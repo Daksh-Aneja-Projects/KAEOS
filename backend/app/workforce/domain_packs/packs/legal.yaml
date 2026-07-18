@@ -1,0 +1,126 @@
+name: "Legal & Compliance"
+slug: "legal"
+description: "Complete Corporate Legal department covering contract management, compliance obligations, litigation tracking, and intellectual property."
+long_description: "The KAEOS Legal Domain Pack provides an autonomous, compliance-first digital Legal department capable of auditing contracts, processing data subject requests (DSARs), and testing regulatory obligations."
+icon: "⚖️"
+category: "legal"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "e_signature"
+    examples: ["docusign", "hellosign", "adobe_sign"]
+    data_provided: ["envelopes", "signed_documents"]
+
+capabilities:
+  - id: "contract_management"
+    name: "Contract Lifecycle Management"
+    description: "Draft, review, and track corporate agreements, identifying high-risk clauses."
+    icon: "📜"
+    agents: ["contract_agent"]
+    processes: ["contract_review"]
+    compliance: ["GAAP", "SOX"]
+
+  - id: "regulatory_compliance"
+    name: "Regulatory Compliance"
+    description: "Monitor international regulations, audit obligations, and trace compliance evidence."
+    icon: "🏛️"
+    agents: ["compliance_agent"]
+    processes: ["obligation_audit"]
+    compliance: ["GDPR", "SOC2", "HIPAA"]
+
+  - id: "litigation_support"
+    name: "Litigation & Exposure Modeling"
+    description: "Manage lawsuits, track court filings, and assess potential litigation risk exposure."
+    icon: "🧑‍⚖️"
+    agents: ["litigation_agent"]
+    processes: ["exposure_evaluation"]
+    compliance: ["SOX"]
+
+  - id: "privacy_operations"
+    name: "Privacy & Data Protection"
+    description: "Automate GDPR/CCPA data subject access requests (DSARs) and verify identities."
+    icon: "🔒"
+    agents: ["privacy_agent"]
+    processes: ["dsar_verification"]
+    compliance: ["GDPR", "CCPA"]
+
+  - id: "intellectual_property"
+    name: "Intellectual Property (IP)"
+    description: "Track patents, trademark renewals, and log trade secrets."
+    icon: "💡"
+    agents: ["ip_agent"]
+    processes: ["patent_review"]
+    compliance: ["USPTO"]
+
+agent_definitions:
+  - name: "ContractAgent"
+    type: "contract_agent"
+    capability: "contract_management"
+    description: "Audits contract clauses for liability caps and indemnification risk."
+    persona: "You are the Contract Agent. You scan legal drafts and recommend changes to protect the company."
+
+  - name: "ComplianceAgent"
+    type: "compliance_agent"
+    capability: "regulatory_compliance"
+    description: "Tracks corporate compliance calendar and audits evidence files."
+    persona: "You are the Compliance Agent. You maintain audit readiness for SOC2 and ISO compliance."
+
+  - name: "LitigationAgent"
+    type: "litigation_agent"
+    capability: "litigation_support"
+    description: "Evaluates financial exposure of pending lawsuits."
+    persona: "You are the Litigation Agent. You model liability risk and support document discovery."
+
+  - name: "PrivacyAgent"
+    type: "privacy_agent"
+    capability: "privacy_operations"
+    description: "Ensures compliance with consumer data privacy regulations."
+    persona: "You are the Privacy Agent. You handle DSAR requests and maintain ROPA registers."
+
+  - name: "IPAgent"
+    type: "ip_agent"
+    capability: "intellectual_property"
+    description: "Manages patents, trademarks, and trade secret registries."
+    persona: "You are the Intellectual Property Agent. You track USPTO filing deadlines and prioritize renewals."
+
+  - name: "GovernanceAgent"
+    type: "governance_agent"
+    capability: "regulatory_compliance"
+    description: "Supports board resolution drafting and governance calendars."
+    persona: "You are the Governance Agent. You draft corporate resolutions and catalog minutes."
+
+process_definitions:
+  - id: "contract_review"
+    name: "AI Clause Risk Review"
+    capability: "contract_management"
+    sla_hours: 12
+    steps:
+      - id: "review_clauses"
+        type: "AGENT_ACTION"
+        agent: "contract_agent"
+        method: "review_contract"
+
+  - id: "obligation_audit"
+    name: "Compliance Obligation Verification"
+    capability: "regulatory_compliance"
+    sla_hours: 24
+    steps:
+      - id: "audit_evidence"
+        type: "AGENT_ACTION"
+        agent: "compliance_agent"
+        method: "audit_obligation"
+
+knowledge_templates:
+  - "privacy_policy"
+  - "contract_standards_manual"
+  - "corporate_bylaws"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 8
+  default_confidence_floor: 0.95
+  requires_hitl: true
+
+compliance_frameworks: ["GDPR", "CCPA", "SOC2", "ISO-27001", "HIPAA", "SOX"]

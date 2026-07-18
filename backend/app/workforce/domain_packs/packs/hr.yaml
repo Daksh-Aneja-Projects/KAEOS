@@ -1,0 +1,86 @@
+name: "Human Resources"
+slug: "hr"
+description: "Complete Human Resources department covering recruiting, onboarding, benefits, compensation, and more."
+long_description: "The KAEOS HR Domain Pack provides a fully autonomous digital HR department capable of managing the entire employee lifecycle from hire to retire. Includes 15 specialized agents and 50+ business processes."
+icon: "👥"
+category: "people"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "hris"
+    examples: ["bamboohr", "workday", "ukg"]
+    data_provided: ["employee_records", "org_chart", "job_titles"]
+  - category: "email"
+    examples: ["smtp", "gmail", "outlook"]
+    data_provided: ["notifications", "candidate_comms"]
+
+capabilities:
+  - id: "talent_acquisition"
+    name: "Talent Acquisition"
+    description: "Manage job requisitions, candidate screening, interviews, and offers."
+    icon: "🎯"
+    agents: ["recruiting_agent", "sourcing_agent"]
+    processes: ["candidate_screening", "interview_scheduling", "offer_generation"]
+    compliance: ["EEOC", "GDPR"]
+
+  - id: "onboarding"
+    name: "Employee Onboarding"
+    description: "Welcome new hires, manage I-9s, equipment, and 30/60/90 day plans."
+    icon: "🚀"
+    agents: ["onboarding_agent"]
+    processes: ["new_hire_welcome", "equipment_provisioning", "benefits_orientation"]
+    compliance: ["I9"]
+
+  - id: "benefits_admin"
+    name: "Benefits Administration"
+    description: "Manage enrollments, life events, and compliance."
+    icon: "🏥"
+    agents: ["benefits_agent"]
+    processes: ["open_enrollment", "life_event_processing"]
+    compliance: ["HIPAA", "ACA"]
+
+agent_definitions:
+  - name: "RecruitingAgent"
+    type: "recruiting"
+    capability: "talent_acquisition"
+    description: "Screens resumes and manages candidate pipeline."
+    persona: "You are the Recruiting Agent. You are an expert in talent acquisition..."
+
+  - name: "OnboardingAgent"
+    type: "onboarding"
+    capability: "onboarding"
+    description: "Guides new hires through their first 90 days."
+    persona: "You are the Onboarding Agent. Your goal is to make new hires feel welcome..."
+
+  - name: "BenefitsAgent"
+    type: "benefits"
+    capability: "benefits_admin"
+    description: "Answers benefits questions and processes enrollments."
+    persona: "You are the Benefits Agent. You have deep knowledge of healthcare plans..."
+
+process_definitions:
+  - id: "candidate_screening"
+    name: "Candidate Screening"
+    capability: "talent_acquisition"
+    sla_hours: 48
+    steps:
+      - id: "ai_screen"
+        type: "AGENT_ACTION"
+        agent: "recruiting_agent"
+        method: "screen_resume"
+
+knowledge_templates:
+  - "employee_handbook"
+  - "pto_policy"
+  - "benefits_guide"
+  - "code_of_conduct"
+
+deployment_config:
+  min_agents: 3
+  max_agents: 15
+  default_confidence_floor: 0.85
+  requires_hitl: true
+
+compliance_frameworks: ["EEOC", "GDPR", "HIPAA", "CCPA"]

@@ -1,0 +1,138 @@
+name: "Finance & Accounting"
+slug: "finance"
+description: "Complete Finance department covering accounts payable, accounts receivable, budgeting, expense management, treasury, and SOX audit."
+long_description: "The KAEOS Finance Domain Pack provides an autonomous, compliance-first digital Finance department capable of handling double-entry bookkeeping, vendor matching, automated collections, budget tracking, and tax planning."
+icon: "💰"
+category: "finance"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "accounting"
+    examples: ["quickbooks", "xero", "netsuite"]
+    data_provided: ["chart_of_accounts", "ledger_entries", "invoices"]
+  - category: "banking"
+    examples: ["plaid", "stripe", "mercury"]
+    data_provided: ["bank_transactions", "balances"]
+
+capabilities:
+  - id: "accounts_payable"
+    name: "Accounts Payable (AP)"
+    description: "Manage vendors, match invoices with purchase orders, and process payments."
+    icon: "📥"
+    agents: ["ap_agent"]
+    processes: ["invoice_matching"]
+    compliance: ["GAAP", "SOX"]
+
+  - id: "accounts_receivable"
+    name: "Accounts Receivable (AR)"
+    description: "Manage customers, issue invoices, run dunning, and reconcile payments."
+    icon: "📤"
+    agents: ["ar_agent"]
+    processes: ["dunning_escalation"]
+    compliance: ["ASC-606", "GAAP"]
+
+  - id: "budgeting_forecasting"
+    name: "Budgeting & Forecasting"
+    description: "Track department budgets, calculate variances, and project future cash flows."
+    icon: "📊"
+    agents: ["budget_agent"]
+    processes: ["budget_variance_check"]
+    compliance: ["GAAP"]
+
+  - id: "expense_management"
+    name: "Expense Management"
+    description: "Audit employee expense reports against policies and process reimbursements."
+    icon: "🎫"
+    agents: ["expense_agent"]
+    processes: ["expense_audit"]
+    compliance: ["IRS-compliance"]
+
+  - id: "tax_governance"
+    name: "Tax & Compliance"
+    description: "Calculate tax liabilities, track filings, and manage withholding configurations."
+    icon: "🏛️"
+    agents: ["tax_agent"]
+    processes: ["tax_liability_calc"]
+    compliance: ["IRS", "CDTFA"]
+
+  - id: "internal_audit"
+    name: "Audit & SOX Controls"
+    description: "Perform automated testing of financial internal controls for SOX Section 404."
+    icon: "🔍"
+    agents: ["audit_agent"]
+    processes: ["sox_control_testing"]
+    compliance: ["SOX"]
+
+agent_definitions:
+  - name: "APAgent"
+    type: "ap_agent"
+    capability: "accounts_payable"
+    description: "Manages accounts payable invoice entry and matches bills."
+    persona: "You are the Accounts Payable Agent. You ensure vendor invoices match POs and bank records."
+
+  - name: "ARAgent"
+    type: "ar_agent"
+    capability: "accounts_receivable"
+    description: "Automates customer invoicing, aging analysis, and collections."
+    persona: "You are the Accounts Receivable Agent. You optimize cash collections and ensure timely customer payments."
+
+  - name: "BudgetAgent"
+    type: "budget_agent"
+    capability: "budgeting_forecasting"
+    description: "Tracks corporate budgets and runs variance analysis."
+    persona: "You are the Budget Agent. You flag over-budget line items and support financial forecasting."
+
+  - name: "ExpenseAgent"
+    type: "expense_agent"
+    capability: "expense_management"
+    description: "Validates expense reports against travel and reimbursement policies."
+    persona: "You are the Expense Agent. You inspect expense claims and detect compliance violations."
+
+  - name: "TaxAgent"
+    type: "tax_agent"
+    capability: "tax_governance"
+    description: "Calculates corporate tax obligations and tracks deadlines."
+    persona: "You are the Tax Agent. You ensure timely filing and accurate withholding computations."
+
+  - name: "AuditAgent"
+    type: "audit_agent"
+    capability: "internal_audit"
+    description: "Performs continuous testing of SOX controls and internal audits."
+    persona: "You are the Audit Agent. You verify process compliance and report internal audit findings."
+
+process_definitions:
+  - id: "invoice_matching"
+    name: "3-Way Invoice Matching"
+    capability: "accounts_payable"
+    sla_hours: 24
+    steps:
+      - id: "match_invoice"
+        type: "AGENT_ACTION"
+        agent: "ap_agent"
+        method: "verify_three_way_match"
+
+  - id: "dunning_escalation"
+    name: "Receivables Collections & Dunning"
+    capability: "accounts_receivable"
+    sla_hours: 48
+    steps:
+      - id: "send_dunning"
+        type: "AGENT_ACTION"
+        agent: "ar_agent"
+        method: "generate_dunning_letter"
+
+knowledge_templates:
+  - "accounting_policy_manual"
+  - "travel_and_expense_policy"
+  - "signature_authority_matrix"
+  - "sox_compliance_manual"
+
+deployment_config:
+  min_agents: 3
+  max_agents: 10
+  default_confidence_floor: 0.90
+  requires_hitl: true
+
+compliance_frameworks: ["SOX", "GAAP", "IFRS", "IRS", "CDTFA"]

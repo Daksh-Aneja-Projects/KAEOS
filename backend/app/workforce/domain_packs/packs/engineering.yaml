@@ -1,0 +1,124 @@
+name: "Engineering & IT Ops"
+slug: "engineering"
+description: "Complete Engineering department covering code review, deployment governance, incident response, and postmortem learning."
+long_description: "The KAEOS Engineering Domain Pack provides an autonomous digital Engineering & IT Ops department. It reviews pull requests against the real change surface, correlates incidents to the deployments that actually shipped, and scores deployment risk against live SLO and error-budget posture. Coding and IT ops together are the largest slice of enterprise AI spend — and the place where ungoverned autonomy is most dangerous, which is why production releases here always require human approval."
+icon: "⚙️"
+category: "engineering"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "source_control"
+    examples: ["github", "gitlab"]
+    data_provided: ["pull_requests", "reviews", "commits"]
+  - category: "incident"
+    examples: ["pagerduty", "servicenow"]
+    data_provided: ["incidents", "on_call_schedules", "escalations"]
+  - category: "observability"
+    examples: ["datadog", "sentry"]
+    data_provided: ["monitors", "alert_states", "error_issues"]
+
+capabilities:
+  - id: "code_review"
+    name: "Code Review & Risk Assessment"
+    description: "Assess pull requests against the real change surface — diff size, auth and migration touches, CI status, and test-coverage movement."
+    icon: "🔍"
+    agents: ["code_review_agent"]
+    processes: ["pull_request_review"]
+    compliance: ["SOC2", "CHANGE_MANAGEMENT"]
+
+  - id: "incident_response"
+    name: "Incident Triage & Correlation"
+    description: "Assign severity, propose the immediate action, and correlate the incident to the deployment that actually caused it."
+    icon: "🚨"
+    agents: ["incident_agent"]
+    processes: ["incident_triage"]
+    compliance: ["SOC2"]
+
+  - id: "deployment_governance"
+    name: "Deployment Risk Governance"
+    description: "Score release risk against service tier, current health, open incidents, and remaining error budget. Always routes to a human."
+    icon: "🚀"
+    agents: ["deploy_risk_agent"]
+    processes: ["deployment_approval"]
+    compliance: ["SOC2", "CHANGE_MANAGEMENT"]
+
+  - id: "service_ownership"
+    name: "Service Catalog & SLO Posture"
+    description: "Track service tiers, ownership, SLO targets versus actuals, and error-budget burn."
+    icon: "🗂️"
+    agents: ["code_review_agent"]
+    processes: ["pull_request_review"]
+    compliance: ["SOC2"]
+
+  - id: "postmortem_learning"
+    name: "Postmortem & Action Items"
+    description: "Capture blameless postmortems with root cause, contributing factors, and tracked action items."
+    icon: "📓"
+    agents: ["incident_agent"]
+    processes: ["incident_triage"]
+    compliance: ["SOC2"]
+
+agent_definitions:
+  - name: "CodeReviewAgent"
+    type: "code_review_agent"
+    capability: "code_review"
+    description: "Reviews a pull request and writes a risk level, summary, and findings back onto it."
+    persona: "You are the Code Review Agent. You judge merge risk from the actual diff — auth changes, database migrations, CI status, and coverage regressions — never from the description alone."
+
+  - name: "IncidentAgent"
+    type: "incident_agent"
+    capability: "incident_response"
+    description: "Triages incidents: severity, probable cause, recommended action, and deploy correlation."
+    persona: "You are the Incident Triage Agent. You correlate incidents only to deployments that actually shipped before detection, because blaming a release that never went out sends responders down the wrong path."
+
+  - name: "DeployRiskAgent"
+    type: "deploy_risk_agent"
+    capability: "deployment_governance"
+    description: "Scores deployment risk 0-100 against live service posture. Produces evidence for a human approver."
+    persona: "You are the Deploy Risk Agent. You never approve a production release; you assemble the evidence a human approves against."
+
+process_definitions:
+  - id: "pull_request_review"
+    name: "Pull Request Risk Review"
+    capability: "code_review"
+    sla_hours: 4
+    steps:
+      - id: "review"
+        type: "AGENT_ACTION"
+        agent: "code_review_agent"
+        method: "review_pull_request"
+
+  - id: "incident_triage"
+    name: "Incident Triage & Deploy Correlation"
+    capability: "incident_response"
+    sla_hours: 1
+    steps:
+      - id: "triage"
+        type: "AGENT_ACTION"
+        agent: "incident_agent"
+        method: "triage_incident"
+
+  - id: "deployment_approval"
+    name: "Deployment Risk Assessment"
+    capability: "deployment_governance"
+    sla_hours: 2
+    steps:
+      - id: "assess"
+        type: "AGENT_ACTION"
+        agent: "deploy_risk_agent"
+        method: "assess_deployment"
+
+knowledge_templates:
+  - "incident_response_playbook"
+  - "deployment_change_management_policy"
+
+deployment_config:
+  min_agents: 1
+  max_agents: 10
+  default_confidence_floor: 0.85
+  # Production changes are gated: engineering_deploy_approval is an always-HITL skill.
+  requires_hitl: true
+
+compliance_frameworks: ["SOC2", "ISO-27001", "CHANGE_MANAGEMENT"]

@@ -1,0 +1,133 @@
+{
+  "note": "Consolidated final state per agent across validation runs on 2026-07-16. Every agent runs its full gated pipeline against a real row (tenant_realco Kaggle data where present, tenant_acme seeds otherwise). PENDING_HITL / ESCALATED_DEBATE / BLOCKED_COMPLIANCE-when-unapproved are designed governance outcomes, not failures. 'grounded' = the entity's actual content was verified inside the stored execution context.",
+  "total_agents": 23,
+  "correct_outcomes": 23,
+  "grounding_confirmed": 15,
+  "model": "ollama/phi4-mini (weakest supported tier - maximizes gate engagement)",
+  "results": [
+    {
+      "agent": "finance.ar_dunning",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true,
+      "sox_blocks_unapproved_call": true
+    },
+    {
+      "agent": "finance.budget_variance",
+      "status": "ESCALATED_DEBATE",
+      "grounded": null,
+      "sox_blocks_unapproved_call": true,
+      "note": "debate gate escalated to human; SUCCESS_CLEAN grounded on prior run"
+    },
+    {
+      "agent": "finance.expense_audit",
+      "status": "ESCALATED_DEBATE",
+      "grounded": null,
+      "sox_blocks_unapproved_call": true
+    },
+    {
+      "agent": "finance.payroll_audit",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true,
+      "sox_blocks_unapproved_call": true
+    },
+    {
+      "agent": "legal.compliance_audit",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "legal.contract_review",
+      "status": "PENDING_HITL",
+      "grounded": null,
+      "note": "by design: confidence pinned 0.75"
+    },
+    {
+      "agent": "legal.litigation_eval",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "legal.privacy_dsar",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "ops.procurement_audit",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "ops.project_eval",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "ops.qa_inspect",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "ops.vendor_risk",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "sales.account_health",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "sales.churn_prevention",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "sales.forecast",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "sales.lead_scoring",
+      "status": "ESCALATED_DEBATE",
+      "grounded": null,
+      "note": "Kaggle tenant_realco lead"
+    },
+    {
+      "agent": "sales.pipeline_coach",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "sales.proposal_gen",
+      "status": "PENDING_HITL",
+      "grounded": null,
+      "note": "by design: confidence pinned 0.50"
+    },
+    {
+      "agent": "support.triage",
+      "status": "ESCALATED_DEBATE",
+      "grounded": null,
+      "note": "Kaggle tenant_realco ticket"
+    },
+    {
+      "agent": "support.auto_resolve",
+      "status": "PENDING_HITL",
+      "grounded": null,
+      "note": "by design: confidence pinned 0.79"
+    },
+    {
+      "agent": "support.escalation",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "support.csat_analysis",
+      "status": "SUCCESS_CLEAN",
+      "grounded": true
+    },
+    {
+      "agent": "support.sla_monitor",
+      "status": "SUCCESS_CLEAN"
+    }
+  ]
+}

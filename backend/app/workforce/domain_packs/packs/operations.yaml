@@ -1,0 +1,126 @@
+name: "Operations & PMO"
+slug: "operations"
+description: "Complete Operations department covering project PMO, capacity planning, vendor contracts, purchasing, and QA inspections."
+long_description: "The KAEOS Operations Domain Pack provides an autonomous, resource-optimized digital Operations department capable of tracking critical paths, analyzing developer workload capacity, and auditing QA standards."
+icon: "⚙️"
+category: "operations"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "pmo"
+    examples: ["jira", "asana", "monday"]
+    data_provided: ["projects", "tasks", "milestones"]
+
+capabilities:
+  - id: "project_pmo"
+    name: "Project Management Office (PMO)"
+    description: "Manage strategic projects, evaluate task milestones, and analyze bottleneck timelines."
+    icon: "📋"
+    agents: ["project_agent"]
+    processes: ["task_timeline_audit"]
+    compliance: ["ISO-9001"]
+
+  - id: "capacity_planning"
+    name: "Capacity Planning"
+    description: "Track resource allocations and check workload capacity constraints."
+    icon: "👥"
+    agents: ["resource_agent"]
+    processes: ["capacity_overload_audit"]
+    compliance: ["SOC2"]
+
+  - id: "supplier_operations"
+    name: "Supplier & Vendor Operations"
+    description: "Manage subcontractor agreements and rate performance compliance scorecards."
+    icon: "🤝"
+    agents: ["vendor_agent"]
+    processes: ["vendor_performance_evaluation"]
+    compliance: ["ISO-9001"]
+
+  - id: "procurement_operations"
+    name: "Procurement & Purchasing"
+    description: "Audit purchase requests and auto-approve expenditures under limits."
+    icon: "🛒"
+    agents: ["procurement_agent"]
+    processes: ["purchase_request_audit"]
+    compliance: ["SOX"]
+
+  - id: "quality_assurance"
+    name: "Quality Control & Inspections"
+    description: "Perform operational process inspections and log corrective action plans."
+    icon: "🔍"
+    agents: ["quality_agent"]
+    processes: ["quality_inspection_audit"]
+    compliance: ["ISO-9001"]
+
+agent_definitions:
+  - name: "ProjectAgent"
+    type: "project_agent"
+    capability: "project_pmo"
+    description: "Evaluates project tasks for schedule delay risks."
+    persona: "You are the Project PMO Agent. You review timelines and alert on stalled deliverables."
+
+  - name: "ResourceAgent"
+    type: "resource_agent"
+    capability: "capacity_planning"
+    description: "Audits team utilization levels to check for over-allocation."
+    persona: "You are the Resource Capacity Agent. You check allocated hours against capacity guidelines."
+
+  - name: "VendorAgent"
+    type: "vendor_agent"
+    capability: "supplier_operations"
+    description: "Assesses supplier delivery performance."
+    persona: "You are the Supplier Operations Agent. You compile monthly subcontractor scorecard metrics."
+
+  - name: "ProcurementAgent"
+    type: "procurement_agent"
+    capability: "procurement_operations"
+    description: "Audits purchase claims and auto-approves transactions under threshold."
+    persona: "You are the Purchasing Agent. You verify expenditure authorization details against limits."
+
+  - name: "QualityAgent"
+    type: "quality_agent"
+    capability: "quality_assurance"
+    description: "Audits failed inspection points and drafts corrective plans."
+    persona: "You are the Quality QA Agent. You ensure adherence to ISO-9001 rules."
+
+  - name: "FacilityAgent"
+    type: "supplier_operations"
+    capability: "supplier_operations"
+    description: "Monitors workspace assets and prioritizes maintenance tickets."
+    persona: "You are the Facility Maintenance Agent. You catalog repair requests and assign technicians."
+
+process_definitions:
+  - id: "task_timeline_audit"
+    name: "Task Risk Assessment"
+    capability: "project_pmo"
+    sla_hours: 24
+    steps:
+      - id: "evaluate"
+        type: "AGENT_ACTION"
+        agent: "project_agent"
+        method: "evaluate_task_risk"
+
+  - id: "purchase_request_audit"
+    name: "Procurement Threshold Audit"
+    capability: "procurement_operations"
+    sla_hours: 12
+    steps:
+      - id: "audit"
+        type: "AGENT_ACTION"
+        agent: "procurement_agent"
+        method: "audit_purchase_request"
+
+knowledge_templates:
+  - "quality_assurance_standards"
+  - "purchasing_policy_guidelines"
+  - "resource_allocation_playbook"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 8
+  default_confidence_floor: 0.90
+  requires_hitl: true
+
+compliance_frameworks: ["ISO-9001", "SOC2", "SOX"]

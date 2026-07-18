@@ -1,0 +1,97 @@
+name: KAEOS Enterprise CI
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    - name: Install ruff
+      run: pip install ruff==0.15.8
+    - name: Ruff (bug-catching rules — see backend/ruff.toml)
+      run: |
+        cd backend
+        ruff check .
+
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Run unit tests
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+        DEV_MODE: "true"
+      run: |
+        cd backend
+        # The e2e suite needs a live backend on :8001 plus a local Ollama, so it
+        # cannot run here — it skips itself via the `client` fixture rather than
+        # failing, which would make CI green while testing nothing. Run it
+        # against a real stack: see README "E2E Test Suite".
+        pytest tests/ --ignore=tests/e2e
+
+  backend-e2e-mock:
+    # Gate/pipeline logic against a LIVE backend with a deterministic fake
+    # LLM (KAEOS_FAKE_LLM=1) - no Ollama, no cloud keys. The full-fidelity
+    # e2e run with a real local model stays a pre-release manual step.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Boot backend + seed + run non-Ollama e2e
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+        DEV_MODE: "true"
+        KAEOS_FAKE_LLM: "1"
+      run: |
+        cd backend
+        python -m uvicorn app.main:app --port 8001 --log-level warning &
+        for i in $(seq 1 30); do
+          curl -sf http://localhost:8001/health > /dev/null && break
+          sleep 2
+        done
+        python scripts/seed_master.py
+        pytest tests/e2e -m "not ollama" -q --tb=short
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Node.js 20
+      uses: actions/setup-node@v3
+      with:
+        node-version: "20"
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    - name: Lint and Build
+      run: |
+        cd frontend
+        npm run lint
+        npm run build

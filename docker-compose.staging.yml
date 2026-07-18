@@ -1,0 +1,105 @@
+# KAEOS Staging Environment Configuration
+# Focuses on resource limits, robust healthchecks, and production parity.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16  # vector type required by the semantic-memory tables
+    restart: always
+    environment:
+      POSTGRES_USER: kaeos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kaeos_staging_secure}
+      POSTGRES_DB: kaeos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaeos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env.staging
+    environment:
+      # The app MUST connect as kaeos_app (NON-OWNER): Postgres exempts table
+      # owners from row-level security, so connecting as `kaeos` here would
+      # leave every tenant-isolation policy installed but INERT. The owner URL
+      # is only for maintenance paths (DDL, migrations, seeding). The
+      # kaeos_app role is created by migration b7c1d9e4a201; verify with
+      # scripts/verify_rls.py after deploy.
+      - DATABASE_URL=postgresql+asyncpg://kaeos_app:${KAEOS_APP_DB_PASSWORD:-kaeos_app_staging}@postgres:5432/kaeos
+      - KAEOS_OWNER_DB_URL=postgresql+asyncpg://kaeos:${POSTGRES_PASSWORD:-kaeos_staging_secure}@postgres:5432/kaeos
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time (Vite bakes it into the bundle); must be browser-reachable.
+        # Override with the staging host's public URL when not on localhost.
+        VITE_API_BASE: ${KAEOS_PUBLIC_API_BASE:-http://localhost:8001/api/v1}
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  pgdata:
+  redisdata:
+  backend-data:

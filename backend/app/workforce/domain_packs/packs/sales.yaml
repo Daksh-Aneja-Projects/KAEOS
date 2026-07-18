@@ -1,0 +1,118 @@
+name: "Sales & CRM"
+slug: "sales"
+description: "Complete Sales department covering pipelines, lead scoring, territory planning, commissions, and forecasts."
+long_description: "The KAEOS Sales Domain Pack provides an autonomous, performance-focused digital Sales department capable of scoring inbound leads, coaching opportunity win steps, and computing payouts."
+icon: "📈"
+category: "sales"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "crm"
+    examples: ["salesforce", "hubspot", "pipedrive"]
+    data_provided: ["opportunities", "leads", "accounts"]
+
+capabilities:
+  - id: "pipeline_management"
+    name: "Pipeline Management"
+    description: "Manage sales opportunities, track close probabilities, and suggest next-best-actions."
+    icon: "📞"
+    agents: ["pipeline_agent", "cpq_agent"]
+    processes: ["deal_coaching", "cpq_discount_review"]
+    compliance: ["ASC-606"]
+
+  - id: "lead_operations"
+    name: "Lead Operations & Scoring"
+    description: "Qualify inbound signups, score ICP relevance, and route leads to reps."
+    icon: "🎯"
+    agents: ["lead_scoring_agent"]
+    processes: ["lead_qualification"]
+    compliance: ["GDPR"]
+
+  - id: "revenue_forecasting"
+    name: "Revenue Forecasting"
+    description: "Compile rep forecast commits and project aggregate attainment."
+    icon: "📈"
+    agents: ["forecast_agent"]
+    processes: ["quarterly_prediction"]
+    compliance: ["ASC-606"]
+
+  - id: "commission_governance"
+    name: "Commission Management"
+    description: "Formulate sales commission plans, calculate deal-level commissions, and route payouts."
+    icon: "💰"
+    agents: ["commission_agent"]
+    processes: ["payout_calculation"]
+    compliance: ["SOX"]
+
+agent_definitions:
+  - name: "PipelineAgent"
+    type: "pipeline_agent"
+    capability: "pipeline_management"
+    description: "Monitors open deals and suggests follow-up actions to increase win rates."
+    persona: "You are the Pipeline Coach Agent. You review opportunity parameters and recommend follow-up templates."
+
+  - name: "LeadScoringAgent"
+    type: "lead_scoring_agent"
+    capability: "lead_operations"
+    description: "Scores marketing and inbound leads against corporate ICP definitions."
+    persona: "You are the Lead Qualifier Agent. You evaluate company scaling logs and email metrics to assign scores."
+
+  - name: "ForecastAgent"
+    type: "forecast_agent"
+    capability: "revenue_forecasting"
+    description: "Predicts final quarterly sales bookings."
+    persona: "You are the Revenue Forecast Agent. You model pipeline coverage to compute estimated attainment."
+
+  - name: "CommissionAgent"
+    type: "commission_agent"
+    capability: "commission_governance"
+    description: "Auto-calculates commission payouts on closed opportunities."
+    persona: "You are the Commission Auditor Agent. You verify calculations against compensation plans."
+
+  - name: "AccountAgent"
+    type: "account_agent"
+    capability: "pipeline_management"
+    description: "Tracks client health metrics and alerts on customer success issues."
+    persona: "You are the Account Success Agent. You identify expansion targets and flag churn risk."
+
+  - name: "CPQAgent"
+    type: "cpq_agent"
+    capability: "pipeline_management"
+    description: "Deal desk auditor reviewing customized quotes and requested discounts."
+    persona: "You are the CPQ Deal Desk Agent. You protect corporate margins by auditing pricing configurations."
+
+process_definitions:
+  - id: "deal_coaching"
+    name: "Sales Deal Coaching Audit"
+    capability: "pipeline_management"
+    sla_hours: 24
+    steps:
+      - id: "coach"
+        type: "AGENT_ACTION"
+        agent: "pipeline_agent"
+        method: "coach_deal"
+
+  - id: "lead_qualification"
+    name: "Lead ICP Scoring"
+    capability: "lead_operations"
+    sla_hours: 4
+    steps:
+      - id: "score"
+        type: "AGENT_ACTION"
+        agent: "lead_scoring_agent"
+        method: "score_lead"
+
+knowledge_templates:
+  - "sales_playbook"
+  - "commission_comp_plan"
+  - "pricing_discount_framework"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 10
+  default_confidence_floor: 0.90
+  requires_hitl: true
+
+compliance_frameworks: ["ASC-606", "GDPR", "SOX"]

@@ -1,0 +1,77 @@
+# KAEOS — Ruff configuration
+#
+# Rule selection is deliberate. The goal is to catch BUGS, not to enforce
+# cosmetic uniformity across a 52k-line codebase in one sweep.
+#
+# What earned its place:
+#   F  (pyflakes)  — real defects: unused variables that signal dead logic,
+#                    redefinitions that shadow routes, undefined names.
+#                    F841 caught three HR agents building an LLM prompt and
+#                    silently discarding it; that is the class worth gating on.
+#   E7 (pycodestyle logic errors) — `== None`, ambiguous names, lambda-assign.
+#   B  (bugbear)   — mutable default args, unused loop vars, etc.
+#
+# What is deliberately NOT selected:
+#   UP (pyupgrade) — would flag ~1,100 typing modernizations (Dict->dict,
+#     Optional->|None) across 52k lines. That is a large, risky diff with zero
+#     defect reduction. A lint gate nobody acts on is worse than no gate; run it
+#     as its own reviewed pass, not as a release blocker.
+
+target-version = "py312"
+line-length = 120
+
+exclude = [
+    "proof_archive",      # archived one-off runners, not deployed
+    "alembic/versions",   # generated migrations
+    "scripts/maintenance", # one-off migration tools that already ran; not shipped
+    "__pycache__",
+    ".venv",
+    "artifacts",
+]
+
+[lint]
+select = ["F", "E4", "E7", "E9", "B"]
+
+ignore = [
+    # E402: module-import-not-at-top-of-file.
+    # The codebase deliberately defers imports (routers import services below the
+    # APIRouter() definition, services import models inside functions) to break
+    # circular-import cycles. Enforcing this would mean a large, risky refactor
+    # for zero defect reduction.
+    "E402",
+    # E712: `== True` comparisons.
+    # Required by SQLAlchemy: `Column == True` builds a SQL expression, while
+    # `Column is True` evaluates in Python and silently breaks the query.
+    "E712",
+    # B008: function call in default argument.
+    # This IS the FastAPI dependency-injection idiom: `Depends(get_db)`.
+    "B008",
+    # B904: `raise ... from err` inside except. Worth doing, but it is ~53
+    # call sites of exception-chaining polish; tracked separately rather than
+    # bundled into a release commit.
+    "B904",
+    # E701/E702: multiple statements on one line — cosmetic.
+    "E701",
+    "E702",
+    # E741: `l` as a variable name. Real rule (l/1 confusion), but the remaining
+    # sites are all short comprehensions (`[l.id for l in logs]`) where scope is
+    # one line. Renaming is churn, not defect reduction.
+    "E741",
+    # B905: `zip()` without explicit strict=. Guards against silent truncation on
+    # mismatched lengths; the remaining sites zip sequences built from the same
+    # source in the same function. Revisit if zip is ever fed external data.
+    "B905",
+    # B007: unused loop control variable — cosmetic.
+    "B007",
+]
+
+[lint.per-file-ignores]
+# Model/package __init__ files re-export names for SQLAlchemy registration and
+# public API surface; those imports are "unused" only to a static reader.
+"__init__.py" = ["F401"]
+"app/models/__init__.py" = ["F401"]
+# Tests may assert on unused locals and shadow fixtures by design.
+"tests/**" = ["F811", "B011"]
+
+[format]
+quote-style = "preserve"

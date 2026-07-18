@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+.git/
+.gitignore
+alembic/versions/__pycache__/
+data/output/
+data/api_keys.json
+*.egg-info/
+dist/
+build/

@@ -1,0 +1,181 @@
+# =============================================================================
+# KAEOS — Enterprise Workforce Operating System
+# .gitignore — Professional configuration
+# =============================================================================
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.whl
+*.so
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# ─── Virtual environments ────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.virtualenv/
+
+# ─── Environment / Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/data/api_keys.json
+
+# ─── Databases ───────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+backend/kaeos.db
+backend/benchmark.db
+backend/evidence.db
+backend/genome_test*.db
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Node / Frontend ─────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+.cache/
+
+# ─── Build Artifacts ─────────────────────────────────────────────────────────
+frontend/dist/
+backend/dist/
+
+# ─── IDE / Editor ────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.project
+.classpath
+*.iml
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ─── Docker volumes / runtime data ───────────────────────────────────────────
+pgdata/
+redisdata/
+prometheus-data/
+grafana-data/
+
+# ─── Alembic cache ───────────────────────────────────────────────────────────
+backend/alembic/__pycache__/
+backend/alembic/versions/__pycache__/
+
+# ─── Dev / Debug / Sprint scripts (not production code) ─────────────────────
+# These were used during development validation and are not part of the product
+backend/run_*.py
+backend/fix_*.py
+backend/_fix_*.py
+backend/wire_*.py
+backend/seed_*.py
+backend/test_*.py
+backend/verify_*.py
+backend/validation_runner.py
+backend/statistical_proof_runner.py
+backend/synthetic_proof_runner.py
+backend/trust_proof_runner.py
+backend/list_routes.py
+backend/sitecustomize.py
+backend/extract_runtime_template.py
+backend/generate_genome_evidence.py
+
+# ─── JSON reports / dumps ────────────────────────────────────────────────────
+backend/calibration_report.json
+backend/enterprise_trust_report.json
+backend/evidence_dump.json
+backend/benchmark_reports/
+
+# ─── Internal planning / architecture docs (not user-facing) ─────────────────
+implementation_plan.md
+implementation_plan_upgrade
+self_assessment.md
+CODEBASE_MAP.md
+DEPENDENCY_GRAPH.md
+.commitmsg
+
+# ─── Root-level dev scripts ──────────────────────────────────────────────────
+run_data_discovery.py
+run_frontend_audit.py
+run_truth_audit.py
+run_truth_test.py
+run_yc_verification.py
+search_openml.py
+
+# ─── CSV / output data ───────────────────────────────────────────────────────
+csv/
+artifacts/
+feedback/
+
+backend/data/output/
+backend/data/*.jsonl
+
+# --- Internal strategy docs (do not push to public repo) ---------------------
+docs/YC_APPLICATION_GUIDE.md
+docs/INVESTOR_*.md
+skill.md
+IMPLEMENTATION_STATUS.md
+docs/history/
+docs/DEMO_SCRIPT.md
+marketing/
+backend/proof_archive/
+backend/scripts/maintenance/
+
+# ─── Test/run output dumps (never commit) ────────────────────────────────────
+backend/full.txt
+backend/proof_archive/output/
+*.log
+
+# ─── Downloaded datasets (raw, licensed, large — ingestion code is committed, data is not) ───
+backend/data/kaggle_raw/
+
+# launch-film render intermediates (final kaeos-launch.mp4 is kept)
+marketing/video_track.mp4
+marketing/probe.mp4
+marketing/render.log
+marketing/qc_*.png

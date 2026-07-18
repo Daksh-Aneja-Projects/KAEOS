@@ -1,0 +1,117 @@
+name: "Customer Support"
+slug: "support"
+description: "Complete Customer Support department covering helpdesk tickets, knowledge base curation, SLA tracking, and NPS surveys."
+long_description: "The KAEOS Support Domain Pack provides an autonomous, customer-facing digital Support department capable of triaging requests, drafting resolutions from knowledge articles, and escalating breaches."
+icon: "🎧"
+category: "support"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "helpdesk"
+    examples: ["zendesk", "intercom", "freshdesk", "jira_service_desk"]
+    data_provided: ["tickets", "comments", "customer_records"]
+
+capabilities:
+  - id: "ticket_management"
+    name: "Ticket Triage & Routing"
+    description: "Categorize incoming issues, determine urgency, and assign tickets."
+    icon: "🎫"
+    agents: ["triage_agent", "resolution_agent"]
+    processes: ["ticket_triage", "ticket_resolution"]
+    compliance: ["SOC2"]
+
+  - id: "knowledge_management"
+    name: "Knowledge Base Curation"
+    description: "Write and update self-service troubleshooting documentation based on resolved tickets."
+    icon: "📖"
+    agents: ["kb_agent"]
+    processes: ["kb_generation"]
+    compliance: ["SOC2"]
+
+  - id: "sla_governance"
+    name: "SLA Management"
+    description: "Track response and resolution timers, alerting managers before breaches happen."
+    icon: "⏰"
+    agents: ["sla_agent", "escalation_agent"]
+    processes: ["sla_breach_monitoring"]
+    compliance: ["SLA"]
+
+  - id: "customer_feedback"
+    name: "CSAT & Sentiment Analytics"
+    description: "Monitor customer surveys and analyze sentiment tags to identify common friction points."
+    icon: "💬"
+    agents: ["feedback_agent"]
+    processes: ["feedback_sentiment_audit"]
+    compliance: ["SOC2"]
+
+agent_definitions:
+  - name: "TriageAgent"
+    type: "triage_agent"
+    capability: "ticket_management"
+    description: "Classifies ticket subject lines and assigns routing priorities."
+    persona: "You are the Triage Agent. You categorize requests to ensure fast first-response times."
+
+  - name: "ResolutionAgent"
+    type: "resolution_agent"
+    capability: "ticket_management"
+    description: "Drafts answers to user tickets using published help articles."
+    persona: "You are the Resolution Agent. You draft friendly, technical replies from existing documentation."
+
+  - name: "KBAgent"
+    type: "kb_agent"
+    capability: "knowledge_management"
+    description: "Converts solved ticket details into drafted FAQ articles."
+    persona: "You are the KB Curator Agent. You identify documentation gaps and draft clear user guides."
+
+  - name: "SLAAgent"
+    type: "sla_agent"
+    capability: "sla_governance"
+    description: "Monitors active SLA clocks and highlights breaches."
+    persona: "You are the SLA Monitor Agent. You ensure no customer ticket is left unanswered."
+
+  - name: "FeedbackAgent"
+    type: "feedback_agent"
+    capability: "customer_feedback"
+    description: "Audits satisfaction survey comments for sentiment themes."
+    persona: "You are the Customer Experience Agent. You extract friction patterns from surveys."
+
+  - name: "EscalationAgent"
+    type: "escalation_agent"
+    capability: "sla_governance"
+    description: "Prepares detailed summary dossiers for escalated cases."
+    persona: "You are the Escalation Agent. You package case histories so technicians can fix issues quickly."
+
+process_definitions:
+  - id: "ticket_triage"
+    name: "Inbound Ticket Classification"
+    capability: "ticket_management"
+    sla_hours: 1
+    steps:
+      - id: "triage"
+        type: "AGENT_ACTION"
+        agent: "triage_agent"
+        method: "triage_ticket"
+
+  - id: "ticket_resolution"
+    name: "Automated Ticket Solving"
+    capability: "ticket_management"
+    sla_hours: 4
+    steps:
+      - id: "solve"
+        type: "AGENT_ACTION"
+        agent: "resolution_agent"
+        method: "solve_ticket"
+
+knowledge_templates:
+  - "support_escalation_playbook"
+  - "customer_comms_style_guide"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 12
+  default_confidence_floor: 0.85
+  requires_hitl: false
+
+compliance_frameworks: ["SOC2", "ISO-27001", "GDPR"]

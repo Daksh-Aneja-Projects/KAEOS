@@ -1,0 +1,112 @@
+# KAEOS KAEOS 1.0 — Production Docker Compose
+# Usage: docker compose up --build
+# Includes: PostgreSQL (persistent), Redis (caching), Backend, Frontend
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16  # vector type required by the semantic-memory tables
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kaeos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kaeos_dev_2026}
+      POSTGRES_DB: kaeos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaeos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (session cache, event bus, rate limiting) ─────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── Backend (FastAPI) ───────────────────────────────────────
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      # The app connects as kaeos_app (NON-OWNER) so Postgres row-level
+      # security actually applies - the owner bypasses its own policies.
+      - DATABASE_URL=postgresql+asyncpg://kaeos_app:${KAEOS_APP_DB_PASSWORD:-kaeos_app_dev}@postgres:5432/kaeos
+      # Owner URL: migrations + seeders only (bypasses RLS by design).
+      - KAEOS_OWNER_DB_URL=postgresql+asyncpg://kaeos:${POSTGRES_PASSWORD:-kaeos_dev_2026}@postgres:5432/kaeos
+      - REDIS_URL=redis://redis:6379/0
+      # DEV_MODE=true with ENVIRONMENT=staging/production refuses to boot.
+      - ENVIRONMENT=${KAEOS_ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend (Vite → Nginx) ────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the static bundle at BUILD time (Vite). Must be reachable
+        # from the user's BROWSER — the Docker-internal name backend:8001 is not.
+        VITE_API_BASE: http://localhost:8001/api/v1
+    restart: unless-stopped
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+
+  # ── Observability (Prometheus + Grafana) ────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  pgdata:
+  redisdata:
+  backend-data:
+  prometheus-data:
+  grafana-data:

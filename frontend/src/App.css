@@ -1,0 +1,5 @@
+/* App-level styles (minimal — design system is in index.css) */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
