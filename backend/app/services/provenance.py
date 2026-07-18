@@ -1,7 +1,10 @@
 import json
 import hashlib
+import logging
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 class ProvenanceEngine:
     """L11 - Knowledge Provenance & Lineage Ledger"""
@@ -40,6 +43,11 @@ class ProvenanceEngine:
             parent_record = await db_session.get(ProvenanceLedger, str(parent_id))
             if parent_record:
                 parent_hash = parent_record.chain_hash
+            else:
+                logger.warning(
+                    f"[Provenance] parent_id={parent_id} not found — chain integrity broken. "
+                    f"Using GENESIS as fallback for rule={rule_id}"
+                )
 
         if tenant_id is None:
             # Best-effort backfill from the subject rule (rule-event entries).

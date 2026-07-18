@@ -16,10 +16,16 @@ class ConnectionManager:
         # Maps tenant_id -> list of active WebSockets
         self.active_connections: Dict[str, List[WebSocket]] = {}
 
+    MAX_CONNECTIONS_PER_TENANT = 50
+
     async def connect(self, websocket: WebSocket, tenant_id: str):
-        await websocket.accept()
         if tenant_id not in self.active_connections:
             self.active_connections[tenant_id] = []
+        if len(self.active_connections[tenant_id]) >= self.MAX_CONNECTIONS_PER_TENANT:
+            await websocket.close(code=1008, reason="Too many connections for this tenant")
+            logger.warning(f"WebSocket rejected for tenant {tenant_id}: connection limit reached")
+            return False
+        await websocket.accept()
         self.active_connections[tenant_id].append(websocket)
         logger.info(f"WebSocket connected for tenant {tenant_id}. Active: {len(self.active_connections[tenant_id])}")
 
@@ -106,7 +112,9 @@ async def websocket_endpoint(
             await websocket.close(code=1008, reason="Unauthorized")
             return
 
-    await manager.connect(websocket, tenant_id)
+    connected = await manager.connect(websocket, tenant_id)
+    if connected is False:
+        return
     try:
         while True:
             raw = await websocket.receive_text()

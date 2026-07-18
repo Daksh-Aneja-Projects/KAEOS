@@ -41,10 +41,10 @@ export default class ErrorBoundary extends Component<Props, State> {
             background: 'rgba(229, 83, 75, 0.12)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', fontSize: 24,
           }}>⚠</div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: '#f7f8f8' }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: 'var(--color-ink, #f7f8f8)' }}>
             {this.props.fallbackTitle || 'Module Error'}
           </h3>
-          <p style={{ fontSize: 13, color: '#8a8f98', margin: 0, maxWidth: 400, textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-ink-subtle, #8a8f98)', margin: 0, maxWidth: 400, textAlign: 'center' }}>
             {this.state.error?.message || 'An unexpected error occurred in this module.'}
           </p>
           <button

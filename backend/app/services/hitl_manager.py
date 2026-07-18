@@ -285,6 +285,7 @@ class HITLManager:
         # Update the DB row when one exists. Gate-3 pauses of gated (synthetic)
         # skills have no SkillExecution row yet - that is not an error; the
         # resume path below creates one via the executor.
+        # Use optimistic locking to prevent double-resolution races.
         async with AsyncSessionLocal() as session:
             from sqlalchemy import select, update
             exec_q = await session.execute(
@@ -292,15 +293,27 @@ class HITLManager:
             )
             execution = exec_q.scalar_one_or_none()
             if execution:
-                await session.execute(
+                if execution.agent_state not in ("PENDING_HITL", "PAUSED", None):
+                    logger.warning(
+                        f"[HITL] {execution_id} already resolved "
+                        f"(state={execution.agent_state}) — ignoring duplicate"
+                    )
+                    return False
+                result = await session.execute(
                     update(SkillExecution)
-                    .where(SkillExecution.id == execution_id)
+                    .where(
+                        SkillExecution.id == execution_id,
+                        SkillExecution.agent_state.in_(["PENDING_HITL", "PAUSED", None]),
+                    )
                     .values(
                         agent_state="RUNNING" if approved else "FAILED",
                         hitl_approved=approved,
                         hitl_approver=approver,
                     )
                 )
+                if result.rowcount == 0:
+                    logger.warning(f"[HITL] {execution_id} resolve lost CAS race — already handled")
+                    return False
                 await session.commit()
 
         if not record and not execution:

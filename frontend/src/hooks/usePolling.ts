@@ -117,6 +117,7 @@ export function usePolling<T>(
       if (document.hidden) {
         if (intervalRef.current) clearInterval(intervalRef.current);
       } else if (isLive) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
         execute();
         intervalRef.current = setInterval(execute, intervalMs);
       }

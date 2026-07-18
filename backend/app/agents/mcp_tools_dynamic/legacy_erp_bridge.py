@@ -19,7 +19,8 @@ class LegacyErpBridgeTool:
 
         try:
 
-            response = await httpx.AsyncClient().post(f"{self.base_url}/api/legacy_erp_bridge", json=payload)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(f"{self.base_url}/api/legacy_erp_bridge", json=payload, timeout=30)
 
             response.raise_for_status()
 

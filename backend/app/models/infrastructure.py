@@ -6,7 +6,7 @@ N3: Inter-Agent Communication Protocol
 N4: Tenant Onboarding Engine
 """
 from sqlalchemy import (
-    Column, String, Boolean, Integer, Float, DateTime, Text, JSON, Enum,
+    Column, String, Boolean, Integer, Float, DateTime, Text, JSON, Enum, Numeric,
 )
 from sqlalchemy.sql import func
 import uuid
@@ -95,8 +95,8 @@ class TokenBudget(Base):
     # Budget limits
     token_limit = Column(Integer, default=10_000_000)       # Total tokens allowed
     token_used = Column(Integer, default=0)
-    cost_limit_usd = Column(Float, default=100.0)
-    cost_used_usd = Column(Float, default=0.0)
+    cost_limit_usd = Column(Numeric(12, 6), default=100.0)
+    cost_used_usd = Column(Numeric(12, 6), default=0.0)
 
     # Enforcement
     soft_limit_pct = Column(Float, default=0.80)           # Warning at 80%
@@ -133,7 +133,7 @@ class CostEvent(Base):
     input_tokens = Column(Integer, default=0)
     output_tokens = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
-    cost_usd = Column(Float, default=0.0)
+    cost_usd = Column(Numeric(12, 6), default=0.0)
     latency_ms = Column(Integer, default=0)
 
     # Context

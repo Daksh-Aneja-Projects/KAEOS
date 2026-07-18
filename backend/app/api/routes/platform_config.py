@@ -12,6 +12,8 @@ router = APIRouter(prefix="/config", tags=["Platform Config"])
 
 # -- LLM Routing & BYOK --
 VALID_LAYERS = {"TIER_1_COMPLEX", "TIER_2_STANDARD", "TIER_3_FAST", "TIER_EMBEDDING"}
+# Providers that never require an API key — a stored key for one is meaningless.
+_KEYLESS_PROVIDERS = {"ollama"}
 
 
 class LLMConfigIn(BaseModel):
@@ -81,11 +83,18 @@ async def update_llm_routing(
         db.add(db_item)
 
     model_changed = db_item.model_name != item.model_name
+    provider_changed = db_item.provider != item.provider
     db_item.model_name = item.model_name
     db_item.provider = item.provider
     db_item.api_base = item.api_base
     if item.api_key:
         db_item.api_key_encrypted = encrypt_secrets({"api_key": item.api_key})
+    elif (item.provider or "").lower() in _KEYLESS_PROVIDERS or provider_changed:
+        # A keyless provider (Ollama) must never carry a key, and a key stored
+        # for a DIFFERENT provider is meaningless — and, if it was written under
+        # an old SECRET_KEY, undecryptable. Clear it rather than leaving a stale
+        # blob that later fails the probe with a cryptic decrypt error.
+        db_item.api_key_encrypted = None
     # A new model invalidates the old capability profile — force a re-probe.
     if model_changed:
         db_item.capability_profile = {}
@@ -145,7 +154,17 @@ async def probe_llm_model(
         try:
             api_key = decrypt_secrets(cfg.api_key_encrypted).get("api_key")
         except ValueError as e:
-            raise HTTPException(400, detail=str(e))
+            # A keyless provider (Ollama) doesn't need the key at all — a stale,
+            # undecryptable blob must not block its probe. Providers that DO
+            # require a key still fail loudly.
+            if (cfg.provider or "").lower() in _KEYLESS_PROVIDERS:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"[Probe] ignoring undecryptable key for keyless provider "
+                    f"{cfg.provider} on layer {layer}"
+                )
+            else:
+                raise HTTPException(400, detail=str(e))
 
     profile = await model_probe.run(
         model_name=cfg.model_name,

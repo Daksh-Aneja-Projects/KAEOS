@@ -80,11 +80,13 @@ async def run_gated_finance_skill(
         "has_human_approver": context.get("has_human_approver", False),
     }
 
-    # Post-execution audit flags (Gate 6): finance actions log financial amounts
+    # Gate 6 audit flags: NOT pre-seeded — execution must earn them.
+    # The SkillExecutionEngine sets these in reasoning_chain output when a step
+    # actually logs the required artifact. Pre-setting defeats audit enforcement.
     if "SOX" in compliance_tags or "GAAP" in compliance_tags:
-        ctx["financial_amount_logged"] = True
+        ctx.setdefault("financial_amount_logged", bool(context.get("amount")))
     if "PCI" in compliance_tags:
-        ctx["pci_dss_compliant"] = True
+        ctx.setdefault("pci_dss_compliant", bool(context.get("pci_validated")))
 
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)

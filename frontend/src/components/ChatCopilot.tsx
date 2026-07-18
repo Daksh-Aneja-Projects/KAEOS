@@ -47,7 +47,7 @@ export default function ChatCopilot({ onClose }: { onClose?: () => void }) {
     // Use Server-Sent Events (SSE) for streaming response
     const fetchStream = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000/api/v1'}/chat/stream`, {
+        const response = await fetch(`${import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`}/chat/stream`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

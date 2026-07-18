@@ -11,7 +11,7 @@ interface WebSocketMessage {
 
 export function useWebSocket(tenantIdOverride?: string) {
   const { user } = useAuth();
-  const tenantId = tenantIdOverride || user?.tenant_id || 'tenant_acme';
+  const tenantId = tenantIdOverride || user?.tenant_id;
   const [status, setStatus] = useState<WebSocketStatus>('disconnected');
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   
@@ -21,7 +21,7 @@ export function useWebSocket(tenantIdOverride?: string) {
   const retryRef = useRef<number>(0);
 
   const connect = useCallback(() => {
-    if (!isComponentMounted.current) return;
+    if (!isComponentMounted.current || !tenantId) return;
     
     setStatus('connecting');
     // Derive the WS endpoint from the API base via the shared client helper -

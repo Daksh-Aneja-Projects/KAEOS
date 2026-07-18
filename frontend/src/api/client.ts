@@ -3,6 +3,8 @@
  * Typed fetch wrapper for all backend endpoints - ZERO hardcoded data
  */
 
+declare global { interface Window { __kaeos_reloading?: boolean; } }
+
 const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`;
 
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -26,7 +28,10 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     // AuthGuard returns the user to the login page instead of a dead UI.
     if (res.status === 401 && token && !path.startsWith('/auth/login')) {
       localStorage.removeItem('kaeos-token');
-      window.location.reload();
+      if (!window.__kaeos_reloading) {
+        window.__kaeos_reloading = true;
+        window.location.reload();
+      }
     }
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     // FastAPI validation errors return `detail` as an array of {loc,msg,type};

@@ -61,6 +61,8 @@ engine_kwargs = {
 if not settings.is_sqlite:
     engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
     engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_recycle"] = 3600
 elif ":memory:" in settings.DATABASE_URL:
     # A SQLite ":memory:" database is per-connection by default, so tables created
     # on one connection are invisible to others. Use a StaticPool so every session
@@ -205,6 +207,10 @@ async def ensure_app_role(conn) -> bool:
     from sqlalchemy import text as _text
 
     app_pw = _os.environ.get("KAEOS_APP_DB_PASSWORD", "kaeos_app_dev")
+    # Sanitize password: reject if it contains single quotes (prevents SQL injection
+    # in the DO $$ block where parameterized queries are not available).
+    if "'" in app_pw:
+        raise ValueError("KAEOS_APP_DB_PASSWORD must not contain single quotes")
     # Only the owner may create roles / grant; init_db's conn is the owner.
     await conn.execute(_text(f"""
         DO $$

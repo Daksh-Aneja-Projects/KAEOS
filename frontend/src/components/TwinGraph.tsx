@@ -404,10 +404,11 @@ export default function TwinGraph({
           ? (deptColor.get(n.id) || TYPE_COLORS.Department)
           : (TYPE_COLORS[n.label] || '#94a3b8');
         tip.style.display = 'block';
+        const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         tip.innerHTML =
-          `<div style="font-weight:600;color:#f7f8f8;font-size:12px">${(n.name || '').slice(0, 30)}</div>` +
+          `<div style="font-weight:600;color:#f7f8f8;font-size:12px">${esc((n.name || '').slice(0, 30))}</div>` +
           `<div style="font-weight:700;color:${tipColor};font-size:9px;text-transform:uppercase">` +
-          `${n.label}${n.status ? ' · ' + String(n.status).replace(/^[A-Za-z]+Status\./, '') : ''}</div>` +
+          `${esc(n.label)}${n.status ? ' · ' + esc(String(n.status).replace(/^[A-Za-z]+Status\./, '')) : ''}</div>` +
           `<div style="color:#8a8f98;font-size:9px;margin-top:2px">drag to move · click for details</div>`;
       } else {
         tip.style.display = 'none';

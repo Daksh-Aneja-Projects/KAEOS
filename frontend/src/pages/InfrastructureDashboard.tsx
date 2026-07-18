@@ -64,8 +64,14 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {loading && (
+          <div className="flex items-center justify-center h-40">
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.inkSubtle }} />
+          </div>
+        )}
+
         {/* N1: Model Registry */}
-        {tab === 'models' && (
+        {!loading && tab === 'models' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Model Registry & 4-Tier Routing</h2>
@@ -111,9 +117,9 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   <div className="col-span-2 font-mono text-[11px]">{m.model_name}</div>
                   <div className="capitalize">{m.provider}</div>
                   <div><span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: tierColor(m.tier) + '20', color: tierColor(m.tier) }}>{m.tier}</span></div>
-                  <div className="text-center font-mono text-[11px]">{m.avg_latency_ms}ms</div>
-                  <div className="text-center font-mono text-[11px]" style={{ color: m.success_rate >= 0.95 ? '#22c55e' : '#f59e0b' }}>{(m.success_rate * 100).toFixed(1)}%</div>
-                  <div className="text-center font-mono text-[11px]">${m.cost_per_1k_input}</div>
+                  <div className="text-center font-mono text-[11px]">{m.avg_latency_ms ?? '-'}ms</div>
+                  <div className="text-center font-mono text-[11px]" style={{ color: (m.success_rate ?? 0) >= 0.95 ? '#22c55e' : '#f59e0b' }}>{m.success_rate != null ? (m.success_rate * 100).toFixed(1) + '%' : '-'}</div>
+                  <div className="text-center font-mono text-[11px]">{m.cost_per_1k_input != null ? `$${m.cost_per_1k_input}` : '-'}</div>
                   <div className="text-center">
                     {m.is_canary ? (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>CANARY</span>
@@ -128,7 +134,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
         )}
 
         {/* N2: Cost Governor */}
-        {tab === 'cost' && (
+        {!loading && tab === 'cost' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Inference Cost Governor</h2>
@@ -181,7 +187,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
         )}
 
         {/* N3: Agent Protocol */}
-        {tab === 'agents' && (
+        {!loading && tab === 'agents' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Agent Protocol & Circuit Breakers</h2>

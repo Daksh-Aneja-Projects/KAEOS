@@ -167,7 +167,10 @@ class EventBus:
                     try:
                         self.webhook_queue.put_nowait((event_data, matching_subs))
                     except asyncio.QueueFull:
-                        pass
+                        logger.error(
+                            f"[EventBus] Event DROPPED: queue full and Redis unavailable "
+                            f"(type={event_type.value}, tenant={tenant_id})"
+                        )
 
             # 4. Broadcast to all connected WebSocket clients for this tenant (real-time push)
             try:

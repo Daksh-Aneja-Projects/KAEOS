@@ -15,7 +15,6 @@ import hashlib
 import json
 import logging
 import math
-import socket
 import struct
 import time
 
@@ -40,8 +39,28 @@ _EMBEDDING_DIMS = {
 }
 
 
-def _ollama_reachable(base_url: str) -> bool:
-    """Fast, cached TCP probe to check whether an Ollama server is reachable."""
+def _blocking_tcp_probe(host: str, port: int, timeout: float) -> bool:
+    """Blocking TCP connect — kept because it is far more reliable than an
+    asyncio open_connection on Windows, where the async path can spuriously
+    time out on a localhost connect that a blocking connect completes."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+async def _ollama_reachable(base_url: str) -> bool:
+    """Fast, cached TCP probe to check whether an Ollama server is reachable.
+
+    Uses a blocking socket connect (reliable) offloaded to a worker thread via
+    asyncio.to_thread, so the event loop is never blocked while still getting a
+    trustworthy result. A generous timeout accommodates a slow localhost stack.
+    """
+    import asyncio
+
     now = time.time()
     cached = _OLLAMA_PROBE_CACHE.get(base_url)
     if cached and (now - cached[0]) < _OLLAMA_PROBE_TTL:
@@ -59,10 +78,8 @@ def _ollama_reachable(base_url: str) -> bool:
     except Exception:
         pass
 
-    reachable = False
     try:
-        with socket.create_connection((host, port), timeout=0.35):
-            reachable = True
+        reachable = await asyncio.to_thread(_blocking_tcp_probe, host, port, 1.5)
     except Exception:
         reachable = False
 
@@ -115,8 +132,8 @@ class LLMRouter:
 
     def __init__(self, api_keys: Optional[dict] = None):
         self.api_keys = api_keys or {}
-        # Set to True when the last embed() call returned simulated vectors.
         self.embeddings_simulated: bool = False
+        self._degraded: bool = False
 
     # ── BYOK: per-tenant model resolution ────────────────────────────────
 
@@ -211,7 +228,7 @@ class LLMRouter:
             keys.update(tenant_api_keys)
         return keys
 
-    def provider_available(self, tenant_api_keys: Optional[dict] = None) -> bool:
+    async def provider_available(self, tenant_api_keys: Optional[dict] = None) -> bool:
         """True if any real LLM provider is available (cloud key or reachable Ollama)."""
         keys = self._effective_keys(tenant_api_keys)
         cloud_providers = ("openai", "anthropic", "groq", "mistral", "cohere")
@@ -220,11 +237,22 @@ class LLMRouter:
         if keys.get("custom_base_url"):
             return True
         base_url = keys.get("ollama_base_url", "http://localhost:11434")
-        return _ollama_reachable(base_url)
+        return await _ollama_reachable(base_url)
 
     def is_retryable_error(exception: BaseException) -> bool:
+        try:
+            import litellm
+            if isinstance(exception, (
+                litellm.RateLimitError,
+                litellm.InternalServerError,
+                litellm.ServiceUnavailableError,
+                litellm.APIConnectionError,
+            )):
+                return True
+        except ImportError:
+            pass
         err_str = str(exception).lower()
-        return "429" in err_str or "rate" in err_str or "503" in err_str or "500" in err_str
+        return "429" in err_str or "rate" in err_str or "503" in err_str or "500" in err_str or "timeout" in err_str
 
     @circuit(failure_threshold=5, recovery_timeout=60)
     @retry(
@@ -273,25 +301,27 @@ class LLMRouter:
                 return fake
             return {"content": fake, "model": "fake-llm", "usage": {}}
 
+        # Budget gate BEFORE tier resolution: _record_cost meters after the fact,
+        # but a tenant whose hard limit resolves to BLOCK must not reach a paid
+        # model, and a DEGRADE verdict must down-tier THIS call — not the next
+        # one — so it has to run before the tier is chosen.
+        await self._check_budget_gate(prompt)
+
         # Resolve model from tier if provided
         return_string = False
         fallback_chain = [model]
         if model_tier:
             if model_tier not in self.MODEL_TIERS:
-                # Fail loudly. Silently falling through to the `model` default
-                # sent an uppercase "FAST" caller to a PAID cloud model with no
-                # local fallback — the opposite of what every tier configures.
                 raise ValueError(
                     f"Unknown model_tier {model_tier!r}; expected one of "
                     f"{sorted(self.MODEL_TIERS)}"
                 )
-            model = self.MODEL_TIERS[model_tier]
-            fallback_chain = self.FALLBACK_CHAINS.get(model_tier, [model])
+            effective_tier = model_tier
+            if self._degraded and model_tier in ("reasoning", "classification"):
+                effective_tier = "fast"
+            model = self.MODEL_TIERS[effective_tier]
+            fallback_chain = self.FALLBACK_CHAINS.get(effective_tier, [model])
             return_string = True
-
-        # Budget gate BEFORE dispatch: _record_cost meters after the fact, but a
-        # tenant whose hard limit resolves to BLOCK must not reach a paid model.
-        await self._check_budget_gate(prompt)
 
         last_error = None
         for chain_model in fallback_chain:
@@ -344,12 +374,20 @@ class LLMRouter:
         except Exception as e:
             logger.warning(f"[LLM] budget check failed open: {e}")
             return
-        if verdict and verdict.get("action") == "BLOCK":
-            raise BudgetExceededError(
-                f"LLM budget exhausted for this tenant "
-                f"({verdict.get('usage_pct', '?')}% of hard limit used) - "
-                f"raise the budget or wait for the period to reset"
-            )
+        if verdict:
+            action = verdict.get("action")
+            if action == "BLOCK":
+                raise BudgetExceededError(
+                    f"LLM budget exhausted for this tenant "
+                    f"({verdict.get('usage_pct', '?')}% of hard limit used) - "
+                    f"raise the budget or wait for the period to reset"
+                )
+            if action == "DEGRADE":
+                logger.warning(
+                    f"[LLM] Budget DEGRADE triggered ({verdict.get('usage_pct', '?')}% used) "
+                    f"— forcing model tier down to 'fast'"
+                )
+                self._degraded = True
 
     async def _record_cost(self, model: str, model_tier: str, usage: dict, latency_ms: int) -> None:
         """Write one CostEvent per real model call. Never raises."""
@@ -366,9 +404,10 @@ class LLMRouter:
             cost = 0.0
             try:
                 import litellm
-                cost = float(litellm.completion_cost(
+                prompt_cost, completion_cost = litellm.cost_per_token(
                     model=model, prompt_tokens=inp, completion_tokens=out
-                ) or 0.0)
+                )
+                cost = float(prompt_cost + completion_cost)
             except Exception:
                 cost = 0.0
 
@@ -414,17 +453,16 @@ class LLMRouter:
         If no provider is available, returns a deterministic SIMULATED response
         rather than attempting a network call (graceful degradation).
         """
-        if not self.provider_available(tenant_api_keys):
+        if not await self.provider_available(tenant_api_keys):
             return self._simulated_completion(prompt, system_prompt)
 
         import litellm
 
         effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
 
-        if "openai" in effective_keys:
-            litellm.api_key = effective_keys["openai"]
-        if "anthropic" in effective_keys:
-            litellm.anthropic_key = effective_keys["anthropic"]
+        # NEVER set litellm module globals — they are shared across all
+        # concurrent coroutines and cause cross-tenant credential leaks under
+        # BYOK. The per-call `api_key` param on acompletion() is the safe path.
 
         messages = []
         if system_prompt:
@@ -445,6 +483,7 @@ class LLMRouter:
             max_tokens=max_tokens,
             api_base=api_base,
             api_key=effective_keys.get(self._get_provider(model)),
+            timeout=30,
         )
 
         return {
@@ -578,7 +617,7 @@ class LLMRouter:
         """
         dim = self._embedding_dim(model)
 
-        if not self.provider_available(tenant_api_keys):
+        if not await self.provider_available(tenant_api_keys):
             self.embeddings_simulated = True
             logger.info(f"[LLM] No provider available — returning SIMULATED embeddings (dim={dim}).")
             return [self._pseudo_embedding(t, dim) for t in texts]
@@ -586,15 +625,26 @@ class LLMRouter:
         try:
             import litellm
             effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
-            if "openai" in effective_keys:
-                litellm.api_key = effective_keys["openai"]
 
+            _t0 = time.perf_counter()
             response = await litellm.aembedding(
                 model=model,
                 input=texts,
                 api_key=effective_keys.get(self._get_provider(model)),
+                timeout=30,
             )
             self.embeddings_simulated = False
+            usage = getattr(response, "usage", None)
+            await self._record_cost(
+                model=model,
+                model_tier="embedding",
+                usage={
+                    "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+                    "completion_tokens": 0,
+                    "total_tokens": getattr(usage, "total_tokens", 0) or 0,
+                } if usage else {},
+                latency_ms=int((time.perf_counter() - _t0) * 1000),
+            )
             return [item["embedding"] for item in response.data]
         except ImportError:
             logger.warning("LiteLLM not installed — returning simulated embeddings")

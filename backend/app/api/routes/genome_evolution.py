@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, func, case, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -27,23 +27,21 @@ async def _live_features(db: AsyncSession, tenant_id: str) -> Dict[str, float]:
     from app.finance.models.accounts_payable import Vendor
     from app.finance.models.budgeting import Budget
 
-    emps = (await db.execute(
-        select(HREmployee).where(HREmployee.tenant_id == tenant_id)
-    )).scalars().all()
-    active_emps = sum(
-        1 for e in emps
-        if (e.status.value if hasattr(e.status, "value") else str(e.status)) == "ACTIVE"
-    )
-    workforce_stability = (active_emps / len(emps) * 100) if emps else 50.0
+    emp_stats = (await db.execute(
+        select(
+            func.count(HREmployee.id).label("total"),
+            func.count(case((cast(HREmployee.status, String) == "ACTIVE", 1))).label("active"),
+        ).where(HREmployee.tenant_id == tenant_id)
+    )).one()
+    workforce_stability = (emp_stats.active / emp_stats.total * 100) if emp_stats.total else 50.0
 
-    agents = (await db.execute(
-        select(DeployedAgent).where(DeployedAgent.tenant_id == tenant_id)
-    )).scalars().all()
-    running = sum(
-        1 for a in agents
-        if (a.status.value if hasattr(a.status, "value") else str(a.status)) == "RUNNING"
-    )
-    capability_redundancy = (running / len(agents) * 100) if agents else 50.0
+    agent_stats = (await db.execute(
+        select(
+            func.count(DeployedAgent.id).label("total"),
+            func.count(case((cast(DeployedAgent.status, String) == "RUNNING", 1))).label("running"),
+        ).where(DeployedAgent.tenant_id == tenant_id)
+    )).one()
+    capability_redundancy = (agent_stats.running / agent_stats.total * 100) if agent_stats.total else 50.0
 
     executions = (await db.execute(
         select(SkillExecution)
@@ -54,21 +52,25 @@ async def _live_features(db: AsyncSession, tenant_id: str) -> Dict[str, float]:
     successes = sum(1 for e in executions if (e.status or "").upper().startswith("SUCCESS"))
     project_delivery = (successes / len(executions) * 100) if executions else 50.0
 
-    # Vendor spend must be the caller's own, not aggregated across tenants.
-    vendors = (await db.execute(
-        select(Vendor).where(Vendor.tenant_id == tenant_id)
-    )).scalars().all()
-    total_spend = sum(float(v.total_spend_ytd or 0) for v in vendors)
-    vendor_concentration = (
-        max(float(v.total_spend_ytd or 0) for v in vendors) / total_spend * 100
-        if vendors and total_spend > 0 else 50.0
-    )
+    # Vendor spend — SQL aggregation to avoid loading all vendor rows.
+    vendor_stats = (await db.execute(
+        select(
+            func.coalesce(func.sum(Vendor.total_spend_ytd), 0).label("total_spend"),
+            func.coalesce(func.max(Vendor.total_spend_ytd), 0).label("max_spend"),
+        ).where(Vendor.tenant_id == tenant_id)
+    )).one()
+    total_spend = float(vendor_stats.total_spend)
+    max_spend = float(vendor_stats.max_spend)
+    vendor_concentration = (max_spend / total_spend * 100) if total_spend > 0 else 50.0
 
-    budgets = (await db.execute(
-        select(Budget).where(Budget.tenant_id == tenant_id)
-    )).scalars().all()
-    planned = sum(float(b.total_planned or 0) for b in budgets)
-    actual = sum(float(b.total_actual or 0) for b in budgets)
+    budget_stats = (await db.execute(
+        select(
+            func.coalesce(func.sum(Budget.total_planned), 0).label("planned"),
+            func.coalesce(func.sum(Budget.total_actual), 0).label("actual"),
+        ).where(Budget.tenant_id == tenant_id)
+    )).one()
+    planned = float(budget_stats.planned)
+    actual = float(budget_stats.actual)
     budget_utilization = (actual / planned * 100) if planned > 0 else 60.0
 
     return {

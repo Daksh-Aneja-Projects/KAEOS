@@ -77,12 +77,11 @@ async def run_gated_hr_skill(
         "requires_fairness_assessment": requires_fairness,
     }
 
-    # Post-execution audit flags (Gate 6): the gated pipeline records provenance
-    # for every run, so the corresponding legal basis is logged.
+    # Gate 6 audit flags: derive from context, not unconditionally pre-set.
     if "GDPR" in compliance_tags:
-        ctx["data_processing_basis_logged"] = True
+        ctx.setdefault("data_processing_basis_logged", bool(context.get("legal_basis")))
     if "SOX" in compliance_tags:
-        ctx["financial_amount_logged"] = True
+        ctx.setdefault("financial_amount_logged", bool(context.get("amount")))
 
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)

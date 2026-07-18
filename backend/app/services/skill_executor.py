@@ -104,6 +104,10 @@ class SkillExecutionEngine:
 
         # Publish identity for anything downstream (notably the LLM router's
         # cost metering, which otherwise cannot know who to bill).
+        # Save previous values so callers' context is not corrupted.
+        _prev_tenant = current_tenant_id.get(None)
+        _prev_skill = current_skill_id.get(None)
+        _prev_exec = current_execution_id.get(None)
         current_tenant_id.set(tenant_id)
         current_skill_id.set(skill_id)
         current_execution_id.set(execution_id)
@@ -187,6 +191,11 @@ class SkillExecutionEngine:
             f"[Exec] {skill_id} → {final_status} in {duration_ms}ms "
             f"({len(reasoning_chain)} steps completed)"
         )
+
+        # Restore caller's context vars.
+        current_tenant_id.set(_prev_tenant)
+        current_skill_id.set(_prev_skill)
+        current_execution_id.set(_prev_exec)
 
         result = self._result(final_status, reasoning_chain, execution_id, duration_ms, skill_id)
         result["cost"] = await self._decision_cost(execution_id, tenant_id)

@@ -158,12 +158,14 @@ class CostGovernorService:
         )
         db.add(event)
 
-        # Update budget counters
+        # Update budget counters with row-level lock to prevent TOCTOU races.
         result = await db.execute(
-            select(TokenBudget).where(
+            select(TokenBudget)
+            .where(
                 TokenBudget.tenant_id == tenant_id,
                 TokenBudget.scope == "tenant"
             )
+            .with_for_update()
         )
         budget = result.scalar_one_or_none()
         if budget:
