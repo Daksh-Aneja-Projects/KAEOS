@@ -62,21 +62,91 @@ Include rigorous error handling and logging. Output strictly the python code. No
             return False
 
     @staticmethod
+    def _scan_findings(source_code: str) -> list[str]:
+        """Real AST scan for dangerous constructs in a generated tool module.
+
+        Returns a list of human-readable findings (empty == clean). This walks the
+        AST rather than substring-matching, so it also catches attribute-traversal
+        escapes (``().__class__.__bases__[0].__subclasses__()``) that the previous
+        name-only blocklist let straight through. It reuses the sandbox's
+        ``_FORBIDDEN_ATTRS`` set (the same one that hardens ``SandboxExecutor``).
+
+        Note: unlike ``SandboxExecutor.validate_ast`` (built for tiny sandboxed
+        snippets, which forbids ALL imports outside a 9-module allowlist and blocks
+        ``super``/``type``/``staticmethod`` …), this scan is tuned for full MCP tool
+        MODULES that legitimately ``import httpx`` and define classes — so it flags
+        genuine RCE/FS/introspection escapes without rejecting normal module code.
+        """
+        from app.services.sandbox import _FORBIDDEN_ATTRS
+
+        # Dotted-call prefixes that are RCE / filesystem-destruction vectors.
+        _DANGEROUS_DOTTED = (
+            "os.system", "os.popen", "os.exec", "os.spawn", "os.remove",
+            "os.rmdir", "os.unlink", "os.putenv", "subprocess.", "pty.spawn",
+            "shutil.rmtree",
+        )
+        # Bare builtins that enable dynamic code / arbitrary FS / introspection.
+        _DANGEROUS_NAMES = {
+            "eval", "exec", "compile", "open", "__import__",
+            "getattr", "setattr", "delattr", "globals", "locals", "vars",
+        }
+
+        try:
+            tree = ast.parse(source_code)
+        except SyntaxError as e:
+            return [f"unparseable source: {e}"]
+
+        def _dotted(node: ast.AST) -> str:
+            parts = []
+            while isinstance(node, ast.Attribute):
+                parts.append(node.attr)
+                node = node.value
+            if isinstance(node, ast.Name):
+                parts.append(node.id)
+            return ".".join(reversed(parts))
+
+        findings: list[str] = []
+        for node in ast.walk(tree):
+            # Attribute-traversal / introspection escapes. We match the sandbox's
+            # curated _FORBIDDEN_ATTRS set (which covers the full __class__ ->
+            # __bases__ -> __subclasses__ -> __globals__ chain) rather than every
+            # dunder, so benign method dunders a real tool class needs
+            # (__init__, __aenter__, __aexit__, __call__ …) are not false-flagged.
+            if isinstance(node, ast.Attribute):
+                if node.attr in _FORBIDDEN_ATTRS:
+                    findings.append(f"forbidden attribute access '.{node.attr}'")
+            # Dangerous calls (name-level and dotted).
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id in _DANGEROUS_NAMES:
+                    findings.append(f"call to dangerous builtin '{func.id}(...)'")
+                elif isinstance(func, ast.Attribute):
+                    dotted = _dotted(func)
+                    if any(dotted.startswith(p) for p in _DANGEROUS_DOTTED):
+                        findings.append(f"call to dangerous api '{dotted}(...)'")
+        return findings
+
+    @staticmethod
     async def _sandbox_execution_scan(source_code: str, integration_name: str) -> bool:
         """
         Runs the generated code through an AST safety scanner to prevent injection of malicious syscalls.
-        Returns True if the code is deemed safe for production.
+        Returns True ONLY if the scan finds no dangerous constructs; False (with the
+        findings logged) otherwise — the PASS is no longer unconditional.
         """
         logger.info(f"Running L12 Red Team Sandbox Scan on dynamic tool '{integration_name}'...")
-        
-        # Static AST verification for dangerous builtins and OS level commands
-        dangerous_patterns = ["os.system", "subprocess", "eval(", "exec(", "open(", "__import__"]
-        for pattern in dangerous_patterns:
-            if pattern in source_code:
-                logger.warning(f"🚨 Red Team Sandbox flagged dangerous pattern: {pattern}")
-                return False
-                
-        logger.info("✅ Red Team Sandbox Scan: PASSED (0 Vulnerabilities Found)")
+
+        findings = PolymorphicEngine._scan_findings(source_code)
+        if findings:
+            logger.warning(
+                "Red Team Sandbox Scan: FAILED for '%s' — %d finding(s): %s",
+                integration_name, len(findings), "; ".join(findings),
+            )
+            return False
+
+        logger.info(
+            "Red Team Sandbox Scan: PASSED for '%s' (0 dangerous constructs detected via AST)",
+            integration_name,
+        )
         return True
 
     @staticmethod
