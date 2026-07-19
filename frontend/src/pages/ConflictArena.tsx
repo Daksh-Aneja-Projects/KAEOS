@@ -11,6 +11,11 @@ const ConflictArena = () => {
  const [openCount, setOpenCount] = useState(0);
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState<string | null>(null);
+ // Which conflict is mid-resolution (drives per-card button spinner/disable)
+ const [resolvingId, setResolvingId] = useState<string | null>(null);
+ // Surfaced when a resolve mutation fails - a silent await would otherwise
+ // leave the buttons looking clickable with nothing happening.
+ const [actionError, setActionError] = useState<string | null>(null);
 
  const load = () => {
   setError(null);
@@ -19,8 +24,16 @@ const ConflictArena = () => {
  useEffect(load, []);
 
  const handleResolve = async (id: string, type: string) => {
-  await api.resolveConflict(id, type, `Resolved via ${type}`);
-  load();
+  setActionError(null);
+  setResolvingId(id);
+  try {
+   await api.resolveConflict(id, type, `Resolved via ${type}`);
+   load();
+  } catch (e: any) {
+   setActionError(e?.message || 'Failed to resolve conflict. Please retry.');
+  } finally {
+   setResolvingId(null);
+  }
  };
 
  const sevStyle = (s: string): React.CSSProperties => {
@@ -68,6 +81,14 @@ const ConflictArena = () => {
       <div className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: colors.error }}>{openCount}</div>
      </div>
     </div>
+
+    {actionError && (
+     <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm"
+      style={{ background: colors.error + '14', border: `1px solid ${colors.error}33`, color: colors.error }}>
+      <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {actionError}</span>
+      <button onClick={() => setActionError(null)} className="text-xs font-medium hover:opacity-70">Dismiss</button>
+     </div>
+    )}
 
     {conflicts.length === 0 ? (
      <BrainEmpty title="No conflicts to resolve" action="The Brain hasn't detected any contradictory rules yet." icon={Swords} />
@@ -117,10 +138,10 @@ const ConflictArena = () => {
         ) : (
          <div className="flex gap-2 pt-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
           {['CHOOSE_A', 'CHOOSE_B', 'MERGE', 'SUPERSEDE'].map(rt => (
-           <button key={rt} onClick={() => handleResolve(c.id, rt)}
-            className="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors hover:opacity-80"
+           <button key={rt} onClick={() => handleResolve(c.id, rt)} disabled={resolvingId === c.id}
+            className="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}
-           >{rt.replace(/_/g, ' ')}</button>
+           >{resolvingId === c.id ? 'Resolving…' : rt.replace(/_/g, ' ')}</button>
           ))}
          </div>
         )}

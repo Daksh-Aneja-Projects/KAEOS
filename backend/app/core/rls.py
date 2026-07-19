@@ -54,6 +54,8 @@ GLOBAL_TABLES = {
     # tenants by necessity, and it matches on a unique email + password hash.
     "users",
     "alembic_version",
+    # The tenant registry itself is platform-global, not tenant-scoped.
+    "tenants",
 }
 
 

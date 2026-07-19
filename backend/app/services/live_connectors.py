@@ -26,7 +26,6 @@ demo feed so the platform remains fully usable without external systems.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import logging
 import uuid
@@ -52,10 +51,33 @@ PROVIDERS = _CORE_PROVIDERS + tuple(VENDOR_ADAPTERS)
 
 # ── Secret encryption ─────────────────────────────────────────────────────────
 
+_KDF_SALT = b"kaeos.byok.fernet.v2"   # fixed app salt for a deterministic KDF
+_KDF_ITERATIONS = 200_000
+
+
 def _fernet() -> Fernet:
-    """Fernet keyed off SECRET_KEY (stable across restarts, never stored)."""
-    secret = (get_settings().SECRET_KEY or "kaeos-dev-secret").encode()
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+    """Derive the at-rest encryption key from SECRET_KEY via PBKDF2-HMAC-SHA256.
+
+    Hardened over the old single unsalted sha256:
+      - PBKDF2 (200k iterations) instead of one hash pass;
+      - NO insecure hardcoded fallback — a missing/weak SECRET_KEY raises rather
+        than silently using a world-readable default key;
+      - entropy floor enforced so BYOK secrets aren't protected by a guessable key.
+    """
+    secret = get_settings().SECRET_KEY or ""
+    if len(secret) < 16 and not get_settings().DEV_MODE:
+        raise RuntimeError(
+            "SECRET_KEY is missing or too short (<16 chars) — refusing to encrypt "
+            "customer credentials with a weak key. Set a strong SECRET_KEY."
+        )
+    if not secret:
+        # DEV_MODE only: still avoid a shared constant by requiring *some* key.
+        raise RuntimeError("SECRET_KEY must be set to store connector credentials.")
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                     salt=_KDF_SALT, iterations=_KDF_ITERATIONS)
+    key = base64.urlsafe_b64encode(kdf.derive(secret.encode()))
     return Fernet(key)
 
 

@@ -49,9 +49,31 @@ jobs:
 
   backend-e2e-mock:
     # Gate/pipeline logic against a LIVE backend with a deterministic fake
-    # LLM (KAEOS_FAKE_LLM=1) - no Ollama, no cloud keys. The full-fidelity
-    # e2e run with a real local model stays a pre-release manual step.
+    # LLM (KAEOS_FAKE_LLM=1) - no Ollama, no cloud keys. Runs against real
+    # PostgreSQL + pgvector + Redis (the production data stack) so dialect-only
+    # bugs are caught in CI - e.g. NUMERIC-returns-Decimal issues that SQLite
+    # silently tolerates. The full-fidelity e2e run with a real local model
+    # stays a pre-release manual step (see README "E2E Test Suite").
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: kaeos
+          POSTGRES_PASSWORD: kaeos_ci
+          POSTGRES_DB: kaeos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaeos"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 3s --health-retries 5
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python 3.12
@@ -63,11 +85,19 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    - name: Boot backend + seed + run non-Ollama e2e
+    - name: Boot backend + seed + run non-Ollama e2e (on Postgres+pgvector)
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+        ADMIN_SECRET: "ci-admin-secret-do-not-use-in-production"
         DEV_MODE: "true"
         KAEOS_FAKE_LLM: "1"
+        # App connects as the non-owner kaeos_app role (created by init_db via the
+        # owner URL) so RLS actually applies - the same posture as production.
+        DATABASE_URL: "postgresql+asyncpg://kaeos_app:kaeos_app_ci@localhost:5432/kaeos"
+        DATABASE_URL_SYNC: "postgresql+psycopg2://kaeos:kaeos_ci@localhost:5432/kaeos"
+        KAEOS_OWNER_DB_URL: "postgresql+asyncpg://kaeos:kaeos_ci@localhost:5432/kaeos"
+        KAEOS_APP_DB_PASSWORD: "kaeos_app_ci"
+        REDIS_URL: "redis://localhost:6379/0"
       run: |
         cd backend
         python -m uvicorn app.main:app --port 8001 --log-level warning &
@@ -76,6 +106,7 @@ jobs:
           sleep 2
         done
         python scripts/seed_master.py
+        python -m scripts.check_migration_drift
         pytest tests/e2e -m "not ollama" -q --tb=short
 
   frontend-build:

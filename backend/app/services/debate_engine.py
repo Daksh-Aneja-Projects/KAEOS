@@ -166,19 +166,11 @@ Respond in JSON: {{"final_confidence":0.0-1.0,"rationale":"...","decision":"PROC
             return {"final_confidence": 0.0, "rationale": str(e), "decision": "ESCALATE", "weight_proposer": 0, "weight_advocate": 0}
 
     def _parse_json(self, response: str) -> dict:
-        cleaned = response.strip()
-        for prefix in ["```json", "```"]:
-            if cleaned.startswith(prefix):
-                cleaned = cleaned[len(prefix):]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
+        from app.services.json_utils import extract_json
         try:
-            return json.loads(cleaned.strip())
-        except json.JSONDecodeError:
-            try:
-                return json.loads(response[response.index("{"):response.rindex("}") + 1])
-            except (ValueError, json.JSONDecodeError):
-                return {"error": "parse_failed", "raw": response[:300]}
+            return extract_json(response)
+        except (ValueError, json.JSONDecodeError):
+            return {"error": "parse_failed", "raw": response[:300]}
 
     async def run_cross_domain_debate(self, topic: str, perspectives: list[str]) -> dict:
         """

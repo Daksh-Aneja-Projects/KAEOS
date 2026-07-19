@@ -14,10 +14,13 @@ All causal evaluation is structural (intervention + counterfactual).
 """
 
 from __future__ import annotations
+import logging
 import math
 import random
 import statistics
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Shared simulator (the "world" — hidden from the discovery engine) ────────
@@ -283,10 +286,20 @@ class EnterprisePhysicsEngine:
     async def simulate_impact(self, db=None, shock_type: str = "MACRO_RATE_HIKE_50BPS") -> List[Dict[str, Any]]:
         """Propagate a macro shock through each enterprise archetype.
 
-        Returns one ripple entry per (archetype, feature) intervention with the
-        measured causal delta. `db` is accepted for interface parity; the
-        simulation itself is closed-form and needs no persistence.
+        HONESTY NOTE: this is a *parameterized closed-form simulation*, not causal
+        inference on the caller's own tenant data. The deltas come from the shared
+        `_simulate_outcome` heuristic over fixed archetype constants (`_base_features`
+        + `MACRO_SHOCKS`); the same `shock_type` yields the same ripple for every
+        tenant. `db` is accepted for interface parity but is deliberately NOT queried
+        here — nothing in the output is derived from tenant rows, so each entry is
+        flagged ``simulated: True`` / ``model: "closed-form-heuristic"`` to stop it
+        being read as a discovered enterprise law or per-tenant measurement.
         """
+        if db is not None:
+            logger.debug(
+                "simulate_impact received a db session but does not query it; "
+                "output is a closed-form heuristic simulation, not tenant-specific."
+            )
         shock = MACRO_SHOCKS.get(shock_type, MACRO_SHOCKS["MACRO_RATE_HIKE_50BPS"])
         base = _base_features()
         ripple: List[Dict[str, Any]] = []
@@ -307,5 +320,8 @@ class EnterprisePhysicsEngine:
                     "control_mean": result["control_mean"],
                     "intervention_mean": result["intervention_mean"],
                     "significant": result.get("significant", result.get("t_statistic", 0) > 2),
+                    # Not measured from tenant data — see method docstring.
+                    "simulated": True,
+                    "model": "closed-form-heuristic",
                 })
         return ripple

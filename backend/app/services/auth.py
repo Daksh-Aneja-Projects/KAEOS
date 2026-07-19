@@ -69,23 +69,57 @@ def _verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+# ── JWT (RFC 7519 via PyJWT) ─────────────────────────────────────────────────
+# Replaces the previous hand-rolled base64(json)+HMAC token. PyJWT pins the
+# accepted `alg` on decode, so a token cannot be down-graded to alg="none", and
+# it handles `iss`/`aud`/`exp`/`nbf` with constant-time signature verification.
+#
+# We use PyJWT rather than python-jose deliberately: python-jose is effectively
+# unmaintained and carries a known algorithm-confusion advisory (CVE affecting
+# OpenSSH ECDSA key handling). PyJWT is actively maintained.
+_JWT_ALG = "HS256"
+_JWT_ISS = "kaeos"
+_JWT_AUD = "kaeos-api"
+
+
 def _create_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
-    """Create a simple signed token (base64 encoded JSON + HMAC signature)."""
+    """Mint a signed JWT for an authenticated session."""
+    import jwt
+    now = datetime.now(timezone.utc)
     payload = {
+        "sub": user_id,
         "user_id": user_id,
         "email": email,
         "role": role,
         "tenant_id": tenant_id,
-        "exp": (datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS)).isoformat(),
-        "iat": datetime.now(timezone.utc).isoformat(),
+        "iss": _JWT_ISS,
+        "aud": _JWT_AUD,
+        "iat": now,
+        "nbf": now,
+        "exp": now + timedelta(hours=TOKEN_EXPIRY_HOURS),
     }
-    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    signature = hmac.new(_get_secret_key().encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
-    return f"{payload_b64}.{signature}"
+    return jwt.encode(payload, _get_secret_key(), algorithm=_JWT_ALG)
 
 
 def decode_token(token: str) -> Optional[dict]:
-    """Decode and verify a token. Returns payload or None."""
+    """Verify a JWT and return its claims, or None if invalid/expired.
+
+    Backwards-compatible: still accepts the legacy `payload.signature` HMAC
+    token so sessions issued before the JWT migration keep working until expiry.
+    """
+    import jwt
+    try:
+        return jwt.decode(
+            token,
+            _get_secret_key(),
+            algorithms=[_JWT_ALG],
+            audience=_JWT_AUD,
+            issuer=_JWT_ISS,
+        )
+    except jwt.PyJWTError:
+        pass
+    # Legacy fallback: verify the old base64(json)+HMAC format so live sessions
+    # are not force-logged-out by the upgrade. Remove after one token lifetime.
     try:
         parts = token.split(".")
         if len(parts) != 2:
@@ -95,7 +129,6 @@ def decode_token(token: str) -> Optional[dict]:
         if not hmac.compare_digest(signature, expected_sig):
             return None
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        # Check expiry
         exp = datetime.fromisoformat(payload["exp"])
         if datetime.now(timezone.utc) > exp:
             return None
@@ -108,41 +141,89 @@ class AuthService:
     """Authentication and user management service."""
 
     @staticmethod
-    async def seed_demo_user(db: AsyncSession):
-        """Create the default demo admin account if it doesn't exist."""
-        result = await db.execute(
+    async def seed_admin_user(db: AsyncSession):
+        """Provision the root admin account from configuration.
+
+        SECURITY: this replaces the old hardcoded `demo@kaeos.ai / demo123`
+        account that was seeded into every deployment. The password now comes
+        from ADMIN_PASSWORD (set in .env). Outside DEV_MODE, if no password is
+        configured NO admin is seeded — a fresh install never ships with a
+        known-public login. Any lingering legacy demo account is neutralised.
+        """
+        settings = get_settings()
+        email = (settings.ADMIN_EMAIL or "").strip().lower()
+
+        # 1. Neutralise the legacy public demo account if it still exists and is
+        #    not the configured admin — closes the old "demo123" backdoor on
+        #    databases created before this fix.
+        legacy = (await db.execute(
             select(User).where(User.email == "demo@kaeos.ai")
-        )
-        existing = result.scalar_one_or_none()
-        if existing:
-            dirty = False
-            # Self-heal: older seeds created the demo user under tenant "default",
-            # which orphans it from the seeded demo data (tenant_acme).
-            if existing.tenant_id != "tenant_acme":
-                existing.tenant_id = "tenant_acme"
-                dirty = True
-            # Self-heal the display name (was "Demo Admin") so existing DBs update
-            # without a reseed.
-            if existing.display_name != "Daksh Aneja":
-                existing.display_name = "Daksh Aneja"
-                dirty = True
-            if dirty:
+        )).scalar_one_or_none()
+        if legacy and legacy.email != email:
+            if legacy.is_active:
+                legacy.is_active = False
                 await db.commit()
-                logger.info("[Auth] Demo admin account updated (tenant/name)")
+                logger.warning(
+                    "[Auth] Legacy demo account demo@kaeos.ai DISABLED "
+                    "(replaced by configured ADMIN_EMAIL)."
+                )
+
+        # 2. Resolve the password. In DEV_MODE we generate an ephemeral one and
+        #    log it once; in any other environment we require ADMIN_PASSWORD.
+        password = settings.ADMIN_PASSWORD or ""
+        generated = False
+        if not password:
+            if settings.DEV_MODE:
+                password = secrets.token_urlsafe(12)
+                generated = True
+            else:
+                logger.warning(
+                    "[Auth] ADMIN_PASSWORD is not set and DEV_MODE is off — "
+                    "NOT seeding an admin account. Set ADMIN_PASSWORD in .env "
+                    "and restart to provision %s.", email or "the admin user",
+                )
+                return
+
+        if not email:
+            logger.warning("[Auth] ADMIN_EMAIL is empty — skipping admin seed.")
             return
 
-        demo = User(
-            email="demo@kaeos.ai",
-            display_name="Daksh Aneja",
-            hashed_password=_hash_password("demo123"),
-            role=UserRole.ADMIN,
-            tenant_id="tenant_acme",
-            is_active=True,
-            is_demo=True,
-        )
-        db.add(demo)
-        await db.commit()
-        logger.info("[Auth] Demo admin account created: demo@kaeos.ai / demo123 (tenant: tenant_acme)")
+        # Register the admin's tenant in the tenant registry (source of truth).
+        from app.services.tenant_registry import ensure_tenant
+        await ensure_tenant(db, settings.ADMIN_TENANT, name=settings.ADMIN_TENANT)
+
+        # 3. Upsert the admin by email.
+        existing = (await db.execute(
+            select(User).where(User.email == email)
+        )).scalar_one_or_none()
+        if existing:
+            existing.hashed_password = _hash_password(password)
+            existing.role = UserRole.ADMIN
+            existing.tenant_id = settings.ADMIN_TENANT
+            existing.display_name = settings.ADMIN_DISPLAY_NAME
+            existing.is_active = True
+            existing.is_demo = False
+            await db.commit()
+            logger.info("[Auth] Admin account synced from config: %s", email)
+        else:
+            admin = User(
+                email=email,
+                display_name=settings.ADMIN_DISPLAY_NAME,
+                hashed_password=_hash_password(password),
+                role=UserRole.ADMIN,
+                tenant_id=settings.ADMIN_TENANT,
+                is_active=True,
+                is_demo=False,
+            )
+            db.add(admin)
+            await db.commit()
+            logger.info("[Auth] Admin account provisioned: %s (tenant: %s)",
+                        email, settings.ADMIN_TENANT)
+        if generated:
+            logger.warning(
+                "[Auth] DEV_MODE generated a temporary admin password for %s: %s "
+                "(set ADMIN_PASSWORD in .env to make it stable)", email, password,
+            )
 
     @staticmethod
     async def login(db: AsyncSession, email: str, password: str) -> Optional[dict]:
@@ -287,8 +368,21 @@ class AuthService:
         user = result.scalar_one_or_none()
         if not user:
             return {"error": "user_not_found"}
-        if user.is_demo:
-            return {"error": "cannot_deactivate_demo"}
+        # Safety: never allow a tenant to disable its own last active admin —
+        # that would lock everyone out. (The old rule blocked disabling demo
+        # accounts unconditionally, which is why the public demo login could
+        # never be turned off; that account no longer exists.)
+        if user.role == UserRole.ADMIN and user.is_active:
+            from sqlalchemy import func
+            active_admins = (await db.execute(
+                select(func.count()).select_from(User).where(
+                    User.tenant_id == tenant_id,
+                    User.role == UserRole.ADMIN,
+                    User.is_active == True,  # noqa: E712
+                )
+            )).scalar_one()
+            if active_admins <= 1:
+                return {"error": "cannot_deactivate_last_admin"}
         user.is_active = False
         await db.commit()
         return {"id": user.id, "is_active": False}

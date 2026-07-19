@@ -22,6 +22,7 @@ class PipelineService:
 
     @staticmethod
     async def run_pipeline(
+        tenant_id: str,
         connector_config: dict,
         connector_credentials: dict,
         connector_slug: str,
@@ -30,9 +31,19 @@ class PipelineService:
         destination_config: dict | None = None,
     ) -> dict:
         """
-        Execute a full Extract → Transform → Load pipeline.
-        Returns execution summary.
+        Execute a full Extract → Transform → Load pipeline for ONE tenant.
+
+        `tenant_id` is REQUIRED and has no default: this is the one path that
+        pulls EXTERNAL data into the platform, so every ingested/loaded record
+        must be attributable to its tenant. We also bind the tenant into the
+        ambient context so any DB session opened downstream is RLS-scoped even
+        when the pipeline is driven outside an HTTP request (e.g. a worker).
         """
+        if not tenant_id:
+            raise ValueError("run_pipeline requires a tenant_id (external data ingestion must be tenant-scoped)")
+        from app.core.context import current_tenant_id
+        current_tenant_id.set(tenant_id)
+
         run_id = str(uuid.uuid4())
         log_entries = []
 
@@ -80,7 +91,10 @@ class PipelineService:
             transform_records = [
                 TransformRecord(
                     id=sr.id, source_record_id=sr.id,
-                    data=sr.data, metadata=sr.metadata,
+                    data=sr.data,
+                    # Stamp tenant_id onto every record's metadata at the source
+                    # so it survives the transform DAG and lands on the output.
+                    metadata={**(sr.metadata or {}), "tenant_id": tenant_id},
                 )
                 for sr in all_records
             ]
@@ -120,16 +134,27 @@ class PipelineService:
             output_records = []
             for record in transform_records:
                 if record.chunks:
-                    output_records.extend(record.chunks)
+                    for ch in record.chunks:
+                        # Chunks are dicts/objects produced by transforms — ensure
+                        # each carries the tenant so nothing untenanted is loaded.
+                        if isinstance(ch, dict):
+                            ch.setdefault("tenant_id", tenant_id)
+                            meta = ch.get("metadata")
+                            if isinstance(meta, dict):
+                                meta.setdefault("tenant_id", tenant_id)
+                        output_records.append(ch)
                 else:
                     output_records.append({
                         "record_id": record.id,
+                        "tenant_id": tenant_id,
                         "data": record.data,
                         "text_content": record.text_content,
-                        "metadata": record.metadata,
+                        "metadata": {**(record.metadata or {}), "tenant_id": tenant_id},
                     })
 
-            write_result = await dest.write(output_records, metadata={"run_id": run_id})
+            write_result = await dest.write(
+                output_records, metadata={"run_id": run_id, "tenant_id": tenant_id}
+            )
             log(f"Loaded {write_result.records_written} records to {destination_type}")
 
             return {

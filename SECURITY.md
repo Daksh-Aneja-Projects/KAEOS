@@ -46,7 +46,7 @@ The following are out of scope:
 3. **Enable HTTPS** in production via a reverse proxy (nginx, Caddy, etc.)
 4. **Restrict CORS origins** to your actual frontend domain
 5. **Use PostgreSQL** in production - SQLite is for development only
-6. **Review the auth module** (`core/auth.py`) and implement proper authentication before exposing to the internet
+6. **Provision the admin account** via `ADMIN_EMAIL` / `ADMIN_PASSWORD` (there is no default public login), keep `DEV_MODE=false`, and confirm RLS is effective at startup (`assert_rls_effective` runs on boot; `scripts/verify_rls.py` as an extra gate) before exposing to the internet
 
 ## Acknowledgements
 

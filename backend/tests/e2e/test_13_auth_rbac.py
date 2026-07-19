@@ -1,9 +1,11 @@
 """
 KAEOS E2E Test 13 — Authentication & RBAC
-Tests the full auth flow: login with demo credentials, JWT issuance,
-/auth/me profile retrieval, admin user management, and rejection paths.
+Tests the full auth flow: login with the configured admin credentials, JWT
+issuance, /auth/me profile retrieval, admin user management, and rejection paths.
 """
 import pytest
+
+from .conftest import admin_email, admin_password
 
 
 @pytest.mark.asyncio
@@ -16,8 +18,10 @@ class TestAuthRBAC:
         """Login once and cache the JWT for the class."""
         if TestAuthRBAC._token:
             return TestAuthRBAC._token
+        if not admin_password():
+            pytest.skip("ADMIN_PASSWORD not set — cannot exercise auth flow")
         r = await client.post("/auth/login", json={
-            "email": "demo@kaeos.ai", "password": "demo123",
+            "email": admin_email(), "password": admin_password(),
         })
         assert r.status_code == 200, f"Login failed → {r.status_code}: {r.text[:200]}"
         data = r.json()
@@ -34,7 +38,7 @@ class TestAuthRBAC:
     async def test_login_wrong_password_rejected(self, client):
         """Wrong password is rejected with 401."""
         r = await client.post("/auth/login", json={
-            "email": "demo@kaeos.ai", "password": "not-the-password",
+            "email": admin_email(), "password": "not-the-password",
         })
         assert r.status_code == 401
 
@@ -49,7 +53,7 @@ class TestAuthRBAC:
         r = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
         user = r.json()
-        assert user.get("email") == "demo@kaeos.ai"
+        assert user.get("email") == admin_email()
         assert user.get("role") == "ADMIN"
         assert user.get("tenant_id") == "tenant_acme"
 

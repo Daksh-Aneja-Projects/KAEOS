@@ -79,10 +79,16 @@ class ComplianceEngine:
                     violations.extend(evaluated_violations)
             except Exception as e:
                 logger.error(f"Compliance LLM evaluation failed: {e}")
-                # Fail-safe: if we can't verify compliance for complex frameworks, raise a warning
+                # FAIL CLOSED in a production posture: if we cannot verify
+                # compliance (e.g. no LLM provider reachable) the safe answer is
+                # to BLOCK, not to proceed on an unverified action. In DEV_MODE /
+                # ALLOW_SIMULATED_LLM we downgrade to a WARNING so local work is
+                # not gridlocked.
+                from app.core.config import get_settings
+                unverifiable_is_blocking = not get_settings().simulated_llm_allowed
                 violations.append({
                     "framework": "SYSTEM",
-                    "severity": "WARNING",
+                    "severity": "BLOCKER" if unverifiable_is_blocking else "WARNING",
                     "reason": f"Could not verify compliance due to system error: {e}"
                 })
                 

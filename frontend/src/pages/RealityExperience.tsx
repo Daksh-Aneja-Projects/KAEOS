@@ -48,6 +48,11 @@ export default function RealityExperience() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [shockType, setShockType] = useState('EMPLOYEE_TERMINATION');
   const [shockTarget, setShockTarget] = useState('');
+  // The twin is the backbone of this view; a failed load must be visible and
+  // retryable, not silently swallowed into an empty graph.
+  const [twinError, setTwinError] = useState<string | null>(null);
+  // Surfaced when a shock injection fails so the button doesn't just reset.
+  const [shockError, setShockError] = useState<string | null>(null);
 
   const fetchTwin = useCallback(async () => {
     try {
@@ -55,8 +60,10 @@ export default function RealityExperience() {
       setTwinNodes(data.nodes || []);
       setTwinLinks(data.links || []);
       setStats(data.stats || null);
-    } catch (e) {
+      setTwinError(null);
+    } catch (e: any) {
       console.error(e);
+      setTwinError(e?.message || 'Failed to load the enterprise twin.');
     }
   }, []);
 
@@ -91,6 +98,7 @@ export default function RealityExperience() {
   const triggerShock = async () => {
     if (!effectiveTarget) return;
     setIsSimulating(true);
+    setShockError(null);
     setDecision(null);
     try {
       const data = await request<any>('/reality/shock', {
@@ -107,8 +115,9 @@ export default function RealityExperience() {
       });
       fetchLearning();
       fetchFeed();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setShockError(e?.message || 'Shock simulation failed. Please retry.');
     } finally {
       setIsSimulating(false);
     }
@@ -137,10 +146,27 @@ export default function RealityExperience() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2 text-sm text-green-500 font-mono items-center">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> LIVE TWIN · {twinNodes.length} NODES
-        </div>
+        {twinError ? (
+          <div className="flex items-center gap-3 text-sm font-mono" style={{ color: colors.error }}>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: colors.error }} /> TWIN OFFLINE
+            </span>
+            <button onClick={fetchTwin} className="px-2.5 py-1 rounded text-xs font-semibold"
+              style={{ background: colors.error + '18', color: colors.error }}>Retry</button>
+          </div>
+        ) : (
+          <div className="flex gap-2 text-sm text-green-500 font-mono items-center">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> LIVE TWIN · {twinNodes.length} NODES
+          </div>
+        )}
       </div>
+
+      {twinError && (
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm"
+          style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+          {twinError}
+        </div>
+      )}
 
       <div className="grid grid-cols-12 gap-6 p-6">
         {/* Left Column: Shock Simulator & Learning */}
@@ -180,6 +206,11 @@ export default function RealityExperience() {
               >
                 {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
               </button>
+              {shockError && (
+                <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+                  {shockError}
+                </div>
+              )}
             </div>
           </div>
 
