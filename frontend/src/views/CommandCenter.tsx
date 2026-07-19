@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, Zap, ShieldCheck, Clock, AlertTriangle, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, TrendingUp, RefreshCw, Eye } from 'lucide-react';
 import { api } from '../api/client';
+import type { KBHealth } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 
 interface FeedEvent {
@@ -9,31 +10,48 @@ interface FeedEvent {
   source_type?: string; source_id?: string;
 }
 
+const FEED_LIMIT_DEFAULT = 30;
+const FEED_LIMIT_ALL = 100;
+
 const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }) => {
   const { colors } = useTheme();
-  const [health, setHealth] = useState<any>(null);
+  const [health, setHealth] = useState<KBHealth | null>(null);
   const [feed, setFeed] = useState<FeedEvent[]>([]);
-  const [actions, setActions] = useState<any[]>([]);
+  const [actions, setActions] = useState<FeedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedLoading, setFeedLoading] = useState(true);
+  const [feedLimit, setFeedLimit] = useState(FEED_LIMIT_DEFAULT);
+  // Every source failing is a real load error (partial success still renders).
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = async (limit = feedLimit) => {
     setLoading(true);
-    try {
-      const [h, f, a] = await Promise.allSettled([
-        api.getHealth(),
-        api.getActivityFeed(30, false),
-        api.getActionRequired(),
-      ]);
-      if (h.status === 'fulfilled') setHealth(h.value);
-      if (f.status === 'fulfilled') setFeed(f.value?.events || []);
-      if (a.status === 'fulfilled') setActions(a.value?.events || []);
-    } catch (err) { console.error('[CommandCenter] refresh failed:', err); }
+    const [h, f, a] = await Promise.allSettled([
+      api.getHealth(),
+      api.getActivityFeed(limit, false),
+      api.getActionRequired(),
+    ]);
+    if (h.status === 'fulfilled') setHealth(h.value);
+    if (f.status === 'fulfilled') setFeed(f.value?.events || []);
+    if (a.status === 'fulfilled') setActions(a.value?.events || []);
+    if (h.status === 'rejected' && f.status === 'rejected' && a.status === 'rejected') {
+      const reason: any = h.reason;
+      setLoadError(reason?.message || 'Failed to load operational intelligence.');
+    } else {
+      setLoadError(null);
+    }
     setLoading(false);
     setFeedLoading(false);
   };
 
-  useEffect(() => { refresh(); const i = setInterval(refresh, 30000); return () => clearInterval(i); }, []);
+  // "View all" toggles how many feed events we pull, then re-queries.
+  const toggleFeedView = () => {
+    const next = feedLimit === FEED_LIMIT_DEFAULT ? FEED_LIMIT_ALL : FEED_LIMIT_DEFAULT;
+    setFeedLimit(next);
+    refresh(next);
+  };
+
+  useEffect(() => { refresh(); const i = setInterval(() => refresh(), 30000); return () => clearInterval(i); }, []);
 
   const severityColor = (s: string) => {
     if (s === 'CRITICAL') return colors.error;
@@ -57,11 +75,23 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
           <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Command Center</h1>
           <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>Live operational intelligence - auto-refreshes every 30s</p>
         </div>
-        <button onClick={refresh} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all"
+        <button onClick={() => refresh()} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all"
           style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
+
+      {/* Load failure - every source is down; offer a retry, not a blank screen */}
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px]"
+          style={{ background: colors.error + '10', border: `1px solid ${colors.error}33`, color: colors.error }}>
+          <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {loadError}</span>
+          <button onClick={() => refresh()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium hover:opacity-80"
+            style={{ background: colors.error + '18' }}>
+            <RefreshCw className="w-3 h-3" /> Retry
+          </button>
+        </div>
+      )}
 
       {/* Metric Cards Row */}
       <div className="grid grid-cols-4 gap-4">
@@ -103,7 +133,10 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
                 </span>
               )}
             </div>
-            <button className="text-[12px]" style={{ color: colors.primary }}>View all</button>
+            <button onClick={toggleFeedView} disabled={loading} className="text-[12px] transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ color: colors.primary }}>
+              {feedLimit === FEED_LIMIT_DEFAULT ? 'View all' : 'Show less'}
+            </button>
           </div>
           <div className="max-h-[400px] overflow-y-auto">
             {feed.length === 0 && !feedLoading && (
@@ -144,7 +177,8 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
                   { label: 'Inferred', key: 'inferred', color: colors.warning },
                   { label: 'Speculative', key: 'speculative', color: colors.error },
                 ].map(t => {
-                  const val = Math.round((health.confidence_distribution[t.key] || 0) * 100);
+                  const cd = health.confidence_distribution as unknown as Record<string, number>;
+                  const val = Math.round((cd[t.key] || 0) * 100);
                   return (
                     <div key={t.key}>
                       <div className="flex justify-between text-[12px] mb-1">
@@ -186,13 +220,13 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
           </div>
 
           {/* Decay Alerts */}
-          {health?.decay_alerts?.length > 0 && (
+          {(health?.decay_alerts?.length ?? 0) > 0 && (
             <div className="rounded-xl p-4" style={{ background: 'rgba(229,83,75,0.06)', border: '1px solid rgba(229,83,75,0.15)' }}>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-4 h-4" style={{ color: colors.error }} />
                 <span className="text-[13px] font-medium" style={{ color: colors.error }}>Decay Alerts</span>
               </div>
-              <p className="text-[12px]" style={{ color: colors.inkMuted }}>{health.decay_alerts.length} rules need urgent revalidation</p>
+              <p className="text-[12px]" style={{ color: colors.inkMuted }}>{health?.decay_alerts?.length ?? 0} rules need urgent revalidation</p>
             </div>
           )}
         </div>

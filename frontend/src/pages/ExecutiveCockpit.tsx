@@ -7,9 +7,20 @@ import { BrainLoading, BrainEmpty, LiveIndicator } from '../components/BrainStat
 import { STREAM_INTERVALS } from '../services/realtime';
 import {
   Activity, TrendingUp, TrendingDown, Minus, Shield, Users, Zap, DollarSign,
-  BarChart3, CheckCircle, XCircle, MessageSquare, Globe, Target,
-  ArrowUpRight, ArrowDownRight, Eye, Brain
+  BarChart3, MessageSquare, Globe, Target,
+  ArrowUpRight, ArrowDownRight, Brain
 } from 'lucide-react';
+
+// Shape of the aggregated /dashboard/cockpit payload (only the fields the
+// cockpit renders; backend may include more).
+interface DebateQueueItem { id?: string; action: string; status?: string; confidence?: number | null }
+interface PioneerAlert { type?: string; time?: string; title: string; source?: string; severity?: string }
+interface OrgReadinessItem { bu: string; score?: number; status?: string; rule_count?: number | null }
+interface CockpitData {
+  pioneer_alerts?: PioneerAlert[];
+  debate_queue?: DebateQueueItem[];
+  org_readiness?: OrgReadinessItem[];
+}
 
 export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -25,10 +36,10 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   // Cockpit-specific data - separate stream for live executive intelligence
   const {
     data: cockpit, isLive, staleness,
-  } = usePolling(
+  } = usePolling<CockpitData>(
     () => api.getCockpit(),
     STREAM_INTERVALS.COCKPIT,
-    { emptyCheck: (d: any) => !d }
+    { emptyCheck: (d) => !d }
   );
 
   const health = results.health;
@@ -158,7 +169,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 icon={Globe}
               />
             ) : (
-              pioneerAlerts.map((item: any, i: number) => {
+              pioneerAlerts.map((item: PioneerAlert, i: number) => {
                 const sevColor = item.severity === 'critical' ? '#ef4444' : item.severity === 'warning' ? '#f59e0b' : '#3b82f6';
                 return (
                   <div key={i} className="p-2.5 rounded-lg" style={{ background: sevColor + '08', border: `1px solid ${sevColor}20` }}>
@@ -246,7 +257,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 icon={MessageSquare}
               />
             ) : (
-              debateQueue.map((d: any, i: number) => (
+              debateQueue.map((d: DebateQueueItem, i: number) => (
                 <div key={d.id || i} className="p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="text-[11px] font-medium mb-1">{d.action}</div>
                   <div className="flex items-center justify-between">
@@ -257,11 +268,6 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                       <span className="text-[10px] font-mono" style={{ color: '#f59e0b' }}>
                         {d.confidence != null ? `${(d.confidence * 100).toFixed(0)}%` : '-'}
                       </span>
-                      <div className="flex gap-1">
-                        <button className="p-1 rounded" style={{ background: '#22c55e20' }}><CheckCircle className="w-3 h-3" style={{ color: '#22c55e' }} /></button>
-                        <button className="p-1 rounded" style={{ background: '#ef444420' }}><XCircle className="w-3 h-3" style={{ color: '#ef4444' }} /></button>
-                        <button className="p-1 rounded" style={{ background: colors.primary + '20' }}><Eye className="w-3 h-3" style={{ color: colors.primary }} /></button>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -285,7 +291,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 icon={Users}
               />
             ) : (
-              orgReadiness.map((bu: any) => {
+              orgReadiness.map((bu: OrgReadinessItem) => {
                 const buScore = bu.score ?? 0;
                 const color = bu.status === 'green' ? '#22c55e' : bu.status === 'red' ? '#ef4444' : '#f59e0b';
                 return (
