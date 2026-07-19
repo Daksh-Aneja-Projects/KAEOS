@@ -23,6 +23,7 @@ class PipelineRunRequest(BaseModel):
 async def run_pipeline(body: PipelineRunRequest, tenant_id: str = Depends(get_tenant_id)):
     """Execute a full Extract → Transform → Load pipeline (tenant-scoped)."""
     result = await PipelineService.run_pipeline(
+        tenant_id=tenant_id,
         connector_config=body.connector_config,
         connector_credentials=body.connector_credentials,
         connector_slug=body.connector_slug,

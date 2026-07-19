@@ -49,8 +49,15 @@ from app.models.domain import ProvenanceLedger, Rule, Skill
 
 @router.get("/quantum-events")
 async def get_quantum_events(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Fetch all post-quantum secured ledger events."""
-    q = await db.execute(select(ProvenanceLedger).filter(ProvenanceLedger.event_type.like("PQ_%")).order_by(ProvenanceLedger.timestamp.desc()))
+    """Fetch recent hash-chained (tamper-evident) provenance ledger events."""
+    # Scoped to the caller's tenant (defense in depth alongside Postgres RLS);
+    # chain_hash IS NOT NULL selects the hash-chained entries.
+    q = await db.execute(
+        select(ProvenanceLedger)
+        .filter(ProvenanceLedger.tenant_id == tenant_id, ProvenanceLedger.chain_hash.isnot(None))
+        .order_by(ProvenanceLedger.timestamp.desc())
+        .limit(100)
+    )
     events = q.scalars().all()
     return [{"id": e.id, "event_type": e.event_type, "timestamp": e.timestamp, "reasoning": e.reasoning, "chain_hash": e.chain_hash} for e in events]
 

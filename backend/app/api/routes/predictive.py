@@ -16,7 +16,13 @@ async def analyze_and_predict(signal_id: str, tenant_id: str = Depends(get_tenan
     Analyzes a specific signal for latent intent and triggers 
     a zero-prompt execution if highly confident.
     """
-    signal_q = await db.execute(select(Signal).where(Signal.id == signal_id))
+    # Scope the lookup to the caller's tenant. Without this filter any
+    # authenticated user could analyse (and trigger zero-prompt execution
+    # against) another tenant's signal by id — a cross-tenant leak on any
+    # non-RLS (SQLite) deployment.
+    signal_q = await db.execute(
+        select(Signal).where(Signal.id == signal_id, Signal.tenant_id == tenant_id)
+    )
     signal = signal_q.scalar_one_or_none()
     
     if not signal:

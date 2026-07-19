@@ -72,7 +72,7 @@ class FederatedEngine:
         
         from app.services.quantum_ledger import QuantumLedgerEngine
         
-        # Write to the immutable global ledger
+        # Write to the tamper-evident (hash-chained) global ledger
         ledger_entry = await QuantumLedgerEngine.record_quantum_event(
             db=db,
             event_type="FEDERATED_SWARM_EXPORT",
@@ -116,7 +116,7 @@ class FederatedEngine:
         
         ledger_q = await db.execute(select(ProvenanceLedger).where(ProvenanceLedger.chain_hash == swarm_ledger_receipt))
         ledger_entry = ledger_q.scalar_one_or_none()
-        if not ledger_entry or ledger_entry.event_type != "PQ_FEDERATED_SWARM_EXPORT":
+        if not ledger_entry or ledger_entry.event_type != "FEDERATED_SWARM_EXPORT":
             raise ValueError("Invalid swarm ledger receipt or not a swarm export.")
             
         reasoning_str = ledger_entry.reasoning

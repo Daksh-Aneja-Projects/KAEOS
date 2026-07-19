@@ -50,6 +50,33 @@ def admin_secret() -> str:
     return ""
 
 
+def _env_from_dotenv(key: str) -> str:
+    """Read a single KEY from process env, then backend/.env (same as backend)."""
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
+def admin_email() -> str:
+    """The configured root-admin login email (ADMIN_EMAIL), default admin@kaeos.ai."""
+    return (_env_from_dotenv("ADMIN_EMAIL") or "admin@kaeos.ai").lower()
+
+
+def admin_password() -> str:
+    """The configured root-admin password (ADMIN_PASSWORD). Empty if unset."""
+    return _env_from_dotenv("ADMIN_PASSWORD")
+
+
 def ollama_reachable() -> bool:
     try:
         with socket.create_connection(("localhost", 11434), timeout=2):

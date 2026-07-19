@@ -19,43 +19,58 @@ class HRKnowledgeBase:
 
     @staticmethod
     async def index_document(tenant_id: str, doc_name: str, text: str):
-        """Index a document into the tenant's HR vector space."""
+        """Index a document into the tenant's HR vector space.
+
+        Uses the REAL polystore VectorStore (get_vector_store()), which is
+        tenant-isolated at the storage layer (tenant_id column + Postgres RLS).
+        The previous code imported the shadowed standalone `vector_store`
+        instance, which never resolved, so this path silently fell back to
+        keyword search on every call.
+        """
         logger.info(f"[KB] Indexing {doc_name!r} for tenant={tenant_id}")
+        # Chunk by paragraph so retrieval works at sentence/section granularity.
+        chunks = [c.strip() for c in text.split("\n\n") if c.strip()] or [text.strip()]
         try:
-            from app.core.polystore import vector_store  # type: ignore[import]
-            await vector_store.upsert(
-                collection=f"hr_kb_{tenant_id}",
-                doc_id=doc_name,
-                text=text,
-                metadata={"tenant_id": tenant_id, "source": doc_name},
-            )
-            logger.info(f"[KB] Indexed {doc_name!r} into polystore for tenant={tenant_id}")
-        except (ImportError, ModuleNotFoundError):
-            logger.info(f"[KB] Polystore not configured — using in-memory fallback for {doc_name!r}")
+            from app.core.polystore import get_vector_store
+            from app.services.llm_router import LLMRouter
+            store = get_vector_store()
+            router = LLMRouter()
+            for i, chunk in enumerate(chunks):
+                embedding = (await router.embed([chunk]))[0]
+                await store.upsert(
+                    vector_id=f"{doc_name}#{i}",
+                    tenant_id=tenant_id,
+                    content=chunk,
+                    embedding=embedding,
+                    metadata={"source": doc_name},
+                    namespace="hr_kb",
+                )
+            logger.info(f"[KB] Indexed {len(chunks)} chunk(s) of {doc_name!r} for tenant={tenant_id}")
+            return
         except Exception as e:
-            logger.warning(f"[KB] Polystore upsert failed ({e}), using in-memory fallback")
-            key = f"{tenant_id}:{doc_name}"
-            # Chunk by paragraph so keyword search covers individual sentences
-            chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
-            HRKnowledgeBase._fallback_corpus[key] = chunks
+            logger.warning(f"[KB] Vector index failed ({e}); using keyword fallback for {doc_name!r}")
+        # Keyword fallback — tenant-prefixed key keeps corpora isolated.
+        HRKnowledgeBase._fallback_corpus[f"{tenant_id}:{doc_name}"] = chunks
 
     @staticmethod
     async def retrieve_context(tenant_id: str, query: str, top_k: int = 3) -> str:
         """Retrieve relevant policy text for a query."""
         logger.info(f"[KB] Retrieving context for query={query!r} tenant={tenant_id}")
         try:
-            from app.core.polystore import vector_store  # type: ignore[import]
-            results = await vector_store.search(
-                collection=f"hr_kb_{tenant_id}",
-                query=query,
-                top_k=top_k,
+            from app.core.polystore import get_vector_store
+            from app.services.llm_router import LLMRouter
+            store = get_vector_store()
+            query_embedding = (await LLMRouter().embed([query]))[0]
+            results = await store.search(
+                tenant_id=tenant_id,
+                query_embedding=query_embedding,
+                limit=top_k,
+                namespace="hr_kb",
             )
             if results:
-                return "\n\n".join(r["text"] for r in results)
-        except (ImportError, ModuleNotFoundError):
-            pass  # polystore not configured; use keyword fallback
+                return "\n\n".join(r.get("content", "") for r in results if r.get("content"))
         except Exception as e:
-            logger.warning(f"[KB] Polystore search failed ({e}), falling back to keyword search")
+            logger.warning(f"[KB] Vector search failed ({e}), falling back to keyword search")
 
         # Keyword fallback: score chunks by term overlap
         query_terms = set(query.lower().split())

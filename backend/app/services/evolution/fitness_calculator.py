@@ -1,3 +1,21 @@
+"""
+evolution/fitness_calculator.py
+===============================
+SIMULATED PLACEHOLDER — NOT WIRED TO ANY ENDPOINT.
+
+WARNING: every subscore and narrative below is a hardcoded fixture, NOT computed
+telemetry. This class is only consumed by ``EvolutionEngine.evaluate_and_evolve``,
+which is itself never called anywhere in the app (verified by grep) — it is dead
+code. The REAL, DB-backed fitness computation lives in
+``app/api/routes/genome_evolution.py`` (``_live_features`` + ``/evolution/state``),
+which derives subscores from live HR/agent/skill/vendor rows.
+
+Do NOT surface anything returned here as measured fitness. Outputs carry a
+``simulated: True`` flag so a caller can never mistake these constants for real
+per-tenant analysis. If this path is ever revived, replace the literals with a
+``_live_features``-style DB query (it needs a ``db`` session, which this signature
+does not currently take).
+"""
 import logging
 from typing import Dict, Any
 
@@ -5,27 +23,33 @@ logger = logging.getLogger(__name__)
 
 class FitnessCalculator:
     """
-    Calculates Enterprise Fitness by traversing the Neo4j Graph.
-    Uses structural topology and capability alignment rather than arbitrary heuristics.
+    SIMULATED PLACEHOLDER (dead code) — returns fixed demo constants, not computed
+    fitness. See module docstring. The real graph/DB-backed fitness path is in
+    ``app/api/routes/genome_evolution.py``.
     """
     def __init__(self, graph_service):
         self.graph = graph_service
 
     async def calculate_fitness(self, tenant_id: str) -> Dict[str, Any]:
         """
-        Executes graph queries to calculate sub-scores and generate contributing factors.
+        SIMULATED PLACEHOLDER — returns hardcoded fixture subscores/narratives.
+        Not wired to any endpoint; does not query the graph or DB.
         """
-        logger.info("FitnessCalculator: Executing Graph-First Fitness Analysis...")
-        
+        logger.warning(
+            "FitnessCalculator.calculate_fitness is a SIMULATED PLACEHOLDER returning "
+            "hardcoded constants (tenant_id=%s ignored) — not real telemetry.", tenant_id
+        )
+
         # In a full implementation, these would be Cypher queries:
         # Example Cypher for Capability Gap:
         # MATCH (i:Initiative)-[:REQUIRES_CAPABILITY]->(c:Capability)
         # OPTIONAL MATCH (e:Employee)-[:CONTRIBUTES_TO]->(:Project)-[:DELIVERS]->(i)
         # WHERE NOT (e)-[:HAS_CAPABILITY]->(c)
         # RETURN count(i) as gap_count
-        
-        # We will simulate the result of querying the rot injected by the Synthetic Generator.
-        
+
+        # SIMULATED PLACEHOLDER — all scores/factors below are fixed fixtures, NOT
+        # computed from any tenant's data. See module docstring.
+
         # 1. Capability Fitness (Detects the Quantum Computing Gap)
         capability_score = 0.65
         cap_factors = {
@@ -74,6 +98,7 @@ class FitnessCalculator:
         global_score = sum(subscores.values()) / len(subscores)
         
         return {
+            "simulated": True,  # SIMULATED PLACEHOLDER — fixed constants, not measured
             "global_fitness_score": global_score,
             "subscores": subscores,
             "factors": {

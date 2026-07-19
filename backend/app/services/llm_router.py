@@ -91,6 +91,12 @@ class BudgetExceededError(RuntimeError):
     """Raised when a tenant's token/cost budget hard limit blocks an LLM call."""
 
 
+class NoLLMProviderError(RuntimeError):
+    """Raised when no LLM provider is reachable and simulated output is not
+    permitted. Governance gates MUST treat this as fail-closed (deny / route to
+    human) rather than rubber-stamping a decision on a fabricated response."""
+
+
 class LLMRouter:
     """
     Provider-agnostic LLM gateway — BYOK model.
@@ -451,9 +457,19 @@ class LLMRouter:
         """Single LLM call — extracted for retry/fallback orchestration.
 
         If no provider is available, returns a deterministic SIMULATED response
-        rather than attempting a network call (graceful degradation).
+        ONLY when simulation is explicitly permitted (DEV_MODE / ALLOW_SIMULATED_LLM).
+        Otherwise it FAILS CLOSED by raising NoLLMProviderError, so a headless
+        deployment cannot silently auto-approve governance gates on fake output.
         """
         if not await self.provider_available(tenant_api_keys):
+            from app.core.config import get_settings
+            if not get_settings().simulated_llm_allowed:
+                raise NoLLMProviderError(
+                    "No LLM provider is reachable (no cloud key, no local Ollama) "
+                    "and ALLOW_SIMULATED_LLM is off. Refusing to fabricate a "
+                    "governance decision. Configure a provider or set "
+                    "ALLOW_SIMULATED_LLM=true for offline local testing only."
+                )
             return self._simulated_completion(prompt, system_prompt)
 
         import litellm

@@ -1,16 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { PendingHITLItem } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTheme } from '../context/ThemeContext';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
+
+interface ReasoningStep { step: number | string; action: string; confidence?: number }
 
 export default function HITLQueue({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
   const [items, setItems] = useState<PendingHITLItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  // Load failure - without this a failed fetch shows an empty "queue is clear".
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Per-item in-flight guard + surfaced failure for approve/reject.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const { lastMessage } = useWebSocket();
 
   const fetchData = useCallback(async (showSpinner = true) => {
@@ -20,8 +27,10 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
       // pipeline pauses (route_type GATED_AGENT).
       const data = await api.getPendingHITL();
       setItems(data);
-    } catch (error) {
+      setLoadError(null);
+    } catch (error: any) {
       console.error('Failed to load HITL items', error);
+      setLoadError(error?.message || 'Failed to load pending approvals.');
     } finally {
       setLoading(false);
     }
@@ -38,15 +47,22 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
     if (t.includes('HITL')) fetchData(false);
   }, [lastMessage, fetchData]);
 
-  const handleApprove = async (id: string) => {
-    await api.approveHITL(id);
-    await fetchData(false);
+  const runDecision = async (id: string, fn: () => Promise<unknown>) => {
+    setActionError(null);
+    setBusyId(id);
+    try {
+      await fn();
+      await fetchData(false);
+    } catch (e: any) {
+      setActionError(e?.message || 'Decision failed. Please retry.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const handleReject = async (id: string) => {
-    await api.rejectHITL(id);
-    await fetchData(false);
-  };
+  const handleApprove = (id: string) => runDecision(id, () => api.approveHITL(id));
+
+  const handleReject = (id: string) => runDecision(id, () => api.rejectHITL(id));
 
   const filteredItems = items.filter(i =>
     i.skill_id_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -89,9 +105,19 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
           </div>
         </div>
 
+        {actionError && (
+          <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px]"
+            style={{ background: colors.error + '14', border: `1px solid ${colors.error}33`, color: colors.error }}>
+            <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {actionError}</span>
+            <button onClick={() => setActionError(null)} className="text-[12px] font-medium hover:opacity-70">Dismiss</button>
+          </div>
+        )}
+
         <div className="grid gap-4">
           {loading ? (
             <BrainLoading message="Loading pending approvals…" />
+          ) : loadError ? (
+            <BrainError message={loadError} onRetry={() => fetchData()} />
           ) : filteredItems.length === 0 ? (
             <div style={card} className="text-center py-16">
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
@@ -130,15 +156,15 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                     </p>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => handleReject(item.id)}
-                      className="px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:opacity-80 flex items-center gap-2"
+                    <button onClick={() => handleReject(item.id)} disabled={busyId === item.id}
+                      className="px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:opacity-80 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: colors.error + '15', color: colors.error }}>
-                      <XCircle className="w-4 h-4" /> Reject
+                      {busyId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />} Reject
                     </button>
-                    <button onClick={() => handleApprove(item.id)}
-                      className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white transition-all hover:opacity-90 flex items-center gap-2"
+                    <button onClick={() => handleApprove(item.id)} disabled={busyId === item.id}
+                      className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white transition-all hover:opacity-90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
-                      <CheckCircle2 className="w-4 h-4" /> Approve Execution
+                      {busyId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Approve Execution
                     </button>
                   </div>
                 </div>
@@ -146,7 +172,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                 <div className="mt-6 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
                   <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.inkSubtle }}>Agent Reasoning Chain</h4>
                   <div className="space-y-2">
-                    {item.reasoning_chain.map((step: any, idx: number) => (
+                    {(item.reasoning_chain as ReasoningStep[]).map((step, idx: number) => (
                       <div key={idx} className="flex items-center gap-3 text-[13px]">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] shrink-0"
                           style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>

@@ -661,15 +661,6 @@ export const api = {
   // Security (L17)
   getSecurityLog: () => request<{ logs: SecurityLog[]; stats: { total_events: number; blocked: number; escalated: number; allowed: number } }>('/security/audit-log'),
 
-  // Predictive Ops (L20)
-  getGhostExecutions: () => request<{ ghost_executions: any[] }>('/predictive/ghost-executions'),
-
-  // KAEOS 10X
-  getQuantumEvents: () => request<any[]>('/10x/quantum-events'),
-  getRegulatoryRules: () => request<any[]>('/10x/regulatory-rules'),
-  getFederatedExports: () => request<any[]>('/10x/federated-exports'),
-  getPolymorphicEvents: () => request<any[]>('/10x/polymorphic-events'),
-
   // --- New L9 Gaps ---
   // HITL
   // Single HITL queue: the DB is the source of truth for ALL pending
@@ -1130,6 +1121,14 @@ export const api = {
       .replace(/^http/, 'ws')
       .replace(/\/api\/v1\/?$/, '');
     const token = localStorage.getItem('kaeos-token');
+    // SECURITY (log-leak surface): the JWT rides in the query string because the
+    // browser WebSocket API cannot set an Authorization header on the handshake.
+    // Query strings are prone to landing in proxy/server access logs and browser
+    // history, so this token is more exposed than the Bearer header used for REST.
+    // Prefer a header/subprotocol path (e.g. Sec-WebSocket-Protocol carrying the
+    // token, or a short-lived single-use ticket minted via REST then redeemed on
+    // connect) IF the backend adds support - do not change this without a matching
+    // server-side handler, or live connections will break.
     return `${wsBase}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   },
 };

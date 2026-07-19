@@ -257,6 +257,54 @@ async def init_db():
             await ensure_rls_policies(conn)
 
 
+async def assert_rls_effective() -> None:
+    """Verify (on Postgres) that RLS is actually in force before serving traffic.
+
+    RLS policies are inert when the app connects as the table OWNER (Postgres
+    exempts owners from their own policies). That misconfiguration installs
+    every policy yet silently disables all isolation — the worst kind of bug,
+    because it looks secure. Here we confirm, using the APP connection, that the
+    current role is NOT the owner of a tenant-scoped table and that at least one
+    tenant_isolation policy exists. Fails loudly in a production environment;
+    warns in dev.
+    """
+    if settings.is_sqlite:
+        return
+    from sqlalchemy import text as _text
+    async with engine.connect() as conn:
+        role = (await conn.execute(_text("SELECT current_user"))).scalar()
+        owns_tenant_table = (await conn.execute(_text(
+            "SELECT count(*) FROM pg_tables t "
+            "JOIN information_schema.columns c "
+            "  ON c.table_name = t.tablename AND c.table_schema = t.schemaname "
+            "WHERE t.schemaname='public' AND c.column_name='tenant_id' "
+            "  AND t.tableowner = current_user"
+        ))).scalar() or 0
+        policy_count = (await conn.execute(_text(
+            "SELECT count(*) FROM pg_policies "
+            "WHERE schemaname='public' AND policyname='tenant_isolation'"
+        ))).scalar() or 0
+
+    problems = []
+    if owns_tenant_table:
+        problems.append(
+            f"the app connects as role {role!r}, which OWNS {owns_tenant_table} "
+            f"tenant table(s) — Postgres exempts owners from RLS, so tenant "
+            f"isolation is INERT. Connect as the non-owner 'kaeos_app' role."
+        )
+    if policy_count == 0:
+        problems.append("no tenant_isolation RLS policies are installed.")
+
+    if problems:
+        msg = "[RLS] isolation is NOT effective: " + " ".join(problems)
+        if settings.is_production_like:
+            raise RuntimeError(msg + " Refusing to serve traffic.")
+        _db_logger.warning(msg + " (allowed outside production).")
+    else:
+        _db_logger.info(f"[RLS] verified effective — app role {role!r} is non-owner, "
+                        f"{policy_count} policies installed.")
+
+
 async def get_db():
     """Request-scoped session.
 
