@@ -1,4 +1,6 @@
 """KAEOS — Brain Overview API (Enterprise Intelligence Summary)"""
+import logging
+
 from app.core.tenant import get_tenant_id
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,8 @@ from app.models.domain import (
     Rule, Skill, SkillExecution, Workflow, Signal,
 )
 from app.models.agent_factory import DeployedAgent, AgentStatus
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/brain", tags=["Brain — Enterprise Overview"])
 
@@ -69,7 +73,13 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
             )
         )
         workforces = workforce_result.scalar() or 0
-    except Exception:
+    except Exception as exc:
+        # Graceful degradation: still return the rest of the snapshot, but make a
+        # schema/DB fault visible rather than silently reporting an empty tenant.
+        logger.warning(
+            "brain_overview: deployed-agent count failed for tenant %s (reporting 0): %s",
+            tenant_id, exc, exc_info=True,
+        )
         workforces = 0
 
     # ── Knowledge coverage ──
