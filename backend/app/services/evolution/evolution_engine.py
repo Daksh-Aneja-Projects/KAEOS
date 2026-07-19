@@ -159,6 +159,15 @@ class EvolutionEngine:
                 f"for the intent '{task_intent}'. It encountered an edge case with the following context: {context_str}... "
                 f"Could you explain the unwritten rule or exception that applies here?"
             )
+            # Derive real (heuristic) quality scores from the generated question
+            # instead of hardcoding them — otherwise they inflate the dashboard's
+            # avg_quality_score with fabricated numbers.
+            from app.services.elicitation import score_question_quality
+            _q = score_question_quality(
+                question_text,
+                {"first_name": expert.display_name},
+                {"context_ref": f"exec:{execution_id}", "action": task_intent},
+            ).as_dict()
             eq = ElicitationQuestion(
                 tenant_id=tenant_id,
                 employee_id=expert.id,
@@ -168,9 +177,9 @@ class EvolutionEngine:
                 priority="HIGH",
                 delivery_channel="slack",
                 status="PENDING",
-                specificity=0.85,
-                groundedness=0.90,
-                answerability=0.75,
+                specificity=_q["specificity"],
+                groundedness=_q["groundedness"],
+                answerability=_q["answerability"],
             )
             db.add(eq)
             await db.commit()

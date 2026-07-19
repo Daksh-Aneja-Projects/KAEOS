@@ -102,8 +102,17 @@ async def lifespan(app: FastAPI):
             )
 
     setup_logging()
-    
+
     await init_db()
+    # Verify Postgres RLS is actually in force (not inert due to owner-role
+    # misconfig) before serving any traffic. Fails closed in production.
+    from app.core.database import assert_rls_effective
+    try:
+        await assert_rls_effective()
+    except RuntimeError:
+        raise
+    except Exception as _rls_exc:
+        logger.warning(f"[RLS] effectiveness check could not run: {_rls_exc}")
     # Seeding is maintenance: run it on the owner connection. Under RLS the
     # app role cannot insert rows without a tenant context (by design), so
     # seeding through it fails closed - which is the policy working, not a bug.

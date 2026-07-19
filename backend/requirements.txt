@@ -1,5 +1,10 @@
 # KAEOS Backend Dependencies
 fastapi==0.115.0
+# Pin Starlette explicitly: fastapi 0.115 requires starlette <0.41, but an
+# unpinned resolve can pull a much newer Starlette that removed the Router
+# `on_startup` kwarg fastapi passes internally — importing any route module then
+# fails with `Router.__init__() got an unexpected keyword argument 'on_startup'`.
+starlette==0.38.6
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.35
 alembic==1.13.2

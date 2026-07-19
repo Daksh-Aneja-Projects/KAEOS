@@ -134,6 +134,28 @@ class Settings(BaseSettings):
             problems.append("SECRET_KEY must be set (>=16 chars) when DEV_MODE is off.")
         if not self.ADMIN_SECRET or self.ADMIN_SECRET in ("", "dev_secret", "dev_admin_2026"):
             problems.append("ADMIN_SECRET must be set to a unique value when DEV_MODE is off.")
+        problems.extend(self.validate_production_database())
+        return problems
+
+    def validate_production_database(self) -> list[str]:
+        """Fatal DB misconfigurations for a production-like deployment.
+
+        RLS — the only tenant-isolation backstop that does not depend on every
+        query remembering its `.where(tenant_id==…)` — exists ONLY on Postgres
+        and ONLY when the app connects as a NON-OWNER role. Refuse to run
+        production on SQLite (no RLS at all). Owner-vs-non-owner is verified at
+        runtime (see app/core/database.assert_rls_effective) since it needs a
+        live connection.
+        """
+        if not self.is_production_like:
+            return []
+        problems: list[str] = []
+        if self.is_sqlite:
+            problems.append(
+                "DATABASE_URL is SQLite in a production environment: SQLite has no "
+                "row-level security, so tenant isolation would rely solely on "
+                "application query filters. Use PostgreSQL in production."
+            )
         return problems
 
 
