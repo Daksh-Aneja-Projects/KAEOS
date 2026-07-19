@@ -7,7 +7,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-import json
 
 class SkillRouter:
     """L9 - Multi-Agent Skill Router"""
@@ -49,8 +48,8 @@ Candidates:
                 temperature=0.0
             )
             content = raw if isinstance(raw, str) else raw.get("content", "{}")
-            clean = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            decision = json.loads(clean)
+            from app.services.json_utils import extract_json_object
+            decision = extract_json_object(content)
             
             selected = decision.get("selected_skill_id")
             conf = decision.get("confidence", 0.0)

@@ -18,6 +18,23 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""  # REQUIRED in prod: python -c "import secrets; print(secrets.token_urlsafe(32))"
     ADMIN_SECRET: str = ""  # REQUIRED in prod: set a unique admin secret
 
+    # ── Admin bootstrap ────────────────────────────────────────────────────
+    # The first/root admin account is provisioned from these values at startup
+    # instead of a hardcoded public demo login. If ADMIN_PASSWORD is empty the
+    # account is NOT seeded outside DEV_MODE (no public credentials ever ship).
+    ADMIN_EMAIL: str = "admin@kaeos.ai"
+    ADMIN_PASSWORD: str = ""            # set in .env — this is the login password
+    ADMIN_DISPLAY_NAME: str = "KAEOS Admin"
+    ADMIN_TENANT: str = "tenant_acme"
+    # Seed the fictional demo dataset (tenant_acme). Turn OFF for a real deploy
+    # so dashboards only show genuinely ingested data.
+    SEED_DEMO_DATA: bool = True
+
+    # LLM governance safety: outside DEV_MODE, refuse to let governance gates
+    # (compliance/fairness/debate/HITL) pass on SIMULATED output when no real
+    # provider is reachable. Set True only for offline local testing.
+    ALLOW_SIMULATED_LLM: bool = False
+
     # Database — SQLite for local dev, PostgreSQL for production
     DATABASE_URL: str = "sqlite+aiosqlite:///./kaeos.db"
     DATABASE_URL_SYNC: str = "sqlite:///./kaeos.db"
@@ -91,6 +108,19 @@ class Settings(BaseSettings):
     def is_sqlite(self) -> bool:
         return "sqlite" in self.DATABASE_URL
 
+    @property
+    def simulated_llm_allowed(self) -> bool:
+        """Whether governance gates may pass on SIMULATED (no-provider) output.
+
+        Allowed only for local development/testing. In any real environment a
+        missing LLM provider must FAIL CLOSED (deny/HITL) rather than rubber-stamp.
+        """
+        return self.DEV_MODE or self.ALLOW_SIMULATED_LLM
+
+    @property
+    def is_production_like(self) -> bool:
+        return self.ENVIRONMENT.lower() in ("production", "prod", "staging")
+
     def validate_production_security(self) -> list[str]:
         """Return a list of fatal security misconfigurations when not in DEV_MODE.
 
@@ -104,6 +134,28 @@ class Settings(BaseSettings):
             problems.append("SECRET_KEY must be set (>=16 chars) when DEV_MODE is off.")
         if not self.ADMIN_SECRET or self.ADMIN_SECRET in ("", "dev_secret", "dev_admin_2026"):
             problems.append("ADMIN_SECRET must be set to a unique value when DEV_MODE is off.")
+        problems.extend(self.validate_production_database())
+        return problems
+
+    def validate_production_database(self) -> list[str]:
+        """Fatal DB misconfigurations for a production-like deployment.
+
+        RLS — the only tenant-isolation backstop that does not depend on every
+        query remembering its `.where(tenant_id==…)` — exists ONLY on Postgres
+        and ONLY when the app connects as a NON-OWNER role. Refuse to run
+        production on SQLite (no RLS at all). Owner-vs-non-owner is verified at
+        runtime (see app/core/database.assert_rls_effective) since it needs a
+        live connection.
+        """
+        if not self.is_production_like:
+            return []
+        problems: list[str] = []
+        if self.is_sqlite:
+            problems.append(
+                "DATABASE_URL is SQLite in a production environment: SQLite has no "
+                "row-level security, so tenant isolation would rely solely on "
+                "application query filters. Use PostgreSQL in production."
+            )
         return problems
 
 

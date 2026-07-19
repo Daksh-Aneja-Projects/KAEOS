@@ -169,8 +169,10 @@ class CostGovernorService:
         )
         budget = result.scalar_one_or_none()
         if budget:
-            budget.token_used += total_tokens
-            budget.cost_used_usd += cost_usd
+            # Coerce to plain numeric types before arithmetic: Postgres returns
+            # NUMERIC as decimal.Decimal, and `Decimal += float` raises TypeError.
+            budget.token_used = int(budget.token_used or 0) + int(total_tokens or 0)
+            budget.cost_used_usd = float(budget.cost_used_usd or 0.0) + float(cost_usd or 0.0)
 
         await db.commit()
         return {
@@ -204,24 +206,29 @@ class CostGovernorService:
         total_cost = 0.0
 
         for e in events:
-            total_tokens += e.total_tokens
-            total_cost += e.cost_usd
+            # Postgres returns NUMERIC columns as decimal.Decimal while SQLite
+            # returns float; mixing them (float += Decimal) raises TypeError. Coerce
+            # to float/int once per event so the aggregation is dialect-agnostic.
+            tokens = int(e.total_tokens or 0)
+            cost = float(e.cost_usd or 0.0)
+            total_tokens += tokens
+            total_cost += cost
 
             tier_agg.setdefault(e.model_tier, {"tokens": 0, "cost": 0.0, "calls": 0})
-            tier_agg[e.model_tier]["tokens"] += e.total_tokens
-            tier_agg[e.model_tier]["cost"] += e.cost_usd
+            tier_agg[e.model_tier]["tokens"] += tokens
+            tier_agg[e.model_tier]["cost"] += cost
             tier_agg[e.model_tier]["calls"] += 1
 
             if e.agent_id:
                 agent_agg.setdefault(e.agent_id, {"tokens": 0, "cost": 0.0, "calls": 0})
-                agent_agg[e.agent_id]["tokens"] += e.total_tokens
-                agent_agg[e.agent_id]["cost"] += e.cost_usd
+                agent_agg[e.agent_id]["tokens"] += tokens
+                agent_agg[e.agent_id]["cost"] += cost
                 agent_agg[e.agent_id]["calls"] += 1
 
             if e.request_type:
                 type_agg.setdefault(e.request_type, {"tokens": 0, "cost": 0.0, "calls": 0})
-                type_agg[e.request_type]["tokens"] += e.total_tokens
-                type_agg[e.request_type]["cost"] += e.cost_usd
+                type_agg[e.request_type]["tokens"] += tokens
+                type_agg[e.request_type]["cost"] += cost
                 type_agg[e.request_type]["calls"] += 1
 
         # Get budget status

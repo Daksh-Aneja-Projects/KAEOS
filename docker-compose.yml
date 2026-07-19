@@ -1,5 +1,8 @@
-# KAEOS KAEOS 1.0 — Production Docker Compose
+# KAEOS 1.0 — Local / Development Docker Compose
 # Usage: docker compose up --build
+# NOTE: this file carries convenient DEV defaults (DB/Grafana passwords). For a
+# real deployment, override every *_PASSWORD via environment/secrets and front
+# the stack with TLS — do NOT run these defaults on a public network.
 # Includes: PostgreSQL (persistent), Redis (caching), Backend, Frontend
 
 services:
@@ -98,7 +101,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Dev default only — set GRAFANA_ADMIN_PASSWORD for anything non-local.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-kaeos_local_dev}
     depends_on:
       - prometheus
     volumes:

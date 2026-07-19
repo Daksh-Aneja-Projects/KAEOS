@@ -1,26 +1,57 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Plus, Play, Square, Pause, CheckCircle2, Clock, AlertTriangle, Sparkles, Send, ChevronRight, Loader2, Workflow } from 'lucide-react';
+import { Bot, Plus, Play, Square, Pause, CheckCircle2, Clock, AlertTriangle, Sparkles, Send, ChevronRight, Loader2, Workflow, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import DeployConfigModal from '../components/DeployConfigModal';
 import type { DeployConfig } from '../components/DeployConfigModal';
+
+// Shapes returned by the /agents endpoints. The backend is loosely typed, so
+// these capture only the fields the UI reads (extra fields allowed via index).
+interface Blueprint {
+  id: string;
+  name?: string;
+  status: string;
+  description?: string;
+  original_prompt?: string;
+  blueprint_graph?: { nodes?: unknown[] };
+  dag_nodes?: unknown[];
+  [k: string]: any;
+}
+interface DeployedAgent {
+  id: string;
+  agent_name?: string;
+  status: string;
+  total_executions?: number;
+  success_count?: number;
+  [k: string]: any;
+}
 
 const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<'create' | 'blueprints' | 'deployed'>('create');
   const [prompt, setPrompt] = useState('');
   const [creating, setCreating] = useState(false);
-  const [blueprints, setBlueprints] = useState<any[]>([]);
-  const [deployed, setDeployed] = useState<any[]>([]);
-  const [selectedBp, setSelectedBp] = useState<any>(null);
+  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [deployed, setDeployed] = useState<DeployedAgent[]>([]);
+  const [selectedBp, setSelectedBp] = useState<Blueprint | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deployTarget, setDeployTarget] = useState<any>(null);
+  const [deployTarget, setDeployTarget] = useState<Blueprint | null>(null);
+  // Both feeds failing is a genuine load error (partial success still renders).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Blocks the lifecycle button that's mid-flight and surfaces its failure.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
     const [bp, dp] = await Promise.allSettled([api.listBlueprints(), api.listDeployedAgents()]);
     if (bp.status === 'fulfilled') setBlueprints(bp.value?.blueprints || []);
     if (dp.status === 'fulfilled') setDeployed(dp.value?.agents || []);
+    if (bp.status === 'rejected' && dp.status === 'rejected') {
+      setLoadError(bp.reason?.message || 'Failed to load Agent Factory data.');
+    } else {
+      setLoadError(null);
+    }
     setLoading(false);
   };
 
@@ -28,37 +59,48 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
 
   const handleCreate = async () => {
     if (!prompt.trim()) return;
+    setActionError(null);
     setCreating(true);
     try {
       const res = await api.createBlueprint(prompt);
       if (res?.blueprint) { setSelectedBp(res.blueprint); setTab('blueprints'); }
       await loadData();
       setPrompt('');
-    } catch (e) { console.error(e); }
-    setCreating(false);
+    } catch (e: any) {
+      setActionError(e?.message || 'Failed to generate blueprint. Please retry.');
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleApprove = async (id: string) => {
-    await api.approveBlueprint(id, 'admin');
-    await loadData();
+  // Shared wrapper: run a lifecycle mutation, surface failures, and always
+  // release the button's loading state so it never gets stuck.
+  const runAction = async (id: string, fn: () => Promise<unknown>, after?: () => void) => {
+    setActionError(null);
+    setBusyId(id);
+    try {
+      await fn();
+      await loadData();
+      after?.();
+    } catch (e: any) {
+      setActionError(e?.message || 'Action failed. Please retry.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const handleCompile = async (id: string) => {
-    await api.compileBlueprint(id);
-    await loadData();
-  };
+  const handleApprove = (id: string) => runAction(id, () => api.approveBlueprint(id, 'admin'));
 
-  const handleDeploy = async (id: string, config?: DeployConfig) => {
-    await api.deployBlueprint(id, config ? { risk_level: config.risk_level, confidence_threshold: config.confidence_threshold, hitl_mode: config.hitl_mode, hitl_threshold: config.hitl_threshold } : undefined);
-    setDeployTarget(null);
-    await loadData();
-    setTab('deployed');
-  };
+  const handleCompile = (id: string) => runAction(id, () => api.compileBlueprint(id));
 
-  const handleStop = async (id: string) => {
-    await api.stopAgent(id);
-    await loadData();
-  };
+  const handleDeploy = (id: string, config?: DeployConfig) =>
+    runAction(
+      id,
+      () => api.deployBlueprint(id, config ? { risk_level: config.risk_level, confidence_threshold: config.confidence_threshold, hitl_mode: config.hitl_mode, hitl_threshold: config.hitl_threshold } : undefined),
+      () => { setDeployTarget(null); setTab('deployed'); },
+    );
+
+  const handleStop = (id: string) => runAction(id, () => api.stopAgent(id));
 
   const statusBadge = (s: string) => {
     const map: Record<string, { bg: string; text: string }> = {
@@ -82,6 +124,27 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
           <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>Build, compile, and deploy agents from natural language</p>
         </div>
       </div>
+
+      {/* Mutation failures - a raw await would otherwise fail silently */}
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px]"
+          style={{ background: colors.error + '14', border: `1px solid ${colors.error}33`, color: colors.error }}>
+          <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-[12px] font-medium hover:opacity-70">Dismiss</button>
+        </div>
+      )}
+
+      {/* Load failure - offer a retry instead of an empty "no blueprints" screen */}
+      {loadError && !loading && (
+        <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px]"
+          style={{ background: colors.error + '10', border: `1px solid ${colors.error}33`, color: colors.error }}>
+          <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {loadError}</span>
+          <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium hover:opacity-80"
+            style={{ background: colors.error + '18' }}>
+            <RefreshCw className="w-3 h-3" /> Retry
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
@@ -140,7 +203,7 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
                     {statusBadge(bp.status)}
                   </div>
                   {(bp.description || bp.original_prompt) && (
-                    <p className="text-[12px]" style={{ color: colors.inkSubtle }}>{(bp.description || bp.original_prompt).slice(0, 120)}…</p>
+                    <p className="text-[12px]" style={{ color: colors.inkSubtle }}>{(bp.description || bp.original_prompt || '').slice(0, 120)}…</p>
                   )}
                   {(() => {
                     const nodes = bp.blueprint_graph?.nodes || bp.dag_nodes;
@@ -151,24 +214,24 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
                 </div>
                 <div className="flex gap-2 ml-4">
                   {['BLUEPRINT_READY', 'DRAFTING', 'DRAFT'].includes(bp.status) && (
-                    <button onClick={(e) => { e.stopPropagation(); handleApprove(bp.id); }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+                    <button onClick={(e) => { e.stopPropagation(); handleApprove(bp.id); }} disabled={busyId === bp.id}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(94,106,210,0.12)', color: colors.primaryHover }}>
-                      <CheckCircle2 className="w-3 h-3" /> Approve
+                      {busyId === bp.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Approve
                     </button>
                   )}
                   {bp.status === 'APPROVED' && (
-                    <button onClick={(e) => { e.stopPropagation(); handleCompile(bp.id); }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+                    <button onClick={(e) => { e.stopPropagation(); handleCompile(bp.id); }} disabled={busyId === bp.id}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(83,155,245,0.12)', color: colors.info }}>
-                      <Workflow className="w-3 h-3" /> Compile
+                      {busyId === bp.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Workflow className="w-3 h-3" />} Compile
                     </button>
                   )}
                   {bp.status === 'COMPILED' && (
-                    <button onClick={(e) => { e.stopPropagation(); setDeployTarget(bp); }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+                    <button onClick={(e) => { e.stopPropagation(); setDeployTarget(bp); }} disabled={busyId === bp.id}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(39,166,68,0.12)', color: colors.success }}>
-                      <Play className="w-3 h-3" /> Deploy
+                      {busyId === bp.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />} Deploy
                     </button>
                   )}
                 </div>
@@ -206,9 +269,10 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
                 </div>
                 <div className="flex gap-2">
                   {ag.status === 'RUNNING' && (
-                    <button onClick={() => handleStop(ag.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+                    <button onClick={() => handleStop(ag.id)} disabled={busyId === ag.id}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>
-                      <Square className="w-3 h-3" /> Stop
+                      {busyId === ag.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3" />} Stop
                     </button>
                   )}
                 </div>

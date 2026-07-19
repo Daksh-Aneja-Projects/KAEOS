@@ -7,8 +7,8 @@ import KaeosLogo from '../components/KaeosLogo';
 export default function LoginPage() {
   const { login } = useAuth();
   const { colors, theme, toggle } = useTheme();
-  const [email, setEmail] = useState('demo@kaeos.ai');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
@@ -83,7 +83,7 @@ export default function LoginPage() {
               style={{
                 background: colors.canvas, borderColor: colors.hairline, color: colors.ink,
               }}
-              placeholder="demo@kaeos.ai" />
+              placeholder="you@company.com" />
           </div>
 
           {/* Password */}
@@ -113,13 +113,15 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo hint */}
-        <div className="mt-5 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px]"
-            style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
-            <span className="font-semibold" style={{ color: colors.primary }}>Demo:</span>
-            demo@kaeos.ai / demo123
-          </div>
+        {/* First-run hint: there is no default/public login — the root admin is
+            provisioned from ADMIN_EMAIL / ADMIN_PASSWORD in .env. */}
+        <div className="mt-5 text-center px-2">
+          <p className="text-[11px] leading-relaxed" style={{ color: colors.inkSubtle }}>
+            <span className="font-semibold" style={{ color: colors.primary }}>First run?</span>{' '}
+            Sign in with the <span className="font-mono">ADMIN_EMAIL</span> /{' '}
+            <span className="font-mono">ADMIN_PASSWORD</span> you set in{' '}
+            <span className="font-mono">.env</span>
+          </p>
         </div>
 
         {/* Footer */}

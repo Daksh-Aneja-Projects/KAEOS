@@ -55,9 +55,16 @@ class ConnectionManager:
                 sent += 1
             except Exception:
                 dead.append(conn)
-        # Clean dead connections
-        for c in dead:
-            self.active_connections.get(tenant_id, []).remove(c)
+        # Clean dead connections. Mutate the actual tracked list (not a fresh
+        # default) and guard membership — under concurrency a connection may
+        # already be gone, and .remove() on a missing item raises ValueError.
+        conns = self.active_connections.get(tenant_id)
+        if conns is not None:
+            for c in dead:
+                if c in conns:
+                    conns.remove(c)
+            if not conns:
+                self.active_connections.pop(tenant_id, None)
         return sent
 
     async def broadcast_to_all(self, message: Dict[str, Any]) -> int:

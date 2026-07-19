@@ -1,4 +1,6 @@
 """KAEOS 10X — Polymorphic Operations API"""
+import hashlib
+
 from app.core.tenant import get_tenant_id
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +70,7 @@ async def generate_ambient_ui(request: UIRequest):
     
     return {
         "status": "success",
-        "transient_component_id": "ambient_ui_" + str(hash(jsx_content))[-8:],
+        "transient_component_id": "ambient_ui_" + hashlib.sha256(jsx_content.encode()).hexdigest()[:8],
         "jsx_payload": jsx_content,
         "render_target": "slack_block_kit_or_web"
     }

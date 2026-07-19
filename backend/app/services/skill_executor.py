@@ -538,10 +538,9 @@ def _is_json_safe(value) -> bool:
 
 
 def _safe_parse_json(raw: str) -> dict:
-    import json
+    from app.services.json_utils import extract_json_object
     try:
-        clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(clean)
+        return extract_json_object(raw)
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"LLM response parse failed: {e}")

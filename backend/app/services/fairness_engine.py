@@ -3,7 +3,6 @@ Demographic fairness scoring for HCM-touching agent actions.
 EU AI Act Article 13 + GDPR Article 22 compliant.
 """
 import logging
-import json
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -179,19 +178,18 @@ Respond in JSON:
 {{"overall_score": 0.0-1.0, "attribute_scores": {{"gender": {{"score": 0.9, "flag": false}}}}, "flagged_attributes": ["age"], "rationale": "Plain language explanation suitable for regulators"}}"""
 
             resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2)
-            cleaned = resp.strip()
-            for p in ["```json", "```"]:
-                if cleaned.startswith(p): cleaned = cleaned[len(p):]
-            if cleaned.endswith("```"): cleaned = cleaned[:-3]
-            try:
-                return json.loads(cleaned.strip())
-            except json.JSONDecodeError:
-                return json.loads(resp[resp.index("{"):resp.rindex("}") + 1])
+            from app.services.json_utils import extract_json_object
+            return extract_json_object(resp)
         except Exception as e:
             logger.error(f"[Fairness] Assessment failed: {e}")
+            # FAIL CLOSED: an unassessable action is not a safe action. Score 0.0
+            # so the gate blocks (or routes to a human) rather than passing on an
+            # unverifiable neutral score. This is the correct behaviour when the
+            # LLM provider is unavailable (NoLLMProviderError) in production.
             return {
-                "overall_score": 0.5,
+                "overall_score": 0.0,
                 "attribute_scores": {},
                 "flagged_attributes": ["assessment_error"],
-                "rationale": f"Fairness assessment failed: {str(e)}. Defaulting to cautious score.",
+                "rationale": f"Fairness assessment could not be completed ({str(e)}). "
+                             f"Blocking per fail-closed policy.",
             }

@@ -229,6 +229,11 @@ async def generate_question(body: GenerateQuestionRequest, tenant_id: str = Depe
     )
 
     if result.get("status") == "GENERATED":
+        # Persist the HEURISTIC quality scores computed by the engine from the
+        # generated text (see services/elicitation.score_question_quality), not
+        # hardcoded literals. These feed the dashboard's avg_quality_score, so
+        # they must reflect the actual question rather than fabricated constants.
+        quality = result.get("quality", {})
         eq = ElicitationQuestion(
             id=str(uuid.uuid4()),
             tenant_id=employee.tenant_id,
@@ -238,7 +243,9 @@ async def generate_question(body: GenerateQuestionRequest, tenant_id: str = Depe
             context_ref=body.domain or "general",
             priority="NORMAL",
             delivery_channel="slack",
-            specificity=0.85, groundedness=0.9, answerability=0.8,
+            specificity=quality.get("specificity", 0.0),
+            groundedness=quality.get("groundedness", 0.0),
+            answerability=quality.get("answerability", 0.0),
         )
         db.add(eq)
         employee.questions_this_week = (employee.questions_this_week or 0) + 1

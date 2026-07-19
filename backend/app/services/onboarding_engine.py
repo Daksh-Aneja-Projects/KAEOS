@@ -63,6 +63,9 @@ class OnboardingEngineService:
         db.add(onboarding)
         await db.commit()
         await db.refresh(onboarding)
+        # Register the new tenant in the platform registry (source of truth).
+        from app.services.tenant_registry import ensure_tenant
+        await ensure_tenant(db, tenant_id, name=tenant_name)
         logger.info(f"[N4] Onboarding initiated for tenant {tenant_id} ({tenant_name})")
         return OnboardingEngineService._to_dict(onboarding)
 

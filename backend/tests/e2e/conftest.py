@@ -30,24 +30,55 @@ TIMEOUT = float(os.environ.get("KAEOS_TEST_TIMEOUT", "300"))
 
 
 def admin_secret() -> str:
-    """Resolve ADMIN_SECRET the way the backend does (env, then backend/.env).
+    """Resolve ADMIN_SECRET the way the backend does.
 
     Platform actions (provisioning a tenant, enumerating every tenant's
     onboarding) are gated on this; tenant JWTs deliberately do not authorize them.
+
+    Looks in the process env, then backend/.env, then the repo-root .env. The
+    root fallback matters because the container stack is configured from the
+    root .env: if the two files ever drift, these tests would otherwise fail
+    with a confusing 401 rather than finding the secret the server is using.
     """
-    secret = os.environ.get("ADMIN_SECRET", "")
-    if secret:
-        return secret
-    env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-    try:
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("ADMIN_SECRET="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-    except OSError:
-        pass
+    return _env_from_dotenv("ADMIN_SECRET")
+
+
+def _env_from_dotenv(key: str) -> str:
+    """Read a single KEY from the process env, then backend/.env, then root .env.
+
+    The two dotenv files serve different stacks (backend/.env for a local run,
+    the root .env for docker compose). Checking both means the suite still finds
+    the right value whichever stack it is pointed at.
+    """
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    here = os.path.dirname(__file__)
+    for env_path in (
+        os.path.join(here, "..", "..", ".env"),        # backend/.env
+        os.path.join(here, "..", "..", "..", ".env"),  # repo-root .env
+    ):
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith(f"{key}="):
+                        v = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if v:
+                            return v
+        except OSError:
+            continue
     return ""
+
+
+def admin_email() -> str:
+    """The configured root-admin login email (ADMIN_EMAIL), default admin@kaeos.ai."""
+    return (_env_from_dotenv("ADMIN_EMAIL") or "admin@kaeos.ai").lower()
+
+
+def admin_password() -> str:
+    """The configured root-admin password (ADMIN_PASSWORD). Empty if unset."""
+    return _env_from_dotenv("ADMIN_PASSWORD")
 
 
 def ollama_reachable() -> bool:

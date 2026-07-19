@@ -13,8 +13,16 @@ and fully explainable decisions.**
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://typescriptlang.org)
-[![Tests](https://img.shields.io/badge/E2E_Tests-426-brightgreen.svg)](backend/tests/e2e/)
+[![Tests](https://img.shields.io/badge/E2E_Tests-419-brightgreen.svg)](backend/tests/e2e/)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
+
+<br />
+
+![KAEOS — Enterprise Workforce dashboard](docs/screenshots/01-dashboard.png)
+
+<sub>The workforce dashboard: **safe-autonomy rate** (how much ran without a human gate), live departments,
+and skills that have *earned* autonomy. Captured from a running instance against PostgreSQL — a live
+app on a seeded demo tenant, not a mockup or a design comp.</sub>
 
 </div>
 
@@ -43,13 +51,13 @@ decisions **before problems become crises**.
 | **Agent Factory** | Create, approve, compile, deploy, and orchestrate enterprise AI agents that all share the same organizational context - from a plain-English prompt | `/agents/blueprint*`, `/agents/deployed`, `/agents/debates`, `/agents/activity-feed` |
 | **Decision Intelligence** | Evaluates business situations, generates options, scores cost / risk / impact, and recommends the best course of action - with adversarial debate before committing | `/reality/shock`, `/reality/decision`, `/simulation/what-if`, `/org-intelligence/*` |
 | **Learning Engine** | Learns continuously from decisions and outcomes: confidence decay, Bayesian validation updates, execution feedback (L10), and learning modifiers that improve future recommendations | `/reality/learning`, `ConfidenceEngine`, `FeedbackEngine`, `EvolutionEngine` |
-| **Enterprise Simulation** | Simulates "what-if" scenarios - **M&A integration, cyber incidents**, talent exodus, vendor/supply-chain failure, system outages, budget cuts, macro shocks - over the live twin and the causal physics engine, each with tuned causal profiles and scenario-specific decision options | `/reality/shock`, `/reality/simulate`, `/10x/physics/simulate`, `/simulation/what-if` |
-| **Governance & Provenance** | Every recommendation is explainable, traceable, and auditable - immutable provenance ledger, quantum event ledger, fairness audits, red-team scans, HITL gates. No black-box AI | `/provenance`, `/10x/quantum-events`, `/fairness/audit-log`, `/redteam`, `/hitl` |
+| **Enterprise Simulation** | "What-if" scenarios - **M&A integration, cyber incidents**, talent exodus, vendor/supply-chain failure, system outages, budget cuts, macro shocks. Blast-radius traversal runs over the live twin; the impact-scoring layer is a **parametric simulator over configurable causal archetypes** (tuned profiles, not learned from tenant data) | `/reality/shock`, `/reality/simulate`, `/10x/physics/simulate`, `/simulation/what-if` |
+| **Governance & Provenance** | Every recommendation is explainable, traceable, and auditable - a hash-chained (tamper-evident) provenance ledger, fairness audits, red-team checks, and blocking HITL gates. Explainable by design, not a black box | `/provenance`, `/10x/quantum-events`, `/fairness/audit-log`, `/redteam`, `/hitl` |
 | **Executive Command Center** | A real-time interface where leaders monitor the enterprise, inject business shocks, visualize downstream impact, and receive actionable recommendations in seconds | `/executive/*`, `/dashboard/cockpit`, `/reality/twin`, Reality Experience UI |
 
 ### Our Moonshot
 
-To build the first true **Company Brain** - an intelligent reasoning layer that sits above every
+To build a true **Company Brain** - an intelligent reasoning layer that sits above every
 enterprise system, understands how the entire business operates, predicts the consequences of
 change, coordinates autonomous AI agents, and helps organizations make better decisions before
 problems become crises.
@@ -67,7 +75,8 @@ processes, and operates continuously - with full audit trails and human override
 
 ### 7 AI-Powered Departments
 
-Deploy any combination of these pre-built, production-ready AI departments:
+Deploy any combination of these pre-built AI departments, built on a production-oriented,
+security-hardened architecture (RLS-isolated per tenant, gated agent pipeline):
 
 | Department | Agents | Key Automations |
 |-----------|--------|-----------------|
@@ -256,7 +265,7 @@ Prompt → Blueprint (DRAFTING) → Approval (APPROVED) → Compile (COMPILED) �
 - Approve, compile (LLM-powered code generation), and deploy with one click
 - Deployed agents appear in the live workforce with full observability
 
-### AI Foundry - the enterprise that manufactures its own AI (v2, Phase 2 live)
+### AI Foundry - curating governed activity into training datasets (Phase 2 live; fine-tuning is roadmap)
 
 KAEOS v1 is a Company Brain: it understands, reasons over, and acts on enterprise knowledge, and
 learns by memory - every conversation adds context, but the underlying model never changes. v2 goes
@@ -297,6 +306,69 @@ A guided, frontend-driven flow stands up a new client entirely through the produ
   checklist computed from real tenant state - connect a data source, deploy a department, run a first
   governed decision, configure their model, invite their team, and watch their AI training dataset
   grow.
+
+---
+
+## Screenshots
+
+All captured from a running instance against PostgreSQL — a live app on a seeded demo tenant.
+
+### Reality Experience — live enterprise twin, shock simulation, decision provenance
+![Reality Experience](docs/screenshots/19-reality-twin-full.png)
+<sub>Inject a shock (termination, vendor failure, cyber incident) and watch it propagate across the live
+twin, with the reasoning chain and a provenance feed of every decision.</sub>
+
+### AI Foundry — and an honest roadmap, shown in-product
+![AI Foundry](docs/screenshots/16-ai-foundry-roadmap.png)
+<sub>Governed decisions are curated into training data. Note the phase strip: **Phase 2 is LIVE**;
+model fine-tuning (Phase 3+) is roadmap and the product says so. Signal quality is broken out by
+how each example was earned — gold, human-corrected, approved, or negative.</sub>
+
+### Executive Cockpit — governance in motion
+![Executive Cockpit](docs/screenshots/06-decisions-hitl.png)
+<sub>System health, rules, executions and success rate — with the agent stream showing
+`HITL_REQUIRED` approvals: agents that hit the confidence gate and stopped for a human.</sub>
+
+### Skills Registry — confidence, decay, and compliance tags
+![Skills Registry](docs/screenshots/18-skills-registry.png)
+<sub>Every compiled skill carries a confidence score, how it was validated, a half-life (confidence
+decays), the tools it may call, and its compliance tags (SOC2, GDPR, SOX, PCI-DSS…).</sub>
+
+### Knowledge Graph — how every workflow connects to the rules that govern it
+![Knowledge Graph](docs/screenshots/22-knowledge-graph.png)
+<sub>Live from the database: workflows wired to the rules that constrain them — the cross-domain
+graph the Company Brain reasons over.</sub>
+
+### Knowledge Capture — eliciting the unwritten rules
+![Elicitation Hub](docs/screenshots/17-elicitation-hub.png)
+<sub>When an agent hits an edge case, KAEOS asks the right human a targeted question and folds the
+answer back into the Company Brain — scored for specificity, groundedness and answerability.</sub>
+
+### Pre-built connectors — 22 live adapters
+![Connector Library](docs/screenshots/21-connector-library.png)
+<sub>Connectors across Engineering, Finance, HR, Legal, Sales, Support and Operations. Credentials
+are encrypted at rest and never returned by the API.</sub>
+
+### The seven AI departments
+![Departments](docs/screenshots/02-departments.png)
+
+### Department-as-a-Service — deploy a governed department in four steps
+![Deploy Department](docs/screenshots/23-deploy-department.png)
+<sub>Pick a pack, connect systems, review, deploy. Each pack ships its capabilities, agents, and the
+compliance frameworks it's built against (SOX, GDPR, HIPAA, ISO-27001, EEOC…).</sub>
+
+### Department depth — Finance
+![Finance department](docs/screenshots/03-department-finance.png)
+<sub>Each department has its own ledgers, workflows and agents; the sidebar expands into the
+department's own sub-navigation.</sub>
+
+### Agent Factory — build an agent from plain language
+![Agent Factory](docs/screenshots/05-agent-factory.png)
+<sub>Describe what you need; the Blueprint Generator decomposes it into a task DAG, wires Company
+Brain context, and produces an approval-ready blueprint.</sub>
+
+### Getting started
+![Getting Started](docs/screenshots/20-getting-started.png)
 
 ---
 
@@ -368,7 +440,17 @@ ADMIN_SECRET=<a second unique secret - guards the admin endpoints>
 ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY=sk-...
 # For fully-local inference (no cloud keys needed):
 # OLLAMA_BASE_URL=http://localhost:11434
+
+# Your first admin login — provisioned automatically on startup.
+# There is NO default public login; pick your own here.
+ADMIN_EMAIL=admin@yourco.com
+ADMIN_PASSWORD=<a strong password — this is how you sign in>
 ```
+
+> **First login.** After the stack is up, sign in at the frontend with the
+> `ADMIN_EMAIL` / `ADMIN_PASSWORD` you set above. Leaving `ADMIN_PASSWORD` empty
+> (outside `DEV_MODE`) means no admin is seeded — a deliberate choice so a public
+> deployment never ships with known credentials.
 
 > Outside `DEV_MODE=true` the backend **refuses to boot** until both `SECRET_KEY`
 > and `ADMIN_SECRET` are set to real values - a default secret is a security
@@ -402,13 +484,10 @@ docker compose up --build
 
 ### 3. Login
 
-Seeded demo credentials:
-
-| Field | Value |
-|-------|-------|
-| Email | `demo@kaeos.ai` |
-| Password | `demo123` |
-| Tenant | `tenant_acme` |
+Sign in with the admin account you configured in `.env` — the `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` you set in step 1. It's provisioned automatically on first
+startup. There is **no** default/shared login: if `ADMIN_PASSWORD` is empty
+(outside `DEV_MODE`), no admin is seeded, by design.
 
 ### 4. Seed demo data
 
@@ -491,7 +570,7 @@ kaeos/
 │   │   ├── security_audit.py        # Security posture audit
 │   │   └── load_test.py             # Load/perf harness
 │   ├── tests/
-│   │   ├── e2e/                     # 426-test E2E suite (live backend + real Ollama)
+│   │   ├── e2e/                     # 419-test E2E suite (live backend + real Ollama)
 │   │   │   ├── conftest.py          # Shared fixtures (httpx client, has_ollama)
 │   │   │   ├── test_01_company_brain.py
 │   │   │   ├── test_02_hr_department.py
@@ -623,11 +702,15 @@ Headline results (deterministic path - the rule-based safety net, no LLM):
 
 | Domain | Real dataset | Result |
 |--------|-------------|--------|
-| **Engineering** | ServiceNow incident log (141k events) | **100% priority match** - KAEOS's ITIL impact×urgency logic reproduces the real instance exactly |
+| **Engineering** | ServiceNow incident log (141k events) | **100% match to the instance's own ITIL priority** - a deterministic impact×urgency identity, i.e. a sanity check that we implement the rule correctly, **not** a predictive-accuracy claim |
 | **Finance** | IBM AR late-payment histories (2,466 settled invoices) | **81% accuracy vs 64% baseline** - payment history + dispute status predicts late settlement, with calibrated confidence |
 | **HR** | IBM attrition (1,470 employees) | **72% balanced accuracy** on a rare (16%) event - catches flight risk without flooding the queue |
 | **Legal** | CUAD v1 (9,358 expert-labelled clause spans, 36 categories) | **39% deterministic-exact** (chance ≈3%) - unmistakable clauses classify instantly; the rest route to a human, which is the HITL contract working |
 | Sales / Support / Ops | LeadForge / support tickets / procurement | Reported honestly, incl. two datasets whose labels carry **no learnable signal** (documented, not hidden) |
+
+Not every domain beats its baseline: on these datasets some domains (notably HR, Sales, and
+Support) land at or below the naive baseline rather than above it, and those results are reported
+transparently - not spun as wins - in the underlying `benchmark/REAL_DATA_BENCHMARK.md` report.
 
 The benchmark is repeatable and committed; raw datasets are gitignored (licensed) with their Kaggle
 refs recorded for reproduction. This **replaces** the previous `benchmark_reports/*.json`, which held
@@ -648,7 +731,7 @@ now grounded, and `python scripts/validate_domain_agents.py` runs each one throu
 pipeline against real rows, verifying both the outcome and that the entity's actual content reached
 the model (report: `benchmark/agent_validation_report.json`).
 
-### E2E Test Suite (426 tests across 29 files, live backend + real Ollama)
+### E2E Test Suite (419 tests across 29 files, live backend + real Ollama)
 
 The full E2E suite exercises every functional surface against a running backend with real
 seeded data - all 7 department brains and their AI agents, the 7-gate skill pipeline
@@ -684,12 +767,14 @@ python -m pytest tests/e2e/test_02_hr_department.py -v
 python -m pytest tests/e2e/ -v -m "not ollama"
 ```
 
-**Current status: the FULL suite is green on PostgreSQL with row-level security enforced -
-423 passed, 3 skipped, 0 failed** (the 3 skips are LLM-outage guards). This is the strongest
-configuration the suite runs in: a bug SQLite silently tolerates becomes a hard failure under
-RLS. The fresh-deploy path is equally proven - `docker compose down -v && up --build` from an
-empty volume self-bootstraps the database role, seeds all seven departments, and passes a live
-skill execution and Foundry dataset build on first boot.
+**Current status:** the end-to-end suite (419 tests) passes against both SQLite (local dev)
+and **PostgreSQL 16 + pgvector** (the production data stack) with row-level security enforced.
+CI runs the non-Ollama suite against Postgres+pgvector, so a bug SQLite silently tolerates is
+caught automatically (this is real: a `NUMERIC`-returns-`Decimal` bug that passed on SQLite was
+found and fixed exactly this way). Exact pass counts are run-dependent - a few tests exercise a
+live LLM whose availability and output vary. On a fresh Postgres deploy the app self-bootstraps:
+`init_db` creates the non-owner `kaeos_app` role, installs RLS on every tenant table, and
+`assert_rls_effective` refuses to serve traffic if isolation isn't actually in force.
 
 ### Unit Tests
 
@@ -751,7 +836,7 @@ exactly why production runs Postgres.
 | **Rate Limiting** | 200 req/min per tenant via `RateLimitMiddleware` |
 | **CORS** | Configurable per-environment origin allowlist |
 | **Audit Trail** | `SecurityAuditLog` for all auth events and policy violations |
-| **HITL Gate** | All high-confidence AI decisions require human approval |
+| **HITL Gate** | Decisions **below** the autonomous-confidence threshold (default 0.82) — and high-stakes/first-run actions — are routed to human approval before execution; the gate is blocking and tenant-isolated |
 | **Provenance** | Immutable `ProvenanceLedger` for every AI decision with full lineage |
 | **Secrets** | API keys stored as SHA-256 hashes; plaintext never persisted |
 
@@ -877,8 +962,34 @@ On the dev stack (no external services): backends report `sqlite` / `sqlite` / `
 ### Monitoring
 
 - **Prometheus** metrics at `http://localhost:9090`
-- **Grafana** at `http://localhost:3000` (default: admin/admin - change before exposing it). Point it
-  at the Prometheus data source to chart API latency, HITL queue depth, and skill execution metrics.
+- **Grafana** at `http://localhost:3000` (dev default password only — set `GRAFANA_ADMIN_PASSWORD`
+  before exposing it). Point it at the Prometheus data source to chart API latency, HITL queue
+  depth, and skill execution metrics.
+
+---
+
+## Known Limitations & Roadmap
+
+We'd rather you read this from us than find it. What's shipped and verified vs. what's ahead:
+
+**Verified today:** the governance spine (gates fail closed), per-tenant PostgreSQL row-level
+security (isolation proven on Postgres — cross-tenant reads scoped, cross-tenant writes blocked),
+BYOK LLM routing with real cost metering, a 419-test E2E suite green on SQLite **and**
+Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
+
+**Not done yet / roadmap:**
+- **AI Foundry fine-tuning.** Phase 2 (dataset curation) is live; actual model fine-tuning,
+  evaluation, and deployment (Phases 3–5) are **not** implemented — no training code ships today.
+- **Simulation surfaces.** The enterprise "what-if"/physics and evolution-fitness surfaces are
+  parameterized simulations over configurable archetypes — labelled as such, not models learned
+  from your data.
+- **Rate limiting** is per-process (in-memory); front it with a shared limiter for multi-instance deploys.
+- **Semantic search** uses pgvector on Postgres; the zero-dependency SQLite dev path uses keyword
+  (TF-IDF) matching, not embeddings.
+
+**Before a production client:** load testing, an independent security/penetration test, and — if
+upgrading an existing install — a one-time connector-credential re-encryption. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 
@@ -896,7 +1007,7 @@ Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for t
 and [NOTICE](NOTICE) for required attributions.
 
 ```
-Copyright 2026 Daksh
+Copyright 2026 Daksh Aneja
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -924,10 +1035,12 @@ publishers - see [NOTICE](NOTICE) and each dataset's Kaggle page before redistri
 
 **Built with** FastAPI · SQLAlchemy · LiteLLM · React · TypeScript · Redis · Neo4j · pgvector · Ollama
 
-**Built by Daksh Aneja** (founder) **with Claude** (co-founder & AI partner) - who together
-architected and shipped the governance spine, the seven departments, the AI Foundry, the
-client-onboarding experience, and the PostgreSQL + row-level-security hardening that makes
-the whole thing production-ready.
+**Built by Daksh Aneja**, with **Claude** (Anthropic's AI) as engineering co-founder & partner —
+across architecture, implementation, security hardening, and verification. Human-directed and
+AI-built, and — see *Known limitations* above — deliberately honest about what's shipped versus
+roadmap. Tenant isolation (RLS) is verified on PostgreSQL and the E2E suite passes on
+Postgres + pgvector; load/penetration testing and a one-time connector-credential re-encryption
+are the operational steps before a production client (see `docs/DEPLOYMENT.md`).
 
 *KAEOS - The cognitive operating system for enterprises.*
 
