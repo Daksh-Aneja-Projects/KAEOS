@@ -76,12 +76,16 @@ async def lifespan(app: FastAPI):
         )
 
     # Hard guard: DEV_MODE bypasses auth AND honors an X-Tenant-ID override -
-    # catastrophic on a shared deployment. Refuse to boot outside development.
-    if settings.DEV_MODE and settings.ENVIRONMENT.lower() in ("production", "prod", "staging"):
+    # catastrophic on a shared deployment. Allow it ONLY when ENVIRONMENT is an
+    # explicitly-known local value; treat anything else (incl. typos like
+    # "prod1", "live", "staging-eu") as production and refuse to boot. This is
+    # fail-closed: an unrecognised environment never runs with auth disabled.
+    _DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
+    if settings.DEV_MODE and settings.ENVIRONMENT.lower() not in _DEV_ENVIRONMENTS:
         raise RuntimeError(
             f"DEV_MODE=true with ENVIRONMENT={settings.ENVIRONMENT!r}: refusing to start. "
-            "DEV_MODE disables authentication and tenant isolation - it is for "
-            "local development only."
+            "DEV_MODE disables authentication and tenant isolation — it is allowed "
+            f"only when ENVIRONMENT is one of {sorted(_DEV_ENVIRONMENTS)}."
         )
 
     if settings.DEV_MODE:
@@ -104,14 +108,19 @@ async def lifespan(app: FastAPI):
     # app role cannot insert rows without a tenant context (by design), so
     # seeding through it fails closed - which is the policy working, not a bug.
     async with MaintenanceSessionLocal() as session:
-        seeded = await seed_database(session)
-        if seeded:
-            logger.info("Database seeded with KAEOS demo data")
+        # Demo/fictional dataset (tenant_acme) is opt-out: set SEED_DEMO_DATA=false
+        # in a real deployment so dashboards only reflect genuinely ingested data.
+        if settings.SEED_DEMO_DATA:
+            seeded = await seed_database(session)
+            if seeded:
+                logger.info("Database seeded with KAEOS demo data")
+            else:
+                logger.info("Database already contains data, skipping seed")
         else:
-            logger.info("Database already contains data, skipping seed")
-        # Seed demo auth user
+            logger.info("SEED_DEMO_DATA=false — skipping fictional demo dataset")
+        # Provision the root admin account from configuration (no public default).
         from app.services.auth import AuthService
-        await AuthService.seed_demo_user(session)
+        await AuthService.seed_admin_user(session)
 
         # Sync built-in domain packs (HR, etc.) from YAML into DB
         try:

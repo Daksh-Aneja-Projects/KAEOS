@@ -39,12 +39,12 @@ async def run_all_seeds():
         else:
             logger.info("[Phase 1] Core KB already seeded — skipping ✓")
 
-    # Phase 1b: Demo auth user
-    logger.info("\n[Phase 1b] Demo auth user...")
+    # Phase 1b: Root admin account (from ADMIN_EMAIL/ADMIN_PASSWORD config)
+    logger.info("\n[Phase 1b] Root admin account...")
     async with AsyncSessionLocal() as session:
         from app.services.auth import AuthService
-        await AuthService.seed_demo_user(session)
-    logger.info("[Phase 1b] Demo user seeded ✓")
+        await AuthService.seed_admin_user(session)
+    logger.info("[Phase 1b] Admin account provisioned ✓")
 
     # Phase 2: Department domains (HR, Finance, Legal, Sales, Support, Operations)
     logger.info("\n[Phase 2] Domain-specific seeds...")

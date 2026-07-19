@@ -189,9 +189,14 @@ Respond in JSON:
                 return json.loads(resp[resp.index("{"):resp.rindex("}") + 1])
         except Exception as e:
             logger.error(f"[Fairness] Assessment failed: {e}")
+            # FAIL CLOSED: an unassessable action is not a safe action. Score 0.0
+            # so the gate blocks (or routes to a human) rather than passing on an
+            # unverifiable neutral score. This is the correct behaviour when the
+            # LLM provider is unavailable (NoLLMProviderError) in production.
             return {
-                "overall_score": 0.5,
+                "overall_score": 0.0,
                 "attribute_scores": {},
                 "flagged_attributes": ["assessment_error"],
-                "rationale": f"Fairness assessment failed: {str(e)}. Defaulting to cautious score.",
+                "rationale": f"Fairness assessment could not be completed ({str(e)}). "
+                             f"Blocking per fail-closed policy.",
             }
