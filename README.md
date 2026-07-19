@@ -13,7 +13,7 @@ and fully explainable decisions.**
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://typescriptlang.org)
-[![Tests](https://img.shields.io/badge/E2E_Tests-426-brightgreen.svg)](backend/tests/e2e/)
+[![Tests](https://img.shields.io/badge/E2E_Tests-419-brightgreen.svg)](backend/tests/e2e/)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 </div>
@@ -67,7 +67,8 @@ processes, and operates continuously - with full audit trails and human override
 
 ### 7 AI-Powered Departments
 
-Deploy any combination of these pre-built, production-ready AI departments:
+Deploy any combination of these pre-built AI departments, built on a production-oriented
+architecture (beta - security hardening and re-verification in progress):
 
 | Department | Agents | Key Automations |
 |-----------|--------|-----------------|
@@ -491,7 +492,7 @@ kaeos/
 │   │   ├── security_audit.py        # Security posture audit
 │   │   └── load_test.py             # Load/perf harness
 │   ├── tests/
-│   │   ├── e2e/                     # 426-test E2E suite (live backend + real Ollama)
+│   │   ├── e2e/                     # 419-test E2E suite (live backend + real Ollama)
 │   │   │   ├── conftest.py          # Shared fixtures (httpx client, has_ollama)
 │   │   │   ├── test_01_company_brain.py
 │   │   │   ├── test_02_hr_department.py
@@ -629,6 +630,10 @@ Headline results (deterministic path - the rule-based safety net, no LLM):
 | **Legal** | CUAD v1 (9,358 expert-labelled clause spans, 36 categories) | **39% deterministic-exact** (chance ≈3%) - unmistakable clauses classify instantly; the rest route to a human, which is the HITL contract working |
 | Sales / Support / Ops | LeadForge / support tickets / procurement | Reported honestly, incl. two datasets whose labels carry **no learnable signal** (documented, not hidden) |
 
+Not every domain beats its baseline: on these datasets some domains (notably HR, Sales, and
+Support) land at or below the naive baseline rather than above it, and those results are reported
+transparently - not spun as wins - in the underlying `benchmark/REAL_DATA_BENCHMARK.md` report.
+
 The benchmark is repeatable and committed; raw datasets are gitignored (licensed) with their Kaggle
 refs recorded for reproduction. This **replaces** the previous `benchmark_reports/*.json`, which held
 fabricated numbers with no dataset behind them.
@@ -648,7 +653,7 @@ now grounded, and `python scripts/validate_domain_agents.py` runs each one throu
 pipeline against real rows, verifying both the outcome and that the entity's actual content reached
 the model (report: `benchmark/agent_validation_report.json`).
 
-### E2E Test Suite (426 tests across 29 files, live backend + real Ollama)
+### E2E Test Suite (419 tests across 29 files, live backend + real Ollama)
 
 The full E2E suite exercises every functional surface against a running backend with real
 seeded data - all 7 department brains and their AI agents, the 7-gate skill pipeline
@@ -684,10 +689,11 @@ python -m pytest tests/e2e/test_02_hr_department.py -v
 python -m pytest tests/e2e/ -v -m "not ollama"
 ```
 
-**Current status: the FULL suite is green on PostgreSQL with row-level security enforced -
-423 passed, 3 skipped, 0 failed** (the 3 skips are LLM-outage guards). This is the strongest
-configuration the suite runs in: a bug SQLite silently tolerates becomes a hard failure under
-RLS. The fresh-deploy path is equally proven - `docker compose down -v && up --build` from an
+**Current status: the FULL suite runs against PostgreSQL with row-level security enforced.**
+In a representative local run the suite reported **416 passed, 3 skipped** (the 3 skips are
+LLM-outage guards) - exact pass counts are run-dependent, since some tests exercise a live LLM
+whose availability and output vary. PostgreSQL + RLS is the strongest configuration the suite
+runs in: a bug SQLite silently tolerates becomes a hard failure under RLS. The fresh-deploy path is equally proven - `docker compose down -v && up --build` from an
 empty volume self-bootstraps the database role, seeds all seven departments, and passes a live
 skill execution and Foundry dataset build on first boot.
 
@@ -926,8 +932,9 @@ publishers - see [NOTICE](NOTICE) and each dataset's Kaggle page before redistri
 
 **Built by Daksh Aneja** (founder) **with Claude** (co-founder & AI partner) - who together
 architected and shipped the governance spine, the seven departments, the AI Foundry, the
-client-onboarding experience, and the PostgreSQL + row-level-security hardening that makes
-the whole thing production-ready.
+client-onboarding experience, and the PostgreSQL + row-level-security hardening. Security
+hardening and full re-verification are in progress as the platform moves from beta toward
+production readiness.
 
 *KAEOS - The cognitive operating system for enterprises.*
 
