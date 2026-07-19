@@ -757,7 +757,7 @@ exactly why production runs Postgres.
 | **Rate Limiting** | 200 req/min per tenant via `RateLimitMiddleware` |
 | **CORS** | Configurable per-environment origin allowlist |
 | **Audit Trail** | `SecurityAuditLog` for all auth events and policy violations |
-| **HITL Gate** | All high-confidence AI decisions require human approval |
+| **HITL Gate** | Decisions **below** the autonomous-confidence threshold (default 0.82) — and high-stakes/first-run actions — are routed to human approval before execution; the gate is blocking and tenant-isolated |
 | **Provenance** | Immutable `ProvenanceLedger` for every AI decision with full lineage |
 | **Secrets** | API keys stored as SHA-256 hashes; plaintext never persisted |
 
@@ -902,7 +902,7 @@ Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for t
 and [NOTICE](NOTICE) for required attributions.
 
 ```
-Copyright 2026 Daksh
+Copyright 2026 Daksh Aneja
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -930,11 +930,14 @@ publishers - see [NOTICE](NOTICE) and each dataset's Kaggle page before redistri
 
 **Built with** FastAPI · SQLAlchemy · LiteLLM · React · TypeScript · Redis · Neo4j · pgvector · Ollama
 
-**Built by Daksh Aneja** (founder) **with Claude** (co-founder & AI partner) - who together
-architected and shipped the governance spine, the seven departments, the AI Foundry, the
-client-onboarding experience, and the PostgreSQL + row-level-security hardening. Security
-hardening and full re-verification are in progress as the platform moves from beta toward
-production readiness.
+**Built by Daksh Aneja** (founder) **with Claude** — Anthropic's AI, as co-founder & engineering
+partner — who together architected and shipped the governance spine, the seven departments, the
+AI Foundry (dataset-curation layer), the client-onboarding experience, and the PostgreSQL +
+row-level-security hardening. The core security hardening and verification pass is complete —
+tenant isolation (RLS) verified on PostgreSQL, the end-to-end test suite passing, and an
+independent code review clean. Final pre-launch steps (load and penetration testing, and a
+one-time decision on connector-credential re-encryption) remain before onboarding a production
+client — these are operational, not architectural.
 
 *KAEOS - The cognitive operating system for enterprises.*
 
