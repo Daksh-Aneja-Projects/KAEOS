@@ -127,7 +127,7 @@ class ProvenanceLedger(Base):
     # so /provenance could not be tenant-scoped and RLS had nothing to filter on.
     # Nullable only so pre-existing rows (written before this column) don't block
     # the migration; every new write populates it.
-    tenant_id = Column(String, index=True, nullable=True)
+    tenant_id = Column(String, index=True, nullable=False)
     # Polymorphic subject id, NOT a foreign key: the ledger records rule
     # events (rule ids) AND agent executions (skill ids). Postgres enforced
     # the old rules FK and rejected every AGENT_EXECUTION entry (SQLite

@@ -184,6 +184,10 @@ class AuthService:
             logger.warning("[Auth] ADMIN_EMAIL is empty — skipping admin seed.")
             return
 
+        # Register the admin's tenant in the tenant registry (source of truth).
+        from app.services.tenant_registry import ensure_tenant
+        await ensure_tenant(db, settings.ADMIN_TENANT, name=settings.ADMIN_TENANT)
+
         # 3. Upsert the admin by email.
         existing = (await db.execute(
             select(User).where(User.email == email)
