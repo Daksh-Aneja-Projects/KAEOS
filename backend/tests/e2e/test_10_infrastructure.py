@@ -68,7 +68,12 @@ class TestInfrastructure:
 
     async def test_backend_health(self, client):
         """Backend health check endpoint."""
-        r = await client.get("http://localhost:8001/health")
+        # /health lives outside /api/v1, so it needs the backend root - taken
+        # from the conftest (derived from KAEOS_TEST_URL), never hardcoded. A
+        # literal :8001 probes whatever holds that port rather than the backend
+        # under test.
+        from tests.e2e.conftest import BACKEND_ROOT
+        r = await client.get(f"{BACKEND_ROOT}/health")
         assert r.status_code == 200
         data = r.json()
         assert data.get("status") == "ok"

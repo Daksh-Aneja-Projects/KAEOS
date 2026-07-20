@@ -30,7 +30,13 @@ async def run_all_seeds():
 
     # Phase 1: Core seed (rules, skills, employees, connectors, etc.)
     logger.info("\n[Phase 1] Core Knowledge Base seed...")
-    from app.core.database import AsyncSessionLocal
+    # Seeding is maintenance work: it must run on the OWNER connection. The app
+    # role (kaeos_app) is subject to RLS, and a script carries no request tenant
+    # context - so both its reads and its writes fail closed. Reading nothing is
+    # the nastier half: seed_database's "already seeded?" probe returns empty,
+    # the seeder concludes the DB is fresh, and the re-insert then trips
+    # "new row violates row-level security policy".
+    from app.core.database import MaintenanceSessionLocal as AsyncSessionLocal
     from app.core.seed import seed_database
     async with AsyncSessionLocal() as session:
         seeded = await seed_database(session)

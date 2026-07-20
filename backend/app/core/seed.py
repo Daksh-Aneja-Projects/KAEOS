@@ -541,10 +541,55 @@ def seed_signals():
     return out
 
 
+async def _assert_seedable(db_session):
+    """Refuse to seed through a session that row-level security applies to.
+
+    The blocked WRITE is the obvious failure; the blocked READ is the dangerous
+    one. Under RLS the "already seeded?" probe below returns nothing - not
+    because the database is empty, but because the policy is hiding rows from a
+    session with no tenant context. The seeder then concludes the database is
+    fresh and re-inserts everything, which surfaces as
+
+        new row violates row-level security policy for table "agent_blueprints"
+
+    naming whichever table SQLAlchemy happened to flush first, while the probe
+    that actually lied leaves no trace at all. That cost a CI debugging session.
+
+    Seeding is maintenance: it must run on the OWNER connection
+    (MaintenanceSessionLocal / KAEOS_OWNER_DB_URL), which Postgres exempts from
+    its own policies. `row_security_active` is exactly that question - false for
+    the owner and for BYPASSRLS roles, true for the app role.
+    """
+    from app.core.rls import is_postgres
+    if not is_postgres(db_session):
+        return  # SQLite has no RLS
+
+    from sqlalchemy import text
+    active = (await db_session.execute(
+        text("SELECT row_security_active('skills')")
+    )).scalar()
+    if not active:
+        return
+
+    tenant = (await db_session.execute(
+        text("SELECT current_setting('app.tenant_id', true)")
+    )).scalar()
+    raise RuntimeError(
+        "seed_database() was called on a session subject to row-level security "
+        f"(tenant context: {tenant or 'UNSET'}). Its reads are filtered, so the "
+        "'already seeded?' check cannot be trusted and the seed would be "
+        "duplicated or rejected. Seed on the owner connection instead: "
+        "`from app.core.database import MaintenanceSessionLocal` (requires "
+        "KAEOS_OWNER_DB_URL to point at the table-owning role)."
+    )
+
+
 async def seed_database(db_session):
     """Main seed function - call on startup."""
     global NOW
     NOW = datetime.now(timezone.utc)
+
+    await _assert_seedable(db_session)
 
     from sqlalchemy import select
     existing = await db_session.execute(select(Skill).limit(1))

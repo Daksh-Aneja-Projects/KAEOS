@@ -8,7 +8,12 @@ import uuid
 import random
 from datetime import datetime, timezone, timedelta
 
-from app.core.database import async_engine, AsyncSessionLocal
+# Seeding is maintenance: run as the table OWNER. The app role is subject to RLS
+# and a script has no request tenant context, so its writes fail closed.
+from app.core.database import (
+    maintenance_engine as async_engine,
+    MaintenanceSessionLocal as AsyncSessionLocal,
+)
 from app.models.domain import Base
 
 from app.models.agent_factory import (
