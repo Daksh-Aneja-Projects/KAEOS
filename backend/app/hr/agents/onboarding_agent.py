@@ -25,7 +25,23 @@ class OnboardingAgent:
         """Sends a check-in message to the new hire and evaluates their response."""
         q = await db.execute(select(Employee).where(Employee.id == employee_id))
         employee = q.scalar_one_or_none()
-        
+        if employee is None:
+            # A missing employee record previously crashed below on
+            # `employee.first_name` - but only when a response WAS provided, so
+            # the crash hid behind the happy no-response path. Escalate instead.
+            logger.warning(f"OnboardingAgent: unknown employee {employee_id} for week-{week_num} check-in")
+            return {
+                "status": "EMPLOYEE_NOT_FOUND",
+                "response_received": bool((response or "").strip()),
+                "sentiment_score": None,
+                "issues_detected": [],
+                "requires_human_escalation": True,
+                "recommended_action": (
+                    f"No employee record found for id {employee_id}; verify the "
+                    "HRIS sync before re-running the check-in."
+                ),
+            }
+
         logger.info(f"OnboardingAgent executing Week {week_num} check-in for {employee_id}")
 
         # Do NOT fabricate sentiment input. If the new hire has not responded yet,

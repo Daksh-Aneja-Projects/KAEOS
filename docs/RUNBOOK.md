@@ -46,8 +46,9 @@ Order matters, and both steps run as the OWNER role (`kaeos`):
 - **Redis is required in staging/production.** Without it the HITL manager falls back to a
   single-process memory store (fine for dev, wrong for multi-worker). The Redis path was verified
   live: Gate-3 pause -> `kaeos:hitl:<execution_id>` key -> approve -> resume.
-- **Set `ENVIRONMENT=staging` (or `production`).** The backend REFUSES TO BOOT if `DEV_MODE=true`
-  is combined with staging/production - DEV_MODE disables auth and tenant isolation.
+- **Set `ENVIRONMENT=staging` (or `production`).** The backend REFUSES TO BOOT with `DEV_MODE=true`
+  unless ENVIRONMENT is explicitly a known-local value (development/dev/local/test/testing/ci) -
+  DEV_MODE disables auth and tenant isolation, so an unset or non-local ENVIRONMENT fails closed.
 - Local LLM default is `ollama/qwen2.5-coder:7b` (fits a 6GB GPU). `phi4-mini` remains available
   as the weak-model BYOK demo: its probed ceiling routes decisions to humans.
 

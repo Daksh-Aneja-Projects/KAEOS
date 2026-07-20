@@ -448,11 +448,17 @@ Pick one of two modes:
 ```env
 # Mode A: local/dev (zero external services, auth + tenant isolation OFF).
 # Uses SQLite + in-memory cache; simplest way to try KAEOS locally.
+# BOTH lines are required: DEV_MODE disables auth, so ENVIRONMENT must be
+# explicitly set to a known-local value (development, dev, local, test,
+# testing, ci) or the app refuses to boot.
 DEV_MODE=true
+ENVIRONMENT=development
 
 # Mode B: production-like (Postgres + RLS, auth ON).
-# Leave DEV_MODE unset (or false). DEV_MODE=true is REFUSED when
-# ENVIRONMENT=staging or production, so it can never leak into a real deploy.
+# Leave DEV_MODE unset (or false). DEV_MODE=true is REFUSED unless ENVIRONMENT
+# is explicitly one of the known-local values above — an unset ENVIRONMENT or
+# anything else (staging, production, typos) fails closed, so it can never
+# leak into a real deploy.
 
 SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_urlsafe(32))">
 ADMIN_SECRET=<a second unique secret - guards the admin endpoints>
@@ -484,7 +490,9 @@ ADMIN_PASSWORD=<a strong password — this is how you sign in>
 > polystore selects those backends automatically.
 >
 > **Hard guard:** `DEV_MODE=true` disables auth and tenant isolation, so the backend
-> **refuses to boot** when combined with `ENVIRONMENT=staging` or `production`.
+> **refuses to boot** unless `ENVIRONMENT` is explicitly set to a known-local value
+> (`development`, `dev`, `local`, `test`, `testing`, `ci`). Unset or anything else
+> — including `staging`, `production`, and typos — fails closed.
 
 ### 2. Start all services
 
@@ -782,7 +790,7 @@ python -m pytest tests/e2e/ -v --tb=short
 
 # No model at all? The deterministic fake-LLM lane covers the gate/pipeline
 # logic (this is what CI runs; ~17 min for the whole suite):
-#   KAEOS_FAKE_LLM=1 DEV_MODE=true python -m uvicorn app.main:app --port 8001 &
+#   KAEOS_FAKE_LLM=1 DEV_MODE=true ENVIRONMENT=ci python -m uvicorn app.main:app --port 8001 &
 #   pytest tests/e2e -m "not ollama" -q
 
 # Run a single test file
