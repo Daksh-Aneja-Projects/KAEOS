@@ -2,15 +2,23 @@
 KAEOS — Auth API Routes
 Login, registration, user management with RBAC enforcement.
 """
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
-from app.services.auth import AuthService, decode_token
+from app.services.auth import AuthService, decode_token, revoke_token
 from app.models.auth import UserRole
 
 router = APIRouter(prefix="/auth", tags=["Authentication & RBAC"])
+
+
+class LoginRequest(BaseModel):
+    """Typed login body. Rejects wrong-typed fields with a 422 instead of the
+    handler crashing on `.strip()` of a non-string (which used to 500)."""
+    email: str
+    password: str
 
 
 async def get_current_user(
@@ -45,19 +53,31 @@ def require_role(*roles: str):
 
 
 @router.post("/login")
-async def login(data: dict, db: AsyncSession = Depends(get_db)):
+async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Authenticate with email/password, returns JWT token."""
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
+    email = (data.email or "").strip().lower()
+    password = data.password or ""
 
     if not email or not password:
         raise HTTPException(status_code=400, detail="Email and password required")
 
-    result = await AuthService.login(db, email, password)
+    ip = request.client.host if request.client else None
+    result = await AuthService.login(db, email, password, ip_address=ip)
     if not result:
+        # Same message for bad credentials and lockout — don't reveal which.
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     return result
+
+
+@router.post("/logout")
+async def logout(authorization: Optional[str] = Header(None)):
+    """Revoke the caller's current token (adds its jti to the denylist)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization.removeprefix("Bearer ").strip()
+    revoked = revoke_token(token)
+    return {"revoked": revoked}
 
 @router.post("/sso/saml")
 async def saml_sso(data: dict):

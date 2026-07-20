@@ -11,6 +11,7 @@ from app.models.domain import Connector, ConnectorCredential
 
 router = APIRouter(prefix="/connectors", tags=["Connectors — L0 Data Fabric"])
 from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 
 
 class CredentialsBody(BaseModel):
@@ -144,6 +145,11 @@ async def store_credentials(
             secrets_encrypted=encrypt_secrets(body.secrets),
         ))
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="connector_credentials", resource_id=conn.id,
+    )
     return {
         "status": "CREDENTIALS_STORED", "connector": conn.name, "provider": provider,
         "secret_keys_stored": sorted(body.secrets.keys()),
@@ -203,6 +209,11 @@ async def delete_credentials(
         raise HTTPException(404, "No credentials stored for this connector")
     await db.delete(cred)
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="DELETE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="connector_credentials", resource_id=conn.id,
+    )
     return {"status": "CREDENTIALS_DELETED", "connector": conn.name}
 
 
@@ -210,9 +221,10 @@ async def delete_credentials(
 async def test_connection(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
 ):
-    """Attempt a live connection with the stored credentials."""
+    """Attempt a live connection with the stored credentials. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     from app.services.live_connectors import LiveConnectorService, decrypt_secrets
     conn = await _get_connector(connector_id, tenant_id, db)
     cred = (await db.execute(
@@ -274,6 +286,11 @@ async def connect_connector(
     conn.connected_at = datetime.now(timezone.utc)
     conn.last_sync_at = datetime.now(timezone.utc)
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="connector", resource_id=conn.id,
+    )
     return {"status": "CONNECTED", "connector": conn.name}
 
 
@@ -287,6 +304,11 @@ async def disconnect_connector(connector_id: str, db: AsyncSession = Depends(get
 
     conn.status = "PAUSED"
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="connector", resource_id=conn.id,
+    )
     return {"status": "PAUSED", "connector": conn.name}
 
 
@@ -415,9 +437,10 @@ async def connector_feed(
 async def sync_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id)
+    tenant: dict = Depends(require_role("operator")),
 ):
     """Triggers an immediate sync for a connector."""
+    tenant_id = tenant["tenant_id"]
     result = await db.execute(select(Connector).where(Connector.id == connector_id, Connector.tenant_id == tenant_id))
     conn = result.scalar_one_or_none()
     if not conn:

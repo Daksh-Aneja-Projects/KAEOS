@@ -126,3 +126,37 @@ jobs:
         cd frontend
         npm run lint
         npm run build
+
+  security-scan:
+    # Dependency + static-analysis security scanning. NON-BLOCKING for now:
+    # every step has continue-on-error so findings are reported without failing
+    # the build while the backlog is worked down. Once the backlog is clean,
+    # remove the continue-on-error flags (or gate on them) to make this blocking.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    - name: Install scanners
+      run: pip install pip-audit bandit
+    - name: pip-audit (known CVEs in backend dependencies)
+      continue-on-error: true
+      run: |
+        cd backend
+        pip-audit -r requirements.txt
+    - name: bandit (Python static analysis, medium+ severity)
+      continue-on-error: true
+      run: |
+        cd backend
+        bandit -r app -ll
+    - name: Set up Node.js 20
+      uses: actions/setup-node@v3
+      with:
+        node-version: "20"
+    - name: npm audit (frontend dependencies, high+ severity)
+      continue-on-error: true
+      run: |
+        cd frontend
+        npm audit --audit-level=high

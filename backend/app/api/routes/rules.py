@@ -9,7 +9,7 @@ import json
 import uuid
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.models.domain import (
     Rule, ProvenanceLedger, ConfidenceHistory,
     ConfidenceTier,
@@ -92,8 +92,9 @@ async def get_rule(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: As
 
 
 @router.post("", response_model=RuleResponse, status_code=201)
-async def create_rule(body: RuleCreate, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Create a new candidate rule (enters KB at INFERRED tier)."""
+async def create_rule(body: RuleCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Create a new candidate rule (enters KB at INFERRED tier). Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     vector = {
         "source_breadth": 0.3,
         "source_authority": 0.4,
@@ -150,10 +151,11 @@ async def create_rule(body: RuleCreate, tenant_id: str = Depends(get_tenant_id),
 async def validate_rule(
     rule_id: str,
     body: RuleValidateRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bump a rule's confidence tier via human validation (L5 HITL gate). Tenant-scoped to the caller."""
+    """Bump a rule's confidence tier via human validation (L5 HITL gate). Tenant-scoped to the caller. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     result = await db.execute(
         select(Rule).where(Rule.tenant_id == tenant_id).where(Rule.id == rule_id)
     )

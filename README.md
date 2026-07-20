@@ -13,7 +13,7 @@ and fully explainable decisions.**
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://typescriptlang.org)
-[![Tests](https://img.shields.io/badge/E2E_Tests-419-brightgreen.svg)](backend/tests/e2e/)
+[![Tests](https://img.shields.io/badge/E2E_Tests-426-brightgreen.svg)](backend/tests/e2e/)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 <br />
@@ -105,7 +105,11 @@ Two behaviours are deliberate and enforced by tests:
 
 ### 7-Gate Skill Execution Pipeline
 
-Every AI action - regardless of source - flows through a mandatory 7-gate pipeline before execution:
+Every AI action - regardless of source - is evaluated by the same 7-gate pipeline before execution.
+Autonomy is the default: a decision whose confidence clears the threshold passes straight through the
+HITL gate and executes without a human. The gate only pauses decisions below the threshold and a set of
+high-consequence action classes (e.g. production deploys, customer-facing documents), which always route
+to a human:
 
 ```
 Signal / Trigger
@@ -120,7 +124,8 @@ Signal / Trigger
   3. Confidence      ← Threshold check, AMBER/GREEN/RED tier routing
       │
       ▼
-  4. HITL            ← Human-in-the-loop approval (DB-persisted queue; Redis cache)
+  4. HITL            ← Below-threshold + high-consequence actions pause here;
+      │                 above-threshold decisions pass through autonomously
       │
       ▼
   5. Debate          ← Adversarial Proposer / Advocate / Arbitrator reasoning
@@ -129,7 +134,7 @@ Signal / Trigger
   6. Execute         ← LLM execution via tiered BYOK routing (local Ollama → Claude → GPT-4o)
       │
       ▼
-  7. Provenance      ← Immutable audit trail with full decision lineage
+  7. Provenance      ← Hash-chained, tamper-evident decision ledger with full lineage
 ```
 
 ### Intelligence Layer
@@ -219,7 +224,11 @@ catalog (id, domain, authority weight, PII flag, required config).
 confidence scoring: systems of record (BambooHR 0.95, PagerDuty 0.95, Stripe 0.95) outrank wiki
 content (Confluence 0.75) which outranks chat (Slack 0.5). Slack is where decisions get *discussed*;
 treating that talk as fact is how a knowledge base fills with confident nonsense. Adapters touching
-personal data are flagged `handles_pii` and routed through PII scrubbing on ingest.
+personal data are flagged `handles_pii`; the ingest pipeline applies PII scrubbing as records are
+normalized into Signals. Keeping PII out of *cloud* LLMs is a separate concern with its own controls:
+a data-residency mode (`DATA_RESIDENCY` pins inference to a local Ollama-only model and strips every
+cloud credential/endpoint) and optional pre-egress PII scrubbing on outbound LLM calls. Residency mode
+is live; broader pre-egress scrubbing is being extended (see Known Limitations).
 
 Security model:
 
@@ -434,7 +443,17 @@ cp .env.example .env
 
 Open `.env` and set at minimum:
 
+Pick one of two modes:
+
 ```env
+# Mode A: local/dev (zero external services, auth + tenant isolation OFF).
+# Uses SQLite + in-memory cache; simplest way to try KAEOS locally.
+DEV_MODE=true
+
+# Mode B: production-like (Postgres + RLS, auth ON).
+# Leave DEV_MODE unset (or false). DEV_MODE=true is REFUSED when
+# ENVIRONMENT=staging or production, so it can never leak into a real deploy.
+
 SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_urlsafe(32))">
 ADMIN_SECRET=<a second unique secret - guards the admin endpoints>
 ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY=sk-...
@@ -489,11 +508,17 @@ Sign in with the admin account you configured in `.env` — the `ADMIN_EMAIL` /
 startup. There is **no** default/shared login: if `ADMIN_PASSWORD` is empty
 (outside `DEV_MODE`), no admin is seeded, by design.
 
-### 4. Seed demo data
+### 4. Seed demo data (usually automatic)
+
+The stack **auto-seeds on startup** (`SEED_DEMO_DATA=true`, the default), so after step 2 the
+7 departments are already populated. Set `SEED_DEMO_DATA=false` if you want an empty tenant that
+reflects only genuinely ingested data.
+
+To (re)run the seeder manually, run it **inside the backend container** so it targets the same
+database the app uses (running it on your host hits a different DB, e.g. a local SQLite file):
 
 ```bash
-cd backend
-python scripts/seed_master.py
+docker compose exec backend python -m scripts.seed_master
 ```
 
 This seeds all 7 departments - HR, Finance, Legal, Sales, Support, Operations, **Engineering & IT Ops** -
@@ -537,7 +562,7 @@ kaeos/
 │   │   │   ├── model_probe.py       # BYOK self-calibration battery
 │   │   │   ├── json_utils.py        # Tolerant LLM JSON parsing (use everywhere)
 │   │   │   ├── live_connectors.py   # Credentialed live sync + encryption
-│   │   │   ├── vendor_adapters.py   # 17-vendor adapter catalog
+│   │   │   ├── vendor_adapters.py   # vendor adapters (17 here + 5 core in live_connectors = 22 total)
 │   │   │   ├── precog_engine.py     # Zero-prompt ambient intelligence
 │   │   │   ├── enterprise_physics_engine.py
 │   │   │   ├── genome_compiler.py
@@ -570,7 +595,7 @@ kaeos/
 │   │   ├── security_audit.py        # Security posture audit
 │   │   └── load_test.py             # Load/perf harness
 │   ├── tests/
-│   │   ├── e2e/                     # 419-test E2E suite (live backend + real Ollama)
+│   │   ├── e2e/                     # 426-test E2E suite (live backend + real Ollama)
 │   │   │   ├── conftest.py          # Shared fixtures (httpx client, has_ollama)
 │   │   │   ├── test_01_company_brain.py
 │   │   │   ├── test_02_hr_department.py
@@ -731,7 +756,7 @@ now grounded, and `python scripts/validate_domain_agents.py` runs each one throu
 pipeline against real rows, verifying both the outcome and that the entity's actual content reached
 the model (report: `benchmark/agent_validation_report.json`).
 
-### E2E Test Suite (419 tests across 29 files, live backend + real Ollama)
+### E2E Test Suite (426 tests across 29 files, live backend + real Ollama)
 
 The full E2E suite exercises every functional surface against a running backend with real
 seeded data - all 7 department brains and their AI agents, the 7-gate skill pipeline
@@ -746,8 +771,8 @@ LLM-dependent tests use a local Ollama instance (`qwen2.5-coder:7b` model) - no 
 cd backend
 python -m uvicorn app.main:app --port 8001 --log-level warning
 
-# 2. Seed all data (separate terminal)
-python scripts/seed_master.py
+# 2. Seed all data (separate terminal, from backend/)
+python -m scripts.seed_master
 
 # 3. Start Ollama (for LLM-dependent tests)
 ollama pull qwen2.5-coder:7b
@@ -767,7 +792,7 @@ python -m pytest tests/e2e/test_02_hr_department.py -v
 python -m pytest tests/e2e/ -v -m "not ollama"
 ```
 
-**Current status:** the end-to-end suite (419 tests) passes against both SQLite (local dev)
+**Current status:** the end-to-end suite (426 tests) passes against both SQLite (local dev)
 and **PostgreSQL 16 + pgvector** (the production data stack) with row-level security enforced.
 CI runs the non-Ollama suite against Postgres+pgvector, so a bug SQLite silently tolerates is
 caught automatically (this is real: a `NUMERIC`-returns-`Decimal` bug that passed on SQLite was
@@ -831,13 +856,13 @@ exactly why production runs Postgres.
 | Feature | Implementation |
 |---------|----------------|
 | **Authentication** | JWT Bearer tokens + API Keys (hashed with SHA-256) |
-| **Authorization** | Role-based: `viewer` / `operator` / `admin` |
+| **Authorization** | Role-based (`viewer` / `operator` / `admin`) via `require_role`; enforced on consequential/mutating endpoints (create, update, delete, execute, approve, install, connector credentials). ~95 of 127 write endpoints are role- or admin-secret-gated today; the remainder are tenant-scoped read/compute endpoints (see Known Limitations) |
 | **Tenant Isolation** | Two layers: `Depends(get_tenant_id)` filters on every route, PLUS Postgres Row-Level Security policies on every tenant table (fails closed; verified by `scripts/verify_rls.py`) |
 | **Rate Limiting** | 200 req/min per tenant via `RateLimitMiddleware` |
 | **CORS** | Configurable per-environment origin allowlist |
-| **Audit Trail** | `SecurityAuditLog` for all auth events and policy violations |
-| **HITL Gate** | Decisions **below** the autonomous-confidence threshold (default 0.82) — and high-stakes/first-run actions — are routed to human approval before execution; the gate is blocking and tenant-isolated |
-| **Provenance** | Immutable `ProvenanceLedger` for every AI decision with full lineage |
+| **Audit Trail** | `SecurityAuditLog` records auth successes/failures (with lockout), RBAC denials, HITL decisions, config changes, connector and export actions, wired to real runtime events across the auth service and ~20 route modules. Best-effort writer (never blocks a request). Separate from the AI-decision provenance ledger, which is also live |
+| **HITL Gate** | Autonomy is the default: once a decision's confidence clears a configurable threshold (default 0.82) it runs without a human. Decisions below the threshold, plus high-consequence action classes (e.g. production deploys, customer-facing documents), route to human approval before execution. Approvals are role-gated (operator/admin) and attributable to the approver; the gate is blocking and tenant-isolated |
+| **Provenance** | Hash-chained, tamper-evident `ProvenanceLedger` for every AI decision with full lineage; explainable by design |
 | **Secrets** | API keys stored as SHA-256 hashes; plaintext never persisted |
 
 To report a security vulnerability, see [SECURITY.md](SECURITY.md).
@@ -861,8 +886,8 @@ alembic upgrade head
 # Start dev server (port 8001)
 python -m uvicorn app.main:app --port 8001 --reload
 
-# Seed all demo data
-python scripts/seed_master.py
+# Seed all demo data (from backend/)
+python -m scripts.seed_master
 ```
 
 ### Frontend
@@ -932,7 +957,7 @@ docker compose up --build -d
 docker compose exec backend sh -c 'DATABASE_URL="$KAEOS_OWNER_DB_URL" alembic upgrade head'
 
 # Seed demo data (seeding also runs on the owner connection automatically)
-docker compose exec backend python scripts/seed_master.py
+docker compose exec backend python -m scripts.seed_master
 ```
 
 > **Fresh database bootstrap order:** the backend's startup `init_db()` creates the full
@@ -974,14 +999,43 @@ We'd rather you read this from us than find it. What's shipped and verified vs. 
 
 **Verified today:** the governance spine (gates fail closed), per-tenant PostgreSQL row-level
 security (isolation proven on Postgres — cross-tenant reads scoped, cross-tenant writes blocked),
-BYOK LLM routing with real cost metering, a 419-test E2E suite green on SQLite **and**
+BYOK LLM routing with real cost metering, a 426-test E2E suite green on SQLite **and**
 Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
 
+Here is exactly what is shipped versus in progress. We treat this candor as an asset, not an apology.
+
 **Not done yet / roadmap:**
+- **RBAC coverage.** The `viewer`/`operator`/`admin` roles are defined and enforced today on
+  consequential and mutating endpoints: creation, update, deletion, skill execution, HITL approval,
+  connector credentials, deployments, and pack install/uninstall. In the current code roughly 95 of
+  127 write endpoints carry an explicit role or admin-secret gate; the ~30 that do not are
+  tenant-scoped read/compute/simulation endpoints (analysis, what-if, telemetry ingest) protected by
+  tenant isolation, plus intentionally public `login`/`logout`. Extending `require_role` to that
+  remaining tail is on the roadmap.
+- **Security audit logging.** The access/security audit log (`SecurityAuditLog`: auth successes and
+  failures with lockout, RBAC denials, HITL decisions, config changes, connector and export actions)
+  is wired to real runtime events across the auth service and ~20 route modules in this release. It is
+  a best-effort writer (a logging failure never blocks the request) and is distinct from the
+  hash-chained AI-decision provenance ledger, which is a separate system and was always real; do not
+  conflate the two.
+- **Prompt-injection defense.** Mitigations are in place (source-authority weighting so untrusted
+  content ranks below systems of record, tool allow-lists, gated execution), but this is defense in
+  depth, not a complete solution. Treat connected content as untrusted input.
+- **Data-protection features.** Right-to-erasure, configurable retention windows, and the
+  data-residency (local-LLM-only) mode are newly added or in progress. Residency mode is live;
+  erasure and retention tooling is being extended and should be validated against your own
+  obligations before relying on it.
+- **Background jobs are single-instance.** The scheduler and decay/learning loops assume one process;
+  running multiple backend replicas needs a leader lock (or an external scheduler) to avoid duplicate
+  runs. Not yet implemented.
+- **Not certified for regulated employee data.** KAEOS has not been independently certified (SOC 2,
+  ISO 27001, HIPAA, etc.) and is not yet cleared for processing regulated employee or other sensitive
+  personal data in production. Compliance tags in-product describe the frameworks a pack is *built
+  against*, not an external attestation.
 - **AI Foundry fine-tuning.** Phase 2 (dataset curation) is live; actual model fine-tuning,
-  evaluation, and deployment (Phases 3–5) are **not** implemented — no training code ships today.
+  evaluation, and deployment (Phases 3-5) are **not** implemented; no training code ships today.
 - **Simulation surfaces.** The enterprise "what-if"/physics and evolution-fitness surfaces are
-  parameterized simulations over configurable archetypes — labelled as such, not models learned
+  parameterized simulations over configurable archetypes, labelled as such, not models learned
   from your data.
 - **Rate limiting** is per-process (in-memory); front it with a shared limiter for multi-instance deploys.
 - **Semantic search** uses pgvector on Postgres; the zero-dependency SQLite dev path uses keyword

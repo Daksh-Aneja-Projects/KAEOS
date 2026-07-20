@@ -1,4 +1,5 @@
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 """
 KAEOS Workforce API — Domain Packs
 Browse, install, and manage domain packs.
@@ -69,6 +70,7 @@ async def list_installations(
         select(DomainPackInstallation)
         .where(DomainPackInstallation.tenant_id == tenant_id)
         .order_by(DomainPackInstallation.installed_at.desc())
+        .limit(200)
     )
     installs = result.scalars().all()
 
@@ -91,10 +93,11 @@ async def list_installations(
 @router.post("/{pack_id}/install")
 async def install_domain_pack(
     pack_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db)
 ):
-    """Install a domain pack — records a real, idempotent installation row."""
+    """Install a domain pack — records a real, idempotent installation row. Requires admin role."""
+    tenant_id = tenant["tenant_id"]
     from app.workforce.models.domain_pack import DomainPackInstallation, InstallationStatus
 
     pack = (await db.execute(
@@ -133,10 +136,11 @@ async def install_domain_pack(
 @router.post("/{pack_id}/uninstall")
 async def uninstall_domain_pack(
     pack_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db)
 ):
-    """Uninstall a domain pack — removes the tenant's installation record."""
+    """Uninstall a domain pack — removes the tenant's installation record. Requires admin role."""
+    tenant_id = tenant["tenant_id"]
     from app.workforce.models.domain_pack import DomainPackInstallation
 
     existing = (await db.execute(

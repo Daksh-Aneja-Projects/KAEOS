@@ -11,7 +11,8 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from app.engineering.agents.code_review_agent import CodeReviewAgent
 from app.engineering.agents.deploy_risk_agent import DeployRiskAgent
 from app.engineering.agents.incident_agent import IncidentAgent
@@ -97,7 +98,7 @@ async def list_services(
     q = select(Service).where(Service.tenant_id == tenant_id)
     if health:
         q = q.where(Service.health == health)
-    services = (await db.execute(q.order_by(Service.name))).scalars().all()
+    services = (await db.execute(q.order_by(Service.name).limit(200))).scalars().all()
     return [{
         "id": s.id, "name": s.name, "slug": s.slug, "description": s.description,
         "tier": _enum(s.tier), "health": _enum(s.health),
@@ -135,7 +136,7 @@ async def list_engineers(
     db: AsyncSession = Depends(get_db),
 ):
     engineers = (await db.execute(
-        select(Engineer).where(Engineer.tenant_id == tenant_id).order_by(Engineer.name)
+        select(Engineer).where(Engineer.tenant_id == tenant_id).order_by(Engineer.name).limit(200)
     )).scalars().all()
     return [{
         "id": e.id, "name": e.name, "email": e.email, "github_handle": e.github_handle,
@@ -155,7 +156,7 @@ async def list_pull_requests(
     q = select(PullRequest).where(PullRequest.tenant_id == tenant_id)
     if status:
         q = q.where(PullRequest.status == status)
-    prs = (await db.execute(q.order_by(PullRequest.opened_at.desc()))).scalars().all()
+    prs = (await db.execute(q.order_by(PullRequest.opened_at.desc()).limit(200))).scalars().all()
     return [{
         "id": p.id, "number": p.number, "title": p.title, "status": _enum(p.status),
         "branch": p.branch, "service_id": p.service_id, "author_id": p.author_id,
@@ -172,12 +173,19 @@ async def list_pull_requests(
 @router.post("/pull-requests/{pr_id}/review")
 async def review_pull_request(
     pr_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Gated AI code review — writes risk + findings back onto the PR."""
+    tenant_id = tenant["tenant_id"]
     try:
-        return await CodeReviewAgent().review_pull_request(db, pr_id, tenant_id)
+        result = await CodeReviewAgent().review_pull_request(db, pr_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="pull_request", resource_id=pr_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -196,7 +204,7 @@ async def list_deployments(
     q = select(Deployment).where(Deployment.tenant_id == tenant_id)
     if environment:
         q = q.where(Deployment.environment == environment)
-    deploys = (await db.execute(q.order_by(Deployment.started_at.desc()))).scalars().all()
+    deploys = (await db.execute(q.order_by(Deployment.started_at.desc()).limit(200))).scalars().all()
     return [{
         "id": d.id, "version": d.version, "environment": d.environment,
         "status": _enum(d.status), "service_id": d.service_id,
@@ -212,12 +220,19 @@ async def list_deployments(
 @router.post("/deployments/{deployment_id}/assess")
 async def assess_deployment(
     deployment_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Gated deploy-risk assessment. Always routes to human approval."""
+    tenant_id = tenant["tenant_id"]
     try:
-        return await DeployRiskAgent().assess_deployment(db, deployment_id, tenant_id)
+        result = await DeployRiskAgent().assess_deployment(db, deployment_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="deployment", resource_id=deployment_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -239,7 +254,7 @@ async def list_incidents(
         q = q.where(Incident.status == status)
     if severity:
         q = q.where(Incident.severity == severity)
-    incidents = (await db.execute(q.order_by(Incident.detected_at.desc()))).scalars().all()
+    incidents = (await db.execute(q.order_by(Incident.detected_at.desc()).limit(200))).scalars().all()
     return [{
         "id": i.id, "number": i.incident_number, "title": i.title,
         "description": i.description, "severity": _enum(i.severity), "status": _enum(i.status),
@@ -280,12 +295,19 @@ async def get_incident(
 @router.post("/incidents/{incident_id}/triage")
 async def triage_incident(
     incident_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Gated AI incident triage — severity, probable cause, recommended action."""
+    tenant_id = tenant["tenant_id"]
     try:
-        return await IncidentAgent().triage_incident(db, incident_id, tenant_id)
+        result = await IncidentAgent().triage_incident(db, incident_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="incident", resource_id=incident_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -300,7 +322,7 @@ async def list_postmortems(
 ):
     pms = (await db.execute(
         select(Postmortem).where(Postmortem.tenant_id == tenant_id)
-        .order_by(Postmortem.created_at.desc())
+        .order_by(Postmortem.created_at.desc()).limit(200)
     )).scalars().all()
     return [{
         "id": p.id, "incident_id": p.incident_id, "summary": p.summary,

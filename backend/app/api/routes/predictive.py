@@ -1,5 +1,6 @@
 """KAEOS 10X — Predictive Operations API"""
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,11 +12,12 @@ from app.services.predictive_ops import PredictiveOpsEngine
 router = APIRouter(prefix="/predictive", tags=["KAEOS 10X — Predictive Ops"])
 
 @router.post("/analyze-signal/{signal_id}")
-async def analyze_and_predict(signal_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """
-    Analyzes a specific signal for latent intent and triggers 
+    Analyzes a specific signal for latent intent and triggers
     a zero-prompt execution if highly confident.
     """
+    tenant_id = tenant["tenant_id"]
     # Scope the lookup to the caller's tenant. Without this filter any
     # authenticated user could analyse (and trigger zero-prompt execution
     # against) another tenant's signal by id — a cross-tenant leak on any
@@ -33,6 +35,11 @@ async def analyze_and_predict(signal_id: str, tenant_id: str = Depends(get_tenan
     if intent:
         # Trigger execution based on intent
         execution = await PredictiveOpsEngine.trigger_zero_prompt_execution(db, intent)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="AGENT_EXEC", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="zero_prompt_execution", resource_id=execution.id,
+        )
         return {
             "status": "INTENT_DETECTED",
             "intent": {

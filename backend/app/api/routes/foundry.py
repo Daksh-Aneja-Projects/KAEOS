@@ -19,7 +19,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.core.database import get_db
 from app.services.foundry import dataset_builder
 
@@ -63,14 +63,16 @@ async def record_feedback(
 @router.post("/datasets/build")
 async def build_dataset(
     body: dict | None = None,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Curate this tenant's governed executions into training examples.
 
     Idempotent - already-mined executions are skipped, so this is safe to call
     on a schedule. Body (optional): { include_negative?: bool, limit?: int }.
+    Requires operator role.
     """
+    tenant_id = tenant["tenant_id"]
     body = body or {}
     result = await dataset_builder.mine_executions(
         db,

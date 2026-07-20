@@ -214,10 +214,39 @@ class LLMRouter:
         # Never cap below 0.5 — the gates, not the cap, decide what is unusable.
         return max(0.5, min(1.0, float(ceiling)))
 
+    # ── Data-residency helpers (GDPR/DPDP) ───────────────────────────────
+
+    # Every credential/model that would send prompt text off-box. When data
+    # residency is local/eu/in/on_prem, none of these may be used — PII must
+    # never leave the region, so only ``ollama/...`` (local) routing is allowed.
+    _CLOUD_KEY_NAMES = (
+        "openai", "anthropic", "groq", "mistral", "cohere", "custom_base_url",
+    )
+
+    @staticmethod
+    def _is_local_model(model: str) -> bool:
+        """Only Ollama runs in-region; everything else is cloud egress."""
+        return bool(model) and model.startswith("ollama/")
+
+    @staticmethod
+    def _local_llm_only() -> bool:
+        """True when DATA_RESIDENCY pins inference on-region (local/eu/in/on_prem)."""
+        try:
+            from app.core.config import get_settings
+            return bool(get_settings().local_llm_only)
+        except Exception:
+            return False
+
     # ── Provider availability detection ──────────────────────────────────
 
     def _effective_keys(self, tenant_api_keys: Optional[dict] = None) -> dict:
-        """Merge instance keys, tenant keys, and configured settings keys."""
+        """Merge instance keys, tenant keys, and configured settings keys.
+
+        DATA RESIDENCY: when local_llm_only is set, cloud credentials are
+        stripped entirely so nothing downstream (provider_available / _call_llm)
+        can accidentally route PII to a cloud provider. Only the Ollama base URL
+        survives, keeping all inference in-region.
+        """
         keys = dict(self.api_keys)
         try:
             from app.core.config import get_settings
@@ -232,10 +261,19 @@ class LLMRouter:
             pass
         if tenant_api_keys:
             keys.update(tenant_api_keys)
+        if self._local_llm_only():
+            # Drop every cloud credential/endpoint — local-only means local-only.
+            for k in self._CLOUD_KEY_NAMES:
+                keys.pop(k, None)
         return keys
 
     async def provider_available(self, tenant_api_keys: Optional[dict] = None) -> bool:
-        """True if any real LLM provider is available (cloud key or reachable Ollama)."""
+        """True if any real LLM provider is available (cloud key or reachable Ollama).
+
+        Under local_llm_only, _effective_keys has already stripped all cloud
+        credentials, so this collapses to "is a local Ollama reachable?" — if not,
+        the caller fails closed (NoLLMProviderError) rather than reaching cloud.
+        """
         keys = self._effective_keys(tenant_api_keys)
         cloud_providers = ("openai", "anthropic", "groq", "mistral", "cohere")
         if any(keys.get(p) for p in cloud_providers):
@@ -328,6 +366,24 @@ class LLMRouter:
             model = self.MODEL_TIERS[effective_tier]
             fallback_chain = self.FALLBACK_CHAINS.get(effective_tier, [model])
             return_string = True
+
+        # DATA RESIDENCY: when local-only, strip every cloud model out of the
+        # routing chain so PII can only ever reach a local Ollama model. If the
+        # requested chain was entirely cloud, substitute the local tier default
+        # rather than reaching cloud; if no Ollama is up, _call_llm fails closed
+        # with NoLLMProviderError instead of silently falling back to cloud.
+        if self._local_llm_only():
+            local_chain = [m for m in fallback_chain if self._is_local_model(m)]
+            if not local_chain:
+                local_defaults = [
+                    m for m in self.MODEL_TIERS.values() if self._is_local_model(m)
+                ]
+                local_chain = local_defaults[:1] or ["ollama/qwen2.5-coder:7b"]
+                logger.info(
+                    "[LLM] local_llm_only: requested chain was cloud-only; "
+                    "routing to local default %s to keep PII in-region", local_chain[0]
+                )
+            fallback_chain = local_chain
 
         last_error = None
         for chain_model in fallback_chain:
@@ -450,6 +506,33 @@ class LLMRouter:
             logger.error(f"Failed to parse JSON from LLM output: {str(content)[:300]}")
             raise ValueError("Could not extract JSON from LLM response") from e
 
+    async def _scrub_for_cloud(self, text: Optional[str]) -> Optional[str]:
+        """Redact PII from text before it leaves for a cloud provider.
+
+        Reuses the existing Presidio-backed scrubber (app/transforms/pii_scrubber).
+        Imported lazily so a missing Presidio install degrades gracefully — the
+        scrubber itself falls back to a regex analyzer (email/SSN/IP) and logs a
+        warning. Any failure returns the original text: scrubbing must never take
+        down inference. This path only runs for CLOUD calls; local Ollama skips it.
+        """
+        if not text:
+            return text
+        try:
+            from app.transforms.pii_scrubber import PIIScrubberNode
+            from app.transforms.base import TransformRecord
+
+            node = PIIScrubberNode("llm_cloud_egress_scrub", {"action": "redact"})
+            record = TransformRecord(
+                id="llm_egress", source_record_id="llm_egress",
+                data={}, text_content=text,
+            )
+            result = await node.process([record])
+            scrubbed = result.records[0].text_content
+            return scrubbed if scrubbed is not None else text
+        except Exception as e:
+            logger.warning(f"[LLM] PII scrub before cloud egress failed, proceeding unscrubbed: {e}")
+            return text
+
     async def _call_llm(
         self, model: str, prompt: str, system_prompt: Optional[str],
         temperature: float, max_tokens: int, tenant_api_keys: Optional[dict],
@@ -475,6 +558,21 @@ class LLMRouter:
         import litellm
 
         effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
+
+        # PII SCRUB BEFORE CLOUD EGRESS: local Ollama runs in-region and needs
+        # no scrub (avoid the overhead), but any cloud call may exfiltrate PII.
+        # Scrub the prompt/system prompt through Presidio when SCRUB_PII_BEFORE_LLM
+        # is set, or whenever we are NOT pinned local-only (defence in depth).
+        # A scrub failure must never break inference — it degrades to unscrubbed.
+        if not self._is_local_model(model):
+            try:
+                from app.core.config import get_settings
+                _s = get_settings()
+                if _s.SCRUB_PII_BEFORE_LLM or not _s.local_llm_only:
+                    prompt = await self._scrub_for_cloud(prompt)
+                    system_prompt = await self._scrub_for_cloud(system_prompt)
+            except Exception as e:
+                logger.warning(f"[LLM] pre-cloud PII scrub skipped (non-fatal): {e}")
 
         # NEVER set litellm module globals — they are shared across all
         # concurrent coroutines and cause cross-tenant credential leaks under

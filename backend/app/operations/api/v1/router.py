@@ -2,7 +2,8 @@
 KAEOS Operations Domain — V1 API Router
 CRUD and agent triggers.
 """
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -72,7 +73,7 @@ async def operations_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
 # --- Projects ---
 @router.get("/projects")
 async def list_projects(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Project).where(Project.tenant_id == tenant_id))
+    q = await db.execute(select(Project).where(Project.tenant_id == tenant_id).limit(200))
     projects = q.scalars().all()
     
     project_list = []
@@ -115,12 +116,19 @@ async def list_projects(tenant_id: str = Depends(get_tenant_id), db: AsyncSessio
     return project_list
 
 @router.post("/projects/tasks/{task_id}/evaluate")
-async def evaluate_task(task_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     # Callers (UI + e2e) pass a PROJECT id here; ProjectAgent evaluates projects.
     # Path kept for backward compatibility.
     agent = ProjectAgent()
     try:
-        return await agent.evaluate_project(db, task_id, tenant_id)
+        result = await agent.evaluate_project(db, task_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="project", resource_id=task_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -130,7 +138,7 @@ async def evaluate_task(task_id: str, tenant_id: str = Depends(get_tenant_id), d
 # --- Resources ---
 @router.get("/resources")
 async def list_resources(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(ResourceAllocation).where(ResourceAllocation.tenant_id == tenant_id))
+    q = await db.execute(select(ResourceAllocation).where(ResourceAllocation.tenant_id == tenant_id).limit(200))
     allocs = q.scalars().all()
     
     alloc_list = []
@@ -156,10 +164,17 @@ async def list_resources(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     return alloc_list
 
 @router.post("/resources/allocations/{allocation_id}/check")
-async def check_overload(allocation_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def check_overload(allocation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = ResourceAgent()
     try:
-        return await agent.check_overload(db, allocation_id, tenant_id)
+        result = await agent.check_overload(db, allocation_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="resource_allocation", resource_id=allocation_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -169,7 +184,7 @@ async def check_overload(allocation_id: str, tenant_id: str = Depends(get_tenant
 # --- Vendors ---
 @router.get("/vendors")
 async def list_vendors(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(VendorContract).where(VendorContract.tenant_id == tenant_id))
+    q = await db.execute(select(VendorContract).where(VendorContract.tenant_id == tenant_id).limit(200))
     contracts = q.scalars().all()
     return [{
         "id": c.id,
@@ -182,10 +197,17 @@ async def list_vendors(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
     } for c in contracts]
 
 @router.post("/vendors/{contract_id}/evaluate")
-async def evaluate_vendor(contract_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def evaluate_vendor(contract_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = VendorAgent()
     try:
-        return await agent.evaluate_vendor(db, contract_id, tenant_id)
+        result = await agent.evaluate_vendor(db, contract_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="vendor_contract", resource_id=contract_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -196,7 +218,7 @@ async def evaluate_vendor(contract_id: str, tenant_id: str = Depends(get_tenant_
 @router.get("/procurements")
 async def list_procurements(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     from app.operations.models.procurement import PurchaseOrder
-    q = await db.execute(select(PurchaseRequest).where(PurchaseRequest.tenant_id == tenant_id))
+    q = await db.execute(select(PurchaseRequest).where(PurchaseRequest.tenant_id == tenant_id).limit(200))
     requests = q.scalars().all()
     result = []
     for r in requests:
@@ -218,10 +240,17 @@ async def list_procurements(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
     return result
 
 @router.post("/procurements/{request_id}/audit")
-async def audit_procurement(request_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def audit_procurement(request_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = ProcurementAgent()
     try:
-        return await agent.audit_request(db, request_id, tenant_id)
+        result = await agent.audit_request(db, request_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="purchase_request", resource_id=request_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -232,7 +261,7 @@ async def audit_procurement(request_id: str, tenant_id: str = Depends(get_tenant
 @router.get("/inspections")
 async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     from app.operations.models.quality import NonConformance, QualityStandard
-    q = await db.execute(select(Inspection).where(Inspection.tenant_id == tenant_id))
+    q = await db.execute(select(Inspection).where(Inspection.tenant_id == tenant_id).limit(200))
     inspections = q.scalars().all()
     result = []
     for i in inspections:
@@ -258,10 +287,17 @@ async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     return result
 
 @router.post("/inspections/{inspection_id}/audit")
-async def audit_inspection(inspection_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = QAAgent()
     try:
-        return await agent.inspect_qa(db, inspection_id, tenant_id)
+        result = await agent.inspect_qa(db, inspection_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="inspection", resource_id=inspection_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:

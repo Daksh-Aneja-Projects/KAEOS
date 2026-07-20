@@ -295,7 +295,28 @@ class AgentExecutor:
             )
         except Exception as e:
             logger.warning(f"[Gate3] Tenant ceiling lookup failed (no cap applied): {e}")
-        if effective_confidence < 0.82:
+
+        # Two independent reasons to route to a human:
+        #  (a) confidence below the CONFIGURED autonomous-exec threshold (this
+        #      used to be a hardcoded 0.82 literal that ignored the config knob);
+        #  (b) HIGH-CONSEQUENCE actions (payments, terminations, contract
+        #      execution, external sends, irreversible/data-deletion) ALWAYS go
+        #      to a human, regardless of confidence — you don't let a model wire
+        #      money on its own no matter how sure it is.
+        from app.core.config import get_settings
+        _settings = get_settings()
+        _threshold = _settings.CONFIDENCE_AUTONOMOUS_EXEC
+        _skill_tags = set(
+            (skill.get("compliance_tags") or [])
+            + (skill.get("tags") or [])
+            + ([skill.get("department")] if skill.get("department") else [])
+        )
+        _skill_blob = " ".join(str(x).lower() for x in _skill_tags) + " " + str(skill.get("skill_id", "")).lower()
+        _high_consequence = any(t in _skill_blob for t in _settings.HIGH_CONSEQUENCE_TAGS)
+
+        if _high_consequence or effective_confidence < _threshold:
+            if _high_consequence:
+                logger.info(f"[Gate3] high-consequence action -> forcing HITL: {skill.get('skill_id')}")
             gate_decision = await self.hitl.request_human_confirmation(skill, context)
             # Non-blocking HITL returns immediately with pending=True
             if gate_decision.get("pending"):

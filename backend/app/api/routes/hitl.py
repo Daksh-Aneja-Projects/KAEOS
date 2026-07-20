@@ -1,4 +1,4 @@
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,11 +8,29 @@ from app.core.database import get_db
 router = APIRouter(prefix="/hitl", tags=["HITL"])
 
 
+def _approver_identity(tenant: dict) -> str:
+    """Attributable approver derived from the AUTHENTICATED principal.
+
+    Never trust a client-supplied approver name: an approval is only worth
+    anything if the ledger can say WHO clicked it. Falls back through the
+    identity fields the tenant principal may carry.
+    """
+    return (
+        tenant.get("email")
+        or tenant.get("user_id")
+        or tenant.get("name")
+        or f"{tenant.get('tenant_id', 'unknown')}:{tenant.get('role', 'unknown')}"
+    )
+
+
 class HITLResolutionRequest(BaseModel):
     execution_id: str
     approved: bool
     reason: str = ""
-    approver: str = "human"
+
+
+class HITLDecisionBody(BaseModel):
+    reason: str = ""
 
 
 @router.get("/status/{execution_id}")
@@ -29,50 +47,93 @@ async def get_hitl_status(
 
 
 @router.post("/resolve")
-async def resolve_hitl(req: HITLResolutionRequest, tenant_id: str = Depends(get_tenant_id)):
-    """Resolve a pending HITL approval (Redis-backed, restart-safe)."""
+async def resolve_hitl(
+    req: HITLResolutionRequest,
+    tenant: dict = Depends(require_role("operator")),
+):
+    """Resolve a pending HITL approval (Redis-backed, restart-safe).
+
+    Operator+ only; the approver recorded is the authenticated principal.
+    """
     from app.services.hitl_manager import hitl_manager
+    from app.core.audit import record_security_event
+    approver = _approver_identity(tenant)
+    tenant_id = tenant["tenant_id"]
     success = await hitl_manager.resolve_hitl(
-        req.execution_id, req.approved, req.approver, req.reason, tenant_id=tenant_id
+        req.execution_id, req.approved, approver, req.reason, tenant_id=tenant_id
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found in pending HITL requests")
+    await record_security_event(
+        tenant_id=tenant_id,
+        event_type="HITL_DECISION",
+        action="APPROVE" if req.approved else "REJECT",
+        actor=approver,
+        actor_role=tenant.get("role"),
+        resource_type="hitl_execution",
+        resource_id=req.execution_id,
+        details={"reason": req.reason},
+    )
     return {"status": "success", "execution_id": req.execution_id, "approved": req.approved}
 
 
 @router.post("/{execution_id}/approve")
 async def approve_hitl(
     execution_id: str,
-    data: dict,
-    tenant_id: str = Depends(get_tenant_id),
+    data: HITLDecisionBody | None = None,
+    tenant: dict = Depends(require_role("operator")),
 ):
-    """Approve a pending HITL request."""
+    """Approve a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager
-    reason = data.get("reason", "")
-    approver = data.get("approver", "human")
+    from app.core.audit import record_security_event
+    approver = _approver_identity(tenant)
+    tenant_id = tenant["tenant_id"]
+    reason = data.reason if data else ""
     success = await hitl_manager.resolve_hitl(
         execution_id, approved=True, approver=approver, reason=reason, tenant_id=tenant_id
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found")
+    await record_security_event(
+        tenant_id=tenant_id,
+        event_type="HITL_DECISION",
+        action="APPROVE",
+        actor=approver,
+        actor_role=tenant.get("role"),
+        resource_type="hitl_execution",
+        resource_id=execution_id,
+        details={"reason": reason},
+    )
     return {"status": "approved", "execution_id": execution_id}
 
 
 @router.post("/{execution_id}/reject")
 async def reject_hitl(
     execution_id: str,
-    data: dict,
-    tenant_id: str = Depends(get_tenant_id),
+    data: HITLDecisionBody | None = None,
+    tenant: dict = Depends(require_role("operator")),
 ):
-    """Reject a pending HITL request."""
+    """Reject a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager
-    reason = data.get("reason", "")
-    approver = data.get("approver", "human")
+    from app.core.audit import record_security_event
+    approver = _approver_identity(tenant)
+    tenant_id = tenant["tenant_id"]
+    reason = data.reason if data else ""
     success = await hitl_manager.resolve_hitl(
         execution_id, approved=False, approver=approver, reason=reason, tenant_id=tenant_id
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found")
+    await record_security_event(
+        tenant_id=tenant_id,
+        event_type="HITL_DECISION",
+        action="REJECT",
+        actor=approver,
+        actor_role=tenant.get("role"),
+        resource_type="hitl_execution",
+        resource_id=execution_id,
+        details={"reason": reason},
+    )
     return {"status": "rejected", "execution_id": execution_id}
 
 

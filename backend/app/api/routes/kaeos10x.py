@@ -1,5 +1,5 @@
 """KAEOS 10X — Regulatory & Quantum APIs"""
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -16,10 +16,11 @@ class RegulationPayload(BaseModel):
     urgency: str
 
 @router.post("/ingest-regulation")
-async def ingest_regulation(payload: RegulationPayload, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def ingest_regulation(payload: RegulationPayload, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """
-    Ingests a new legal framework and autonomously generates compliance rules.
+    Ingests a new legal framework and autonomously generates compliance rules. Requires operator role.
     """
+    tenant_id = tenant["tenant_id"]
     try:
         update = RegulatoryUpdate(
             framework_name=payload.framework_name,

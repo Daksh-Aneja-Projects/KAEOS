@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin import is_admin, verify_admin_secret
 from app.core.database import MaintenanceSessionLocal, get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.services.model_management import ModelManagementService
 from app.services.cost_governor import CostGovernorService
 from app.services.agent_protocol import AgentProtocolService
@@ -26,8 +26,9 @@ async def list_models(tenant_id: str = Depends(get_tenant_id), db: AsyncSession 
 
 
 @router.post("/infrastructure/models")
-async def register_model(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """N1 — Register a new model in the 4-tier catalog."""
+async def register_model(data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N1 — Register a new model in the 4-tier catalog. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     from app.models.infrastructure import ModelTier
     tier_map = {"FAST": ModelTier.FAST, "STANDARD": ModelTier.STANDARD,
                 "DEEP": ModelTier.DEEP, "VERTICAL": ModelTier.VERTICAL}
@@ -61,8 +62,9 @@ async def list_prompts(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
 
 
 @router.post("/infrastructure/prompts")
-async def register_prompt(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """N1 — Register a versioned prompt template."""
+async def register_prompt(data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N1 — Register a versioned prompt template. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     return await ModelManagementService.register_prompt(
         db, tenant_id,
         template_key=data.get("template_key", ""),
@@ -94,8 +96,9 @@ async def list_budgets(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
 
 
 @router.post("/infrastructure/cost/budgets")
-async def create_budget(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """N2 — Create or update a token budget allocation."""
+async def create_budget(data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N2 — Create or update a token budget allocation. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     return await CostGovernorService.create_budget(
         db, tenant_id,
         scope=data.get("scope", "tenant"),
@@ -140,8 +143,9 @@ async def list_agent_registry(tenant_id: str = Depends(get_tenant_id), db: Async
 
 
 @router.post("/infrastructure/agents/register")
-async def register_agent(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """N3 — Register an agent in the discovery registry."""
+async def register_agent(data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N3 — Register an agent in the discovery registry. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     return await AgentProtocolService.register_agent(
         db, tenant_id,
         agent_name=data.get("agent_name", ""),

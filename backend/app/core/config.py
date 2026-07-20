@@ -35,6 +35,46 @@ class Settings(BaseSettings):
     # provider is reachable. Set True only for offline local testing.
     ALLOW_SIMULATED_LLM: bool = False
 
+    # ── Security & governance hardening ─────────────────────────────────────
+    # Expose Prometheus /metrics. Off by default: it leaks per-endpoint traffic
+    # and should be scraped over an internal network, not the public internet.
+    EXPOSE_METRICS: bool = False
+    # Force-enable/disable interactive API docs (/docs, /redoc, /openapi.json).
+    # None = auto (on only in a development ENVIRONMENT). Set False for prod.
+    ENABLE_DOCS: bool | None = None
+    # Persist a real security audit trail (auth events, RBAC denials, config
+    # changes, data exports). See app/core/audit.py.
+    AUDIT_LOG_ENABLED: bool = True
+
+    # Run the singleton background loops (precog, event bus, scheduler) in THIS
+    # process. Set False on every replica except one so they don't run N times
+    # (N× LLM spend + races). A real deployment should use a leader lock.
+    RUN_BACKGROUND_JOBS: bool = True
+
+    # Login brute-force protection.
+    LOGIN_MAX_FAILURES: int = 5          # failures before lockout
+    LOGIN_LOCKOUT_SECONDS: int = 900     # 15 min lockout window
+    MIN_PASSWORD_LENGTH: int = 10        # enforced on user creation
+
+    # High-consequence action tags that ALWAYS route to a human, regardless of
+    # confidence (payments, terminations, contract execution, external sends).
+    HIGH_CONSEQUENCE_TAGS: list[str] = [
+        "payment", "payout", "wire_transfer", "termination", "offboarding",
+        "contract_execution", "external_send", "data_deletion", "irreversible",
+    ]
+
+    # ── Data protection / residency ─────────────────────────────────────────
+    # "local" (or "eu"/"in") forbids sending any data to cloud LLM providers:
+    # the router refuses cloud models and cloud fallback, keeping PII in-region.
+    # Empty = cloud allowed (BYOK). Set per deployment for regulated data.
+    DATA_RESIDENCY: str = ""
+    @property
+    def local_llm_only(self) -> bool:
+        return self.DATA_RESIDENCY.lower() in ("local", "eu", "in", "on_prem", "on-prem")
+    # Run the PII scrubber (Presidio) over any prompt before it leaves to a
+    # cloud LLM provider. On by default when a residency is set; opt-in otherwise.
+    SCRUB_PII_BEFORE_LLM: bool = False
+
     # Database — SQLite for local dev, PostgreSQL for production
     DATABASE_URL: str = "sqlite+aiosqlite:///./kaeos.db"
     DATABASE_URL_SYNC: str = "sqlite:///./kaeos.db"
@@ -80,6 +120,10 @@ class Settings(BaseSettings):
     AGENT_SANDBOX_MEMORY_MB: int = 512
     AGENT_SANDBOX_TIMEOUT_SEC: int = 300
     AGENT_MAX_REFUNDS_PER_HOUR: int = 50
+    # Register the `python_sandbox` arbitrary-code tool for agents. OFF by
+    # default: it is a prompt-injection RCE surface (untrusted content can steer
+    # an agent into calling it). Only enable in a trusted, isolated deployment.
+    ENABLE_PYTHON_SANDBOX_TOOL: bool = False
 
     # Decay
     DECAY_CHECK_INTERVAL_HOURS: int = 1
@@ -120,6 +164,18 @@ class Settings(BaseSettings):
     @property
     def is_production_like(self) -> bool:
         return self.ENVIRONMENT.lower() in ("production", "prod", "staging")
+
+    @property
+    def docs_enabled(self) -> bool:
+        """Whether to serve /docs, /redoc, /openapi.json.
+
+        Explicit ENABLE_DOCS wins; otherwise on only in a dev environment. This
+        means a prod deploy that merely forgot to flip a flag does NOT hand the
+        full API map to anonymous users.
+        """
+        if self.ENABLE_DOCS is not None:
+            return self.ENABLE_DOCS
+        return not self.is_production_like
 
     def validate_production_security(self) -> list[str]:
         """Return a list of fatal security misconfigurations when not in DEV_MODE.

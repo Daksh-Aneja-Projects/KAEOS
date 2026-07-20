@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 import uuid
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.services.knowledge import PolystoreEngine
 from app.core.dependencies import get_polystore_engine
@@ -91,10 +92,11 @@ async def execute_skill(
     skill_id: str,
     body: SkillExecutionRequest,
     background_tasks: BackgroundTasks,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Execute a skill — full L9 pipeline: route → execute → report to L10."""
+    """Execute a skill — full L9 pipeline: route → execute → report to L10. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     # 1. Find skill — this tenant's. Was found by id alone, so any tenant could
     # RUN another tenant's skill (writing an execution under the victim tenant).
     result = await db.execute(
@@ -275,17 +277,30 @@ async def get_pending_hitl(
         for e in execs
     ]
 
+def _approver_identity(tenant: dict) -> str:
+    """Attributable approver from the AUTHENTICATED principal (never client text)."""
+    return (
+        tenant.get("email")
+        or tenant.get("user_id")
+        or tenant.get("name")
+        or f"{tenant.get('tenant_id', 'unknown')}:{tenant.get('role', 'unknown')}"
+    )
+
+
 @router.post("/hitl/{exec_id}/approve")
 async def approve_hitl(
     exec_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """L9 - Approve a pending HITL execution (your own tenant's only).
 
-    Took no tenant dependency at all and looked the execution up by id, so any
-    tenant could approve - and thereby RUN - another tenant's paused skill.
+    Operator+ only: approving RESUMES and runs the paused skill, so a viewer
+    must not be able to. Tenant-isolated by the query below; approver recorded
+    is the authenticated principal, not free text.
     """
+    tenant_id = tenant["tenant_id"]
+    approver = _approver_identity(tenant)
     result = await db.execute(
         select(SkillExecution).where(
             SkillExecution.id == exec_id, SkillExecution.tenant_id == tenant_id
@@ -318,19 +333,26 @@ async def approve_hitl(
     gate_record = await hitl_manager._get_record(exec_id)
     if gate_record and gate_record.get("status") == "PENDING":
         await hitl_manager.resolve_hitl(
-            exec_id, approved=True, approver="human", tenant_id=tenant_id
+            exec_id, approved=True, approver=approver, tenant_id=tenant_id
         )
 
+    await record_security_event(
+        tenant_id=tenant_id, event_type="HITL_DECISION", action="APPROVE",
+        actor=approver, actor_role=tenant.get("role"),
+        resource_type="skill_execution", resource_id=exec_id,
+    )
     return {"status": "SUCCESS", "execution_id": exec_id}
 
 @router.post("/hitl/{exec_id}/reject")
 async def reject_hitl(
     exec_id: str,
     background_tasks: BackgroundTasks,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """L9 - Reject a pending HITL execution (your own tenant's only)."""
+    """L9 - Reject a pending HITL execution (operator+, your own tenant's only)."""
+    tenant_id = tenant["tenant_id"]
+    approver = _approver_identity(tenant)
     result = await db.execute(
         select(SkillExecution).where(
             SkillExecution.id == exec_id, SkillExecution.tenant_id == tenant_id
@@ -371,9 +393,14 @@ async def reject_hitl(
     gate_record = await hitl_manager._get_record(exec_id)
     if gate_record and gate_record.get("status") == "PENDING":
         await hitl_manager.resolve_hitl(
-            exec_id, approved=False, approver="human", tenant_id=tenant_id
+            exec_id, approved=False, approver=approver, tenant_id=tenant_id
         )
 
+    await record_security_event(
+        tenant_id=tenant_id, event_type="HITL_DECISION", action="REJECT",
+        actor=approver, actor_role=tenant.get("role"),
+        resource_type="skill_execution", resource_id=exec_id,
+    )
     return {"status": "REJECTED", "execution_id": exec_id}
 
 
@@ -385,8 +412,9 @@ class CompileRequest(BaseModel):
 
 
 @router.post("/compile")
-async def compile_skill(body: CompileRequest, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """L8 — Compile rules from a workflow into a SKILL.md agent contract."""
+async def compile_skill(body: CompileRequest, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """L8 — Compile rules from a workflow into a SKILL.md agent contract. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     from app.services.compiler import SkillsCompiler
     from app.models.domain import Rule
 

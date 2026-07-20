@@ -2,7 +2,8 @@
 KAEOS Finance Domain — V1 API Router
 Comprehensive CRUD and operational endpoints for all finance functions.
 """
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from app.core.database import get_db
@@ -105,7 +106,7 @@ async def list_chart_of_accounts(tenant_id: str = Depends(get_tenant_id), accoun
     q = select(ChartOfAccount).where(ChartOfAccount.tenant_id == tenant_id)
     if account_type:
         q = q.where(ChartOfAccount.account_type == account_type)
-    result = await db.execute(q.order_by(ChartOfAccount.account_code))
+    result = await db.execute(q.order_by(ChartOfAccount.account_code).limit(200))
     accounts = result.scalars().all()
     return [{"id": a.id, "code": a.account_code, "name": a.account_name, "type": a.account_type.value,
              "balance": float(a.current_balance or 0), "currency": a.currency, "is_active": a.is_active,
@@ -121,7 +122,7 @@ async def list_vendors(tenant_id: str = Depends(get_tenant_id), status: Optional
     q = select(Vendor).where(Vendor.tenant_id == tenant_id)
     if status:
         q = q.where(Vendor.status == status)
-    result = await db.execute(q)
+    result = await db.execute(q.limit(200))
     vendors = result.scalars().all()
     return [{"id": v.id, "code": v.vendor_code, "name": v.name, "status": v.status.value,
              "payment_terms": v.payment_terms_days, "spend_ytd": float(v.total_spend_ytd or 0),
@@ -147,7 +148,7 @@ async def list_invoices(tenant_id: str = Depends(get_tenant_id), status: Optiona
         q = q.where(Invoice.status == status)
     if vendor_id:
         q = q.where(Invoice.vendor_id == vendor_id)
-    result = await db.execute(q.order_by(Invoice.due_date))
+    result = await db.execute(q.order_by(Invoice.due_date).limit(200))
     invoices = result.scalars().all()
     return [{"id": i.id, "number": i.invoice_number, "vendor_id": i.vendor_id, "status": i.status.value,
              "total": float(i.total_amount), "balance": float(i.balance_due), "due_date": str(i.due_date),
@@ -155,7 +156,7 @@ async def list_invoices(tenant_id: str = Depends(get_tenant_id), status: Optiona
 
 @router.get("/payments")
 async def list_payments(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Payment).where(Payment.tenant_id == tenant_id).order_by(Payment.payment_date.desc()))
+    q = await db.execute(select(Payment).where(Payment.tenant_id == tenant_id).order_by(Payment.payment_date.desc()).limit(200))
     payments = q.scalars().all()
     return [{"id": p.id, "number": p.payment_number, "vendor_id": p.vendor_id, "amount": float(p.amount),
              "method": p.method.value, "status": p.status.value, "date": str(p.payment_date)} for p in payments]
@@ -167,7 +168,7 @@ async def list_payments(tenant_id: str = Depends(get_tenant_id), db: AsyncSessio
 
 @router.get("/customers")
 async def list_customers(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Customer).where(Customer.tenant_id == tenant_id))
+    q = await db.execute(select(Customer).where(Customer.tenant_id == tenant_id).limit(200))
     customers = q.scalars().all()
     return [{"id": c.id, "code": c.customer_code, "name": c.name, "status": c.status.value,
              "outstanding": float(c.total_outstanding or 0), "revenue_ytd": float(c.total_revenue_ytd or 0),
@@ -181,7 +182,7 @@ async def list_receivables(tenant_id: str = Depends(get_tenant_id), status: Opti
     q = select(CustomerInvoice).where(CustomerInvoice.tenant_id == tenant_id)
     if status:
         q = q.where(CustomerInvoice.status == status)
-    result = await db.execute(q.order_by(CustomerInvoice.due_date))
+    result = await db.execute(q.order_by(CustomerInvoice.due_date).limit(200))
     invoices = result.scalars().all()
     return [{"id": i.id, "number": i.invoice_number, "customer_id": i.customer_id, "status": i.status.value,
              "total": float(i.total_amount), "balance": float(i.balance_due), "due_date": str(i.due_date),
@@ -194,7 +195,7 @@ async def list_receivables(tenant_id: str = Depends(get_tenant_id), status: Opti
 
 @router.get("/budgets")
 async def list_budgets(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Budget).where(Budget.tenant_id == tenant_id))
+    q = await db.execute(select(Budget).where(Budget.tenant_id == tenant_id).limit(200))
     budgets = q.scalars().all()
     return [{"id": b.id, "name": b.name, "type": b.budget_type, "year": b.fiscal_year, "status": b.status.value,
              "planned": float(b.total_planned), "actual": float(b.total_actual), "variance": float(b.total_variance),
@@ -208,6 +209,7 @@ async def get_budget_lines(budget_id: str, tenant_id: str = Depends(get_tenant_i
         select(BudgetLine)
         .where(BudgetLine.tenant_id == tenant_id, BudgetLine.budget_id == budget_id)
         .order_by(BudgetLine.period)
+        .limit(200)
     )
     lines = q.scalars().all()
     return [{"id": l.id, "category": l.category, "period": l.period, "label": l.period_label,
@@ -216,7 +218,7 @@ async def get_budget_lines(budget_id: str, tenant_id: str = Depends(get_tenant_i
 
 @router.get("/forecasts")
 async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Forecast).where(Forecast.tenant_id == tenant_id))
+    q = await db.execute(select(Forecast).where(Forecast.tenant_id == tenant_id).limit(200))
     forecasts = q.scalars().all()
     return [{"id": f.id, "name": f.forecast_name, "type": f.forecast_type, "scenario": f.scenario,
              "total": float(f.total_forecast), "confidence": f.confidence_score,
@@ -232,7 +234,7 @@ async def list_expense_reports(tenant_id: str = Depends(get_tenant_id), status: 
     q = select(ExpenseReport).where(ExpenseReport.tenant_id == tenant_id)
     if status:
         q = q.where(ExpenseReport.status == status)
-    result = await db.execute(q.order_by(ExpenseReport.created_at.desc()))
+    result = await db.execute(q.order_by(ExpenseReport.created_at.desc()).limit(200))
     reports = result.scalars().all()
     return [{"id": r.id, "number": r.report_number, "title": r.title, "employee_id": r.employee_id,
              "status": r.status.value, "total": float(r.total_amount), "approved": float(r.approved_amount or 0),
@@ -244,6 +246,7 @@ async def get_expense_items(report_id: str, tenant_id: str = Depends(get_tenant_
         select(ExpenseItem)
         .where(ExpenseItem.tenant_id == tenant_id, ExpenseItem.report_id == report_id)
         .order_by(ExpenseItem.line_number)
+        .limit(200)
     )
     items = q.scalars().all()
     return [{"id": i.id, "date": str(i.expense_date), "category": i.category.value, "description": i.description,
@@ -257,7 +260,7 @@ async def get_expense_items(report_id: str, tenant_id: str = Depends(get_tenant_
 
 @router.get("/bank-accounts")
 async def list_bank_accounts(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(BankAccount).where(BankAccount.tenant_id == tenant_id))
+    q = await db.execute(select(BankAccount).where(BankAccount.tenant_id == tenant_id).limit(200))
     accounts = q.scalars().all()
     return [{"id": a.id, "name": a.account_name, "bank": a.bank_name, "masked_number": a.account_number_masked,
              "classification": a.classification.value, "balance": float(a.current_balance or 0),
@@ -269,7 +272,7 @@ async def get_cash_flow(tenant_id: str = Depends(get_tenant_id), fiscal_year: Op
     q = select(CashFlow).where(CashFlow.tenant_id == tenant_id)
     if fiscal_year:
         q = q.where(CashFlow.fiscal_year == fiscal_year)
-    result = await db.execute(q.order_by(CashFlow.flow_date.desc()))
+    result = await db.execute(q.order_by(CashFlow.flow_date.desc()).limit(200))
     flows = result.scalars().all()
     return [{"id": f.id, "date": str(f.flow_date), "type": f.flow_type.value, "category": f.category,
              "amount": float(f.amount), "is_forecast": f.is_forecast, "source": f.source_module} for f in flows]
@@ -281,7 +284,7 @@ async def get_cash_flow(tenant_id: str = Depends(get_tenant_id), fiscal_year: Op
 
 @router.get("/tax/filings")
 async def list_tax_filings(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(TaxFiling).where(TaxFiling.tenant_id == tenant_id).order_by(TaxFiling.due_date))
+    q = await db.execute(select(TaxFiling).where(TaxFiling.tenant_id == tenant_id).order_by(TaxFiling.due_date).limit(200))
     filings = q.scalars().all()
     return [{"id": f.id, "type": f.filing_type, "jurisdiction": f.jurisdiction, "period": f.period,
              "status": f.status.value, "liability": float(f.tax_liability or 0), "paid": float(f.tax_paid or 0),
@@ -289,7 +292,7 @@ async def list_tax_filings(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
 
 @router.get("/tax/rules")
 async def list_tax_rules(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(TaxRule).where(TaxRule.tenant_id == tenant_id).where(TaxRule.is_active == True))
+    q = await db.execute(select(TaxRule).where(TaxRule.tenant_id == tenant_id).where(TaxRule.is_active == True).limit(200))
     rules = q.scalars().all()
     return [{"id": r.id, "name": r.name, "type": r.tax_type, "jurisdiction": r.jurisdiction,
              "rate": r.rate, "progressive": r.is_progressive} for r in rules]
@@ -301,7 +304,7 @@ async def list_tax_rules(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
 
 @router.get("/reports")
 async def list_reports(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(FinancialReport).where(FinancialReport.tenant_id == tenant_id).order_by(FinancialReport.created_at.desc()))
+    q = await db.execute(select(FinancialReport).where(FinancialReport.tenant_id == tenant_id).order_by(FinancialReport.created_at.desc()).limit(200))
     reports = q.scalars().all()
     return [{"id": r.id, "type": r.report_type.value, "title": r.title, "status": r.status.value,
              "period": f"{r.period_start} to {r.period_end}", "ai_anomalies": len(r.ai_anomalies or []),
@@ -317,7 +320,7 @@ async def list_audit_findings(tenant_id: str = Depends(get_tenant_id), status: O
     q = select(AuditFinding).where(AuditFinding.tenant_id == tenant_id)
     if status:
         q = q.where(AuditFinding.status == status)
-    result = await db.execute(q)
+    result = await db.execute(q.limit(200))
     findings = result.scalars().all()
     return [{"id": f.id, "number": f.finding_number, "title": f.title, "severity": f.severity.value,
              "status": f.status.value, "area": f.area, "impact": float(f.financial_impact or 0),
@@ -325,7 +328,7 @@ async def list_audit_findings(tenant_id: str = Depends(get_tenant_id), status: O
 
 @router.get("/sox-controls")
 async def list_sox_controls(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(SOXControl).where(SOXControl.tenant_id == tenant_id))
+    q = await db.execute(select(SOXControl).where(SOXControl.tenant_id == tenant_id).limit(200))
     controls = q.scalars().all()
     return [{"id": c.id, "code": c.control_id_code, "name": c.name, "type": c.control_type,
              "frequency": c.frequency, "nature": c.nature, "area": c.area, "status": c.status.value,
@@ -333,7 +336,7 @@ async def list_sox_controls(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
 
 @router.get("/compliance-rules")
 async def list_compliance_rules(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(FinanceComplianceRule).where(FinanceComplianceRule.tenant_id == tenant_id).where(FinanceComplianceRule.is_active == True))
+    q = await db.execute(select(FinanceComplianceRule).where(FinanceComplianceRule.tenant_id == tenant_id).where(FinanceComplianceRule.is_active == True).limit(200))
     rules = q.scalars().all()
     return [{"id": r.id, "regulation": r.regulation, "section": r.section, "name": r.name,
              "severity": r.severity, "is_blocking": r.is_blocking, "applies_to": r.applies_to} for r in rules]
@@ -344,26 +347,39 @@ async def list_compliance_rules(tenant_id: str = Depends(get_tenant_id), db: Asy
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post("/invoices/{invoice_id}/match")
-async def run_ap_agent(invoice_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def run_ap_agent(invoice_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Triggers the Accounts Payable agent to perform 3-way matching."""
+    tenant_id = tenant["tenant_id"]
     from app.finance.agents.ap_agent import APAgent
     agent = APAgent()
     try:
-        return await agent.process_invoice(db, invoice_id, tenant_id)
+        result = await agent.process_invoice(db, invoice_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="invoice", resource_id=invoice_id,
+        )
+        return result
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 
 @router.post("/receivables/{invoice_id}/dunning")
-async def run_ar_agent(invoice_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Triggers the Accounts Receivable agent to generate dunning letters."""
+    tenant_id = tenant["tenant_id"]
     from app.finance.agents.ar_agent import ARAgent
     agent = ARAgent()
     try:
         result = await agent.generate_dunning(db, invoice_id, tenant_id)
         # Ensure the letter body is passed as 'letter' as expected by the frontend
         result["letter"] = f"Subject: {result.get('subject')}\n\n{result.get('body')}"
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="receivable", resource_id=invoice_id,
+        )
         return result
     except Exception as e:
         logger.exception("%s failed", __name__)

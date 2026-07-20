@@ -3,7 +3,7 @@ from collections import defaultdict
 import time
 import uuid
 
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -75,8 +75,9 @@ async def get_recent_scans(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
 
 
 @router.post("/scan/{skill_id}")
-async def run_skill_scan(skill_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Run a new adversarial scan against a skill and persist results. Tenant-scoped to the caller."""
+async def run_skill_scan(skill_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Run a new adversarial scan against a skill and persist results. Tenant-scoped to the caller. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     result = await db.execute(
         select(Skill)
         .where(Skill.tenant_id == tenant_id)

@@ -1,5 +1,6 @@
 """KAEOS — Conflict Arena API (L16 Conflict Resolution)"""
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -27,21 +28,25 @@ async def list_conflicts(
     q = select(ConflictCase).where(ConflictCase.tenant_id == tenant_id)
     if status:
         q = q.where(ConflictCase.status == status)
-    q = q.order_by(ConflictCase.detected_at.desc())
+    q = q.order_by(ConflictCase.detected_at.desc()).limit(200)
 
     result = await db.execute(q)
     cases = result.scalars().all()
 
+    # Fetch every referenced rule in ONE query (was an N+1: two SELECTs per case).
+    rule_ids = {c.rule_a_id for c in cases} | {c.rule_b_id for c in cases}
+    rule_ids.discard(None)
+    rules_by_id = {}
+    if rule_ids:
+        rules_res = await db.execute(
+            select(Rule).where(Rule.tenant_id == tenant_id, Rule.id.in_(rule_ids))
+        )
+        rules_by_id = {r.id: r for r in rules_res.scalars().all()}
+
     items = []
     for c in cases:
-        rule_a = await db.execute(
-            select(Rule).where(Rule.tenant_id == tenant_id).where(Rule.id == c.rule_a_id)
-        )
-        rule_b = await db.execute(
-            select(Rule).where(Rule.tenant_id == tenant_id).where(Rule.id == c.rule_b_id)
-        )
-        ra = rule_a.scalar_one_or_none()
-        rb = rule_b.scalar_one_or_none()
+        ra = rules_by_id.get(c.rule_a_id)
+        rb = rules_by_id.get(c.rule_b_id)
         items.append({
             "id": c.id,
             "conflict_type": c.conflict_type,
@@ -75,9 +80,10 @@ async def list_conflicts(
 async def resolve_conflict(
     conflict_id: str,
     body: ResolveRequest,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     """Resolve a conflict case. Tenant-scoped to the caller."""
+    tenant_id = tenant["tenant_id"]
     result = await db.execute(
         select(ConflictCase)
         .where(ConflictCase.tenant_id == tenant_id)
@@ -92,4 +98,9 @@ async def resolve_conflict(
     case.resolution_note = body.resolution_note
     case.resolved_at = datetime.now(timezone.utc)
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="conflict_case", resource_id=conflict_id,
+    )
     return {"status": "RESOLVED", "conflict_id": conflict_id}

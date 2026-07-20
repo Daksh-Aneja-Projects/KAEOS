@@ -2,7 +2,8 @@
 KAEOS Sales Domain — V1 API Router
 CRUD and agent triggers.
 """
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -102,10 +103,17 @@ async def list_leads(
     return lead_list
 
 @router.post("/leads/{lead_id}/score")
-async def score_lead(lead_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def score_lead(lead_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = LeadScoringAgent()
     try:
-        return await agent.score_lead(db, lead_id, tenant_id)
+        result = await agent.score_lead(db, lead_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="lead", resource_id=lead_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -145,10 +153,17 @@ async def list_accounts(
     return result
 
 @router.post("/accounts/{account_id}/health")
-async def evaluate_account_health(account_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def evaluate_account_health(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = AccountHealthAgent()
     try:
-        return await agent.assess_health(db, account_id, tenant_id)
+        result = await agent.assess_health(db, account_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="account", resource_id=account_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -157,10 +172,17 @@ async def evaluate_account_health(account_id: str, tenant_id: str = Depends(get_
 
 
 @router.post("/accounts/{account_id}/churn-risk")
-async def assess_churn_risk(account_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def assess_churn_risk(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = ChurnAgent()
     try:
-        return await agent.identify_churn_risk(db, account_id, tenant_id)
+        result = await agent.identify_churn_risk(db, account_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="account", resource_id=account_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -198,10 +220,17 @@ async def list_opportunities(
     return result
 
 @router.post("/opportunities/{opportunity_id}/coach")
-async def coach_opportunity(opportunity_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def coach_opportunity(opportunity_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = PipelineCoachAgent()
     try:
-        return await agent.coach_opportunity(db, opportunity_id, tenant_id)
+        result = await agent.coach_opportunity(db, opportunity_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="opportunity", resource_id=opportunity_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -210,11 +239,18 @@ async def coach_opportunity(opportunity_id: str, tenant_id: str = Depends(get_te
 
 
 @router.post("/opportunities/{opportunity_id}/proposal")
-async def generate_proposal(opportunity_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def generate_proposal(opportunity_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Always routes to HITL - a customer-facing document never ships unreviewed."""
+    tenant_id = tenant["tenant_id"]
     agent = ProposalGenAgent()
     try:
-        return await agent.generate_proposal(db, opportunity_id, tenant_id)
+        result = await agent.generate_proposal(db, opportunity_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="opportunity", resource_id=opportunity_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -222,10 +258,17 @@ async def generate_proposal(opportunity_id: str, tenant_id: str = Depends(get_te
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 @router.post("/opportunities/{opportunity_id}/cpq")
-async def cpq_review(opportunity_id: str, discount: float = Query(...), tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def cpq_review(opportunity_id: str, discount: float = Query(...), tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = CPQAgent()
     try:
-        return await agent.evaluate_quote(db, opportunity_id, discount, tenant_id)
+        result = await agent.evaluate_quote(db, opportunity_id, discount, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="opportunity", resource_id=opportunity_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -236,7 +279,7 @@ async def cpq_review(opportunity_id: str, discount: float = Query(...), tenant_i
 @router.get("/forecasts")
 async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     from app.sales.models.forecasting import ForecastLine
-    q = await db.execute(select(SalesForecast).where(SalesForecast.tenant_id == tenant_id))
+    q = await db.execute(select(SalesForecast).where(SalesForecast.tenant_id == tenant_id).limit(200))
     fcs = q.scalars().all()
     result = []
     for f in fcs:
@@ -275,10 +318,17 @@ async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     return result
 
 @router.post("/forecasts/{forecast_id}/predict")
-async def predict_forecast(forecast_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def predict_forecast(forecast_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = ForecastAgent()
     try:
-        return await agent.predict_forecast(db, forecast_id, tenant_id)
+        result = await agent.predict_forecast(db, forecast_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="forecast", resource_id=forecast_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -296,7 +346,7 @@ async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), 
     """
     from app.sales.models.commission import CommissionCalculation
     q = await db.execute(
-        select(CommissionCalculation).where(CommissionCalculation.tenant_id == tenant_id)
+        select(CommissionCalculation).where(CommissionCalculation.tenant_id == tenant_id).limit(200)
     )
     return [
         {
@@ -313,10 +363,17 @@ async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), 
 
 
 @router.post("/commission/{calculation_id}/payout")
-async def calculate_commission(calculation_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def calculate_commission(calculation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = CommissionAgent()
     try:
-        return await agent.calculate_payout(db, calculation_id, tenant_id)
+        result = await agent.calculate_payout(db, calculation_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="commission_calculation", resource_id=calculation_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:

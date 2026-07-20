@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from app.hr.models.core import HREmployee
 from app.hr.models.recruiting import (
     JobRequisition, Candidate, CandidateStage, ReqStatus,
@@ -64,7 +65,7 @@ class HITLDecision(BaseModel):
 
 @router.get("/employees", response_model=List[Dict[str, Any]])
 async def list_employees(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))
+    q = await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id).limit(200))
     employees = q.scalars().all()
     return [{
         "id": e.id, "first_name": e.first_name, "last_name": e.last_name, "status": e.status,
@@ -97,7 +98,7 @@ async def get_employee(employee_id: str, tenant_id: str = Depends(get_tenant_id)
 
 @router.get("/requisitions")
 async def list_requisitions(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id))
+    q = await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id).limit(200))
     reqs = q.scalars().all()
     return [{"id": r.id, "title": r.title, "status": r.status, "headcount": r.headcount,
              "department": r.department,
@@ -113,7 +114,7 @@ async def list_candidates(
     stmt = select(Candidate).where(Candidate.tenant_id == tenant_id)
     if requisition_id:
         stmt = stmt.where(Candidate.requisition_id == requisition_id)
-    candidates = (await db.execute(stmt)).scalars().all()
+    candidates = (await db.execute(stmt.limit(200))).scalars().all()
     return [{
         "id": c.id,
         "requisition_id": c.requisition_id,
@@ -131,10 +132,11 @@ async def list_candidates(
 @router.post("/requisitions", status_code=201)
 async def create_requisition(
     body: RequisitionCreate,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new job requisition (opens it for candidates)."""
+    tenant_id = tenant["tenant_id"]
     req = JobRequisition(
         tenant_id=tenant_id,
         title=body.title,
@@ -150,16 +152,22 @@ async def create_requisition(
     db.add(req)
     await db.commit()
     await db.refresh(req)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="requisition", resource_id=req.id,
+    )
     return {"id": req.id, "title": req.title, "status": req.status.value}
 
 
 @router.post("/candidates", status_code=201)
 async def add_candidate(
     body: CandidateCreate,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Add a candidate to a requisition (scoped to the caller's tenant)."""
+    tenant_id = tenant["tenant_id"]
     req = (await db.execute(
         select(JobRequisition).where(
             JobRequisition.id == body.requisition_id,
@@ -182,13 +190,18 @@ async def add_candidate(
     db.add(candidate)
     await db.commit()
     await db.refresh(candidate)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="candidate", resource_id=candidate.id,
+    )
     return {"id": candidate.id, "stage": candidate.stage.value}
 
 
 @router.post("/candidates/{candidate_id}/screen")
 async def trigger_screening(
     candidate_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger AI screening for a candidate through the gated 7-gate pipeline.
@@ -197,6 +210,7 @@ async def trigger_screening(
     (fairness/compliance/debate) or HITL intervenes, the response carries the
     gated status and an ``execution_id`` that can be resolved via the HITL API.
     """
+    tenant_id = tenant["tenant_id"]
     candidate = (await db.execute(
         select(Candidate).where(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
     )).scalar_one_or_none()
@@ -211,6 +225,12 @@ async def trigger_screening(
 
     agent = RecruitingAgent()
     result = await agent.screen_candidate(db, candidate_id)
+
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="candidate", resource_id=candidate_id,
+    )
 
     # Gated / non-clean outcome — surface status + provenance reference for HITL.
     if result.get("gated"):
@@ -243,10 +263,11 @@ _TERMINAL_STAGES = {CandidateStage.HIRED, CandidateStage.REJECTED, CandidateStag
 async def advance_candidate_stage(
     candidate_id: str,
     body: StageAdvance,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Advance (or reject/withdraw) a candidate's pipeline stage."""
+    tenant_id = tenant["tenant_id"]
     candidate = (await db.execute(
         select(Candidate).where(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
     )).scalar_one_or_none()
@@ -275,6 +296,11 @@ async def advance_candidate_stage(
     candidate.stage = target
     db.add(candidate)
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="candidate", resource_id=candidate_id,
+    )
     return {"candidate_id": candidate_id, "stage": target.value}
 
 
@@ -284,15 +310,21 @@ async def advance_candidate_stage(
 async def hitl_approve(
     execution_id: str,
     body: HITLDecision,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
 ):
     """Approve a pending HITL-gated HR execution."""
+    tenant_id = tenant["tenant_id"]
     from app.services.hitl_manager import hitl_manager
     ok = await hitl_manager.resolve_hitl(
         execution_id, True, body.approver, body.reason, tenant_id=tenant_id
     )
     if not ok:
         raise HTTPException(status_code=404, detail="No pending HITL request for that execution")
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="hitl_execution", resource_id=execution_id,
+    )
     return {"execution_id": execution_id, "approved": True}
 
 
@@ -300,15 +332,21 @@ async def hitl_approve(
 async def hitl_reject(
     execution_id: str,
     body: HITLDecision,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
 ):
     """Reject a pending HITL-gated HR execution."""
+    tenant_id = tenant["tenant_id"]
     from app.services.hitl_manager import hitl_manager
     ok = await hitl_manager.resolve_hitl(
         execution_id, False, body.approver, body.reason, tenant_id=tenant_id
     )
     if not ok:
         raise HTTPException(status_code=404, detail="No pending HITL request for that execution")
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="hitl_execution", resource_id=execution_id,
+    )
     return {"execution_id": execution_id, "approved": False}
 
 
@@ -316,7 +354,7 @@ async def hitl_reject(
 
 @router.get("/time-off-requests")
 async def list_time_off_requests(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(TimeOffRequest).where(TimeOffRequest.tenant_id == tenant_id))
+    q = await db.execute(select(TimeOffRequest).where(TimeOffRequest.tenant_id == tenant_id).limit(200))
     requests = q.scalars().all()
     return [{
         "id": r.id, "employee_id": r.employee_id, "status": r.status, "leave_type": r.leave_type,
@@ -328,7 +366,7 @@ async def list_time_off_requests(tenant_id: str = Depends(get_tenant_id), db: As
 
 @router.get("/performance-reviews")
 async def list_performance_reviews(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(PerformanceReview).where(PerformanceReview.tenant_id == tenant_id))
+    q = await db.execute(select(PerformanceReview).where(PerformanceReview.tenant_id == tenant_id).limit(200))
     reviews = q.scalars().all()
     return [{"id": r.id, "employee_id": r.employee_id, "status": r.status,
              "manager_rating": r.manager_rating, "self_rating": r.self_rating} for r in reviews]

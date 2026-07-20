@@ -10,7 +10,7 @@ import os
 
 logger = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -156,29 +156,45 @@ async def lifespan(app: FastAPI):
     from app.services.event_bus import event_bus
     from app.services.scheduler import init_scheduler
     
-    precog_task = asyncio.create_task(PreCogEngine().run_ambient_loop())
-    event_bus_task = asyncio.create_task(event_bus._worker_loop())
-    scheduler = init_scheduler()
-    scheduler.start()
-        
+    # These are SINGLETON loops. Running them on every replica means N× the LLM
+    # spend and read-then-write races on the same rows. Until there's a proper
+    # leader lock, run them only where RUN_BACKGROUND_JOBS is true (set it false
+    # on all replicas but one). Default true keeps single-instance dev/demo working.
+    precog_task = event_bus_task = scheduler = None
+    if settings.RUN_BACKGROUND_JOBS:
+        precog_task = asyncio.create_task(PreCogEngine().run_ambient_loop())
+        event_bus_task = asyncio.create_task(event_bus._worker_loop())
+        scheduler = init_scheduler()
+        scheduler.start()
+        logger.info("[Background] singleton loops started (precog, event bus, scheduler)")
+    else:
+        logger.info("[Background] RUN_BACKGROUND_JOBS=false — singleton loops NOT started in this instance")
+
     yield
 
     # Shutdown Background Tasks
-    scheduler.shutdown()
-    precog_task.cancel()
-    event_bus_task.cancel()
+    if scheduler is not None:
+        scheduler.shutdown()
+    if precog_task is not None:
+        precog_task.cancel()
+    if event_bus_task is not None:
+        event_bus_task.cancel()
     await close_redis()
-    
+
     try:
-        await precog_task
-        await event_bus_task
+        if precog_task is not None:
+            await precog_task
+        if event_bus_task is not None:
+            await event_bus_task
     except asyncio.CancelledError:
         pass
 
 
-# Interactive docs and the OpenAPI schema are development-only: on a public
-# deployment they hand out the full endpoint map unauthenticated.
-_docs_enabled = settings.ENVIRONMENT == "development"
+# Interactive docs and the OpenAPI schema hand out the full endpoint map
+# unauthenticated. settings.docs_enabled defaults OFF for a production-like
+# ENVIRONMENT even if the operator forgot to flip a flag (fail-closed), and can
+# be forced with ENABLE_DOCS.
+_docs_enabled = settings.docs_enabled
 
 app = FastAPI(
     title=f"{settings.APP_NAME} API",
@@ -190,9 +206,17 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
-# Instrument Prometheus Metrics (optional)
+# Instrument Prometheus Metrics (optional). /metrics leaks per-endpoint traffic
+# and is scraped over an internal network, not the public internet — only expose
+# it when EXPOSE_METRICS is explicitly set. Instrumentation (the counters) still
+# runs; we just don't publish the public endpoint by default.
 if _HAS_PROMETHEUS:
-    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+    _inst = Instrumentator().instrument(app)
+    if settings.EXPOSE_METRICS:
+        _inst.expose(app, endpoint="/metrics")
+        logger.info("[Observability] /metrics exposed (EXPOSE_METRICS=true)")
+    else:
+        logger.info("[Observability] /metrics NOT exposed (set EXPOSE_METRICS=true to publish)")
 # Instrument OpenTelemetry (optional).
 #
 # Only instrument when a collector is actually configured. Instrumenting with
@@ -297,21 +321,46 @@ app.include_router(wf_processes_router,    prefix=PREFIX)
 app.include_router(wf_analytics_router,    prefix=PREFIX)
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
+# ── Health checks ───────────────────────────────────────────────────────────
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness: is the PROCESS up? Always 200 while the app is running.
+    Point k8s livenessProbe here (restarting on a dead DB would just loop)."""
+    return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+
 
 @app.get("/health")
-async def health():
-    """Liveness + active persistence backends (polystore) for each component."""
+async def health(response: Response):
+    """Readiness: process up AND critical backends reachable.
+
+    Returns **503** when a critical backend (the primary database) is
+    unavailable, so Docker/k8s and load balancers stop routing traffic to a
+    broken instance instead of being told everything is fine. Point
+    readinessProbe (and the compose healthcheck) here.
+    """
     payload = {
         "status": "ok",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
     }
+    ready = True
     try:
         from app.core.polystore import polystore_health
-        payload["backends"] = await polystore_health()
-    except Exception as e:  # never let /health hard-fail
+        backends = await polystore_health()
+        payload["backends"] = backends
+        # The vector store is DB-backed; if it is not available, the primary
+        # datastore is down and the instance is NOT ready to serve.
+        vs = backends.get("vector_store", {}) if isinstance(backends, dict) else {}
+        if isinstance(vs, dict) and vs.get("available") is False:
+            ready = False
+    except Exception as e:  # a failed health probe means not ready
         payload["backends"] = {"error": str(e)}
+        ready = False
+
+    if not ready:
+        payload["status"] = "degraded"
+        response.status_code = 503
     return payload
 
 

@@ -4,7 +4,7 @@ Token budget allocation, real-time cost telemetry, budget enforcement, cost attr
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.infrastructure import TokenBudget, CostEvent
@@ -187,49 +187,65 @@ class CostGovernorService:
         tenant_id: str,
         hours: int = 24
     ) -> dict:
-        """Real-time cost telemetry: token consumption per model, agent, workflow."""
+        """Real-time cost telemetry: token consumption per model, agent, workflow.
+
+        Aggregation is pushed into SQL via GROUP BY so we never pull every
+        CostEvent row (one per LLM call — potentially tens of thousands) into
+        memory. One grouped query each for model_tier / agent_id / request_type,
+        plus one totals query.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        result = await db.execute(
-            select(CostEvent).where(
-                CostEvent.tenant_id == tenant_id,
-                CostEvent.timestamp >= cutoff
-            ).order_by(CostEvent.timestamp.desc())
+        base_filter = (
+            CostEvent.tenant_id == tenant_id,
+            CostEvent.timestamp >= cutoff,
         )
-        events = result.scalars().all()
+        tokens_sum = func.sum(CostEvent.total_tokens)
+        cost_sum = func.sum(CostEvent.cost_usd)
+        calls_count = func.count()
 
-        # Aggregate by model tier
-        tier_agg = {}
-        agent_agg = {}
-        type_agg = {}
-        total_tokens = 0
-        total_cost = 0.0
+        # Postgres returns NUMERIC (SUM) as decimal.Decimal while SQLite returns
+        # float; coerce every aggregate to int/float once so the returned dict is
+        # dialect-agnostic (a raw Decimal would break json/round downstream).
+        def _row(tokens, cost, calls) -> dict:
+            return {
+                "tokens": int(tokens or 0),
+                "cost": float(cost or 0.0),
+                "calls": int(calls or 0),
+            }
 
-        for e in events:
-            # Postgres returns NUMERIC columns as decimal.Decimal while SQLite
-            # returns float; mixing them (float += Decimal) raises TypeError. Coerce
-            # to float/int once per event so the aggregation is dialect-agnostic.
-            tokens = int(e.total_tokens or 0)
-            cost = float(e.cost_usd or 0.0)
-            total_tokens += tokens
-            total_cost += cost
+        # Totals
+        totals_result = await db.execute(
+            select(tokens_sum, cost_sum, calls_count).where(*base_filter)
+        )
+        t_tokens, t_cost, t_calls = totals_result.one()
+        total_tokens = int(t_tokens or 0)
+        total_cost = float(t_cost or 0.0)
+        total_events = int(t_calls or 0)
 
-            tier_agg.setdefault(e.model_tier, {"tokens": 0, "cost": 0.0, "calls": 0})
-            tier_agg[e.model_tier]["tokens"] += tokens
-            tier_agg[e.model_tier]["cost"] += cost
-            tier_agg[e.model_tier]["calls"] += 1
+        # By model tier (includes a NULL-tier group, matching prior behaviour)
+        tier_result = await db.execute(
+            select(CostEvent.model_tier, tokens_sum, cost_sum, calls_count)
+            .where(*base_filter)
+            .group_by(CostEvent.model_tier)
+        )
+        tier_agg = {tier: _row(tk, cs, ca) for tier, tk, cs, ca in tier_result.all()}
 
-            if e.agent_id:
-                agent_agg.setdefault(e.agent_id, {"tokens": 0, "cost": 0.0, "calls": 0})
-                agent_agg[e.agent_id]["tokens"] += tokens
-                agent_agg[e.agent_id]["cost"] += cost
-                agent_agg[e.agent_id]["calls"] += 1
+        # By agent (only rows with a real agent_id, matching `if e.agent_id`)
+        agent_result = await db.execute(
+            select(CostEvent.agent_id, tokens_sum, cost_sum, calls_count)
+            .where(*base_filter, CostEvent.agent_id.isnot(None), CostEvent.agent_id != "")
+            .group_by(CostEvent.agent_id)
+        )
+        agent_agg = {aid: _row(tk, cs, ca) for aid, tk, cs, ca in agent_result.all()}
 
-            if e.request_type:
-                type_agg.setdefault(e.request_type, {"tokens": 0, "cost": 0.0, "calls": 0})
-                type_agg[e.request_type]["tokens"] += tokens
-                type_agg[e.request_type]["cost"] += cost
-                type_agg[e.request_type]["calls"] += 1
+        # By request type (only rows with a real request_type)
+        type_result = await db.execute(
+            select(CostEvent.request_type, tokens_sum, cost_sum, calls_count)
+            .where(*base_filter, CostEvent.request_type.isnot(None), CostEvent.request_type != "")
+            .group_by(CostEvent.request_type)
+        )
+        type_agg = {rt: _row(tk, cs, ca) for rt, tk, cs, ca in type_result.all()}
 
         # Get budget status
         budget_result = await db.execute(
@@ -244,8 +260,8 @@ class CostGovernorService:
             "period_hours": hours,
             "total_tokens": total_tokens,
             "total_cost_usd": round(total_cost, 4),
-            "total_events": len(events),
-            "avg_cost_per_task": round(total_cost / max(len(events), 1), 4),
+            "total_events": total_events,
+            "avg_cost_per_task": round(total_cost / max(total_events, 1), 4),
             "by_tier": {k: {**v, "cost": round(v["cost"], 4)} for k, v in tier_agg.items()},
             "by_agent": {k: {**v, "cost": round(v["cost"], 4)} for k, v in agent_agg.items()},
             "by_request_type": {k: {**v, "cost": round(v["cost"], 4)} for k, v in type_agg.items()},

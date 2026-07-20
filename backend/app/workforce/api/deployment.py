@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.workforce.models.core import WorkforceDeployment, DeploymentStatus
 
 router = APIRouter(prefix="/workforce/deployments", tags=["Workforce — Deployment"])
@@ -110,10 +110,11 @@ async def get_deployment(
 @router.post("/start")
 async def start_deployment(
     req: DeploymentCreateRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start a new department deployment. Creates the state machine record."""
+    """Start a new department deployment. Creates the state machine record. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     from app.workforce.deployment.studio import DeploymentStudio
     config = {
         "capabilities": req.selected_capabilities,
@@ -141,9 +142,10 @@ async def start_deployment(
 async def advance_deployment(
     deployment_id: str,
     req: DeploymentAdvanceRequest,
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Advance the deployment to the next state. Uses the DeploymentStateMachine."""
+    """Advance the deployment to the next state. Uses the DeploymentStateMachine. Requires operator role."""
     result = await db.execute(
         select(WorkforceDeployment).where(WorkforceDeployment.id == deployment_id)
     )

@@ -81,10 +81,28 @@ _JWT_ALG = "HS256"
 _JWT_ISS = "kaeos"
 _JWT_AUD = "kaeos-api"
 
+# In-process session/lockout state. NOTE: single-instance only — a multi-replica
+# deployment must move both of these to Redis (a shared denylist + a shared
+# failed-attempt counter), same caveat as the rate limiter. Documented in
+# docs/DEPLOYMENT.md. Kept in-memory here so single-instance dev/demo works with
+# no extra infra.
+_revoked_jti: set[str] = set()
+_failed_logins: dict[str, list[float]] = {}   # email -> [failure epoch seconds]
+
+
+def revoke_token(token: str) -> bool:
+    """Add a token's jti to the denylist (logout). Returns True if revoked."""
+    payload = decode_token(token)
+    if payload and payload.get("jti"):
+        _revoked_jti.add(payload["jti"])
+        return True
+    return False
+
 
 def _create_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
     """Mint a signed JWT for an authenticated session."""
     import jwt
+    import uuid
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
@@ -92,6 +110,7 @@ def _create_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
         "email": email,
         "role": role,
         "tenant_id": tenant_id,
+        "jti": uuid.uuid4().hex,   # per-session id, enables revocation (logout)
         "iss": _JWT_ISS,
         "aud": _JWT_AUD,
         "iat": now,
@@ -109,13 +128,17 @@ def decode_token(token: str) -> Optional[dict]:
     """
     import jwt
     try:
-        return jwt.decode(
+        claims = jwt.decode(
             token,
             _get_secret_key(),
             algorithms=[_JWT_ALG],
             audience=_JWT_AUD,
             issuer=_JWT_ISS,
         )
+        # Revocation (logout): a token whose jti was revoked is no longer valid.
+        if claims.get("jti") in _revoked_jti:
+            return None
+        return claims
     except jwt.PyJWTError:
         pass
     # Legacy fallback: verify the old base64(json)+HMAC format so live sessions
@@ -226,19 +249,63 @@ class AuthService:
             )
 
     @staticmethod
-    async def login(db: AsyncSession, email: str, password: str) -> Optional[dict]:
-        """Authenticate user and return JWT token."""
+    def _is_locked_out(email: str) -> bool:
+        """True if this email has too many recent failures (brute-force guard)."""
+        import time
+        s = get_settings()
+        window_start = time.time() - s.LOGIN_LOCKOUT_SECONDS
+        recent = [t for t in _failed_logins.get(email, []) if t >= window_start]
+        _failed_logins[email] = recent  # prune
+        return len(recent) >= s.LOGIN_MAX_FAILURES
+
+    @staticmethod
+    def _record_failure(email: str) -> None:
+        import time
+        _failed_logins.setdefault(email, []).append(time.time())
+
+    @staticmethod
+    async def login(db: AsyncSession, email: str, password: str,
+                    ip_address: str | None = None) -> Optional[dict]:
+        """Authenticate user and return JWT token.
+
+        Brute-force protection: after LOGIN_MAX_FAILURES failures within
+        LOGIN_LOCKOUT_SECONDS the email is locked out. Every attempt (success,
+        failure, lockout) is written to the security audit log.
+        """
+        from app.core.audit import record_security_event
+        _tenant_for_audit = get_settings().ADMIN_TENANT  # best-effort tenant for pre-auth events
+
+        if AuthService._is_locked_out(email):
+            await record_security_event(
+                tenant_id=_tenant_for_audit, event_type="AUTH_FAILURE", action="LOGIN",
+                result="BLOCKED", actor=email, ip_address=ip_address,
+                details={"reason": "locked_out"})
+            return None
+
         result = await db.execute(
             select(User).where(User.email == email, User.is_active == True)
         )
         user = result.scalar_one_or_none()
         if not user or not _verify_password(password, user.hashed_password):
+            AuthService._record_failure(email)
+            await record_security_event(
+                tenant_id=(user.tenant_id if user else _tenant_for_audit),
+                event_type="AUTH_FAILURE", action="LOGIN", result="BLOCKED",
+                actor=email, ip_address=ip_address, details={"reason": "bad_credentials"})
             return None
+
+        # Success — clear the failure counter.
+        _failed_logins.pop(email, None)
 
         # Update login tracking
         user.login_count = (user.login_count or 0) + 1
         user.last_login_at = datetime.now(timezone.utc)
         await db.commit()
+
+        await record_security_event(
+            tenant_id=user.tenant_id, event_type="AUTH_SUCCESS", action="LOGIN",
+            result="ALLOWED", actor=user.email, actor_role=user.role.value,
+            ip_address=ip_address)
 
         token = _create_token(user.id, user.email, user.role.value, user.tenant_id)
         return {
@@ -286,6 +353,12 @@ class AuthService:
         """Create a new user (ADMIN only). tenant_id is REQUIRED - no default,
         so a caller that forgets it fails loudly instead of writing a user into
         a bogus "default" tenant."""
+        # Password policy — the primary user-creation path used to accept any
+        # string (including empty). Enforce a minimum length here.
+        min_len = get_settings().MIN_PASSWORD_LENGTH
+        if not password or len(password) < min_len:
+            return {"error": "weak_password",
+                    "detail": f"Password must be at least {min_len} characters."}
         # Check if email exists
         result = await db.execute(select(User).where(User.email == email))
         if result.scalar_one_or_none():

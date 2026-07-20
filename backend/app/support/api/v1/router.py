@@ -2,7 +2,8 @@
 KAEOS Support Domain — V1 API Router
 CRUD and agent triggers.
 """
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -103,10 +104,17 @@ async def list_tickets(
     return result
 
 @router.post("/tickets/{ticket_id}/triage")
-async def triage_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def triage_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = TriageAgent()
     try:
-        return await agent.triage_ticket(db, ticket_id, tenant_id)
+        result = await agent.triage_ticket(db, ticket_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="ticket", resource_id=ticket_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -114,10 +122,17 @@ async def triage_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id),
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 @router.post("/tickets/{ticket_id}/solve")
-async def solve_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def solve_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = ResolutionAgent()
     try:
-        return await agent.solve_ticket(db, ticket_id, tenant_id)
+        result = await agent.solve_ticket(db, ticket_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="ticket", resource_id=ticket_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -125,11 +140,18 @@ async def solve_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id), 
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 @router.post("/tickets/{ticket_id}/auto-resolve")
-async def auto_resolve_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def auto_resolve_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Draft a customer response - always pauses for human review (0.79 gate)."""
+    tenant_id = tenant["tenant_id"]
     agent = AutoResolveAgent()
     try:
-        return await agent.generate_response(db, ticket_id, tenant_id)
+        result = await agent.generate_response(db, ticket_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="ticket", resource_id=ticket_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -137,10 +159,17 @@ async def auto_resolve_ticket(ticket_id: str, tenant_id: str = Depends(get_tenan
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 @router.post("/tickets/{ticket_id}/document")
-async def document_resolution(ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def document_resolution(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = KBAgent()
     try:
-        return await agent.document_resolution(db, ticket_id, tenant_id)
+        result = await agent.document_resolution(db, ticket_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="ticket", resource_id=ticket_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -148,10 +177,17 @@ async def document_resolution(ticket_id: str, tenant_id: str = Depends(get_tenan
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
 @router.post("/tickets/{ticket_id}/escalate")
-async def escalate_ticket(ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def escalate_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = EscalationAgent()
     try:
-        return await agent.escalate_ticket(db, ticket_id, tenant_id)
+        result = await agent.escalate_ticket(db, ticket_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="ticket", resource_id=ticket_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -219,10 +255,17 @@ async def list_csat_surveys(
     return result
 
 @router.post("/csat/{survey_id}/analyze")
-async def analyze_csat(survey_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def analyze_csat(survey_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = CSATAgent()
     try:
-        return await agent.analyze_surveys(db, survey_id, tenant_id)
+        result = await agent.analyze_surveys(db, survey_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="csat_survey", resource_id=survey_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
     except Exception as e:
@@ -260,10 +303,17 @@ async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
     return result
 
 @router.post("/sla/check")
-async def check_sla(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
     agent = SLAAgent()
     try:
-        return await agent.check_sla(db, tenant_id)
+        result = await agent.check_sla(db, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="sla", resource_id=tenant_id,
+        )
+        return result
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e

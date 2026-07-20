@@ -6,7 +6,8 @@ from typing import List
 
 from app.core.database import get_db
 from app.models.settings import TenantLLMConfig, MCPToolConfig, OntologyConfig, FederatedConfig
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 
 router = APIRouter(prefix="/config", tags=["Platform Config"])
 
@@ -62,12 +63,13 @@ async def get_llm_routing(
 @router.post("/llm-routing", response_model=LLMConfigOut)
 async def update_llm_routing(
     item: LLMConfigIn,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Upsert this tenant's model for a tier. The key is encrypted at rest."""
     from app.services.live_connectors import encrypt_secrets
 
+    tenant_id = tenant["tenant_id"]
     if item.layer not in VALID_LAYERS:
         raise HTTPException(400, detail=f"layer must be one of {sorted(VALID_LAYERS)}")
 
@@ -101,16 +103,22 @@ async def update_llm_routing(
 
     await db.commit()
     await db.refresh(db_item)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="llm_routing", resource_id=item.layer,
+    )
     return _to_out(db_item)
 
 
 @router.delete("/llm-routing/{layer}")
 async def delete_llm_routing(
     layer: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a tenant's override for a tier, falling back to platform defaults."""
+    tenant_id = tenant["tenant_id"]
     res = await db.execute(
         select(TenantLLMConfig).where(
             TenantLLMConfig.tenant_id == tenant_id,
@@ -122,13 +130,18 @@ async def delete_llm_routing(
         raise HTTPException(404, detail="No configuration for that layer")
     await db.delete(db_item)
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="DELETE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="llm_routing", resource_id=layer,
+    )
     return {"status": "deleted", "layer": layer}
 
 
 @router.post("/llm-routing/{layer}/probe")
 async def probe_llm_model(
     layer: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -139,6 +152,7 @@ async def probe_llm_model(
     from app.services.live_connectors import decrypt_secrets
     from app.services.model_probe import model_probe
 
+    tenant_id = tenant["tenant_id"]
     res = await db.execute(
         select(TenantLLMConfig).where(
             TenantLLMConfig.tenant_id == tenant_id,
@@ -174,6 +188,11 @@ async def probe_llm_model(
     )
     cfg.capability_profile = profile
     await db.commit()
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="llm_routing_probe", resource_id=layer,
+    )
     return {"layer": layer, "model_name": cfg.model_name, "profile": profile}
 
 # -- MCP Tools --
@@ -224,12 +243,13 @@ async def get_mcp_tools(
 @router.post("/mcp-tools", response_model=MCPToolOut)
 async def update_mcp_tool(
     item: MCPToolIn,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Upsert THIS tenant's config for a tool. The key is encrypted at rest."""
     from app.services.live_connectors import encrypt_secrets
 
+    tenant_id = tenant["tenant_id"]
     res = await db.execute(
         select(MCPToolConfig).where(
             MCPToolConfig.tenant_id == tenant_id,
@@ -250,6 +270,11 @@ async def update_mcp_tool(
 
     await db.commit()
     await db.refresh(db_item)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="mcp_tool", resource_id=item.tool_id,
+    )
     return _mcp_to_out(db_item)
 
 # -- Ontology --
@@ -269,9 +294,10 @@ async def get_ontology(
     return res.scalars().all()
 
 @router.post("/ontology", response_model=OntologyItem)
-async def update_ontology(item: OntologyItem, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def update_ontology(item: OntologyItem, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     # Scoped to (tenant, department): `department` alone was globally unique, so
     # this write landed on whichever tenant's row existed.
+    tenant_id = tenant["tenant_id"]
     res = await db.execute(
         select(OntologyConfig).where(
             OntologyConfig.tenant_id == tenant_id,
@@ -290,6 +316,11 @@ async def update_ontology(item: OntologyItem, tenant_id: str = Depends(get_tenan
         db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="ontology", resource_id=item.department,
+    )
     return db_item
 
 # -- Federated --
@@ -309,10 +340,11 @@ async def get_federated(
     return res.scalars().all()
 
 @router.post("/federated", response_model=FederatedItem)
-async def update_federated(item: FederatedItem, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def update_federated(item: FederatedItem, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     # Scoped to (tenant, department). This flips a PRIVACY CONSENT flag for
     # federated data sharing; keyed on `department` alone it flipped whichever
     # tenant's row existed first.
+    tenant_id = tenant["tenant_id"]
     res = await db.execute(
         select(FederatedConfig).where(
             FederatedConfig.tenant_id == tenant_id,
@@ -331,4 +363,9 @@ async def update_federated(item: FederatedItem, tenant_id: str = Depends(get_ten
         db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="federated_consent", resource_id=item.department,
+    )
     return db_item

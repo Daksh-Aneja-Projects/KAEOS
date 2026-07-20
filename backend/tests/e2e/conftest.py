@@ -127,6 +127,12 @@ async def client():
     """
     Per-test async HTTP client — avoids event loop conflicts.
     Skips the whole test file if backend is not running.
+
+    The functional E2E suite targets a DEV_MODE=true container: tokenless
+    requests resolve to the dev tenant, and an `X-Tenant-ID` header switches
+    tenants (this is what the cross-tenant isolation tests in
+    test_28_cross_tenant_denial rely on). Auth ENFORCEMENT (DEV_MODE=false) is
+    verified separately by the black-box attack checks, not this fixture.
     """
     if not backend_reachable():
         pytest.skip(f"KAEOS backend not running at {BASE_URL}")

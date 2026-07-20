@@ -12,7 +12,8 @@ import io
 
 from app.core.admin import verify_admin_secret
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
+from app.core.audit import record_security_event
 from app.models.domain import (
     Rule, Skill, SkillExecution, Signal, Workflow, Employee,
     ElicitationQuestion, Connector, ProvenanceLedger, DecayEvent,
@@ -100,8 +101,9 @@ class WebhookCreate(BaseModel):
     events: List[str]
 
 @router.post("/webhooks")
-async def create_webhook(body: WebhookCreate, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def create_webhook(body: WebhookCreate, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     from app.services.event_bus import event_bus, EventType
+    tenant_id = tenant["tenant_id"]
     events = []
     for e in body.events:
         try:
@@ -109,6 +111,11 @@ async def create_webhook(body: WebhookCreate, tenant_id: str = Depends(get_tenan
         except ValueError:
             raise HTTPException(400, f"Unknown event type: {e}")
     sub = await event_bus.subscribe(db, body.endpoint, events, tenant_id=tenant_id, name=body.name)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="webhook", resource_id=sub.id,
+    )
     return {"id": sub.id, "name": sub.name, "endpoint": sub.endpoint, "events": body.events}
 
 @router.get("/webhooks")
@@ -139,11 +146,12 @@ async def list_webhooks(
 @router.delete("/webhooks/{webhook_id}")
 async def delete_webhook(
     webhook_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     """Deactivate one of THIS tenant's webhooks (id alone let any tenant kill
-    another's event delivery)."""
+    another's event delivery). Requires admin role."""
+    tenant_id = tenant["tenant_id"]
     from app.services.event_bus import event_bus
     ok = await event_bus.unsubscribe(db, webhook_id, tenant_id=tenant_id)
     if not ok:
@@ -296,8 +304,9 @@ class BulkRuleImport(BaseModel):
 from app.core.tenant import get_tenant_id
 
 @router.post("/import/rules")
-async def import_rules(body: BulkRuleImport, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Bulk import rules from JSON array."""
+async def import_rules(body: BulkRuleImport, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Bulk import rules from JSON array. Requires operator role."""
+    tenant_id = tenant["tenant_id"]
     from app.services.confidence import ConfidenceEngine
     ce = ConfidenceEngine()
     imported = 0
@@ -348,14 +357,15 @@ class RuleCloneRequest(BaseModel):
 async def clone_rule(
     rule_id: str,
     body: RuleCloneRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Clone one of THIS tenant's rules (fork) into a new domain.
+    """Clone one of THIS tenant's rules (fork) into a new domain. Requires operator role.
 
     Looked the source up by id alone, so any tenant could fork another tenant's
     rule - reading its statement and logic in the process.
     """
+    tenant_id = tenant["tenant_id"]
     r = await db.execute(
         select(Rule).where(Rule.id == rule_id, Rule.tenant_id == tenant_id)
     )

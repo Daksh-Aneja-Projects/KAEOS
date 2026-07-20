@@ -40,9 +40,17 @@ async def ensure_tenant(db: AsyncSession, tenant_id: str, name: str = "",
             pass
 
 
-async def deactivate_tenant(db: AsyncSession, tenant_id: str) -> bool:
-    """Mark a tenant inactive (offboarding anchor). Returns True if found."""
+async def deactivate_tenant(db: AsyncSession, tenant_id: str,
+                            purge: bool = False) -> bool:
+    """Mark a tenant inactive (offboarding anchor). Returns True if found.
+
+    When ``purge=True`` this ALSO hard-deletes every tenant-scoped row via
+    ``privacy_erasure.purge_tenant`` — the Art.28 processor-offboarding path.
+    This is IRREVERSIBLE, so it defaults to False; deactivation stays a safe,
+    reversible flag flip unless the caller explicitly opts into erasure.
+    """
     from app.models.auth import Tenant
+    from app.services.privacy_erasure import purge_tenant
     t = (await db.execute(
         select(Tenant).where(Tenant.tenant_id == tenant_id)
     )).scalar_one_or_none()
@@ -50,4 +58,10 @@ async def deactivate_tenant(db: AsyncSession, tenant_id: str) -> bool:
         return False
     t.is_active = False
     await db.commit()
+    if purge:
+        report = await purge_tenant(db, tenant_id)
+        logger.info(
+            "[TenantRegistry] purged tenant %s on deactivation: %d rows deleted",
+            tenant_id, report.get("total_rows_deleted", 0),
+        )
     return True

@@ -11,6 +11,7 @@ from sqlalchemy import select, desc
 
 from app.core.database import AsyncSessionLocal
 from app.core.tenant import get_tenant_id, require_role   # ← replaces TENANT = "default"
+from app.core.audit import record_security_event
 from app.models.agent_factory import (
     AgentBlueprint, DeployedAgent, DebateTranscript,
 )
@@ -38,11 +39,17 @@ temporal_eng = TemporalReasoningEngine()
 @router.post("/agents/blueprint")
 async def create_blueprint(
     req: BlueprintCreateRequest,
-    tenant_id: str = Depends(get_tenant_id),          # ← was: TENANT
+    tenant: dict = Depends(require_role("operator")),          # ← was: TENANT
 ):
     """Generate an agent blueprint from a natural language prompt."""
+    tenant_id = tenant["tenant_id"]
     try:
         result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, req.created_by)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="agent_blueprint", resource_id=(result or {}).get("id") if isinstance(result, dict) else None,
+        )
         return {"status": "blueprint_ready", "blueprint": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -90,12 +97,18 @@ async def get_blueprint(
 async def refine_blueprint(
     blueprint_id: str,
     req: BlueprintRefineRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
 ):
     """Refine/edit an existing blueprint."""
+    tenant_id = tenant["tenant_id"]
     try:
         result = await blueprint_gen.refine_blueprint(
             blueprint_id, req.model_dump(exclude_none=True), tenant_id
+        )
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="agent_blueprint", resource_id=blueprint_id,
         )
         return {"status": "updated", "blueprint": result}
     except ValueError as e:
@@ -113,6 +126,11 @@ async def approve_blueprint(
     tenant_id = tenant["tenant_id"]
     try:
         result = await blueprint_gen.approve_blueprint(blueprint_id, tenant_id, req.approved_by)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="agent_blueprint_approval", resource_id=blueprint_id,
+        )
         return {"status": "approved", "blueprint": result}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -143,6 +161,11 @@ async def deploy_agent(
     tenant_id = tenant["tenant_id"]
     try:
         result = await compiler.deploy_agent(blueprint_id, tenant_id, req.trigger_config)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="AGENT_EXEC", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="deployed_agent", resource_id=blueprint_id,
+        )
         return {"status": "deployed", **result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -225,7 +248,13 @@ async def stop_agent(
 ):
     tenant_id = tenant["tenant_id"]
     try:
-        return await compiler.stop_agent(agent_id, tenant_id)
+        result = await compiler.stop_agent(agent_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="AGENT_EXEC", action="WRITE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="deployed_agent_stop", resource_id=agent_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -376,9 +405,15 @@ async def override_fairness(
 ):
     tenant_id = tenant["tenant_id"]
     try:
-        return await fairness_eng.override_block(
+        result = await fairness_eng.override_block(
             log_id, tenant_id, req.override_by, req.justification
         )
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="fairness_override", resource_id=log_id,
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -395,9 +430,10 @@ async def list_calendar_events(
 @router.post("/calendar/events")
 async def create_calendar_event(
     req: CalendarEventRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
 ):
     from datetime import datetime
+    tenant_id = tenant["tenant_id"]
     data = req.model_dump()
     data["start_date"] = datetime.fromisoformat(data["start_date"])
     data["end_date"] = datetime.fromisoformat(data["end_date"])
@@ -413,6 +449,11 @@ async def delete_calendar_event(
     deleted = await temporal_eng.delete_event(event_id, tenant_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Calendar event not found")
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="DELETE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="calendar_event", resource_id=event_id,
+    )
     return {"status": "deleted"}
 
 

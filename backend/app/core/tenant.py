@@ -88,7 +88,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             return await original_call_next(req)
 
         # Health checks, docs, and auth routes don't need auth
-        public_paths = ("/health", "/docs", "/openapi.json", "/redoc", "/metrics")
+        public_paths = ("/health", "/health/live", "/docs", "/openapi.json", "/redoc", "/metrics")
         auth_paths = ("/api/v1/auth/login", "/api/v1/auth/sso/saml")
         if request.url.path in public_paths or any(request.url.path.startswith(p) for p in auth_paths):
             request.state.tenant = _DEV_TENANT

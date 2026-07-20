@@ -101,6 +101,8 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
         select(Rule).where(
             Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True
         )
+        .order_by(Rule.validated_at.desc())
+        .limit(200)
     )
     for r in all_exec_rules.scalars().all():
         val_date = r.validated_at or r.created_at
