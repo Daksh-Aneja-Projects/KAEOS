@@ -151,7 +151,19 @@ async def execute_skill(
 
     _router = await LLMRouter.for_tenant(skill.tenant_id)
     effective_confidence = min(skill.confidence, _router.confidence_ceiling("reasoning"))
-    hitl_required = effective_confidence < 0.82
+    # Threshold is CONFIGURABLE (CONFIDENCE_AUTONOMOUS_EXEC), and high-consequence
+    # skills (payments, terminations, contract execution, external sends, data
+    # deletion) ALWAYS route to a human here too — the same rule the agent runtime
+    # gate enforces, so this direct-execution path can't be used to bypass it.
+    from app.core.config import get_settings
+    _settings = get_settings()
+    _skill_blob = " ".join(
+        str(x).lower() for x in (
+            (skill.compliance_tags or []) + [skill.department or "", skill.skill_id or ""]
+        )
+    )
+    _high_consequence = any(t in _skill_blob for t in _settings.HIGH_CONSEQUENCE_TAGS)
+    hitl_required = _high_consequence or effective_confidence < _settings.CONFIDENCE_AUTONOMOUS_EXEC
     if hitl_required:
         execution = SkillExecution(
             id=exec_id,
