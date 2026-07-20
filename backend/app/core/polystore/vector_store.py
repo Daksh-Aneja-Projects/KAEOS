@@ -118,7 +118,7 @@ class SqliteVectorStore(VectorStore):
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    f"INSERT INTO {_TABLE} (id, tenant_id, namespace, content, metadata, embedding, created_at) "
+                    f"INSERT INTO {_TABLE} (id, tenant_id, namespace, content, metadata, embedding, created_at) "  # nosec B608
                     "VALUES (:id, :tenant_id, :namespace, :content, :metadata, :embedding, :created_at) "
                     "ON CONFLICT(id) DO UPDATE SET content=excluded.content, metadata=excluded.metadata, "
                     "embedding=excluded.embedding"
@@ -140,7 +140,7 @@ class SqliteVectorStore(VectorStore):
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text(
-                    f"SELECT id, content, metadata, embedding FROM {_TABLE} "
+                    f"SELECT id, content, metadata, embedding FROM {_TABLE} "  # nosec B608
                     "WHERE tenant_id = :tenant_id AND namespace = :namespace"
                 ),
                 {"tenant_id": tenant_id, "namespace": namespace},
@@ -171,7 +171,7 @@ class SqliteVectorStore(VectorStore):
         await self.initialize()
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                text(f"SELECT metadata FROM {_TABLE} WHERE id = :id"), {"id": vector_id}
+                text(f"SELECT metadata FROM {_TABLE} WHERE id = :id"), {"id": vector_id}  # nosec B608
             )
             row = result.first()
             if not row:
@@ -182,7 +182,7 @@ class SqliteVectorStore(VectorStore):
                 meta = {}
             meta[key] = value
             await session.execute(
-                text(f"UPDATE {_TABLE} SET metadata = :metadata WHERE id = :id"),
+                text(f"UPDATE {_TABLE} SET metadata = :metadata WHERE id = :id"),  # nosec B608
                 {"metadata": json.dumps(meta), "id": vector_id},
             )
             await session.commit()
@@ -191,7 +191,7 @@ class SqliteVectorStore(VectorStore):
         try:
             await self.initialize()
             async with AsyncSessionLocal() as session:
-                res = await session.execute(text(f"SELECT COUNT(*) FROM {_TABLE}"))
+                res = await session.execute(text(f"SELECT COUNT(*) FROM {_TABLE}"))  # nosec B608
                 count = res.scalar() or 0
             return {"backend": self.backend_name, "available": True, "records": count}
         except Exception as e:  # pragma: no cover - defensive
@@ -246,7 +246,7 @@ class PgVectorStore(VectorStore):
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    f"INSERT INTO {_TABLE} (id, tenant_id, namespace, content, metadata, embedding) "
+                    f"INSERT INTO {_TABLE} (id, tenant_id, namespace, content, metadata, embedding) "  # nosec B608
                     "VALUES (:id, :tenant_id, :namespace, :content, CAST(:metadata AS JSONB), CAST(:embedding AS vector)) "
                     "ON CONFLICT(id) DO UPDATE SET content=excluded.content, metadata=excluded.metadata, "
                     "embedding=excluded.embedding"
@@ -268,7 +268,7 @@ class PgVectorStore(VectorStore):
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 text(
-                    f"SELECT id, content, metadata, 1 - (embedding <=> CAST(:q AS vector)) AS similarity "
+                    f"SELECT id, content, metadata, 1 - (embedding <=> CAST(:q AS vector)) AS similarity "  # nosec B608
                     f"FROM {_TABLE} WHERE tenant_id = :tenant_id AND namespace = :namespace "
                     "ORDER BY embedding <=> CAST(:q AS vector) LIMIT :limit"
                 ),
@@ -296,7 +296,7 @@ class PgVectorStore(VectorStore):
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    f"UPDATE {_TABLE} SET metadata = jsonb_set(COALESCE(metadata, '{{}}'::jsonb), "
+                    f"UPDATE {_TABLE} SET metadata = jsonb_set(COALESCE(metadata, '{{}}'::jsonb), "  # nosec B608
                     "ARRAY[:key], to_jsonb(:value::text)) WHERE id = :id"
                 ),
                 {"key": key, "value": str(value), "id": vector_id},
@@ -307,7 +307,7 @@ class PgVectorStore(VectorStore):
         try:
             await self.initialize()
             async with AsyncSessionLocal() as session:
-                res = await session.execute(text(f"SELECT COUNT(*) FROM {_TABLE}"))
+                res = await session.execute(text(f"SELECT COUNT(*) FROM {_TABLE}"))  # nosec B608
                 count = res.scalar() or 0
             return {"backend": self.backend_name, "available": True, "records": count}
         except Exception as e:

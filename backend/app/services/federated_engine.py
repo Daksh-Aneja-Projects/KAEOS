@@ -68,7 +68,9 @@ class FederatedEngine:
             raise ValueError(f"Skill {skill_id} does not meet the 90% success threshold for Swarm export.")
             
         procedural_hash = FederatedEngine._extract_zero_knowledge_procedural_weight(skill)
-        global_id = f"swarm_node_{skill.tenant_id}_{hashlib.md5(skill_id.encode()).hexdigest()[:8]}"
+        # MD5 here is an ID shortener, not a security control (the tamper-evident
+        # part is the SHA-512 ledger chain) - declare that so scanners don't flag it.
+        global_id = f"swarm_node_{skill.tenant_id}_{hashlib.md5(skill_id.encode(), usedforsecurity=False).hexdigest()[:8]}"
         
         from app.services.quantum_ledger import QuantumLedgerEngine
         

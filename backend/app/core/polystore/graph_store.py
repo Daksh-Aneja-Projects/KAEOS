@@ -85,7 +85,7 @@ class SqliteGraphStore(GraphStore):
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    f"INSERT INTO {_NODES} (id, label, properties) VALUES (:id, :label, :props) "
+                    f"INSERT INTO {_NODES} (id, label, properties) VALUES (:id, :label, :props) "  # nosec B608
                     "ON CONFLICT(id) DO UPDATE SET label=excluded.label, properties=excluded.properties"
                 ),
                 {"id": node_id, "label": label, "props": json.dumps({**(properties or {}), "id": node_id})},
@@ -99,14 +99,14 @@ class SqliteGraphStore(GraphStore):
             # De-dupe identical edges.
             existing = await session.execute(
                 text(
-                    f"SELECT 1 FROM {_EDGES} WHERE source=:s AND target=:t AND rel_type=:r"
+                    f"SELECT 1 FROM {_EDGES} WHERE source=:s AND target=:t AND rel_type=:r"  # nosec B608
                 ),
                 {"s": source_id, "t": target_id, "r": rel_type},
             )
             if existing.first() is None:
                 await session.execute(
                     text(
-                        f"INSERT INTO {_EDGES} (source, target, rel_type, properties) "
+                        f"INSERT INTO {_EDGES} (source, target, rel_type, properties) "  # nosec B608
                         "VALUES (:s, :t, :r, :p)"
                     ),
                     {"s": source_id, "t": target_id, "r": rel_type, "p": json.dumps(properties or {})},
@@ -116,8 +116,8 @@ class SqliteGraphStore(GraphStore):
     async def _load(self) -> tuple[dict, list]:
         await self.initialize()
         async with AsyncSessionLocal() as session:
-            n = await session.execute(text(f"SELECT id, label, properties FROM {_NODES}"))
-            e = await session.execute(text(f"SELECT source, target, rel_type FROM {_EDGES}"))
+            n = await session.execute(text(f"SELECT id, label, properties FROM {_NODES}"))  # nosec B608
+            e = await session.execute(text(f"SELECT source, target, rel_type FROM {_EDGES}"))  # nosec B608
             nodes = {}
             for row in n.mappings().all():
                 try:

@@ -364,20 +364,17 @@ class PolystoreEngine:
         if domain_filter:
             params["domain"] = domain_filter
 
+        _rule_sim_sql = (
+            "SELECT r.id, r.statement, r.domain, r.confidence_scalar, "  # nosec B608
+            "1 - (re.embedding <=> :embedding) AS similarity "
+            "FROM rule_embeddings re "
+            "JOIN rules r ON r.id = re.rule_id "
+            f"WHERE re.tenant_id = :tenant_id {domain_clause} "  # domain_clause is a fixed literal; value arrives via :domain bind
+            "ORDER BY re.embedding <=> :embedding "
+            "LIMIT :top_k"
+        )
         async with AsyncSessionLocal() as session:
-            rows = await session.execute(
-                text(f"""
-                    SELECT r.id, r.statement, r.domain, r.confidence_scalar,
-                           1 - (re.embedding <=> :embedding) AS similarity
-                    FROM rule_embeddings re
-                    JOIN rules r ON r.id = re.rule_id
-                    WHERE re.tenant_id = :tenant_id
-                      {domain_clause}
-                    ORDER BY re.embedding <=> :embedding
-                    LIMIT :top_k
-                """),
-                params,
-            )
+            rows = await session.execute(text(_rule_sim_sql), params)
             return [
                 {
                     "rule_id": row.id,
@@ -434,16 +431,17 @@ class PolystoreEngine:
         if domain_filter: 
             params["domain"] = domain_filter
 
+        _skill_sim_sql = (
+            "SELECT s.skill_id, s.id as skill_db_id, s.domain, "  # nosec B608
+            "1 - (se.embedding <=> :embedding) AS similarity "
+            "FROM skill_embeddings se "
+            "JOIN skills s ON s.id = se.skill_db_id "
+            f"WHERE se.tenant_id = :tenant_id AND s.status = 'ACTIVE' {domain_clause} "  # domain_clause is a fixed literal; value arrives via :domain bind
+            "ORDER BY se.embedding <=> :embedding LIMIT :top_k"
+        )
         try:
             async with AsyncSessionLocal() as session:
-                rows = await session.execute(text(f"""
-                    SELECT s.skill_id, s.id as skill_db_id, s.domain,
-                           1 - (se.embedding <=> :embedding) AS similarity
-                    FROM skill_embeddings se
-                    JOIN skills s ON s.id = se.skill_db_id
-                    WHERE se.tenant_id = :tenant_id AND s.status = 'ACTIVE' {domain_clause}
-                    ORDER BY se.embedding <=> :embedding LIMIT :top_k
-                """), params)
+                rows = await session.execute(text(_skill_sim_sql), params)
                 return [{"skill_id": row.skill_id, "skill_db_id": row.skill_db_id, "domain": row.domain, "similarity": float(row.similarity)} for row in rows.fetchall()]
         except Exception as e:
             logger.warning(f"Vector search failed (likely sqlite), falling back to lexical: {e}")

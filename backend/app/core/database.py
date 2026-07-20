@@ -212,15 +212,14 @@ async def ensure_app_role(conn) -> bool:
     if "'" in app_pw:
         raise ValueError("KAEOS_APP_DB_PASSWORD must not contain single quotes")
     # Only the owner may create roles / grant; init_db's conn is the owner.
-    await conn.execute(_text(f"""
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kaeos_app') THEN
-                CREATE ROLE kaeos_app LOGIN PASSWORD '{app_pw}';
-            END IF;
-        END
-        $$;
-    """))
+    _create_role_sql = (
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kaeos_app') THEN "
+        f"CREATE ROLE kaeos_app LOGIN PASSWORD '{app_pw}'; "  # nosec B608
+        "END IF; "
+        "END $$;"
+    )
+    await conn.execute(_text(_create_role_sql))
     await conn.execute(_text("GRANT USAGE ON SCHEMA public TO kaeos_app"))
     await conn.execute(_text(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO kaeos_app"))
