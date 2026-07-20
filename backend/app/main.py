@@ -77,16 +77,32 @@ async def lifespan(app: FastAPI):
         )
 
     # Hard guard: DEV_MODE bypasses auth AND honors an X-Tenant-ID override -
-    # catastrophic on a shared deployment. Allow it ONLY when ENVIRONMENT is an
-    # explicitly-known local value; treat anything else (incl. typos like
-    # "prod1", "live", "staging-eu") as production and refuse to boot. This is
-    # fail-closed: an unrecognised environment never runs with auth disabled.
+    # catastrophic on a shared deployment. Because it disables authentication,
+    # enabling it must be a deliberate, explicit act. We require BOTH:
+    #   1. ENVIRONMENT was explicitly configured (env var or .env) — not left at
+    #      the "development" default. `model_fields_set` is True only when a
+    #      config source actually set the field, so an operator who sets
+    #      DEV_MODE=true but forgets ENVIRONMENT is refused rather than sliding
+    #      through on the default.
+    #   2. That explicit value names a known local environment; anything else
+    #      (incl. typos like "prod1", "live", "staging-eu") is treated as
+    #      production and refused.
+    # Both conditions must hold, so the unset case and the unrecognised case
+    # both fail closed: DEV_MODE never disables auth by omission.
     _DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
-    if settings.DEV_MODE and settings.ENVIRONMENT.lower() not in _DEV_ENVIRONMENTS:
+    _env_explicit = "ENVIRONMENT" in settings.model_fields_set
+    if settings.DEV_MODE and (
+        not _env_explicit or settings.ENVIRONMENT.lower() not in _DEV_ENVIRONMENTS
+    ):
+        _env_desc = (
+            f"ENVIRONMENT={settings.ENVIRONMENT!r}" if _env_explicit
+            else "ENVIRONMENT unset (defaulted)"
+        )
         raise RuntimeError(
-            f"DEV_MODE=true with ENVIRONMENT={settings.ENVIRONMENT!r}: refusing to start. "
+            f"DEV_MODE=true with {_env_desc}: refusing to start. "
             "DEV_MODE disables authentication and tenant isolation — it is allowed "
-            f"only when ENVIRONMENT is one of {sorted(_DEV_ENVIRONMENTS)}."
+            "only when ENVIRONMENT is explicitly set to one of "
+            f"{sorted(_DEV_ENVIRONMENTS)}."
         )
 
     if settings.DEV_MODE:

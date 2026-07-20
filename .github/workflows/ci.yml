@@ -39,6 +39,7 @@ jobs:
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
         DEV_MODE: "true"
+        ENVIRONMENT: "ci"
       run: |
         cd backend
         # The e2e suite needs a live backend on :8001 plus a local Ollama, so it
@@ -90,6 +91,7 @@ jobs:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
         ADMIN_SECRET: "ci-admin-secret-do-not-use-in-production"
         DEV_MODE: "true"
+        ENVIRONMENT: "ci"
         KAEOS_FAKE_LLM: "1"
         # App connects as the non-owner kaeos_app role (created by init_db via the
         # owner URL) so RLS actually applies - the same posture as production.

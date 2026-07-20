@@ -27,10 +27,28 @@ class OnboardingAgent:
         employee = q.scalar_one_or_none()
         
         logger.info(f"OnboardingAgent executing Week {week_num} check-in for {employee_id}")
-        
-        # Analyze the provided response
-        simulated_response = response if response else "I'm doing well."
-        
+
+        # Do NOT fabricate sentiment input. If the new hire has not responded yet,
+        # mark the response absent and escalate for human follow-up rather than
+        # inventing an upbeat reply and feeding it to the gated sentiment pipeline.
+        response_text = (response or "").strip()
+        if not response_text:
+            logger.info(
+                f"OnboardingAgent: no response from {employee_id} for week {week_num} "
+                "check-in — marking absent (no sentiment fabricated)."
+            )
+            return {
+                "status": "NO_RESPONSE",
+                "response_received": False,
+                "sentiment_score": None,
+                "issues_detected": [],
+                "requires_human_escalation": True,
+                "recommended_action": (
+                    f"New hire has not responded to the week-{week_num} check-in; "
+                    "follow up manually."
+                ),
+            }
+
         # NOTE: the prompt is not built here — the gated runner composes it from
         # `context` below, which carries the same fields (see json_utils.compact_context).
         
@@ -50,7 +68,7 @@ class OnboardingAgent:
             "persona": self.persona,
             "employee_name": f"{employee.first_name} {employee.last_name}",
             "week_num": week_num,
-            "response_text": simulated_response,
+            "response_text": response_text,
             "intent": f"onboarding week-{week_num} check-in for {employee_id}",
             # GDPR Gate-6 audit basis: onboarding an employee is processing for the
             # performance of the employment contract.

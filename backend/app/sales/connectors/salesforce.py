@@ -30,6 +30,17 @@ class SalesforceConnector:
             "Authorization": f"Bearer {access_token}",
         }
 
+    @staticmethod
+    def _soql_literal(value: str) -> str:
+        """Escape a value for safe interpolation into a SOQL string literal.
+
+        Per SOQL rules, backslash must be escaped before the single quote. This
+        is a targeted escape for the small set of filterable fields below; if the
+        connector grows more filter surface, promote this to a proper query
+        builder rather than hand-interpolating.
+        """
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+
     async def _query(self, soql: str) -> List[Dict[str, Any]]:
         """Run a SOQL query, following queryLocator pagination to completion."""
         records: List[Dict[str, Any]] = []
@@ -61,9 +72,7 @@ class SalesforceConnector:
             "FROM Opportunity"
         )
         if stage:
-            # StageName is escaped for the SOQL string literal.
-            safe_stage = stage.replace("'", "\\'")
-            soql += f" WHERE StageName = '{safe_stage}'"
+            soql += f" WHERE StageName = '{self._soql_literal(stage)}'"
         soql += " ORDER BY CloseDate ASC"
         return await self._query(soql)
 
@@ -72,8 +81,7 @@ class SalesforceConnector:
         logger.info(f"Syncing contacts from Salesforce for tenant {self.tenant_id}")
         soql = "SELECT Id, FirstName, LastName, Email, Title, AccountId FROM Contact"
         if account_id:
-            safe_id = account_id.replace("'", "\\'")
-            soql += f" WHERE AccountId = '{safe_id}'"
+            soql += f" WHERE AccountId = '{self._soql_literal(account_id)}'"
         return await self._query(soql)
 
     async def test_connection(self) -> bool:
