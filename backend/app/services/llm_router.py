@@ -283,6 +283,7 @@ class LLMRouter:
         base_url = keys.get("ollama_base_url", "http://localhost:11434")
         return await _ollama_reachable(base_url)
 
+    @staticmethod
     def is_retryable_error(exception: BaseException) -> bool:
         try:
             import litellm

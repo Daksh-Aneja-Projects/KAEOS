@@ -68,6 +68,10 @@ class RecruitingAgent:
             "job_description": req.job_description,
             "candidate_resume_text": resume_text,
             "intent": f"screen candidate {candidate_id} for requisition {req.id}",
+            # GDPR Gate-6 audit basis: screening an applicant against a role is a
+            # pre-contractual/legitimate-interest processing activity. Declaring it
+            # here is what lets the post-execution audit record a lawful basis.
+            "legal_basis": "legitimate_interests:recruitment_screening",
             # Fairness gate context — HCM decision touching protected attributes.
             "affected_entity_type": "Candidate",
             "affected_count": 1,

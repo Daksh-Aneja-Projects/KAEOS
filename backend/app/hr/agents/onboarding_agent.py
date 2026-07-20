@@ -52,6 +52,9 @@ class OnboardingAgent:
             "week_num": week_num,
             "response_text": simulated_response,
             "intent": f"onboarding week-{week_num} check-in for {employee_id}",
+            # GDPR Gate-6 audit basis: onboarding an employee is processing for the
+            # performance of the employment contract.
+            "legal_basis": "contract:employment_onboarding",
             "affected_entity_type": "Employee",
             "affected_count": 1,
             "instruction": "Output strict JSON in the decision field with keys: sentiment_score (0.0-1.0), issues_detected (list of strings), requires_human_escalation (bool), recommended_action (string).",

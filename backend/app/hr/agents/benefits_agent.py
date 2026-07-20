@@ -59,7 +59,14 @@ class BenefitsAgent:
         return await run_gated_hr_skill(
             skill_id="hr_benefits_query",
             steps=steps,
-            context={"task": task_payload, "persona": self.persona, "intent": "benefits task"},
+            context={
+                "task": task_payload,
+                "persona": self.persona,
+                "intent": "benefits task",
+                # GDPR Gate-6 audit basis: benefits administration is processing for
+                # the performance of the employment contract.
+                "legal_basis": "contract:benefits_administration",
+            },
             tenant_id=tenant_id,
             compliance_tags=["HIPAA", "GDPR"],
             requires_fairness=False,

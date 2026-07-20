@@ -51,6 +51,9 @@ class EmployeeRelationsAgent:
             "case_title": er_case.title,
             "case_description": er_case.description,
             "intent": f"triage ER case {case_id}",
+            # GDPR Gate-6 audit basis: ER case management is a legitimate-interest
+            # processing activity over employee data.
+            "legal_basis": "legitimate_interests:employee_relations_case_management",
             "affected_entity_type": "Employee",
             "affected_count": 1,
             "instruction": "Output strict JSON in the decision field with keys: severity (LOW|MEDIUM|HIGH|CRITICAL), risk_assessment (string), recommended_actions (list).",
@@ -111,7 +114,12 @@ class EmployeeRelationsAgent:
         return await run_gated_hr_skill(
             skill_id="hr_er_triage",
             steps=steps,
-            context={"task": task_payload, "persona": self.persona, "intent": "ER task"},
+            context={
+                "task": task_payload,
+                "persona": self.persona,
+                "intent": "ER task",
+                "legal_basis": "legitimate_interests:employee_relations_case_management",
+            },
             tenant_id=tenant_id,
             compliance_tags=["EEOC", "GDPR"],
         )

@@ -9,13 +9,24 @@ rather than the HTTP get_db override) with no external services required.
 """
 import pytest
 
-# Force the fast, deterministic simulated LLM path (no provider) for the whole run.
 from app.services.llm_router import LLMRouter
-LLMRouter.provider_available = lambda self, *a, **k: False
+
+
+async def _no_provider(self, *args, **kwargs) -> bool:
+    """Async stub matching LLMRouter.provider_available's real signature.
+
+    Every caller awaits provider_available, so the stub must be a coroutine;
+    returning False forces the fast, deterministic simulated LLM path.
+    """
+    return False
 
 
 @pytest.mark.asyncio
-async def test_e2e_deploy_screen_gate_provenance_hitl():
+async def test_e2e_deploy_screen_gate_provenance_hitl(monkeypatch):
+    # Scope the no-provider patch to this test so it's reverted afterwards and
+    # never leaks into other test modules in the same process.
+    monkeypatch.setattr(LLMRouter, "provider_available", _no_provider)
+
     from sqlalchemy import select
     from app.core.database import init_db, AsyncSessionLocal
     from app.workforce.domain_packs.engine import DomainPackEngine

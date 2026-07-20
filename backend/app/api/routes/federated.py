@@ -1,5 +1,5 @@
 """KAEOS 10X — Federated Operations API"""
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

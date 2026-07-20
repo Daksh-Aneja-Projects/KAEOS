@@ -1,5 +1,4 @@
 from app.core.tenant import get_tenant_id, require_role
-from app.core.audit import record_security_event
 """
 KAEOS Workforce API — Domain Packs
 Browse, install, and manage domain packs.

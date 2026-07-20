@@ -1,13 +1,23 @@
 import pytest
 from httpx import AsyncClient
 
-# Force the fast simulated LLM path so screening doesn't hit real providers.
 from app.services.llm_router import LLMRouter
-LLMRouter.provider_available = lambda self, *a, **k: False
+
+
+async def _no_provider(self, *args, **kwargs) -> bool:
+    """Async stub matching LLMRouter.provider_available's real signature.
+
+    Returning False forces the fast simulated LLM path so screening doesn't hit
+    real providers. It must be a coroutine because every caller awaits it.
+    """
+    return False
 
 
 @pytest.mark.asyncio
-async def test_hr_recruiting_flow(async_client: AsyncClient):
+async def test_hr_recruiting_flow(async_client: AsyncClient, monkeypatch):
+    # Scope the no-provider patch to this test so it's reverted afterwards and
+    # never leaks into other test modules in the same process.
+    monkeypatch.setattr(LLMRouter, "provider_available", _no_provider)
     # The gated pipeline uses the app's AsyncSessionLocal engine (separate from the
     # test get_db override); ensure its schema exists in the shared :memory: DB.
     from app.core.database import init_db

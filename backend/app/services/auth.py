@@ -142,7 +142,10 @@ def decode_token(token: str) -> Optional[dict]:
     except jwt.PyJWTError:
         pass
     # Legacy fallback: verify the old base64(json)+HMAC format so live sessions
-    # are not force-logged-out by the upgrade. Remove after one token lifetime.
+    # are not force-logged-out by the upgrade. Tokens live TOKEN_EXPIRY_HOURS (24h),
+    # so every pre-migration token has expired well before this date.
+    # REMOVE ON OR AFTER 2026-08-01 (delete this block and the hmac/base64/json imports
+    # if unused elsewhere).
     try:
         parts = token.split(".")
         if len(parts) != 2:
