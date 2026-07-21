@@ -26,6 +26,12 @@ open Starlette advisory. No functional changes to features.
   (86qp), 2 not-applicable and dismissed (x746 — no `HTTPEndpoint`; wqp7 — no
   `StaticFiles`/Linux), 1 accepted/tracked (82w8 — ingress-mitigated DoS).
 
+### Fixed
+- **Frontend lockfile drift** — `frontend/package-lock.json` referenced
+  `react@19.2.8` while pinning `react@19.2.5`, breaking `npm ci` (`frontend-build`
+  CI job). Re-pinned `react` + `react-dom` to `19.2.8` in lockstep so the lock is
+  consistent with `package.json`.
+
 ## [1.1.1] — 2026-07-21
 
 Maintenance & dependency-security release. Fixes the CI dependency-resolution
