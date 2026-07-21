@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.legal.models.contracts import ClauseRiskLevel, Contract, ContractClause, ContractStatus
+from app.legal.models.contracts import Contract, ContractClause, ContractStatus
 
 
 async def legal_analytics(db: AsyncSession, tenant_id: str) -> dict:

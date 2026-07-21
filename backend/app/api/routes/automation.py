@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant, get_tenant_id, require_role
+from app.core.tenant import get_tenant_id, require_role
 from app.core.automation import AutomationRule, evaluate_rules, validate_rule
 from app.services.workflow_registry import get_spec
 

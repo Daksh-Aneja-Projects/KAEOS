@@ -19,9 +19,9 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import Column, Boolean, DateTime, Integer, JSON, String, select
+from sqlalchemy import Column, Boolean, DateTime, Integer, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 

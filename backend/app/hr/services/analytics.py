@@ -6,9 +6,9 @@ computed live from tenant rows in the shared domain-analytics shape.
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.hr.models.core import EmploymentStatus, HREmployee
-from app.hr.models.recruiting import Candidate, CandidateStage, JobRequisition, ReqStatus
-from app.hr.models.time_attendance import LeaveStatus, TimeOffRequest
+from app.hr.models.core import HREmployee
+from app.hr.models.recruiting import Candidate, JobRequisition, ReqStatus
+from app.hr.models.time_attendance import TimeOffRequest
 
 _FUNNEL_ORDER = ["APPLIED", "AI_SCREENING", "RECRUITER_SCREEN", "HM_INTERVIEW",
                  "PANEL_INTERVIEW", "OFFER_PREP", "OFFER_EXTENDED", "HIRED"]

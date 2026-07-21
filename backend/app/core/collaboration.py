@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, JSON, String, Text, select, delete
+from sqlalchemy import Column, DateTime, JSON, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 

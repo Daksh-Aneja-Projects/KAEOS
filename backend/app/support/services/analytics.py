@@ -3,7 +3,7 @@ KAEOS Support — Analytics Service
 Backlog composition, resolution speed and first-response coverage, computed
 live from ticket timestamps (never from cached counters).
 """
-from datetime import datetime, timezone
+from datetime import timezone
 
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession

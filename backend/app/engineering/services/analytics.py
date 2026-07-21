@@ -6,7 +6,7 @@ computed live from tenant rows.
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engineering.models.delivery import Deployment, DeployStatus, PRStatus, PullRequest
+from app.engineering.models.delivery import Deployment, PRStatus, PullRequest
 from app.engineering.models.incidents import Incident, IncidentStatus
 
 _OPEN_INCIDENTS = [IncidentStatus.DETECTED, IncidentStatus.TRIAGED,
