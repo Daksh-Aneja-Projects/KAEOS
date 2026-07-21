@@ -74,6 +74,16 @@ async def workforce_analytics(
     metrics_tasks = int(m_row[0] or 0) if m_row else 0
     metrics_hours_saved = float(m_row[1] or 0) if m_row else 0
     metrics_cost_saved = float(m_row[2] or 0) if m_row else 0
+
+    # Cost saved derives from the same live hours-saved figure via the loaded
+    # hourly rate — prefer a real WorkforceMetrics cost if the time-series has
+    # been populated, otherwise compute it so the ROI card is never a stale $0
+    # while hours-saved is non-zero.
+    from app.core.config import get_settings
+    loaded_rate = get_settings().LOADED_HOURLY_RATE_USD
+    effective_hours = max(total_hours_saved, metrics_hours_saved)
+    derived_cost = effective_hours * loaded_rate
+    effective_cost = max(metrics_cost_saved, derived_cost)
     metrics_automation = float(m_row[3] or 0) if m_row else 0
     metrics_utilization = float(m_row[4] or 0) if m_row else 0
     metrics_escalation = float(m_row[5] or 0) if m_row else 0
@@ -92,8 +102,9 @@ async def workforce_analytics(
         "departments_active": active_depts,
         "agents_active": active_agents,
         "total_tasks_completed": max(total_tasks, metrics_tasks),
-        "total_hours_saved": round(max(total_hours_saved, metrics_hours_saved), 1),
-        "total_cost_saved": round(metrics_cost_saved, 2),
+        "total_hours_saved": round(effective_hours, 1),
+        "total_cost_saved": round(effective_cost, 2),
+        "loaded_hourly_rate_usd": loaded_rate,
         "automation_coverage_pct": round(max(avg_automation, metrics_automation) * 100, 1),
         "agent_utilization_pct": round(metrics_utilization * 100, 1),
         "human_escalation_rate_pct": round(metrics_escalation * 100, 1),
@@ -108,6 +119,7 @@ async def workforce_analytics(
                 "icon": d.icon,
                 "tasks_completed": d.tasks_completed_total,
                 "hours_saved": round(d.hours_saved_total, 1),
+                "cost_saved": round((d.hours_saved_total or 0) * loaded_rate, 2),
                 "automation_coverage": round((d.automation_coverage or 0) * 100, 1),
                 "health_score": round((d.health_score or 0) * 100, 1),
                 "agent_count": d.agent_count,

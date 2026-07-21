@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import LiveValue from '../components/LiveValue';
+import LiveBadge from '../components/LiveBadge';
 import Sparkline from '../components/Sparkline';
 
 export default function WorkforceDashboard({ domain }: { domain?: string }) {
@@ -31,7 +32,8 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   const [graduations, setGraduations] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const { status, lastMessage } = useWebSocket();
+  const { lastMessage } = useWebSocket();
+  const [syncedAt, setSyncedAt] = useState<number | null>(null);
 
   // Color encodes autonomy posture: green = mostly autonomous, amber = humans
   // carrying the load, red = the fleet is effectively manual.
@@ -60,6 +62,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
     setRecentActivity(activity?.events?.slice(0, 8) || []);
     setTrend(trendData);
     setGraduations(grads);
+    setSyncedAt(Date.now());
     setLoading(false);
   }, []);
 
@@ -94,15 +97,9 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-[24px] font-bold tracking-tight">Enterprise Workforce</h1>
-              {/* Say it out loud when the page is self-updating - otherwise a
-                  live number is indistinguishable from a stale one. */}
-              {status === 'connected' && (
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider"
-                  style={{ background: '#22c55e15', color: '#22c55e' }}>
-                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#22c55e' }} />
-                  Live
-                </span>
-              )}
+              {/* Say it out loud when the page is self-updating — a live number
+                  is otherwise indistinguishable from a stale one. */}
+              <LiveBadge lastSync={syncedAt} />
             </div>
             <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
               {hasDepartments

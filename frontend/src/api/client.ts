@@ -61,6 +61,11 @@ export interface TransitionResult { entity_type: string; entity_id: string; from
 export interface OrgPulseDomain { domain: string; health: number | null; kpis: DomainKPI[]; critical_count?: number; warning_count?: number; sla_breaches?: number; error?: boolean; }
 export interface SLABreach { domain: string; entity_type: string; entity_id: string; title: string; state: string; sla_hours: number; age_hours: number; over_by_hours: number; }
 export interface BulkTransitionResult { entity_type: string; to_state: string; requested: number; succeeded: number; failed: number; results: { id: string; ok: boolean; [k: string]: any }[]; }
+export interface MyWorkItem { domain: string; entity_type: string; entity_id: string; assignee: string; assigned_by: string | null; note: string | null; title: string | null; state: string | null; at: string; }
+export interface EntityComment { id: string; author: string; body: string; mentions: string[]; at: string; }
+export interface AppNotification { id: string; type: string; severity: string; title: string; description: string | null; source_type: string | null; source_id: string | null; is_read: boolean; requires_action: boolean; action_taken: boolean; at: string | null; }
+export interface AutomationRule { id: string; name: string; is_active: boolean; entity_type: string; trigger_state: string; dwell_hours: number; action_type: 'transition' | 'assign' | 'escalate'; action_to_state: string | null; action_assignee: string | null; times_fired: number; last_fired_at: string | null; }
+export interface SavedSegment { id: string; domain: string; name: string; entity_type: string | null; definition: Record<string, any>; created_by?: string | null; }
 export interface OrgPulse { org_health: number | null; domains: OrgPulseDomain[]; insights: (DomainInsight & { domain: string })[]; }
 
 export interface DepartmentCoverage {
@@ -1153,6 +1158,54 @@ export const api = {
   escalateStale: (domain?: string) =>
     request<{ escalated: number; skipped_open: number; breaches: number }>(
       `/org/stale/escalate${domain ? `?domain=${domain}` : ''}`, { method: 'POST' }),
+
+  // ─── Workspace: assignment, comments, my-work, workload (Sprints 6-7) ───
+  assignEntity: (entityType: string, id: string, assignee: string, note?: string) =>
+    request<any>(`/org/entities/${entityType}/${id}/assign`, {
+      method: 'POST', body: JSON.stringify({ assignee, note: note || null }) }),
+  unassignEntity: (entityType: string, id: string) =>
+    request<any>(`/org/entities/${entityType}/${id}/assign`, { method: 'DELETE' }),
+  getAssignment: (entityType: string, id: string) =>
+    request<{ assignee: string | null }>(`/org/entities/${entityType}/${id}/assignment`),
+  getMyWork: () => request<{ assignee: string; items: MyWorkItem[] }>('/org/my-work'),
+  getWorkload: () => request<{ workload: { assignee: string; count: number }[] }>('/org/workload'),
+  getComments: (entityType: string, id: string) =>
+    request<EntityComment[]>(`/org/entities/${entityType}/${id}/comments`),
+  addComment: (entityType: string, id: string, body: string) =>
+    request<EntityComment>(`/org/entities/${entityType}/${id}/comments`, {
+      method: 'POST', body: JSON.stringify({ body }) }),
+  deleteComment: (commentId: string) =>
+    request<any>(`/org/comments/${commentId}`, { method: 'DELETE' }),
+
+  // ─── Notifications (Sprint 9) ───
+  getNotifications: (unreadOnly = false, limit = 50) =>
+    request<{ counts: { unread: number; action_required: number }; items: AppNotification[] }>(
+      `/org/notifications?unread_only=${unreadOnly}&limit=${limit}`),
+  markNotificationsRead: (ids: string[]) =>
+    request<{ marked: number }>('/org/notifications/read', {
+      method: 'POST', body: JSON.stringify({ ids }) }),
+  resolveNotification: (id: string) =>
+    request<any>(`/org/notifications/${id}/resolve`, { method: 'POST' }),
+  getDigest: () => request<any>('/org/digest'),
+
+  // ─── Automation rules (Sprint 8) ───
+  getAutomationRules: () => request<AutomationRule[]>('/org/rules'),
+  createAutomationRule: (body: Partial<AutomationRule>) =>
+    request<AutomationRule>('/org/rules', { method: 'POST', body: JSON.stringify(body) }),
+  toggleAutomationRule: (id: string, active: boolean) =>
+    request<AutomationRule>(`/org/rules/${id}?is_active=${active}`, { method: 'PATCH' }),
+  deleteAutomationRule: (id: string) => request<any>(`/org/rules/${id}`, { method: 'DELETE' }),
+  runAutomationRules: (ruleId?: string) =>
+    request<{ rules_evaluated: number; actions_fired: number; results: any[] }>(
+      `/org/rules/run${ruleId ? `?rule_id=${ruleId}` : ''}`, { method: 'POST' }),
+
+  // ─── Saved segments + CSV export (Sprint 10) ───
+  getSegments: (domain?: string) =>
+    request<SavedSegment[]>(`/org/segments${domain ? `?domain=${domain}` : ''}`),
+  createSegment: (body: Partial<SavedSegment>) =>
+    request<SavedSegment>('/org/segments', { method: 'POST', body: JSON.stringify(body) }),
+  deleteSegment: (id: string) => request<any>(`/org/segments/${id}`, { method: 'DELETE' }),
+  exportCsvUrl: (entityType: string) => `${API_BASE}/org/export/${entityType}.csv`,
   bulkTransition: (domain: string, entityType: string, ids: string[], to_state: string, note?: string) =>
     request<BulkTransitionResult>(`/${domain}/workflows/${entityType}/bulk-transition`, {
       method: 'POST', body: JSON.stringify({ ids, to_state, note: note || null }),

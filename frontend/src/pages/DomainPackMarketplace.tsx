@@ -195,11 +195,12 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                           </div>
                         </div>
                       )}
-                      {/* Deploy Button */}
-                      <button onClick={(e) => { e.stopPropagation(); navigate('/deploy'); }}
+                      {/* Deploy Button — carries the chosen pack into the wizard,
+                          which skips its own catalog step and starts at Connect. */}
+                      <button onClick={(e) => { e.stopPropagation(); navigate('/deploy', { state: { packId: pack.id || pack.slug } }); }}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold text-white w-full justify-center"
                         style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
-                        Deploy This Pack <ArrowRight className="w-4 h-4" />
+                        {isInstalled(pack.id) ? 'Deploy Again' : 'Deploy This Pack'} <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
                   )}

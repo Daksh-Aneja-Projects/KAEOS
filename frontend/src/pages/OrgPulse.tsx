@@ -6,6 +6,7 @@ import type { OrgPulse as OrgPulsePayload, SLABreach, WorkflowEvent } from '../a
 import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainIcon from '../components/DomainIcon';
+import LiveBadge from '../components/LiveBadge';
 import { timeAgo } from '../lib/time';
 
 /**
@@ -48,6 +49,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   const [loading, setLoading] = useState(true);
   const [escalating, setEscalating] = useState(false);
   const [escalateMsg, setEscalateMsg] = useState('');
+  const [lastSync, setLastSync] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const [p, a, s] = await Promise.allSettled([
@@ -56,6 +58,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
     if (p.status === 'fulfilled') setPulse(p.value);
     if (a.status === 'fulfilled') setActivity(a.value || []);
     if (s.status === 'fulfilled') setStale(s.value?.breaches || []);
+    setLastSync(Date.now());
     setLoading(false);
   }, []);
 
@@ -95,9 +98,12 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             Live cross-domain health, computed from every department's real operational data
           </p>
         </div>
-        <button onClick={load} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
-          <RefreshCw className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-3">
+          <LiveBadge lastSync={lastSync} />
+          <button onClick={load} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Org health hero + domain grid */}

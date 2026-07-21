@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
-import { ChevronRight, History, Loader2 } from 'lucide-react';
+import { ChevronRight, History, Loader2, MessageSquare, UserPlus } from 'lucide-react';
 import { api } from '../api/client';
-import type { WorkflowEvent } from '../api/client';
+import type { EntityComment, WorkflowEvent } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 
 /**
- * Renders the allowed next-state buttons for one entity row, driven by the
- * domain's declared workflow spec (GET /{domain}/workflows), plus a history
- * toggle that loads the entity's transition audit trail on demand. Clicking a
- * state POSTs to /{domain}/{entityPath}/{id}/transition — the backend engine
- * validates the move (map, role floor, business guards), stamps side-effects
- * and writes the audit trail.
+ * Per-row workflow controls: allowed next-state buttons (from the domain's
+ * declared spec), plus on-demand panels for the transition history, ownership
+ * assignment, and the comment thread — all keyed off the same entity. Every
+ * mutation flows through the guarded backend engine (transition map, role
+ * floors, guards, audit).
  */
 
 const STATE_COLORS: Record<string, string> = {
@@ -22,22 +21,38 @@ const STATE_COLORS: Record<string, string> = {
   CLOSED: '#64748b', EXPIRED: '#64748b', ROLLED_BACK: '#f59e0b',
 };
 
+// URL path segment -> workflow entity_type used by the collaboration endpoints.
+const PATH_TO_ENTITY: Record<string, string> = {
+  tickets: 'ticket', opportunities: 'opportunity', contracts: 'contract',
+  'purchase-requests': 'purchase_request', 'purchase-orders': 'purchase_order',
+  invoices: 'invoice', 'expense-reports': 'expense_report',
+  incidents: 'incident', deployments: 'deployment',
+  'time-off-requests': 'time_off_request', requisitions: 'job_requisition',
+};
+
 interface Props {
-  domain: string;          // e.g. "support"
+  domain: string;
   entityPath: string;      // e.g. "tickets"
   entityId: string;
   currentState: string;
-  transitions: Record<string, string[]> | undefined; // spec.transitions
-  onDone: (msg: string) => void;   // refresh callback with a status message
+  transitions: Record<string, string[]> | undefined;
+  onDone: (msg: string) => void;
   onError?: (msg: string) => void;
 }
 
 const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, currentState, transitions, onDone, onError }) => {
   const { colors } = useTheme();
+  const entityType = PATH_TO_ENTITY[entityPath] || entityPath;
+
   const [busy, setBusy] = useState<string | null>(null);
+  const [panel, setPanel] = useState<'history' | 'assign' | 'comments' | null>(null);
+
   const [history, setHistory] = useState<WorkflowEvent[] | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [assignee, setAssignee] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [comments, setComments] = useState<EntityComment[] | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [commentBusy, setCommentBusy] = useState(false);
 
   const allowed = transitions?.[(currentState || '').toUpperCase()] || [];
 
@@ -48,25 +63,46 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
       onDone(`${res.entity_type.replace(/_/g, ' ')} moved ${res.from_state} → ${res.to_state}`);
     } catch (e: any) {
       (onError || onDone)(`Transition failed: ${e?.message || e}`);
-    } finally {
-      setBusy(null);
+    } finally { setBusy(null); }
+  };
+
+  const openPanel = async (p: 'history' | 'assign' | 'comments') => {
+    if (panel === p) { setPanel(null); return; }
+    setPanel(p);
+    if (p === 'history' && history === null) {
+      try { setHistory(await api.getWorkflowEvents(domain, { entity_id: entityId })); }
+      catch { setHistory([]); }
+    }
+    if (p === 'comments' && comments === null) {
+      try { setComments(await api.getComments(entityType, entityId)); }
+      catch { setComments([]); }
     }
   };
 
-  const toggleHistory = async () => {
-    if (showHistory) { setShowHistory(false); return; }
-    setShowHistory(true);
-    if (history === null) {
-      setLoadingHistory(true);
-      try {
-        setHistory(await api.getWorkflowEvents(domain, { entity_id: entityId }));
-      } catch {
-        setHistory([]);
-      } finally {
-        setLoadingHistory(false);
-      }
-    }
+  const saveAssignee = async () => {
+    if (!assignee.trim()) return;
+    setAssignBusy(true);
+    try {
+      await api.assignEntity(entityType, entityId, assignee.trim());
+      onDone(`Assigned to ${assignee.trim()}`);
+      setPanel(null); setAssignee('');
+    } catch (e: any) { (onError || onDone)(`Assign failed: ${e?.message || e}`); }
+    finally { setAssignBusy(false); }
   };
+
+  const postComment = async () => {
+    if (!newComment.trim()) return;
+    setCommentBusy(true);
+    try {
+      const c = await api.addComment(entityType, entityId, newComment.trim());
+      setComments(prev => [...(prev || []), c]);
+      setNewComment('');
+    } catch (e: any) { (onError || onDone)(`Comment failed: ${e?.message || e}`); }
+    finally { setCommentBusy(false); }
+  };
+
+  const iconBtn = (active: boolean) =>
+    ({ color: active ? colors.primary : colors.inkTertiary } as React.CSSProperties);
 
   return (
     <div>
@@ -83,18 +119,22 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
             </button>
           );
         })}
-        <button onClick={toggleHistory} title="Transition history"
-          className="p-1 rounded-md"
-          style={{ color: showHistory ? colors.primary : colors.inkTertiary }}>
+        <button onClick={() => openPanel('history')} title="Transition history" className="p-1 rounded-md" style={iconBtn(panel === 'history')}>
           <History className="w-3 h-3" />
+        </button>
+        <button onClick={() => openPanel('assign')} title="Assign" className="p-1 rounded-md" style={iconBtn(panel === 'assign')}>
+          <UserPlus className="w-3 h-3" />
+        </button>
+        <button onClick={() => openPanel('comments')} title="Comments" className="p-1 rounded-md" style={iconBtn(panel === 'comments')}>
+          <MessageSquare className="w-3 h-3" />
         </button>
       </div>
 
-      {showHistory && (
+      {panel === 'history' && (
         <div className="mt-1.5 rounded-lg p-2 space-y-1 min-w-[210px]"
           style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-          {loadingHistory && <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.inkSubtle }} />}
-          {!loadingHistory && (history || []).length === 0 && (
+          {history === null && <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.inkSubtle }} />}
+          {history !== null && history.length === 0 && (
             <p className="text-[10px]" style={{ color: colors.inkTertiary }}>No transitions recorded yet.</p>
           )}
           {(history || []).map(e => (
@@ -107,6 +147,49 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {panel === 'assign' && (
+        <div className="mt-1.5 rounded-lg p-2 flex items-center gap-1.5 min-w-[220px]"
+          style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+          <input value={assignee} onChange={e => setAssignee(e.target.value)}
+            placeholder="assignee (email or name)" onKeyDown={e => e.key === 'Enter' && saveAssignee()}
+            className="flex-1 px-2 py-1 rounded text-[11px] focus:outline-none"
+            style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+          <button onClick={saveAssignee} disabled={assignBusy}
+            className="px-2 py-1 rounded text-[10px] font-semibold text-white disabled:opacity-50"
+            style={{ background: colors.primary }}>
+            {assignBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Assign'}
+          </button>
+        </div>
+      )}
+
+      {panel === 'comments' && (
+        <div className="mt-1.5 rounded-lg p-2 space-y-1.5 min-w-[240px]"
+          style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+          {comments === null && <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.inkSubtle }} />}
+          {comments !== null && comments.length === 0 && (
+            <p className="text-[10px]" style={{ color: colors.inkTertiary }}>No comments yet.</p>
+          )}
+          {(comments || []).map(c => (
+            <div key={c.id} className="text-[10px]">
+              <span className="font-semibold" style={{ color: colors.ink }}>{c.author}</span>
+              <span className="ml-1" style={{ color: colors.inkTertiary }}>{timeAgo(c.at)}</span>
+              <p style={{ color: colors.inkSubtle }}>{c.body}</p>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5 pt-1">
+            <input value={newComment} onChange={e => setNewComment(e.target.value)}
+              placeholder="add a note… @mention supported" onKeyDown={e => e.key === 'Enter' && postComment()}
+              className="flex-1 px-2 py-1 rounded text-[11px] focus:outline-none"
+              style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+            <button onClick={postComment} disabled={commentBusy}
+              className="px-2 py-1 rounded text-[10px] font-semibold text-white disabled:opacity-50"
+              style={{ background: colors.primary }}>
+              {commentBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Post'}
+            </button>
+          </div>
         </div>
       )}
     </div>

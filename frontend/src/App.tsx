@@ -8,10 +8,10 @@ import {
   Landmark, Receipt, Wallet, Scale, ShieldAlert, FileText, ShieldCheck,
   Lock, Lightbulb, BookOpen, Clock, Heart, Compass, Target, TrendingUp,
   CheckSquare, Clipboard, Wrench, Server, GitPullRequest, Siren,
-  Factory, UserPlus
+  Factory, UserPlus, Zap
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { api, type PendingHITLItem } from './api/client';
+import { api, type PendingHITLItem, type AppNotification } from './api/client';
 import KaeosLogo from './components/KaeosLogo';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ThemeAdapter from './components/ThemeAdapter';
@@ -28,6 +28,8 @@ const DeploymentStudio = lazy(() => import('./pages/DeploymentStudio'));
 const DomainPackMarketplace = lazy(() => import('./pages/DomainPackMarketplace'));
 const WorkforceAnalytics = lazy(() => import('./pages/WorkforceAnalytics'));
 const OrgPulse = lazy(() => import('./pages/OrgPulse'));
+const MyWork = lazy(() => import('./pages/MyWork'));
+const Automation = lazy(() => import('./pages/Automation'));
 const ConnectorStudio = lazy(() => import('./pages/ConnectorStudio'));
 
 // ─── HR DEPARTMENT ─────────────────────────────────────────────────
@@ -80,12 +82,15 @@ type NavItem = { path: string; label: string; icon: React.ElementType; badge?: s
 const WORKFORCE_NAV: NavItem[] = [
   { path: '/getting-started', label: 'Getting Started', icon: Compass },
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  // Departments (what you run) → Marketplace (browse & add) → Deploy wizard is
+  // reached from a marketplace pack, so it's a flow, not a standalone nav item.
   { path: '/departments', label: 'Departments', icon: Building2 },
-  { path: '/deploy', label: 'Deploy', icon: Rocket },
   { path: '/marketplace', label: 'Marketplace', icon: Package },
   { path: '/integrations', label: 'Integrations', icon: Plug },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/pulse', label: 'Org Pulse', icon: Activity },
+  { path: '/my-work', label: 'My Work', icon: Briefcase },
+  { path: '/automation', label: 'Automation', icon: Zap },
 ];
 
 const HR_NAV: NavItem[] = [
@@ -193,6 +198,7 @@ function Shell() {
   const [chatOpen, setChatOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<PendingHITLItem[]>([]);
+  const [orgNotifs, setOrgNotifs] = useState<AppNotification[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [platformCollapsed, setPlatformCollapsed] = useState(true);
@@ -204,9 +210,15 @@ function Shell() {
   // queue), polled every 30s. The bell badge lights only when there are items.
   useEffect(() => {
     let cancelled = false;
-    const load = () => api.getPendingHITL()
-      .then(d => { if (!cancelled) setNotifs(Array.isArray(d) ? d : []); })
-      .catch(() => { if (!cancelled) setNotifs([]); });
+    const load = () => {
+      api.getPendingHITL()
+        .then(d => { if (!cancelled) setNotifs(Array.isArray(d) ? d : []); })
+        .catch(() => { if (!cancelled) setNotifs([]); });
+      // Org notifications (SLA escalations, @mentions, automation alerts).
+      api.getNotifications(true, 10)
+        .then(d => { if (!cancelled) setOrgNotifs(d.items || []); })
+        .catch(() => { if (!cancelled) setOrgNotifs([]); });
+    };
     load();
     const t = setInterval(load, 30000);
     return () => { cancelled = true; clearInterval(t); };
@@ -528,9 +540,9 @@ function Shell() {
                 className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
                 style={{ color: notifOpen ? colors.primary : colors.inkSubtle }}>
                 <Bell className="w-4 h-4" />
-                {notifs.length > 0 && (
+                {(notifs.length + orgNotifs.length) > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
-                    style={{ background: colors.error }}>{notifs.length > 9 ? '9+' : notifs.length}</span>
+                    style={{ background: colors.error }}>{(notifs.length + orgNotifs.length) > 9 ? '9+' : (notifs.length + orgNotifs.length)}</span>
                 )}
               </button>
               {notifOpen && (
@@ -546,11 +558,29 @@ function Shell() {
                       </span>
                     </div>
                     <div className="max-h-[360px] overflow-y-auto">
-                      {notifs.length === 0 ? (
+                      {/* Org notifications: SLA escalations, @mentions, automation alerts */}
+                      {orgNotifs.map(n => (
+                        <div key={n.id}
+                          onClick={() => { navigate('/pulse'); setNotifOpen(false); }}
+                          className="px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b"
+                          style={{ borderColor: colors.hairline }}>
+                          <div className="flex items-start gap-2">
+                            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                              style={{ background: (n.severity === 'critical' ? colors.error : colors.warning) + '20' }}>
+                              <Activity className="w-3.5 h-3.5" style={{ color: n.severity === 'critical' ? colors.error : colors.warning }} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{n.title}</div>
+                              {n.description && <div className="text-[10px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{n.description}</div>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {notifs.length === 0 && orgNotifs.length === 0 ? (
                         <div className="px-3 py-8 text-center">
                           <Bell className="w-6 h-6 mx-auto mb-2" style={{ color: colors.inkTertiary }} />
                           <div className="text-[12px]" style={{ color: colors.inkSubtle }}>You're all caught up</div>
-                          <div className="text-[10px] mt-0.5" style={{ color: colors.inkTertiary }}>No decisions awaiting your approval</div>
+                          <div className="text-[10px] mt-0.5" style={{ color: colors.inkTertiary }}>No decisions or alerts awaiting you</div>
                         </div>
                       ) : notifs.map(n => (
                         <div key={n.id}
@@ -615,6 +645,8 @@ function Shell() {
                 <Route path="/integrations" element={<ThemeAdapter><ConnectorStudio domain={domain} /></ThemeAdapter>} />
                 <Route path="/analytics" element={<ThemeAdapter><WorkforceAnalytics domain={domain} /></ThemeAdapter>} />
                 <Route path="/pulse" element={<ThemeAdapter><OrgPulse domain={domain} /></ThemeAdapter>} />
+                <Route path="/my-work" element={<ThemeAdapter><MyWork domain={domain} /></ThemeAdapter>} />
+                <Route path="/automation" element={<ThemeAdapter><Automation domain={domain} /></ThemeAdapter>} />
 
                 {/* HR DEPARTMENT */}
                 <Route path="/departments/hr" element={<ThemeAdapter><HRDashboard domain={domain} /></ThemeAdapter>} />

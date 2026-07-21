@@ -6,7 +6,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "KAEOS"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.1.0"
     DEBUG: bool = False
     # Safe default: auth is ENFORCED unless DEV_MODE is explicitly enabled
     # (e.g. DEV_MODE=true in a local .env). Never ship DEV_MODE=true to production.
@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     # Run the PII scrubber (Presidio) over any prompt before it leaves to a
     # cloud LLM provider. On by default when a residency is set; opt-in otherwise.
     SCRUB_PII_BEFORE_LLM: bool = False
+
+    # Loaded (fully-burdened) hourly labor rate used to convert hours-saved
+    # into a cost-savings estimate on the ROI dashboard. This is a documented
+    # platform default (blended knowledge-worker loaded cost); override per
+    # deployment/tenant. hours_saved is itself a heuristic (0.5h/automated task),
+    # so cost derives transparently from the same figure rather than a second
+    # unpopulated table.
+    LOADED_HOURLY_RATE_USD: float = 85.0
 
     # Database — SQLite for local dev, PostgreSQL for production
     DATABASE_URL: str = "sqlite+aiosqlite:///./kaeos.db"

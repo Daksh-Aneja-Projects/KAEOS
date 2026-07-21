@@ -3,6 +3,56 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-07-21
+
+The **Workflow, Analytics & Collaboration Platform** release. Turns the seven
+department brains from read-only dashboards into an operational system: every
+core entity now has a guarded lifecycle, live cross-domain analytics, ownership,
+comments, automation, and a unified notification surface — all on real tenant data.
+
+### Added
+- **Shared workflow engine** (`app/core/workflow.py`) — declarative per-domain
+  state machines with guarded transitions, per-target-state **role floors**,
+  business **guard** callables, **SLA thresholds**, a `core_workflow_events`
+  audit trail, and a tenant WebSocket broadcast on every transition. Illegal
+  moves return 409 with the allowed set; foreign-tenant rows 404 (never confirm ids).
+- **Per-domain analytics + workflow endpoints** across Finance, HR, Sales,
+  Support, Operations, Legal, Engineering — `GET /{domain}/analytics` (live SQL
+  KPIs, charts, insights), `/{domain}/workflows`, `/{domain}/workflow-events`,
+  guarded `POST .../{id}/transition`, `POST .../workflows/{type}/bulk-transition`
+  (per-id outcomes), and validated entity-**creation** endpoints with auto-numbering.
+- **Org Pulse** (`/pulse`) — cross-domain health (insight-severity + SLA-breach
+  weighted), unified needs-attention feed, live workflow activity, an **SLA
+  Breaches** table, and one-click **Escalate all** (idempotent alerting).
+- **Assignment & My Work** (`/my-work`) — assign any entity, per-user "my work",
+  team workload, all cross-domain.
+- **Comments & @mentions** on any workflow entity, with mention notifications.
+- **Automation rules** (`/automation`) — declarative "when an entity dwells in a
+  state past N hours, transition / assign / escalate"; rules validated against the
+  live workflow registry, evaluated on demand.
+- **Notifications & digest** — unified notification feed with unread counts,
+  mark-read, and a one-call org digest; SLA/mention/automation alerts surface in
+  the header bell alongside the HITL queue.
+- **CSV export & saved segments** — export any workflow entity type; save named
+  per-domain filters.
+- **Live-feel UI** — a `LiveBadge` (WebSocket heartbeat + "synced Ns ago") on the
+  main dashboards; domain views and analytics auto-refresh on tenant events.
+- Alembic `0004_workflow` and `0005_workspace` (RLS-guarded on Postgres).
+
+### Changed
+- **Departments → Marketplace → Deploy** unified into one funnel: Departments
+  shows what you run, the Marketplace is the catalog, and "Deploy This Pack"
+  carries the chosen pack into the wizard (skipping its duplicate pack-picker).
+  Standalone "Deploy" removed from the top nav.
+- **ROI cost-saved** now derives transparently from live hours-saved × a
+  documented loaded hourly rate (`LOADED_HOURLY_RATE_USD`, default $85) instead of
+  reading an unpopulated metrics table — fixes the `$0` cost card while hours were
+  non-zero. Rate is shown as a footnote for honesty.
+
+### Fixed
+- SLA-escalation dedupe now matches the `action_taken` column's `False` default
+  (not just NULL), so re-running escalation never re-alerts open breaches.
+
 ## [1.0.0] — 2026-07-20
 
 First public release.

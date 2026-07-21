@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowRight, Users, Bot, Zap, Activity, Rocket } from 'lucide-react';
+import { Building2, ArrowRight, Users, Bot, Zap, Activity, Package } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
@@ -47,14 +47,14 @@ export default function DepartmentsHub() {
             <div>
               <h1 className="text-[24px] font-bold tracking-tight">Departments</h1>
               <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
-                Your governed AI departments. Open one to see its live work, or deploy a new one.
+                Your governed AI departments. Open one to see its live work, or add a new one from the marketplace.
               </p>
             </div>
           </div>
-          <button onClick={() => navigate('/deploy')}
+          <button onClick={() => navigate('/marketplace')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white transition-all hover:opacity-90"
             style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
-            <Rocket className="w-4 h-4" /> Deploy department
+            <Package className="w-4 h-4" /> Add from marketplace
           </button>
         </div>
 
@@ -67,12 +67,12 @@ export default function DepartmentsHub() {
             <Building2 className="w-9 h-9 mx-auto mb-3" style={{ color: colors.inkTertiary }} />
             <div className="text-[15px] font-semibold">No departments yet</div>
             <p className="text-[13px] mt-1 max-w-sm mx-auto" style={{ color: colors.inkSubtle }}>
-              Deploy your first governed AI department from a domain pack in four guided steps.
+              Browse the marketplace and deploy your first governed AI department from a domain pack in a few guided steps.
             </p>
-            <button onClick={() => navigate('/deploy')}
+            <button onClick={() => navigate('/marketplace')}
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white"
               style={{ background: colors.primary }}>
-              <Rocket className="w-4 h-4" /> Deploy a department
+              <Package className="w-4 h-4" /> Browse marketplace
             </button>
           </div>
         ) : (

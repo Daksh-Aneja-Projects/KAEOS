@@ -14,17 +14,23 @@ import {
   Users, Zap, Heart, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
+import LiveBadge from '../components/LiveBadge';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   const { colors } = useTheme();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [syncedAt, setSyncedAt] = useState<number | null>(null);
 
-  useEffect(() => {
-    api.getWorkforceAnalytics()
-      .then(d => { setData(d); setLoading(false); })
+  const loadAnalytics = React.useCallback(() => {
+    return api.getWorkforceAnalytics()
+      .then(d => { setData(d); setSyncedAt(Date.now()); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
+  useLiveRefresh(loadAnalytics);
 
   if (loading) return <BrainLoading message="Computing ROI analytics..." />;
   if (!data) return <BrainEmpty title="No analytics data yet" action="Deploy a department and complete tasks to generate analytics" />;
@@ -40,11 +46,14 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-[24px] font-bold tracking-tight">Workforce Analytics</h1>
-          <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
-            Enterprise ROI - real-time metrics from all deployed departments.
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-[24px] font-bold tracking-tight">Workforce Analytics</h1>
+            <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
+              Enterprise ROI - real-time metrics from all deployed departments.
+            </p>
+          </div>
+          <LiveBadge lastSync={syncedAt} />
         </div>
 
         {/* KPI Cards */}
@@ -53,27 +62,21 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
             // Deltas were hardcoded ("+12%", "+8.2%", "+15%") and presented as real
             // trends. There is no period-over-period series behind them, so they are
             // omitted rather than fabricated.
-            { label: 'Tasks Completed', value: (data.total_tasks_completed || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e', delta: '' },
-            { label: 'Hours Saved', value: `${data.total_hours_saved || 0}h`, icon: Clock, color: '#f59e0b', delta: '' },
-            { label: 'Cost Saved', value: `$${(data.total_cost_saved || 0).toLocaleString()}`, icon: DollarSign, color: '#22c55e', delta: '' },
-            { label: 'Automation', value: `${data.automation_coverage_pct || 0}%`, icon: Zap, color: '#8b5cf6', delta: '' },
-            { label: 'Health Score', value: `${data.avg_health_score || 0}%`, icon: Heart, color: healthColor(data.avg_health_score || 0), delta: '' },
+            { label: 'Tasks Completed', value: (data.total_tasks_completed || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e', sub: '' },
+            { label: 'Hours Saved', value: `${data.total_hours_saved || 0}h`, icon: Clock, color: '#f59e0b', sub: '0.5h / automated task' },
+            { label: 'Cost Saved', value: `$${(data.total_cost_saved || 0).toLocaleString()}`, icon: DollarSign, color: '#22c55e', sub: data.loaded_hourly_rate_usd ? `@ $${data.loaded_hourly_rate_usd}/hr loaded` : '' },
+            { label: 'Automation', value: `${data.automation_coverage_pct || 0}%`, icon: Zap, color: '#8b5cf6', sub: '' },
+            { label: 'Health Score', value: `${data.avg_health_score || 0}%`, icon: Heart, color: healthColor(data.avg_health_score || 0), sub: '' },
           ].map(kpi => (
             <div key={kpi.label} style={card} className="relative overflow-hidden">
-              {/* Background glow */}
-              <div className="absolute -top-6 -right-6 w-20 h-20 rounded-full opacity-5" style={{ background: kpi.color }} />
               <div className="flex items-center justify-between mb-2">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: kpi.color + '15' }}>
                   <kpi.icon className="w-4.5 h-4.5" style={{ color: kpi.color }} />
                 </div>
-                {kpi.delta && (
-                  <span className="flex items-center gap-0.5 text-[10px] font-bold" style={{ color: '#22c55e' }}>
-                    <TrendingUp className="w-3 h-3" /> {kpi.delta}
-                  </span>
-                )}
               </div>
               <div className="text-[24px] font-bold mt-2" style={{ color: kpi.color }}>{kpi.value}</div>
               <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              {kpi.sub && <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
             </div>
           ))}
         </div>

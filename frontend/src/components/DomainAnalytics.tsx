@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { DomainAnalytics as DomainAnalyticsPayload, DomainChart, DomainKPI } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import LiveBadge from './LiveBadge';
 
 /**
  * Shared analytics layer for the 7 department views.
@@ -121,11 +122,13 @@ const DomainAnalytics: React.FC<{ domain: string }> = ({ domain }) => {
   const [data, setData] = useState<DomainAnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lastSync, setLastSync] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
       setData(await api.getDomainAnalytics(domain));
       setError('');
+      setLastSync(Date.now());
     } catch (e: any) {
       setError(e?.message || 'Failed to load analytics');
     } finally {
@@ -159,6 +162,7 @@ const DomainAnalytics: React.FC<{ domain: string }> = ({ domain }) => {
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end -mb-2"><LiveBadge lastSync={lastSync} /></div>
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {data.kpis.map(kpi => (

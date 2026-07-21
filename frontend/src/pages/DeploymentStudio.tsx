@@ -10,7 +10,7 @@
  * API: GET /workforce/packs/ → POST /workforce/deployments/start → poll GET /workforce/deployments/{id}
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
@@ -25,6 +25,11 @@ type Step = 1 | 2 | 3 | 4;
 export default function DeploymentStudio({ domain }: { domain?: string }) {
   const { colors } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  // The Marketplace is the entry to deploying: it navigates here with the
+  // chosen pack, so the wizard skips its own catalog step. Direct nav (no
+  // preselected pack) still falls back to picking one on Step 1.
+  const preselectedPackId = (location.state as any)?.packId as string | undefined;
   const [step, setStep] = useState<Step>(1);
   const [packs, setPacks] = useState<any[]>([]);
   const [selectedPack, setSelectedPack] = useState<any>(null);
@@ -42,8 +47,14 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
       api.getDomainPacks().catch(() => ({ packs: [] })),
       api.getConnectors().catch(() => ({ connectors: [] })),
     ]).then(([p, c]) => {
-      setPacks(p?.packs || []);
+      const loadedPacks = p?.packs || [];
+      setPacks(loadedPacks);
       setConnectors(c?.connectors || []);
+      // Preselect the pack chosen in the Marketplace and jump past Step 1.
+      if (preselectedPackId) {
+        const match = loadedPacks.find((pk: any) => pk.id === preselectedPackId || pk.slug === preselectedPackId);
+        if (match) { setSelectedPack(match); setStep(2); }
+      }
       setLoading(false);
     });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };

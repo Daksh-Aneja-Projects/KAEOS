@@ -17,14 +17,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.core.workflow import find_stale_entities, list_workflow_events
-
-from app.finance.services.workflows import SPECS as FINANCE_SPECS
-from app.hr.services.workflows import SPECS as HR_SPECS
-from app.sales.services.workflows import SPECS as SALES_SPECS
-from app.support.services.workflows import SPECS as SUPPORT_SPECS
-from app.operations.services.workflows import SPECS as OPERATIONS_SPECS
-from app.legal.services.workflows import SPECS as LEGAL_SPECS
-from app.engineering.services.workflows import SPECS as ENGINEERING_SPECS
+from app.services.workflow_registry import ALL_SPECS
 
 from app.finance.services.analytics import finance_analytics
 from app.hr.services.analytics import hr_analytics
@@ -51,12 +44,7 @@ _DOMAIN_ANALYTICS = [
 ]
 
 # Every registered workflow spec across the platform — the SLA sweep walks this.
-ALL_WORKFLOW_SPECS = [
-    spec
-    for specs in (FINANCE_SPECS, HR_SPECS, SALES_SPECS, SUPPORT_SPECS,
-                  OPERATIONS_SPECS, LEGAL_SPECS, ENGINEERING_SPECS)
-    for spec in specs.values()
-]
+ALL_WORKFLOW_SPECS = ALL_SPECS
 
 _SEVERITY_PENALTY = {"critical": 25, "warning": 10, "info": 0}
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
