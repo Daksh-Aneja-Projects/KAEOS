@@ -1,21 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import {
-  FileText, ShieldCheck, Landmark, Lock, Lightbulb,
+  FileText, ShieldCheck, Landmark, Lock, Lightbulb, BarChart3,
   Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { toPct } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
-type LegalTab = 'contracts' | 'compliance' | 'litigation' | 'privacy' | 'ip';
+type LegalTab = 'contracts' | 'compliance' | 'litigation' | 'privacy' | 'ip' | 'analytics';
 
 const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<LegalTab>(() => {
-    const valid: LegalTab[] = ['contracts', 'compliance', 'litigation', 'privacy', 'ip'];
+    const valid: LegalTab[] = ['contracts', 'compliance', 'litigation', 'privacy', 'ip', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as LegalTab)) return defaultTab as LegalTab;
     return 'contracts';
   });
@@ -31,6 +34,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [dsars, setDsars] = useState<any[]>([]);
   const [patents, setPatents] = useState<any[]>([]);
   const [matters, setMatters] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   useEffect(() => { loadData(); }, []);
 
@@ -45,10 +49,12 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     const results = await Promise.allSettled([
       api.getLegalContracts(), api.getLegalObligations(), api.getLegalCases(),
       api.getLegalDsars(), api.getLegalPatents(), api.getLegalMatters(),
+      api.getDomainWorkflows('legal'),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setContracts(val(0)); setObligations(val(1)); setCases(val(2));
     setDsars(val(3)); setPatents(val(4)); setMatters(val(5));
+    if (results[6].status === 'fulfilled') setWorkflows((results[6] as any).value || {});
     setLoading(false);
   };
 
@@ -98,6 +104,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     { key: 'litigation', label: 'Litigation', icon: Landmark, color: '#ef4444' },
     { key: 'privacy', label: 'Privacy / DSAR', icon: Lock, color: '#3b82f6' },
     { key: 'ip', label: 'Intellectual Property', icon: Lightbulb, color: '#f59e0b' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
@@ -186,6 +193,11 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             {runningAgent === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Review
                           </button>
+                          <div className="mt-1">
+                            <WorkflowActions domain="legal" entityPath="contracts" entityId={c.id}
+                              currentState={c.status} transitions={workflows['contract']?.transitions}
+                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -326,6 +338,9 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                 {patents.length === 0 && <EmptyState icon={Lightbulb} title="No patents" sub="IP portfolio appears here" />}
               </div>
             )}
+
+            {/* ANALYTICS */}
+            {tab === 'analytics' && <DomainAnalytics domain="legal" />}
           </>
         )}
       </div>

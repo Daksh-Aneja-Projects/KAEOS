@@ -49,6 +49,16 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
 }
 
 // ─── Types ───
+
+// Shared domain analytics/workflow layer (all 7 domains return these shapes).
+export interface DomainKPI { key: string; label: string; value: number | null; format: 'currency' | 'number' | 'percent' | 'hours'; }
+export interface DomainChart { key: string; title: string; type: 'bar' | 'funnel' | 'donut'; items: { label: string; value: number }[]; }
+export interface DomainInsight { severity: 'info' | 'warning' | 'critical'; message: string; }
+export interface DomainAnalytics { domain: string; kpis: DomainKPI[]; charts: DomainChart[]; insights: DomainInsight[]; }
+export interface WorkflowSpec { domain: string; entity_type: string; status_attr: string; states: string[]; transitions: Record<string, string[]>; }
+export interface WorkflowEvent { id: string; domain: string; entity_type: string; entity_id: string; from_state: string; to_state: string; actor: string | null; actor_role: string | null; note: string | null; at: string; }
+export interface TransitionResult { entity_type: string; entity_id: string; from_state: string; to_state: string; allowed_next: string[]; at: string; note: string | null; }
+
 export interface DepartmentCoverage {
   department: string;
   coverage: number;
@@ -1113,6 +1123,23 @@ export const api = {
     return request<{ tenant_id: string; count: number; examples: FoundryExample[] }>(
       `/foundry/datasets/export${q ? `?${q}` : ''}`);
   },
+
+  // ─── Domain Analytics & Workflow Layer (shared across the 7 domains) ───
+  // Every domain exposes the same computed-analytics shape and a declared
+  // state machine; the DomainAnalytics / WorkflowActions components render
+  // all seven domains from these four calls.
+  getDomainAnalytics: (domain: string) => request<DomainAnalytics>(`/${domain}/analytics`),
+  getDomainWorkflows: (domain: string) => request<Record<string, WorkflowSpec>>(`/${domain}/workflows`),
+  getWorkflowEvents: (domain: string, params?: { entity_type?: string; entity_id?: string }) => {
+    const q = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => !!v) as [string, string][]
+    ).toString();
+    return request<WorkflowEvent[]>(`/${domain}/workflow-events${q ? `?${q}` : ''}`);
+  },
+  transitionEntity: (domain: string, entityPath: string, id: string, to_state: string, note?: string) =>
+    request<TransitionResult>(`/${domain}/${entityPath}/${id}/transition`, {
+      method: 'POST', body: JSON.stringify({ to_state, note: note || null }),
+    }),
 
   // ─── WebSocket helper (returns URL, not a fetch) ───
   // The ws router is mounted at the server root (/ws/...), NOT under /api/v1.

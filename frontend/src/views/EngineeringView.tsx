@@ -4,11 +4,14 @@ import {
   Bot, Loader2, CheckCircle2, XCircle, RefreshCw, ShieldAlert,
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
-type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems';
+type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
 
 const TAB_LABEL: Record<EngTab, string> = {
   services: 'Service Catalog',
@@ -16,11 +19,12 @@ const TAB_LABEL: Record<EngTab, string> = {
   deployments: 'Deployments',
   incidents: 'Incidents',
   postmortems: 'Postmortems',
+  analytics: 'Analytics',
 };
 
 const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const valid: EngTab[] = ['services', 'pull-requests', 'deployments', 'incidents', 'postmortems'];
+  const valid: EngTab[] = ['services', 'pull-requests', 'deployments', 'incidents', 'postmortems', 'analytics'];
   const [tab, setTab] = useState<EngTab>(
     defaultTab && valid.includes(defaultTab) ? defaultTab : 'services'
   );
@@ -31,19 +35,21 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const [deployments, setDeployments] = useState<any[]>([]);
   const [incidents, setIncidents] = useState<any[]>([]);
   const [postmortems, setPostmortems] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
   const [actionMsg, setActionMsg] = useState('');
 
   const loadData = async () => {
-    const [d, s, p, dep, inc, pm] = await Promise.allSettled([
+    const [d, s, p, dep, inc, pm, wf] = await Promise.allSettled([
       api.getEngineeringDashboard(),
       api.getEngineeringServices(),
       api.getPullRequests(),
       api.getDeployments(),
       api.getIncidents(),
       api.getPostmortems(),
+      api.getDomainWorkflows('engineering'),
     ]);
     if (d.status === 'fulfilled') setDashboard(d.value);
     if (s.status === 'fulfilled') setServices(s.value || []);
@@ -51,6 +57,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
     if (dep.status === 'fulfilled') setDeployments(dep.value || []);
     if (inc.status === 'fulfilled') setIncidents(inc.value || []);
     if (pm.status === 'fulfilled') setPostmortems(pm.value || []);
+    if (wf.status === 'fulfilled') setWorkflows(wf.value || {});
     setLoading(false);
   };
 
@@ -326,6 +333,11 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   </td>
                   <td className="px-4 py-3">
                     <AgentButton id={d.id} label="Assess" onRun={() => runAgent('Deploy risk', d.id, api.runDeployRiskAgent)} />
+                    <div className="mt-1">
+                      <WorkflowActions domain="engineering" entityPath="deployments" entityId={d.id}
+                        currentState={d.status} transitions={workflows['deployment']?.transitions}
+                        onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -368,6 +380,11 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   </td>
                   <td className="px-4 py-3">
                     <AgentButton id={i.id} label="Triage" onRun={() => runAgent('Incident triage', i.id, api.runIncidentTriageAgent)} />
+                    <div className="mt-1">
+                      <WorkflowActions domain="engineering" entityPath="incidents" entityId={i.id}
+                        currentState={i.status} transitions={workflows['incident']?.transitions}
+                        onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -417,6 +434,9 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
           )}
         </div>
       )}
+
+      {/* Analytics */}
+      {!loading && tab === 'analytics' && <DomainAnalytics domain="engineering" />}
     </div>
   );
 };

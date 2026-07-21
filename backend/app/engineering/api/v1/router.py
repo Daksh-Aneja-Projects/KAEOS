@@ -332,3 +332,52 @@ async def list_postmortems(
         "published": p.published,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     } for p in pms]
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.engineering.services.analytics import engineering_analytics  # noqa: E402
+from app.engineering.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_engineering_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed incident, deploy and PR-flow KPIs for the engineering cockpit."""
+    return await engineering_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_engineering_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines - the frontend renders incident/deploy actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_engineering_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for engineering entities."""
+    return await list_workflow_events(db, tenant_id, domain="engineering",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/incidents/{incident_id}/transition")
+async def transition_incident(
+    incident_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Drive an incident through triage, mitigation, resolution; stamps MTTA/MTTR."""
+    return await apply_transition(db, WORKFLOW_SPECS["incident"], incident_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/deployments/{deployment_id}/transition")
+async def transition_deployment(
+    deployment_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Promote / fail / roll back a deployment through the guarded engine."""
+    return await apply_transition(db, WORKFLOW_SPECS["deployment"], deployment_id,
+                                  body.to_state, tenant, note=body.note)

@@ -385,3 +385,52 @@ async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.finance.services.analytics import finance_analytics  # noqa: E402
+from app.finance.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_finance_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed KPIs, distributions and insights for the finance cockpit."""
+    return await finance_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_finance_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines — the frontend renders transition actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_finance_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for finance entities."""
+    return await list_workflow_events(db, tenant_id, domain="finance",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/invoices/{invoice_id}/transition")
+async def transition_invoice(
+    invoice_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Guarded AP invoice lifecycle action (submit, approve, dispute, pay, void)."""
+    return await apply_transition(db, WORKFLOW_SPECS["invoice"], invoice_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/expense-reports/{report_id}/transition")
+async def transition_expense_report(
+    report_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Guarded expense report lifecycle action (submit, approve, reject, reimburse)."""
+    return await apply_transition(db, WORKFLOW_SPECS["expense_report"], report_id,
+                                  body.to_state, tenant, note=body.note)

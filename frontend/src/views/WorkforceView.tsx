@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, Briefcase, Calendar, Star, Search, UserPlus, Clock,
-  CheckCircle2, XCircle, ArrowUpRight,
+  CheckCircle2, XCircle, ArrowUpRight, BarChart3,
   MapPin, TrendingUp, RefreshCw,
   Zap, ExternalLink, ShieldAlert, Loader2
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
 interface HREmployee {
@@ -60,12 +63,12 @@ interface HRPerformanceReview {
   cycle_id?: string;
 }
 
-type HRTab = 'directory' | 'recruiting' | 'time' | 'performance';
+type HRTab = 'directory' | 'recruiting' | 'time' | 'performance' | 'analytics';
 
 const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<HRTab>(() => {
-    const validTabs: HRTab[] = ['directory', 'recruiting', 'time', 'performance'];
+    const validTabs: HRTab[] = ['directory', 'recruiting', 'time', 'performance', 'analytics'];
     if (defaultTab && validTabs.includes(defaultTab as HRTab)) return defaultTab as HRTab;
     if (defaultTab === 'employees') return 'directory';
     return 'directory';
@@ -78,6 +81,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   const [candidates, setCandidates] = useState<HRCandidate[]>([]);
   const [timeOff, setTimeOff] = useState<HRTimeOffRequest[]>([]);
   const [reviews, setReviews] = useState<HRPerformanceReview[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   // Filters
   const [searchQ, setSearchQ] = useState('');
@@ -104,18 +108,20 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
    
   const loadData = async () => {
     setLoading(true);
-    const [emp, req, cand, tor, rev] = await Promise.allSettled([
+    const [emp, req, cand, tor, rev, wf] = await Promise.allSettled([
       api.getHREmployees(),
       api.getHRRequisitions(),
       api.getHRCandidates(),
       api.getHRTimeOffRequests(),
       api.getHRPerformanceReviews(),
+      api.getDomainWorkflows('hr'),
     ]);
     if (emp.status === 'fulfilled') setEmployees(emp.value || []);
     if (req.status === 'fulfilled') setRequisitions(req.value || []);
     if (cand.status === 'fulfilled') setCandidates(cand.value || []);
     if (tor.status === 'fulfilled') setTimeOff(tor.value || []);
     if (rev.status === 'fulfilled') setReviews(rev.value || []);
+    if (wf.status === 'fulfilled') setWorkflows(wf.value || {});
     setLoading(false);
   };
 
@@ -473,7 +479,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
           <table className="w-full">
             <thead>
               <tr style={{ background: colors.surface2 }}>
-                {['Employee ID', 'Type', 'Start', 'End', 'Hours', 'Status'].map(h => (
+                {['Employee ID', 'Type', 'Start', 'End', 'Hours', 'Status', 'Actions'].map(h => (
                   <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wider px-5 py-2.5" style={{ color: colors.inkSubtle }}>{h}</th>
                 ))}
               </tr>
@@ -489,6 +495,11 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.end_date || '-'}</td>
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.hours_requested || '-'}</td>
                   <td className="px-5 py-3"><Badge status={t.status} /></td>
+                  <td className="px-5 py-3">
+                    <WorkflowActions domain="hr" entityPath="time-off-requests" entityId={t.id}
+                      currentState={t.status} transitions={workflows['time_off_request']?.transitions}
+                      onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -570,6 +581,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
     { id: 'recruiting', label: 'Recruiting', icon: Briefcase },
     { id: 'time', label: 'Time & Attendance', icon: Calendar },
     { id: 'performance', label: 'Performance', icon: Star },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   ];
 
   return (
@@ -615,6 +627,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
           {tab === 'recruiting' && renderRecruitingTab()}
           {tab === 'time' && renderTimeTab()}
           {tab === 'performance' && renderPerformanceTab()}
+          {tab === 'analytics' && <DomainAnalytics domain="hr" />}
         </>
       )}
     </div>

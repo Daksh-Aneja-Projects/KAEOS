@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import {
-  TrendingUp, Users, BarChart2, Briefcase,
+  TrendingUp, Users, BarChart2, Briefcase, BarChart3,
   Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, Star
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
-type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts';
+type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts' | 'analytics';
 
 interface Opportunity { id: string; name: string; account: string | null; stage: string; value: number; close_date: string | null; win_probability: number; next_step: string | null; }
 interface Lead { id: string; name: string; company: string; email: string; source: string; status: string; score: number; }
@@ -19,7 +22,7 @@ interface SalesAccount { id: string; name: string; industry: string; arr: number
 const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<SalesTab>(() => {
-    const valid: SalesTab[] = ['opportunities', 'leads', 'forecasts', 'accounts'];
+    const valid: SalesTab[] = ['opportunities', 'leads', 'forecasts', 'accounts', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as SalesTab)) return defaultTab as SalesTab;
     return 'opportunities';
   });
@@ -33,6 +36,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [leads, setLeads] = useState<Lead[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [accounts, setAccounts] = useState<SalesAccount[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   useEffect(() => { loadData(); }, []);
 
@@ -47,9 +51,11 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     const results = await Promise.allSettled([
       api.getSalesOpportunities(), api.getSalesLeads(),
       api.getSalesForecasts(), api.getSalesAccounts(),
+      api.getDomainWorkflows('sales'),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setOpportunities(val(0)); setLeads(val(1)); setForecasts(val(2)); setAccounts(val(3));
+    if (results[4].status === 'fulfilled') setWorkflows((results[4] as any).value || {});
     setLoading(false);
   };
 
@@ -98,6 +104,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     { key: 'leads', label: 'Leads', icon: Users, color: '#f59e0b' },
     { key: 'forecasts', label: 'Forecasts', icon: BarChart2, color: '#22c55e' },
     { key: 'accounts', label: 'Accounts', icon: Briefcase, color: '#3b82f6' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
@@ -157,7 +164,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                    {['Opportunity', 'Account', 'Stage', 'Value', 'Close Date', 'Win %', 'AI Coach'].map(h => (
+                    {['Opportunity', 'Account', 'Stage', 'Value', 'Close Date', 'Win %', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                     ))}
                   </tr></thead>
@@ -185,6 +192,11 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             {runningAgent === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Coach
                           </button>
+                          <div className="mt-1">
+                            <WorkflowActions domain="sales" entityPath="opportunities" entityId={o.id}
+                              currentState={o.stage} transitions={workflows['opportunity']?.transitions}
+                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -316,6 +328,9 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                 {accounts.length === 0 && <EmptyState icon={Briefcase} title="No accounts" sub="Sales accounts appear here" />}
               </div>
             )}
+
+            {/* ANALYTICS */}
+            {tab === 'analytics' && <DomainAnalytics domain="sales" />}
           </>
         )}
       </div>

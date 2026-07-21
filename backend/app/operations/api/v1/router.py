@@ -303,3 +303,53 @@ async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_ro
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from typing import Optional  # noqa: E402
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.operations.services.analytics import operations_analytics  # noqa: E402
+from app.operations.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_operations_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed procurement, quality and utilization KPIs for the ops cockpit."""
+    return await operations_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_operations_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines - the frontend renders procurement actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_operations_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for operations entities."""
+    return await list_workflow_events(db, tenant_id, domain="operations",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/purchase-requests/{request_id}/transition")
+async def transition_purchase_request(
+    request_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a purchase request through draft, approval, ordered, received."""
+    return await apply_transition(db, WORKFLOW_SPECS["purchase_request"], request_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/purchase-orders/{order_id}/transition")
+async def transition_purchase_order(
+    order_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a PO through approval, ordered, received (or cancel)."""
+    return await apply_transition(db, WORKFLOW_SPECS["purchase_order"], order_id,
+                                  body.to_state, tenant, note=body.note)

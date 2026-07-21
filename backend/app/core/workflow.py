@@ -1,0 +1,248 @@
+"""
+KAEOS Core — Shared Workflow Transition Engine
+
+Every domain (Finance, HR, Sales, Support, Operations, Legal, Engineering)
+exposes lifecycle actions on its core entities (approve an invoice, resolve a
+ticket, advance a deal). Instead of each router hand-rolling status writes,
+domains declare a WorkflowSpec (entity + allowed transition map + on-enter
+hooks) and route every state change through apply_transition(), which:
+
+  1. fetches the row tenant-scoped (404 on miss — never confirms foreign ids),
+  2. validates the transition against the declared map (409 with the allowed
+     next states on violation),
+  3. runs the target-state hook (timestamps, derived fields),
+  4. persists a WorkflowEvent audit row and a security audit event.
+
+This keeps the state machine in one reviewable place per domain and gives the
+platform a uniform, queryable transition history across all domains.
+"""
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
+
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import Column, DateTime, JSON, String, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
+
+from app.core.audit import record_security_event
+from app.models.domain import Base
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
+
+
+class WorkflowEvent(Base):
+    """Cross-domain audit trail: one row per guarded state transition."""
+    __tablename__ = "core_workflow_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+
+    domain = Column(String(32), nullable=False, index=True)
+    entity_type = Column(String(64), nullable=False, index=True)
+    entity_id = Column(String, nullable=False, index=True)
+
+    from_state = Column(String(64), nullable=False)
+    to_state = Column(String(64), nullable=False)
+    actor = Column(String(128), nullable=True)
+    actor_role = Column(String(32), nullable=True)
+    note = Column(String(512), nullable=True)
+    context = Column(JSON, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+@dataclass
+class TransitionContext:
+    """Passed to on-enter hooks so they can stamp actor/time-derived fields."""
+    tenant_id: str
+    actor: Optional[str]
+    actor_role: Optional[str]
+    note: Optional[str]
+    now: datetime
+
+
+# Hook signature: mutate the ORM object in place; runs inside the transaction.
+TransitionHook = Callable[[Any, TransitionContext], None]
+
+
+@dataclass
+class WorkflowSpec:
+    domain: str
+    entity_type: str
+    model: type
+    transitions: Dict[str, List[str]]
+    status_attr: str = "status"
+    on_enter: Dict[str, TransitionHook] = field(default_factory=dict)
+
+    @property
+    def states(self) -> List[str]:
+        seen: List[str] = []
+        for src, targets in self.transitions.items():
+            for s in [src, *targets]:
+                if s not in seen:
+                    seen.append(s)
+        return seen
+
+    def allowed_from(self, state: str) -> List[str]:
+        return list(self.transitions.get(state, []))
+
+    def describe(self) -> dict:
+        """Serializable spec — the frontend renders action buttons from this."""
+        return {
+            "domain": self.domain,
+            "entity_type": self.entity_type,
+            "status_attr": self.status_attr,
+            "states": self.states,
+            "transitions": {k: list(v) for k, v in self.transitions.items()},
+        }
+
+
+class TransitionRequest(BaseModel):
+    """Request body for every POST .../transition endpoint."""
+    to_state: str = Field(..., min_length=1, max_length=64)
+    note: Optional[str] = Field(None, max_length=512)
+
+
+def _current_state(obj: Any, spec: WorkflowSpec) -> str:
+    raw = getattr(obj, spec.status_attr)
+    return raw.value if hasattr(raw, "value") else str(raw)
+
+
+def _coerce_state(spec: WorkflowSpec, value: str) -> Any:
+    """Convert the incoming string to the column's enum class when one exists."""
+    col = spec.model.__table__.columns.get(spec.status_attr)
+    enum_cls = getattr(col.type, "enum_class", None) if col is not None else None
+    if enum_cls is not None:
+        return enum_cls(value)
+    return value
+
+
+async def apply_transition(
+    db: AsyncSession,
+    spec: WorkflowSpec,
+    entity_id: str,
+    to_state: str,
+    tenant: dict,
+    note: Optional[str] = None,
+) -> dict:
+    """Perform one guarded, audited state transition. Raises HTTPException."""
+    tenant_id = tenant["tenant_id"]
+
+    if to_state not in spec.states:
+        raise HTTPException(422, detail={
+            "error": "unknown_state",
+            "to_state": to_state,
+            "known_states": spec.states,
+        })
+
+    q = await db.execute(
+        select(spec.model).where(
+            spec.model.id == entity_id,
+            spec.model.tenant_id == tenant_id,
+        )
+    )
+    obj = q.scalar_one_or_none()
+    if not obj:
+        # 404 (not 403) for another tenant's row: 403 would confirm the id exists.
+        raise HTTPException(404, detail=f"{spec.entity_type} not found")
+
+    from_state = _current_state(obj, spec)
+    allowed = spec.allowed_from(from_state)
+    if to_state not in allowed:
+        raise HTTPException(409, detail={
+            "error": "invalid_transition",
+            "entity_type": spec.entity_type,
+            "from_state": from_state,
+            "to_state": to_state,
+            "allowed": allowed,
+        })
+
+    ctx = TransitionContext(
+        tenant_id=tenant_id,
+        actor=tenant.get("name") or tenant.get("email"),
+        actor_role=tenant.get("role"),
+        note=note,
+        now=datetime.now(timezone.utc),
+    )
+
+    setattr(obj, spec.status_attr, _coerce_state(spec, to_state))
+    hook = spec.on_enter.get(to_state)
+    if hook:
+        hook(obj, ctx)
+
+    event = WorkflowEvent(
+        tenant_id=tenant_id,
+        domain=spec.domain,
+        entity_type=spec.entity_type,
+        entity_id=entity_id,
+        from_state=from_state,
+        to_state=to_state,
+        actor=ctx.actor,
+        actor_role=ctx.actor_role,
+        note=note,
+        context={},
+    )
+    db.add(event)
+    await db.commit()
+
+    await record_security_event(
+        tenant_id=tenant_id,
+        event_type="MODIFICATION",
+        action="WRITE",
+        actor=ctx.actor,
+        actor_role=ctx.actor_role,
+        resource_type=spec.entity_type,
+        resource_id=entity_id,
+        details={"workflow": f"{from_state} -> {to_state}", "domain": spec.domain},
+    )
+
+    return {
+        "entity_type": spec.entity_type,
+        "entity_id": entity_id,
+        "from_state": from_state,
+        "to_state": to_state,
+        "allowed_next": spec.allowed_from(to_state),
+        "at": ctx.now.isoformat(),
+        "note": note,
+    }
+
+
+async def list_workflow_events(
+    db: AsyncSession,
+    tenant_id: str,
+    domain: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    limit: int = 100,
+) -> List[dict]:
+    """Tenant-scoped transition history, newest first."""
+    q = select(WorkflowEvent).where(WorkflowEvent.tenant_id == tenant_id)
+    if domain:
+        q = q.where(WorkflowEvent.domain == domain)
+    if entity_type:
+        q = q.where(WorkflowEvent.entity_type == entity_type)
+    if entity_id:
+        q = q.where(WorkflowEvent.entity_id == entity_id)
+    result = await db.execute(q.order_by(WorkflowEvent.created_at.desc()).limit(min(limit, 500)))
+    return [
+        {
+            "id": e.id,
+            "domain": e.domain,
+            "entity_type": e.entity_type,
+            "entity_id": e.entity_id,
+            "from_state": e.from_state,
+            "to_state": e.to_state,
+            "actor": e.actor,
+            "actor_role": e.actor_role,
+            "note": e.note,
+            "at": str(e.created_at),
+        }
+        for e in result.scalars().all()
+    ]

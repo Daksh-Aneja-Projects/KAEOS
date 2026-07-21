@@ -317,3 +317,43 @@ async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncS
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from typing import Optional  # noqa: E402
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.support.services.analytics import support_analytics  # noqa: E402
+from app.support.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_support_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed backlog, MTTR and first-response KPIs for the support cockpit."""
+    return await support_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_support_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines - the frontend renders ticket actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_support_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for support entities."""
+    return await list_workflow_events(db, tenant_id, domain="support",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/tickets/{ticket_id}/transition")
+async def transition_ticket(
+    ticket_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Assign / resolve / close / reopen a ticket; stamps SLA timestamps."""
+    return await apply_transition(db, WORKFLOW_SPECS["ticket"], ticket_id,
+                                  body.to_state, tenant, note=body.note)

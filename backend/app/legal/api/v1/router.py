@@ -229,3 +229,43 @@ async def evaluate_patent(patent_id: str, tenant: dict = Depends(require_role("o
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from typing import Optional  # noqa: E402
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.legal.services.analytics import legal_analytics  # noqa: E402
+from app.legal.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_legal_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed contract portfolio, renewal and risk KPIs for the legal cockpit."""
+    return await legal_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_legal_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines - the frontend renders contract actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_legal_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for legal entities."""
+    return await list_workflow_events(db, tenant_id, domain="legal",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/contracts/{contract_id}/transition")
+async def transition_contract(
+    contract_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a contract through draft, review, approved, signed, active."""
+    return await apply_transition(db, WORKFLOW_SPECS["contract"], contract_id,
+                                  body.to_state, tenant, note=body.note)

@@ -6,17 +6,20 @@ import {
   FileText, TrendingUp, ShieldCheck
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { toPct } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
-type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit';
+type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'analytics';
 
 const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domain, defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<FinanceTab>(() => {
-    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit'];
+    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as FinanceTab)) return defaultTab as FinanceTab;
     return 'ap';
   });
@@ -38,6 +41,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [taxRules, setTaxRules] = useState<any[]>([]);
   const [auditFindings, setAuditFindings] = useState<any[]>([]);
   const [soxControls, setSoxControls] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   useEffect(() => { loadData(); }, []);
 
@@ -62,12 +66,14 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
       api.getFinanceTaxRules(),
       api.getFinanceAuditFindings(),
       api.getFinanceSOXControls(),
+      api.getDomainWorkflows('finance'),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setVendors(val(0)); setInvoices(val(1)); setPayments(val(2));
     setCustomers(val(3)); setReceivables(val(4)); setBudgets(val(5));
     setForecasts(val(6)); setExpenseReports(val(7)); setTaxFilings(val(8));
     setTaxRules(val(9)); setAuditFindings(val(10)); setSoxControls(val(11));
+    if (results[12].status === 'fulfilled') setWorkflows((results[12] as any).value || {});
     setLoading(false);
   };
 
@@ -122,6 +128,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     { key: 'expenses', label: 'Expenses', icon: Wallet, color: '#22c55e' },
     { key: 'tax', label: 'Tax', icon: Scale, color: '#f59e0b' },
     { key: 'audit', label: 'Audit & SOX', icon: ShieldAlert, color: '#ef4444' },
+    { key: 'analytics', label: 'Analytics', icon: TrendingUp, color: '#a855f7' },
   ];
 
   const activeTab = TABS.find(t => t.key === tab)!;
@@ -238,6 +245,11 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                               {runningAgent === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                               Match
                             </button>
+                            <div className="mt-1">
+                              <WorkflowActions domain="finance" entityPath="invoices" entityId={inv.id}
+                                currentState={inv.status} transitions={workflows['invoice']?.transitions}
+                                onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -568,6 +580,9 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                 </div>
               </div>
             )}
+
+            {/* ═══ ANALYTICS ═══ */}
+            {tab === 'analytics' && <DomainAnalytics domain="finance" />}
           </>
         )}
       </div>

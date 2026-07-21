@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Ticket, BookOpen, Clock, MessageSquare,
+  Ticket, BookOpen, Clock, MessageSquare, BarChart3,
   Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, AlertTriangle
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import GateTrace from '../components/GateTrace';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 import { fullTime, timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
-type SupportTab = 'tickets' | 'kb' | 'sla' | 'feedback';
+type SupportTab = 'tickets' | 'kb' | 'sla' | 'feedback' | 'analytics';
 
 interface SupportTicket { id: string; subject: string; status: string; priority: string; customer: string | null; assignee: string | null; created_at: string | null; }
 interface KBArticle { id: string; title: string; category: string | null; status: string; views: number; helpful_pct: number; updated_at: string | null; }
@@ -19,7 +22,7 @@ interface CSATSurvey { id: string; customer: string; rating: number; sentiment: 
 const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<SupportTab>(() => {
-    const valid: SupportTab[] = ['tickets', 'kb', 'sla', 'feedback'];
+    const valid: SupportTab[] = ['tickets', 'kb', 'sla', 'feedback', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as SupportTab)) return defaultTab as SupportTab;
     return 'tickets';
   });
@@ -30,6 +33,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
   const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
 
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [kbArticles, setKbArticles] = useState<KBArticle[]>([]);
   const [slaMetrics, setSlaMetrics] = useState<SLAMetric[]>([]);
   const [surveys, setSurveys] = useState<CSATSurvey[]>([]);
@@ -47,10 +51,12 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
     const results = await Promise.allSettled([
       api.getSupportTickets(), api.getSupportKBArticles(),
       api.getSupportSLAMetrics(), api.getSupportCSATSurveys(),
+      api.getDomainWorkflows('support'),
     ]);
-     
+
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setTickets(val(0)); setKbArticles(val(1)); setSlaMetrics(val(2)); setSurveys(val(3));
+    if (results[4].status === 'fulfilled') setWorkflows((results[4] as any).value || {});
     setLoading(false);
   };
 
@@ -100,6 +106,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
     { key: 'kb', label: 'Knowledge Base', icon: BookOpen, color: '#22c55e' },
     { key: 'sla', label: 'SLA Monitoring', icon: Clock, color: '#f59e0b' },
     { key: 'feedback', label: 'CSAT', icon: MessageSquare, color: '#3b82f6' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
@@ -201,6 +208,9 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                               style={{ background: '#ef444415', color: '#ef4444' }}>
                               {runningAgent === `${t.id}-escalate` ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />} Escalate
                             </button>
+                            <WorkflowActions domain="support" entityPath="tickets" entityId={t.id}
+                              currentState={t.status} transitions={workflows['ticket']?.transitions}
+                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
                           </div>
                         </td>
                       </tr>
@@ -324,6 +334,9 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                 {surveys.length === 0 && <EmptyState icon={MessageSquare} title="No feedback" sub="CSAT surveys appear here" />}
               </div>
             )}
+
+            {/* ANALYTICS */}
+            {tab === 'analytics' && <DomainAnalytics domain="support" />}
           </>
         )}
       </div>

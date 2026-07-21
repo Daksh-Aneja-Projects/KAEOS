@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import {
-  FolderKanban, Users2, Building2, ShoppingCart, ClipboardCheck,
+  FolderKanban, Users2, Building2, ShoppingCart, ClipboardCheck, BarChart3,
   Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 
-type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality';
+type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality' | 'analytics';
 
 interface OpsProject { id: string; name: string; status: string; owner: string | null; budget: number; spent: number; completion_pct: number; start_date: string | null; end_date: string | null; }
 interface OpsResource { id: string; name: string; type: string; project: string | null; utilization: number; available_from: string | null; }
@@ -20,7 +23,7 @@ interface OpsInspection { id: string; title: string; area: string | null; status
 const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<OpsTab>(() => {
-    const valid: OpsTab[] = ['projects', 'resources', 'vendors', 'procurement', 'quality'];
+    const valid: OpsTab[] = ['projects', 'resources', 'vendors', 'procurement', 'quality', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as OpsTab)) return defaultTab as OpsTab;
     return 'projects';
   });
@@ -35,6 +38,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [vendors, setVendors] = useState<OpsVendor[]>([]);
   const [procurements, setProcurements] = useState<OpsProcurement[]>([]);
   const [inspections, setInspections] = useState<OpsInspection[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   useEffect(() => { loadData(); }, []);
 
@@ -49,9 +53,11 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     const results = await Promise.allSettled([
       api.getOperationsProjects(), api.getOperationsResources(), api.getOperationsVendors(),
       api.getOperationsProcurements(), api.getOperationsInspections(),
+      api.getDomainWorkflows('operations'),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setProjects(val(0)); setResources(val(1)); setVendors(val(2)); setProcurements(val(3)); setInspections(val(4));
+    if (results[5].status === 'fulfilled') setWorkflows((results[5] as any).value || {});
     setLoading(false);
   };
 
@@ -101,6 +107,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     { key: 'vendors', label: 'Vendors', icon: Building2, color: '#f59e0b' },
     { key: 'procurement', label: 'Procurement', icon: ShoppingCart, color: '#3b82f6' },
     { key: 'quality', label: 'Quality', icon: ClipboardCheck, color: '#ef4444' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
@@ -303,6 +310,11 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                             {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Audit
                           </button>
+                          <div className="mt-1">
+                            <WorkflowActions domain="operations" entityPath="purchase-requests" entityId={p.id}
+                              currentState={p.status} transitions={workflows['purchase_request']?.transitions}
+                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -351,6 +363,9 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                 {inspections.length === 0 && <EmptyState icon={ClipboardCheck} title="No inspections" sub="Quality inspections appear here" />}
               </div>
             )}
+
+            {/* ANALYTICS */}
+            {tab === 'analytics' && <DomainAnalytics domain="operations" />}
           </>
         )}
       </div>

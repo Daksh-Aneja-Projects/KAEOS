@@ -425,3 +425,52 @@ async def get_hr_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
         "training_completion": None,
         "compliance_score": compliance_score,
     }
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.hr.services.analytics import hr_analytics  # noqa: E402
+from app.hr.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_hr_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Computed headcount, funnel and time-off KPIs for the HR cockpit."""
+    return await hr_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_hr_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines — candidate stages stay on /candidates/{id}/advance."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_hr_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for HR entities."""
+    return await list_workflow_events(db, tenant_id, domain="hr",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/time-off-requests/{request_id}/transition")
+async def transition_time_off_request(
+    request_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Approve / deny / cancel a time-off request through the guarded engine."""
+    return await apply_transition(db, WORKFLOW_SPECS["time_off_request"], request_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/requisitions/{requisition_id}/transition")
+async def transition_requisition(
+    requisition_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a job requisition through draft → approval → open → filled."""
+    return await apply_transition(db, WORKFLOW_SPECS["job_requisition"], requisition_id,
+                                  body.to_state, tenant, note=body.note)
