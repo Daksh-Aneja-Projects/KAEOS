@@ -48,6 +48,20 @@ The following are out of scope:
 5. **Use PostgreSQL** in production - SQLite is for development only
 6. **Provision the admin account** via `ADMIN_EMAIL` / `ADMIN_PASSWORD` (there is no default public login), keep `DEV_MODE=false`, and confirm RLS is effective at startup (`assert_rls_effective` runs on boot; `scripts/verify_rls.py` as an extra gate) before exposing to the internet
 
+## Accepted / tracked advisories
+
+Some upstream advisories cannot currently be remediated by upgrading, because
+the only patched version is incompatible with the rest of the stack. These are
+tracked here and mitigated at deployment rather than silenced blindly.
+
+| Advisory | Severity | Status | Rationale & mitigation |
+| --- | --- | --- | --- |
+| [GHSA-82w8-qh3p-5jfq](https://github.com/advisories/GHSA-82w8-qh3p-5jfq) — Starlette `request.form()` limits silently ignored for `application/x-www-form-urlencoded` (DoS) | High (CVSS 7.5) | **Accepted / tracked** | Only patched in Starlette **1.3.1**, which **no released FastAPI supports** (0.119.x caps `starlette <0.49.0`) and which breaks KAEOS's `require_role` routing. It is a resource-exhaustion DoS — out of scope per this policy — and is mitigated at ingress: enforce a request-body size limit at the reverse proxy (e.g. nginx `client_max_body_size`) in front of the API. Will be remediated by bumping Starlette once FastAPI adopts the 1.x line. Dependabot is configured to stop proposing the un-installable `1.3.1` bump (see `.github/dependabot.yml`). |
+
+Advisories reachable within the supported FastAPI range are remediated by
+upgrade, not accepted — e.g. GHSA-f96h-pmfr-66vw and GHSA-2c2j-9gv5-cj73
+(Starlette multipart DoS) were cleared in 1.1.1 by moving to Starlette 0.48.0.
+
 ## Acknowledgements
 
 We appreciate security researchers who help keep KAEOS safe. Contributors who responsibly disclose vulnerabilities will be credited in release notes (with permission).

@@ -1,0 +1,46 @@
+# Dependabot configuration for KAEOS.
+# Applies to both version updates AND security updates (ignore rules below
+# suppress un-installable bumps in either mode). Grouped + weekly so the repo
+# gets a small, mergeable set of PRs instead of a flood.
+version: 2
+updates:
+  # ---- Backend (pip) --------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      backend-python:
+        patterns:
+          - "*"
+    ignore:
+      # Starlette 1.x is intentionally pinned OUT. No released FastAPI supports
+      # it (0.119.x caps starlette <0.49.0), and Starlette 1.x reworks
+      # include_router into an _IncludedRouter mount with no `.path`, which
+      # breaks every require_role-gated route (500s + RBAC introspection
+      # failures). Dependabot kept proposing the un-installable 0.38→1.3.1
+      # security bump (GHSA-82w8); this stops it. Revisit — and delete this
+      # ignore — once FastAPI ships support for the Starlette 1.x line.
+      # See SECURITY.md "Accepted / tracked advisories" and CHANGELOG 1.1.1.
+      - dependency-name: "starlette"
+        versions: [">=1.0.0"]
+  # ---- Frontend (npm) -------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-npm:
+        patterns:
+          - "*"
+  # ---- CI workflows (github-actions) ---------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      ci-actions:
+        patterns:
+          - "*"
