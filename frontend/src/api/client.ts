@@ -58,7 +58,9 @@ export interface DomainAnalytics { domain: string; kpis: DomainKPI[]; charts: Do
 export interface WorkflowSpec { domain: string; entity_type: string; status_attr: string; states: string[]; transitions: Record<string, string[]>; }
 export interface WorkflowEvent { id: string; domain: string; entity_type: string; entity_id: string; from_state: string; to_state: string; actor: string | null; actor_role: string | null; note: string | null; at: string; }
 export interface TransitionResult { entity_type: string; entity_id: string; from_state: string; to_state: string; allowed_next: string[]; at: string; note: string | null; }
-export interface OrgPulseDomain { domain: string; health: number | null; kpis: DomainKPI[]; critical_count?: number; warning_count?: number; error?: boolean; }
+export interface OrgPulseDomain { domain: string; health: number | null; kpis: DomainKPI[]; critical_count?: number; warning_count?: number; sla_breaches?: number; error?: boolean; }
+export interface SLABreach { domain: string; entity_type: string; entity_id: string; title: string; state: string; sla_hours: number; age_hours: number; over_by_hours: number; }
+export interface BulkTransitionResult { entity_type: string; to_state: string; requested: number; succeeded: number; failed: number; results: { id: string; ok: boolean; [k: string]: any }[]; }
 export interface OrgPulse { org_health: number | null; domains: OrgPulseDomain[]; insights: (DomainInsight & { domain: string })[]; }
 
 export interface DepartmentCoverage {
@@ -1146,6 +1148,12 @@ export const api = {
     request<any>(`/${domain}/${entityPath}`, { method: 'POST', body: JSON.stringify(body) }),
   getOrgPulse: () => request<OrgPulse>('/org/pulse'),
   getOrgActivity: (limit = 50) => request<WorkflowEvent[]>(`/org/activity?limit=${limit}`),
+  getOrgStale: (domain?: string) =>
+    request<{ count: number; breaches: SLABreach[] }>(`/org/stale${domain ? `?domain=${domain}` : ''}`),
+  bulkTransition: (domain: string, entityType: string, ids: string[], to_state: string, note?: string) =>
+    request<BulkTransitionResult>(`/${domain}/workflows/${entityType}/bulk-transition`, {
+      method: 'POST', body: JSON.stringify({ ids, to_state, note: note || null }),
+    }),
 
   // ─── WebSocket helper (returns URL, not a fetch) ───
   // The ws router is mounted at the server root (/ws/...), NOT under /api/v1.

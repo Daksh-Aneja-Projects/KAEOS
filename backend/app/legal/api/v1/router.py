@@ -234,7 +234,10 @@ async def evaluate_patent(patent_id: str, tenant: dict = Depends(require_role("o
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from typing import Optional  # noqa: E402
-from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.core.workflow import (  # noqa: E402
+    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
+    apply_transition, list_workflow_events,
+)
 from app.legal.services.analytics import legal_analytics  # noqa: E402
 from app.legal.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 
@@ -309,3 +312,15 @@ async def create_contract(
     return {"id": c.id, "title": c.title,
             "status": c.status.value if hasattr(c.status, "value") else str(c.status),
             "counterparty": c.counterparty, "contract_type": c.contract_type}
+
+
+@router.post("/workflows/{entity_type}/bulk-transition")
+async def bulk_transition_legal(
+    entity_type: str, body: BulkTransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Apply one transition to up to 200 legal entities; per-id outcomes."""
+    spec = WORKFLOW_SPECS.get(entity_type)
+    if not spec:
+        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
+    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)

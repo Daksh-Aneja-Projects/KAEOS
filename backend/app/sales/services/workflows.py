@@ -36,6 +36,9 @@ OPPORTUNITY_WORKFLOW = WorkflowSpec(
     },
     on_enter={"CLOSED_WON": _won, "CLOSED_LOST": _lost},
     guards={"CLOSED_WON": _guard_won_needs_amount},
+    # Stalled-deal thresholds: a deal parked in a stage this long is stale.
+    sla_hours={"PROSPECTING": 720, "QUALIFICATION": 720,
+               "PROPOSAL": 480, "NEGOTIATION": 336},
 )
 
 SPECS = {"opportunity": OPPORTUNITY_WORKFLOW}

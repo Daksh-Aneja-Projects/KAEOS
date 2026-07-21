@@ -43,6 +43,7 @@ INVOICE_WORKFLOW = WorkflowSpec(
     },
     guards={"PAID": _guard_pay_duplicate, "PARTIALLY_PAID": _guard_pay_duplicate},
     role_requirements={"VOIDED": "admin"},
+    sla_hours={"PENDING_APPROVAL": 72, "DISPUTED": 240},
 )
 
 
@@ -95,6 +96,7 @@ EXPENSE_REPORT_WORKFLOW = WorkflowSpec(
         "REIMBURSED": _expense_reimbursed,
     },
     guards={"APPROVED": _guard_large_expense},
+    sla_hours={"SUBMITTED": 24, "PENDING_APPROVAL": 72},
 )
 
 SPECS = {

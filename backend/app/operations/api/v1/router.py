@@ -308,7 +308,10 @@ async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_ro
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from typing import Optional  # noqa: E402
-from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.core.workflow import (  # noqa: E402
+    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
+    apply_transition, list_workflow_events,
+)
 from app.operations.services.analytics import operations_analytics  # noqa: E402
 from app.operations.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 
@@ -395,3 +398,15 @@ async def create_purchase_request(
     return {"id": pr.id, "item_description": pr.item_description,
             "status": pr.status.value if hasattr(pr.status, "value") else str(pr.status),
             "total_estimated_cost": float(pr.total_estimated_cost or 0)}
+
+
+@router.post("/workflows/{entity_type}/bulk-transition")
+async def bulk_transition_operations(
+    entity_type: str, body: BulkTransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Apply one transition to up to 200 operations entities; per-id outcomes."""
+    spec = WORKFLOW_SPECS.get(entity_type)
+    if not spec:
+        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
+    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)

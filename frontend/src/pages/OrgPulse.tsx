@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertTriangle, HeartPulse, Loader2, OctagonAlert, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Hourglass, Loader2, OctagonAlert, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
-import type { OrgPulse as OrgPulsePayload, WorkflowEvent } from '../api/client';
+import type { OrgPulse as OrgPulsePayload, SLABreach, WorkflowEvent } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainIcon from '../components/DomainIcon';
@@ -42,12 +42,16 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   const { colors } = useTheme();
   const [pulse, setPulse] = useState<OrgPulsePayload | null>(null);
   const [activity, setActivity] = useState<WorkflowEvent[]>([]);
+  const [stale, setStale] = useState<SLABreach[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [p, a] = await Promise.allSettled([api.getOrgPulse(), api.getOrgActivity(30)]);
+    const [p, a, s] = await Promise.allSettled([
+      api.getOrgPulse(), api.getOrgActivity(30), api.getOrgStale(),
+    ]);
     if (p.status === 'fulfilled') setPulse(p.value);
     if (a.status === 'fulfilled') setActivity(a.value || []);
+    if (s.status === 'fulfilled') setStale(s.value?.breaches || []);
     setLoading(false);
   }, []);
 
@@ -187,6 +191,58 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* SLA breaches — entities sitting past their state's target */}
+      <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        <h2 className="text-[13px] font-bold mb-3 flex items-center gap-1.5">
+          <Hourglass className="w-4 h-4" style={{ color: '#f59e0b' }} /> SLA Breaches
+          {stale.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+              style={{ background: '#ef444418', color: '#ef4444' }}>{stale.length}</span>
+          )}
+        </h2>
+        {stale.length === 0 ? (
+          <p className="text-[12px] py-4 text-center" style={{ color: colors.inkTertiary }}>
+            Nothing is sitting past its SLA — every workflow state is inside target.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                {['Domain', 'Item', 'Stuck In', 'SLA', 'Age', 'Over By'].map(h => (
+                  <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {stale.slice(0, 15).map(b => (
+                  <tr key={`${b.entity_type}-${b.entity_id}`} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    <td className="px-3 py-2">
+                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                        style={{ background: `${colors.primary}15`, color: colors.primary }}>{b.domain}</span>
+                    </td>
+                    <td className="px-3 py-2 font-medium max-w-[240px]">
+                      <span className="block truncate" title={b.title}>
+                        {b.title}
+                        <span className="ml-1.5 font-normal" style={{ color: colors.inkTertiary }}>
+                          {b.entity_type.replace(/_/g, ' ')}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-mono">{b.state.replace(/_/g, ' ')}</td>
+                    <td className="px-3 py-2 font-mono" style={{ color: colors.inkSubtle }}>{b.sla_hours}h</td>
+                    <td className="px-3 py-2 font-mono" style={{ color: colors.inkSubtle }}>
+                      {b.age_hours >= 48 ? `${(b.age_hours / 24).toFixed(1)}d` : `${b.age_hours.toFixed(1)}h`}
+                    </td>
+                    <td className="px-3 py-2 font-mono font-bold" style={{ color: b.over_by_hours > 24 ? '#ef4444' : '#f59e0b' }}>
+                      +{b.over_by_hours >= 48 ? `${(b.over_by_hours / 24).toFixed(1)}d` : `${b.over_by_hours.toFixed(1)}h`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

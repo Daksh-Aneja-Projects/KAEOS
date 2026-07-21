@@ -389,7 +389,10 @@ async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
 # ═══════════════════════════════════════════════════════════════════════
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
-from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.core.workflow import (  # noqa: E402
+    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
+    apply_transition, list_workflow_events,
+)
 from app.finance.services.analytics import finance_analytics  # noqa: E402
 from app.finance.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 
@@ -518,3 +521,15 @@ async def create_invoice(
     return {"id": inv.id, "number": inv.invoice_number,
             "status": inv.status.value if hasattr(inv.status, "value") else str(inv.status),
             "total": float(inv.total_amount), "balance": float(inv.balance_due)}
+
+
+@router.post("/workflows/{entity_type}/bulk-transition")
+async def bulk_transition_finance(
+    entity_type: str, body: BulkTransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Apply one transition to up to 200 finance entities; per-id outcomes."""
+    spec = WORKFLOW_SPECS.get(entity_type)
+    if not spec:
+        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
+    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)

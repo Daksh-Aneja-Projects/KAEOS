@@ -38,6 +38,7 @@ TICKET_WORKFLOW = WorkflowSpec(
         "OPEN": _reopened,
         "RESOLVED": _resolved,
     },
+    sla_hours={"NEW": 4, "ASSIGNED": 24, "OPEN": 48, "PENDING_CUSTOMER": 120},
 )
 
 SPECS = {"ticket": TICKET_WORKFLOW}

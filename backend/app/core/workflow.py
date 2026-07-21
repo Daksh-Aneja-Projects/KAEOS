@@ -89,6 +89,10 @@ class WorkflowSpec:
     role_requirements: Dict[str, str] = field(default_factory=dict)
     # target state -> guard callable; a returned string blocks with 409.
     guards: Dict[str, TransitionGuard] = field(default_factory=dict)
+    # state -> max hours an entity may sit in it before it counts as an SLA
+    # breach (stale). Computed on read from updated_at/created_at — no
+    # background job, so the numbers are always live and testable.
+    sla_hours: Dict[str, float] = field(default_factory=dict)
 
     @property
     def states(self) -> List[str]:
@@ -111,6 +115,7 @@ class WorkflowSpec:
             "states": self.states,
             "transitions": {k: list(v) for k, v in self.transitions.items()},
             "role_requirements": dict(self.role_requirements),
+            "sla_hours": dict(self.sla_hours),
         }
 
 
@@ -264,6 +269,92 @@ async def apply_transition(
         "at": ctx.now.isoformat(),
         "note": note,
     }
+
+
+class BulkTransitionRequest(BaseModel):
+    """Request body for every POST .../bulk-transition endpoint."""
+    ids: List[str] = Field(..., min_length=1, max_length=200)
+    to_state: str = Field(..., min_length=1, max_length=64)
+    note: Optional[str] = Field(None, max_length=512)
+
+
+async def apply_bulk_transition(
+    db: AsyncSession,
+    spec: WorkflowSpec,
+    ids: List[str],
+    to_state: str,
+    tenant: dict,
+    note: Optional[str] = None,
+) -> dict:
+    """Apply one transition to many entities; per-id outcomes, never all-or-
+    nothing. A row that fails (illegal move, guard, missing) is reported with
+    its reason while the rest proceed — bulk triage must not stop at the
+    first already-resolved ticket."""
+    results, succeeded = [], 0
+    for entity_id in dict.fromkeys(ids):  # de-dupe, keep order
+        try:
+            res = await apply_transition(db, spec, entity_id, to_state, tenant, note=note)
+            results.append({"id": entity_id, "ok": True,
+                            "from_state": res["from_state"], "to_state": res["to_state"]})
+            succeeded += 1
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
+            results.append({"id": entity_id, "ok": False,
+                            "status_code": e.status_code, **detail})
+    return {"entity_type": spec.entity_type, "to_state": to_state,
+            "requested": len(results), "succeeded": succeeded,
+            "failed": len(results) - succeeded, "results": results}
+
+
+def _entity_title(obj: Any) -> str:
+    for attr in ("subject", "title", "name", "invoice_number", "report_number",
+                 "incident_number", "po_number", "item_description"):
+        v = getattr(obj, attr, None)
+        if v:
+            return str(v)
+    return obj.id
+
+
+async def find_stale_entities(
+    db: AsyncSession,
+    spec: WorkflowSpec,
+    tenant_id: str,
+    limit: int = 100,
+) -> List[dict]:
+    """Entities sitting past their state's SLA, worst-first. Age is measured
+    from updated_at (last touch) and falls back to created_at for models
+    without an update timestamp."""
+    if not spec.sla_hours:
+        return []
+    now = datetime.now(timezone.utc)
+    q = await db.execute(
+        select(spec.model).where(spec.model.tenant_id == tenant_id).limit(2000)
+    )
+    breaches = []
+    for obj in q.scalars().all():
+        state = _current_state(obj, spec)
+        max_hours = spec.sla_hours.get(state)
+        if max_hours is None:
+            continue
+        stamp = getattr(obj, "updated_at", None) or getattr(obj, "created_at", None)
+        if stamp is None:
+            continue
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        age_hours = (now - stamp).total_seconds() / 3600.0
+        if age_hours > max_hours:
+            breaches.append({
+                "domain": spec.domain,
+                "entity_type": spec.entity_type,
+                "entity_id": obj.id,
+                "title": _entity_title(obj),
+                "state": state,
+                "sla_hours": max_hours,
+                "age_hours": round(age_hours, 1),
+                "over_by_hours": round(age_hours - max_hours, 1),
+            })
+    breaches.sort(key=lambda b: b["over_by_hours"], reverse=True)
+    return breaches[:limit]
 
 
 async def list_workflow_events(

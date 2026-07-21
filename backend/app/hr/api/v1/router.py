@@ -429,7 +429,10 @@ async def get_hr_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
 # ═══════════════════════════════════════════════════════════════════════
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
-from app.core.workflow import TransitionRequest, apply_transition, list_workflow_events  # noqa: E402
+from app.core.workflow import (  # noqa: E402
+    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
+    apply_transition, list_workflow_events,
+)
 from app.hr.services.analytics import hr_analytics  # noqa: E402
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 
@@ -521,3 +524,15 @@ async def create_time_off_request(
             "status": req.status.value if hasattr(req.status, "value") else str(req.status),
             "leave_type": req.leave_type.value if hasattr(req.leave_type, "value") else str(req.leave_type),
             "hours_requested": req.hours_requested}
+
+
+@router.post("/workflows/{entity_type}/bulk-transition")
+async def bulk_transition_hr(
+    entity_type: str, body: BulkTransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Apply one transition to up to 200 hr entities; per-id outcomes."""
+    spec = WORKFLOW_SPECS.get(entity_type)
+    if not spec:
+        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
+    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)

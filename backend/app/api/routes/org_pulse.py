@@ -15,7 +15,15 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id
-from app.core.workflow import list_workflow_events
+from app.core.workflow import find_stale_entities, list_workflow_events
+
+from app.finance.services.workflows import SPECS as FINANCE_SPECS
+from app.hr.services.workflows import SPECS as HR_SPECS
+from app.sales.services.workflows import SPECS as SALES_SPECS
+from app.support.services.workflows import SPECS as SUPPORT_SPECS
+from app.operations.services.workflows import SPECS as OPERATIONS_SPECS
+from app.legal.services.workflows import SPECS as LEGAL_SPECS
+from app.engineering.services.workflows import SPECS as ENGINEERING_SPECS
 
 from app.finance.services.analytics import finance_analytics
 from app.hr.services.analytics import hr_analytics
@@ -39,6 +47,14 @@ _DOMAIN_ANALYTICS = [
     ("operations", operations_analytics),
     ("legal", legal_analytics),
     ("engineering", engineering_analytics),
+]
+
+# Every registered workflow spec across the platform — the SLA sweep walks this.
+ALL_WORKFLOW_SPECS = [
+    spec
+    for specs in (FINANCE_SPECS, HR_SPECS, SALES_SPECS, SUPPORT_SPECS,
+                  OPERATIONS_SPECS, LEGAL_SPECS, ENGINEERING_SPECS)
+    for spec in specs.values()
 ]
 
 _SEVERITY_PENALTY = {"critical": 25, "warning": 10, "info": 0}
@@ -77,6 +93,31 @@ async def org_pulse(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
             "warning_count": sum(1 for i in insights if i.get("severity") == "warning"),
         })
 
+    # SLA sweep: breaches surface as insights and dent the owning domain's
+    # health (5 points per breached entity, capped at 25 per domain).
+    breach_counts: dict[str, int] = {}
+    worst: dict[str, dict] = {}
+    for spec in ALL_WORKFLOW_SPECS:
+        try:
+            for b in await find_stale_entities(db, spec, tenant_id, limit=20):
+                breach_counts[b["domain"]] = breach_counts.get(b["domain"], 0) + 1
+                if b["domain"] not in worst or b["over_by_hours"] > worst[b["domain"]]["over_by_hours"]:
+                    worst[b["domain"]] = b
+        except Exception:
+            logger.exception("org_pulse: SLA sweep failed for %s", spec.entity_type)
+    for dom, count in breach_counts.items():
+        w = worst[dom]
+        all_insights.append({
+            "severity": "warning", "domain": dom,
+            "message": f"{count} {dom} item(s) past their state SLA - worst: "
+                       f"{w['entity_type'].replace('_', ' ')} \"{w['title']}\" stuck in "
+                       f"{w['state']} {w['over_by_hours']:.0f}h over target.",
+        })
+        for d in domains:
+            if d["domain"] == dom and d.get("health") is not None:
+                d["health"] = max(d["health"] - min(count * 5, 25), 0)
+                d["sla_breaches"] = count
+
     all_insights.sort(key=lambda i: _SEVERITY_RANK.get(i.get("severity", "info"), 3))
     scored = [d["health"] for d in domains if d.get("health") is not None]
     return {
@@ -84,6 +125,26 @@ async def org_pulse(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         "domains": domains,
         "insights": all_insights[:20],
     }
+
+
+@router.get("/stale")
+async def org_stale(
+    domain: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every entity sitting past its state's SLA, worst-first, across all
+    registered workflows (or one domain)."""
+    breaches: list[dict] = []
+    for spec in ALL_WORKFLOW_SPECS:
+        if domain and spec.domain != domain:
+            continue
+        try:
+            breaches.extend(await find_stale_entities(db, spec, tenant_id))
+        except Exception:
+            logger.exception("org_stale: sweep failed for %s", spec.entity_type)
+    breaches.sort(key=lambda b: b["over_by_hours"], reverse=True)
+    return {"count": len(breaches), "breaches": breaches[:100]}
 
 
 @router.get("/activity")

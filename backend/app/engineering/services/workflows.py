@@ -42,6 +42,8 @@ INCIDENT_WORKFLOW = WorkflowSpec(
         "POSTMORTEM_DUE": ["CLOSED"],
     },
     on_enter={"TRIAGED": _triaged, "RESOLVED": _resolved},
+    sla_hours={"DETECTED": 0.5, "TRIAGED": 4, "MITIGATING": 12,
+               "MONITORING": 24, "RESOLVED": 72, "POSTMORTEM_DUE": 120},
 )
 
 def _guard_critical_deploy(dep: Deployment, ctx: TransitionContext):
@@ -62,6 +64,7 @@ DEPLOYMENT_WORKFLOW = WorkflowSpec(
         "SUCCEEDED": ["ROLLED_BACK"],
     },
     guards={"IN_PROGRESS": _guard_critical_deploy},
+    sla_hours={"PENDING_APPROVAL": 24},
 )
 
 SPECS = {

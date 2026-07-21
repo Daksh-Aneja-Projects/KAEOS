@@ -23,6 +23,7 @@ TIME_OFF_WORKFLOW = WorkflowSpec(
         "DENIED": ["REQUESTED"],
     },
     on_enter={"APPROVED": _timeoff_approved},
+    sla_hours={"REQUESTED": 48},
 )
 
 REQUISITION_WORKFLOW = WorkflowSpec(
@@ -35,6 +36,7 @@ REQUISITION_WORKFLOW = WorkflowSpec(
         "OPEN": ["ON_HOLD", "FILLED", "CANCELLED"],
         "ON_HOLD": ["OPEN", "CANCELLED"],
     },
+    sla_hours={"PENDING_APPROVAL": 120},
 )
 
 # NOTE: candidate stage advancement intentionally has NO WorkflowSpec here —

@@ -16,6 +16,7 @@ PURCHASE_REQUEST_WORKFLOW = WorkflowSpec(
         "APPROVED": ["ORDERED", "CANCELLED"],
         "ORDERED": ["RECEIVED", "CANCELLED"],
     },
+    sla_hours={"PENDING_APPROVAL": 48, "APPROVED": 120, "ORDERED": 336},
 )
 
 PURCHASE_ORDER_WORKFLOW = WorkflowSpec(
@@ -28,6 +29,7 @@ PURCHASE_ORDER_WORKFLOW = WorkflowSpec(
         "APPROVED": ["ORDERED", "CANCELLED"],
         "ORDERED": ["RECEIVED"],
     },
+    sla_hours={"PENDING_APPROVAL": 48, "ORDERED": 336},
 )
 
 SPECS = {
