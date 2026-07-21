@@ -10,6 +10,8 @@ import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 import { fullTime, timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -37,41 +39,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
-
-  const toggleSelected = (id: string) => setSelected(prev => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
-
-  // Bulk actions offer only moves legal for EVERY selected ticket.
-  const bulkAllowed = (() => {
-    const map = workflows['ticket']?.transitions;
-    if (!map || selected.size === 0) return [] as string[];
-    const picked = tickets.filter(t => selected.has(t.id));
-    let common: string[] | null = null;
-    for (const t of picked) {
-      const allowed = map[(t.status || '').toUpperCase()] || [];
-      common = common === null ? allowed : common.filter(s => allowed.includes(s));
-    }
-    return common || [];
-  })();
-
-  const runBulk = async (state: string) => {
-    setBulkBusy(state);
-    try {
-      const res = await api.bulkTransition('support', 'ticket', Array.from(selected), state);
-      setActionMsg(`Bulk ${state.replace(/_/g, ' ')}: ${res.succeeded} succeeded${res.failed ? `, ${res.failed} failed` : ''}`);
-      setSelected(new Set());
-      await loadData();
-    } catch (e: any) {
-      setActionMsg(`Bulk transition failed: ${e?.message || e}`);
-    } finally {
-      setBulkBusy(null);
-    }
-  };
+  const bulk = useBulkSelect(tickets, workflows['ticket'], t => t.status);
   const [kbArticles, setKbArticles] = useState<KBArticle[]>([]);
   const [slaMetrics, setSlaMetrics] = useState<SLAMetric[]>([]);
   const [surveys, setSurveys] = useState<CSATSurvey[]>([]);
@@ -221,38 +189,16 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             {/* TICKETS */}
             {tab === 'tickets' && (
               <div className="space-y-3">
-                {selected.size > 0 && (
-                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg flex-wrap"
-                    style={{ background: `${colors.primary}12`, border: `1px solid ${colors.primary}30` }}>
-                    <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>
-                      {selected.size} selected
-                    </span>
-                    {bulkAllowed.map(state => (
-                      <button key={state} onClick={() => runBulk(state)} disabled={!!bulkBusy}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold disabled:opacity-50"
-                        style={{ background: `${colors.primary}18`, color: colors.primary }}>
-                        {bulkBusy === state ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                        Move all to {state.replace(/_/g, ' ')}
-                      </button>
-                    ))}
-                    {bulkAllowed.length === 0 && (
-                      <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
-                        No transition is legal for every selected ticket - narrow the selection.
-                      </span>
-                    )}
-                    <button onClick={() => setSelected(new Set())}
-                      className="ml-auto text-[11px] font-medium" style={{ color: colors.inkSubtle }}>
-                      Clear
-                    </button>
-                  </div>
-                )}
+                <BulkActionBar domain="support" entityType="ticket" noun="ticket"
+                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     <th className="px-3 py-3 w-8">
                       <input type="checkbox" aria-label="Select all tickets"
-                        checked={tickets.length > 0 && selected.size === tickets.length}
-                        onChange={e => setSelected(e.target.checked ? new Set(tickets.map(t => t.id)) : new Set())} />
+                        checked={bulk.allSelected}
+                        onChange={e => bulk.setAll(e.target.checked)} />
                     </th>
                     {['ID', 'Subject', 'Status', 'Priority', 'Customer', 'Assignee', 'Created', 'Actions'].map(h => (
                       <th key={h}
@@ -270,7 +216,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                       <tr key={t.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                         <td className="px-3 py-3">
                           <input type="checkbox" aria-label={`Select ticket ${t.subject}`}
-                            checked={selected.has(t.id)} onChange={() => toggleSelected(t.id)} />
+                            checked={bulk.isSelected(t.id)} onChange={() => bulk.toggle(t.id)} />
                         </td>
                         <td className="px-4 py-3 font-mono text-[10px]">#{t.id?.toString().slice(-6)}</td>
                         <td className="px-4 py-3 font-medium max-w-[160px]"><span className="block truncate">{t.subject}</span></td>

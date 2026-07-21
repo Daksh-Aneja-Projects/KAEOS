@@ -14,6 +14,8 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 
 type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'analytics';
@@ -45,6 +47,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [soxControls, setSoxControls] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const bulk = useBulkSelect(invoices, workflows['invoice'], (i: any) => i.status);
 
   useEffect(() => { loadData(); }, []);
 
@@ -235,10 +238,17 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </div>
                   ))}
                 </div>
+                <BulkActionBar domain="finance" entityType="invoice" noun="invoice"
+                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
                 <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <th className="px-3 py-3 w-8">
+                          <input type="checkbox" aria-label="Select all invoices"
+                            checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                        </th>
                         {['Invoice #', 'Vendor', 'Status', 'Total', 'Balance Due', 'Due Date', 'PO #', '3-Way Match', 'AI Action'].map(h => (
                           <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                         ))}
@@ -247,6 +257,10 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     <tbody>
                       {invoices.filter(i => !searchQ || i.number?.toLowerCase().includes(searchQ.toLowerCase()) || i.po_number?.toLowerCase().includes(searchQ.toLowerCase())).map((inv: any) => (
                         <tr key={inv.id} className="hover:bg-opacity-50 transition-colors" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                          <td className="px-3 py-3">
+                            <input type="checkbox" aria-label={`Select invoice ${inv.number}`}
+                              checked={bulk.isSelected(inv.id)} onChange={() => bulk.toggle(inv.id)} />
+                          </td>
                           <td className="px-4 py-3 font-medium">{inv.number}</td>
                           <td className="px-4 py-3">{vendors.find(v => v.id === inv.vendor_id)?.name || inv.vendor_id?.slice(0, 8)}</td>
                           <td className="px-4 py-3"><Badge status={inv.status} /></td>

@@ -108,3 +108,30 @@ async def test_pulse_health_dented_by_sla_breaches(async_client: AsyncClient, db
     assert support1["health"] < support0["health"]
     assert any("past their state SLA" in i["message"] and i["domain"] == "support"
                for i in body["insights"])
+
+
+@pytest.mark.asyncio
+async def test_escalate_stale_creates_alerts_and_dedupes(async_client: AsyncClient, db):
+    await _seed_tickets(db, n=2, status="NEW", aged_hours=30)
+
+    r = await async_client.post("/api/v1/org/stale/escalate?domain=support")
+    assert r.status_code == 200, r.text
+    first = r.json()
+    assert first["escalated"] == 2
+    assert first["skipped_open"] == 0
+
+    # Alerts landed in the activity feed as actionable items.
+    from sqlalchemy import select
+    from app.models.agent_factory import ActivityFeedEvent
+    q = await db.execute(select(ActivityFeedEvent).where(
+        ActivityFeedEvent.tenant_id == TENANT,
+        ActivityFeedEvent.requires_action == True))  # noqa: E712
+    alerts = q.scalars().all()
+    assert len(alerts) == 2
+    assert all("SLA breach" in a.title for a in alerts)
+
+    # Idempotent: the same breaches are skipped while their alerts are open.
+    r = await async_client.post("/api/v1/org/stale/escalate?domain=support")
+    second = r.json()
+    assert second["escalated"] == 0
+    assert second["skipped_open"] == 2

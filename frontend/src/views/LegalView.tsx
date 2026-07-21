@@ -12,6 +12,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import CreateEntityModal from '../components/CreateEntityModal';
 import { Plus as PlusIcon } from 'lucide-react';
 
@@ -37,6 +39,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [patents, setPatents] = useState<any[]>([]);
   const [matters, setMatters] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const bulk = useBulkSelect(contracts, workflows['contract'], c => c.status);
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
@@ -180,9 +183,17 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
         ) : (
           <>
             {tab === 'contracts' && (
+              <div className="space-y-3">
+                <BulkActionBar domain="legal" entityType="contract" noun="contract"
+                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
               <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    <th className="px-3 py-3 w-8">
+                      <input type="checkbox" aria-label="Select all contracts"
+                        checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                    </th>
                     {['Title', 'Counterparty', 'Status', 'Value', 'Risk Score', 'Expiry', 'AI Review'].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                     ))}
@@ -190,6 +201,10 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   <tbody>
                     {contracts.filter(c => !searchQ || c.title?.toLowerCase().includes(searchQ.toLowerCase()) || c.counterparty?.toLowerCase().includes(searchQ.toLowerCase())).map((c: any) => (
                       <tr key={c.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <td className="px-3 py-3">
+                          <input type="checkbox" aria-label={`Select ${c.title}`}
+                            checked={bulk.isSelected(c.id)} onChange={() => bulk.toggle(c.id)} />
+                        </td>
                         <td className="px-4 py-3 font-medium">{c.title}</td>
                         <td className="px-4 py-3">{c.counterparty}</td>
                         <td className="px-4 py-3"><Badge status={c.status} /></td>
@@ -224,6 +239,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {contracts.length === 0 && <EmptyState icon={FileText} title="No contracts" sub="Contracts appear here when created" />}
+              </div>
               </div>
             )}
 

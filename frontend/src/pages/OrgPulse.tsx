@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, AlertTriangle, HeartPulse, Hourglass, Loader2, OctagonAlert, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrgPulse as OrgPulsePayload, SLABreach, WorkflowEvent } from '../api/client';
@@ -40,10 +41,13 @@ const fmtKpi = (v: number | null, format: string) => {
 
 const OrgPulse: React.FC<{ domain?: string }> = () => {
   const { colors } = useTheme();
+  const navigate = useNavigate();
   const [pulse, setPulse] = useState<OrgPulsePayload | null>(null);
   const [activity, setActivity] = useState<WorkflowEvent[]>([]);
   const [stale, setStale] = useState<SLABreach[]>([]);
   const [loading, setLoading] = useState(true);
+  const [escalating, setEscalating] = useState(false);
+  const [escalateMsg, setEscalateMsg] = useState('');
 
   const load = useCallback(async () => {
     const [p, a, s] = await Promise.allSettled([
@@ -54,6 +58,21 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
     if (s.status === 'fulfilled') setStale(s.value?.breaches || []);
     setLoading(false);
   }, []);
+
+  const escalateAll = async () => {
+    setEscalating(true); setEscalateMsg('');
+    try {
+      const res = await api.escalateStale();
+      setEscalateMsg(res.escalated > 0
+        ? `Escalated ${res.escalated} breach${res.escalated === 1 ? '' : 'es'} to the activity feed${res.skipped_open ? ` (${res.skipped_open} already open)` : ''}.`
+        : `Nothing new to escalate — ${res.skipped_open} breach${res.skipped_open === 1 ? '' : 'es'} already have open alerts.`);
+      await load();
+    } catch (e: any) {
+      setEscalateMsg(`Escalation failed: ${e?.message || e}`);
+    } finally {
+      setEscalating(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
   useLiveRefresh(load);
@@ -102,8 +121,8 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
 
         <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {(pulse?.domains || []).map(d => (
-            <a key={d.domain} href={DOMAIN_ROUTE[d.domain] || '#'}
-              className="rounded-xl p-4 block transition-transform hover:-translate-y-0.5"
+            <div key={d.domain} onClick={() => navigate(DOMAIN_ROUTE[d.domain] || '/pulse')}
+              className="rounded-xl p-4 block transition-transform hover:-translate-y-0.5 cursor-pointer"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
               <div className="flex items-center justify-between mb-2">
                 <DomainIcon hint={d.domain} size={22} />
@@ -126,7 +145,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                   {d.warning_count ? <span style={{ color: '#f59e0b' }}>{d.warning_count} warning</span> : null}
                 </div>
               ) : null}
-            </a>
+            </div>
           ))}
         </div>
       </div>
@@ -142,8 +161,11 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               const color = ins.severity === 'critical' ? '#ef4444' : '#f59e0b';
               const Icon = ins.severity === 'critical' ? OctagonAlert : AlertTriangle;
               return (
-                <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg text-[12px]"
-                  style={{ background: `${color}10` }}>
+                <div key={i}
+                  onClick={() => navigate(DOMAIN_ROUTE[ins.domain] || '/pulse')}
+                  className="flex items-start gap-2.5 px-3 py-2 rounded-lg text-[12px] cursor-pointer transition-colors hover:brightness-110"
+                  style={{ background: `${color}10` }}
+                  title={`Open ${ins.domain} department`}>
                   <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide mr-1.5" style={{ color }}>
@@ -195,13 +217,26 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
 
       {/* SLA breaches — entities sitting past their state's target */}
       <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        <h2 className="text-[13px] font-bold mb-3 flex items-center gap-1.5">
-          <Hourglass className="w-4 h-4" style={{ color: '#f59e0b' }} /> SLA Breaches
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[13px] font-bold flex items-center gap-1.5">
+            <Hourglass className="w-4 h-4" style={{ color: '#f59e0b' }} /> SLA Breaches
+            {stale.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: '#ef444418', color: '#ef4444' }}>{stale.length}</span>
+            )}
+          </h2>
           {stale.length > 0 && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-              style={{ background: '#ef444418', color: '#ef4444' }}>{stale.length}</span>
+            <div className="flex items-center gap-2">
+              {escalateMsg && <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{escalateMsg}</span>}
+              <button onClick={escalateAll} disabled={escalating}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-50 text-white"
+                style={{ background: '#f59e0b' }}>
+                {escalating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                Escalate all
+              </button>
+            </div>
           )}
-        </h2>
+        </div>
         {stale.length === 0 ? (
           <p className="text-[12px] py-4 text-center" style={{ color: colors.inkTertiary }}>
             Nothing is sitting past its SLA — every workflow state is inside target.
@@ -216,7 +251,11 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               </tr></thead>
               <tbody>
                 {stale.slice(0, 15).map(b => (
-                  <tr key={`${b.entity_type}-${b.entity_id}`} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                  <tr key={`${b.entity_type}-${b.entity_id}`}
+                    onClick={() => navigate(DOMAIN_ROUTE[b.domain] || '/pulse')}
+                    className="cursor-pointer transition-colors hover:brightness-110"
+                    style={{ borderBottom: `1px solid ${colors.hairline}` }}
+                    title={`Open ${b.domain} department`}>
                     <td className="px-3 py-2">
                       <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                         style={{ background: `${colors.primary}15`, color: colors.primary }}>{b.domain}</span>

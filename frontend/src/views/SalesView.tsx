@@ -11,6 +11,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import CreateEntityModal from '../components/CreateEntityModal';
 import { Plus as PlusIcon } from 'lucide-react';
 
@@ -39,6 +41,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [accounts, setAccounts] = useState<SalesAccount[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const bulk = useBulkSelect(opportunities, workflows['opportunity'], o => o.stage);
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
@@ -180,9 +183,17 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
           <>
             {/* OPPORTUNITIES (Pipeline) */}
             {tab === 'opportunities' && (
+              <div className="space-y-3">
+                <BulkActionBar domain="sales" entityType="opportunity" noun="deal"
+                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    <th className="px-3 py-3 w-8">
+                      <input type="checkbox" aria-label="Select all opportunities"
+                        checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                    </th>
                     {['Opportunity', 'Account', 'Stage', 'Value', 'Close Date', 'Win %', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                     ))}
@@ -190,6 +201,10 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   <tbody>
                     {opportunities.filter(o => !searchQ || o.name?.toLowerCase().includes(searchQ.toLowerCase()) || o.account?.toLowerCase().includes(searchQ.toLowerCase())).map((o) => (
                       <tr key={o.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <td className="px-3 py-3">
+                          <input type="checkbox" aria-label={`Select ${o.name}`}
+                            checked={bulk.isSelected(o.id)} onChange={() => bulk.toggle(o.id)} />
+                        </td>
                         <td className="px-4 py-3 font-medium">{o.name}</td>
                         <td className="px-4 py-3">{o.account}</td>
                         <td className="px-4 py-3"><Badge status={o.stage} /></td>
@@ -222,6 +237,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {opportunities.length === 0 && <EmptyState icon={TrendingUp} title="No opportunities" sub="Pipeline opportunities appear here" />}
+              </div>
               </div>
             )}
 

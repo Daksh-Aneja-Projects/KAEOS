@@ -1150,6 +1150,9 @@ export const api = {
   getOrgActivity: (limit = 50) => request<WorkflowEvent[]>(`/org/activity?limit=${limit}`),
   getOrgStale: (domain?: string) =>
     request<{ count: number; breaches: SLABreach[] }>(`/org/stale${domain ? `?domain=${domain}` : ''}`),
+  escalateStale: (domain?: string) =>
+    request<{ escalated: number; skipped_open: number; breaches: number }>(
+      `/org/stale/escalate${domain ? `?domain=${domain}` : ''}`, { method: 'POST' }),
   bulkTransition: (domain: string, entityType: string, ids: string[], to_state: string, note?: string) =>
     request<BulkTransitionResult>(`/${domain}/workflows/${entityType}/bulk-transition`, {
       method: 'POST', body: JSON.stringify({ ids, to_state, note: note || null }),

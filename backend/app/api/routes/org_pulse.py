@@ -10,11 +10,12 @@ stream (the same audit trail each domain shows individually).
 import logging
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.core.workflow import find_stale_entities, list_workflow_events
 
 from app.finance.services.workflows import SPECS as FINANCE_SPECS
@@ -145,6 +146,81 @@ async def org_stale(
             logger.exception("org_stale: sweep failed for %s", spec.entity_type)
     breaches.sort(key=lambda b: b["over_by_hours"], reverse=True)
     return {"count": len(breaches), "breaches": breaches[:100]}
+
+
+@router.post("/stale/escalate")
+async def escalate_stale(
+    domain: Optional[str] = None,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Turn every current SLA breach into an actionable alert in the activity
+    feed (Command Center + WebSocket push). Idempotent: a breach that already
+    has an open, un-actioned alert is skipped, so re-running never spams."""
+    from app.models.agent_factory import ActivityEventType, ActivityFeedEvent, ActivitySeverity
+
+    tenant_id = tenant["tenant_id"]
+    breaches: list[dict] = []
+    for spec in ALL_WORKFLOW_SPECS:
+        if domain and spec.domain != domain:
+            continue
+        try:
+            breaches.extend(await find_stale_entities(db, spec, tenant_id))
+        except Exception:
+            logger.exception("escalate_stale: sweep failed for %s", spec.entity_type)
+
+    if not breaches:
+        return {"escalated": 0, "skipped_open": 0, "breaches": 0}
+
+    # Dedupe against alerts that are still awaiting action.
+    open_q = await db.execute(
+        select(ActivityFeedEvent.source_id).where(
+            ActivityFeedEvent.tenant_id == tenant_id,
+            ActivityFeedEvent.requires_action == True,  # noqa: E712
+            # "un-actioned" means the column is False (its default) or NULL —
+            # never restrict to just one, or dedupe silently fails.
+            (ActivityFeedEvent.action_taken == False)   # noqa: E712
+            | (ActivityFeedEvent.action_taken.is_(None)),
+            ActivityFeedEvent.source_id.in_([b["entity_id"] for b in breaches]),
+        )
+    )
+    already_open = {row[0] for row in open_q.all()}
+
+    # Persist on the request session (same transaction as the dedupe read);
+    # ActivityFeedService opens its own session, which would split the two.
+    escalated = 0
+    for b in breaches:
+        if b["entity_id"] in already_open:
+            continue
+        db.add(ActivityFeedEvent(
+            tenant_id=tenant_id,
+            event_type=ActivityEventType.PROACTIVE_ALERT,
+            severity=ActivitySeverity.WARNING,
+            title=f"SLA breach: {b['entity_type'].replace('_', ' ')} \"{b['title']}\" "
+                  f"stuck in {b['state']} ({b['over_by_hours']:.0f}h over target)",
+            description=f"{b['domain']} · target {b['sla_hours']}h, current age "
+                        f"{b['age_hours']}h. Move it forward or cancel it.",
+            source_type=b["entity_type"],
+            source_id=b["entity_id"],
+            requires_action=True,
+            event_metadata={"domain": b["domain"], "state": b["state"],
+                            "over_by_hours": b["over_by_hours"]},
+        ))
+        escalated += 1
+    await db.commit()
+
+    if escalated:
+        try:
+            from app.api.routes.ws import manager as ws_manager
+            await ws_manager.broadcast_to_tenant(tenant_id, {
+                "type": "sla_escalation", "escalated": escalated,
+            })
+        except Exception:  # pragma: no cover - broadcast is best-effort
+            pass
+
+    return {"escalated": escalated,
+            "skipped_open": len(breaches) - escalated,
+            "breaches": len(breaches)}
 
 
 @router.get("/activity")

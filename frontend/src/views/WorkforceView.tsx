@@ -11,6 +11,8 @@ import { useTheme } from '../context/ThemeContext';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
@@ -85,6 +87,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   const [reviews, setReviews] = useState<HRPerformanceReview[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const bulk = useBulkSelect(timeOff, workflows['time_off_request'], t => t.status);
 
   // Filters
   const [searchQ, setSearchQ] = useState('');
@@ -471,6 +474,9 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
         <MetricCard label="Denied" value={timeOff.filter(t => t.status === 'DENIED').length} icon={XCircle} accent={colors.error} />
       </div>
 
+      <BulkActionBar domain="hr" entityType="time_off_request" noun="request"
+        ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+        onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
       <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
           <Calendar className="w-4 h-4" style={{ color: colors.primary }} />
@@ -482,6 +488,10 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
           <table className="w-full">
             <thead>
               <tr style={{ background: colors.surface2 }}>
+                <th className="px-4 py-2.5 w-8">
+                  <input type="checkbox" aria-label="Select all requests"
+                    checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                </th>
                 {['Employee ID', 'Type', 'Start', 'End', 'Hours', 'Status', 'Actions'].map(h => (
                   <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wider px-5 py-2.5" style={{ color: colors.inkSubtle }}>{h}</th>
                 ))}
@@ -490,6 +500,10 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
             <tbody>
               {timeOff.map((t, i) => (
                 <tr key={t.id} style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}>
+                  <td className="px-4 py-3">
+                    <input type="checkbox" aria-label={`Select request ${t.id.slice(0, 8)}`}
+                      checked={bulk.isSelected(t.id)} onChange={() => bulk.toggle(t.id)} />
+                  </td>
                   <td className="px-5 py-3 text-[12px] font-mono" style={{ color: colors.inkMuted }}>{t.employee_id.slice(0, 8)}…</td>
                   <td className="px-5 py-3">
                     <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: colors.surface2, color: colors.inkSubtle }}>{(t.leave_type || 'PTO').replace(/_/g, ' ')}</span>

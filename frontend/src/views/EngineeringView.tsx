@@ -11,6 +11,8 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 
 type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
@@ -39,6 +41,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const [postmortems, setPostmortems] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const bulk = useBulkSelect(incidents, workflows['incident'], (i: any) => i.status);
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
@@ -368,10 +371,18 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
 
       {/* Incidents */}
       {!loading && tab === 'incidents' && (
+        <div className="space-y-3">
+          <BulkActionBar domain="engineering" entityType="incident" noun="incident"
+            ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+            onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
         <div style={card} className="overflow-hidden">
           <table className="w-full text-[12px]" style={{ color: colors.ink }}>
             <thead>
               <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
+                <th className="px-3 py-2.5 w-8">
+                  <input type="checkbox" aria-label="Select all incidents"
+                    checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                </th>
                 {['Incident', 'Title', 'Sev', 'Status', 'Impact', 'TTR', 'AI Assessment', 'Triage'].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
                 ))}
@@ -380,6 +391,10 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
             <tbody>
               {incidents.map((i) => (
                 <tr key={i.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                  <td className="px-3 py-3">
+                    <input type="checkbox" aria-label={`Select incident ${i.number}`}
+                      checked={bulk.isSelected(i.id)} onChange={() => bulk.toggle(i.id)} />
+                  </td>
                   <td className="px-4 py-3 font-mono">{i.number}</td>
                   <td className="px-4 py-3 font-medium">{i.title}</td>
                   <td className="px-4 py-3"><Badge text={i.severity} color={sevColor(i.severity)} /></td>
@@ -410,6 +425,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 

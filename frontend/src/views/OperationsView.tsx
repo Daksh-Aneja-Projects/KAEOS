@@ -11,6 +11,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import BulkActionBar from '../components/BulkActionBar';
+import { useBulkSelect } from '../hooks/useBulkSelect';
 import CreateEntityModal from '../components/CreateEntityModal';
 import { Plus as PlusIcon } from 'lucide-react';
 
@@ -41,6 +43,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [procurements, setProcurements] = useState<OpsProcurement[]>([]);
   const [inspections, setInspections] = useState<OpsInspection[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const bulk = useBulkSelect(procurements, workflows['purchase_request'], p => p.status);
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
@@ -305,9 +308,17 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
 
             {/* PROCUREMENT */}
             {tab === 'procurement' && (
+              <div className="space-y-3">
+                <BulkActionBar domain="operations" entityType="purchase_request" noun="request"
+                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
+                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    <th className="px-3 py-3 w-8">
+                      <input type="checkbox" aria-label="Select all purchase requests"
+                        checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
+                    </th>
                     {['Request', 'Requestor', 'Status', 'Amount', 'Vendor', 'Submitted', 'AI Audit'].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                     ))}
@@ -315,6 +326,10 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   <tbody>
                     {procurements.filter(p => !searchQ || p.description?.toLowerCase().includes(searchQ.toLowerCase()) || p.requestor?.toLowerCase().includes(searchQ.toLowerCase())).map((p) => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <td className="px-3 py-3">
+                          <input type="checkbox" aria-label={`Select ${p.description}`}
+                            checked={bulk.isSelected(p.id)} onChange={() => bulk.toggle(p.id)} />
+                        </td>
                         <td className="px-4 py-3 font-medium max-w-[140px]"><span className="block truncate">{p.description}</span></td>
                         <td className="px-4 py-3">{p.requestor}</td>
                         <td className="px-4 py-3"><Badge status={p.status} /></td>
@@ -340,6 +355,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   </tbody>
                 </table>
                 {procurements.length === 0 && <EmptyState icon={ShoppingCart} title="No procurement requests" sub="Purchase requests appear here" />}
+              </div>
               </div>
             )}
 
