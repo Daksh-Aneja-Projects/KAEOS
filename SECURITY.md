@@ -48,19 +48,27 @@ The following are out of scope:
 5. **Use PostgreSQL** in production - SQLite is for development only
 6. **Provision the admin account** via `ADMIN_EMAIL` / `ADMIN_PASSWORD` (there is no default public login), keep `DEV_MODE=false`, and confirm RLS is effective at startup (`assert_rls_effective` runs on boot; `scripts/verify_rls.py` as an extra gate) before exposing to the internet
 
-## Accepted / tracked advisories
+## Starlette advisories — disposition
 
-Some upstream advisories cannot currently be remediated by upgrading, because
-the only patched version is incompatible with the rest of the stack. These are
-tracked here and mitigated at deployment rather than silenced blindly.
+KAEOS pins **FastAPI 0.119.1 / Starlette 0.48.0** — the newest installable
+combo, since no released FastAPI supports the Starlette 1.x line (0.119.x caps
+`starlette <0.49.0`) and Starlette 1.x breaks `require_role` routing. Every open
+Starlette advisory is tracked below with its disposition; none are silenced
+without a reason recorded here.
 
-| Advisory | Severity | Status | Rationale & mitigation |
-| --- | --- | --- | --- |
-| [GHSA-82w8-qh3p-5jfq](https://github.com/advisories/GHSA-82w8-qh3p-5jfq) — Starlette `request.form()` limits silently ignored for `application/x-www-form-urlencoded` (DoS) | High (CVSS 7.5) | **Accepted / tracked** | Only patched in Starlette **1.3.1**, which **no released FastAPI supports** (0.119.x caps `starlette <0.49.0`) and which breaks KAEOS's `require_role` routing. It is a resource-exhaustion DoS — out of scope per this policy — and is mitigated at ingress: enforce a request-body size limit at the reverse proxy (e.g. nginx `client_max_body_size`) in front of the API. Will be remediated by bumping Starlette once FastAPI adopts the 1.x line. Dependabot is configured to stop proposing the un-installable `1.3.1` bump (see `.github/dependabot.yml`). |
+| Advisory | Severity | Disposition |
+| --- | --- | --- |
+| [GHSA-f96h-pmfr-66vw](https://github.com/advisories/GHSA-f96h-pmfr-66vw) — DoS via `multipart/form-data` | High | **Fixed** in 1.1.1 (Starlette ≥ 0.40.0). |
+| [GHSA-2c2j-9gv5-cj73](https://github.com/advisories/GHSA-2c2j-9gv5-cj73) — DoS parsing large multipart files | Medium | **Fixed** in 1.1.1 (Starlette ≥ 0.47.2). |
+| [GHSA-86qp-5c8j-p5mr](https://github.com/advisories/GHSA-86qp-5c8j-p5mr) — Host header poisons `request.url.path`, bypassing path-based auth | Medium | **Mitigated in code** (1.1.2). The upstream fix ships only in Starlette 1.0.1 (unreachable), so KAEOS's security gates (tenant/auth gate, rate-limit exemption) now key off the raw ASGI `scope["path"]` — the router's matched path — instead of the Host-reconstructed `request.url.path`. Regression test: `tests/test_tenant_middleware.py::test_poisoned_host_header_cannot_bypass_auth_gate`. |
+| [GHSA-x746-7m8f-x49c](https://github.com/advisories/GHSA-x746-7m8f-x49c) — arbitrary HTTP method dispatched to `HTTPEndpoint` via `getattr` | Medium | **Not applicable** — KAEOS uses no Starlette `HTTPEndpoint` class-based views (FastAPI function routes / `APIRouter` only). Alert dismissed. |
+| [GHSA-wqp7-x3pw-xc5r](https://github.com/advisories/GHSA-wqp7-x3pw-xc5r) — StaticFiles SSRF / NTLM credential theft via UNC paths on Windows | High | **Not applicable** — KAEOS serves no `StaticFiles` and deploys on Linux (`python:3.11-slim`). Alert dismissed. |
+| [GHSA-82w8-qh3p-5jfq](https://github.com/advisories/GHSA-82w8-qh3p-5jfq) — `request.form()` limits ignored for `application/x-www-form-urlencoded` (DoS) | High (CVSS 7.5) | **Accepted / tracked.** Only patched in Starlette 1.3.1 (unreachable). A resource-exhaustion DoS — out of scope per this policy — mitigated at ingress with a reverse-proxy request-body size limit (e.g. nginx `client_max_body_size`). Remediated once FastAPI adopts Starlette 1.x; Dependabot is configured to stop proposing the un-installable bump (`.github/dependabot.yml`). |
 
-Advisories reachable within the supported FastAPI range are remediated by
-upgrade, not accepted — e.g. GHSA-f96h-pmfr-66vw and GHSA-2c2j-9gv5-cj73
-(Starlette multipart DoS) were cleared in 1.1.1 by moving to Starlette 0.48.0.
+The three advisories whose only fix is Starlette ≥ 1.x (86qp, wqp7, 82w8, plus
+x746) will be revisited — and the `starlette >=1.0.0` ignore in
+`.github/dependabot.yml` removed — as soon as FastAPI ships support for the
+Starlette 1.x line.
 
 ## Acknowledgements
 

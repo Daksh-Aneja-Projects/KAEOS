@@ -87,10 +87,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 current_tenant_id.set(tenant["tenant_id"])
             return await original_call_next(req)
 
-        # Health checks, docs, and auth routes don't need auth
+        # Health checks, docs, and auth routes don't need auth.
+        # SECURITY: gate on the raw ASGI scope path, NOT request.url.path.
+        # request.url is reconstructed from the (attacker-controlled) Host header,
+        # so a malformed `Host: victim/health?x=` makes request.url.path read
+        # "/health" while the router still dispatches the real protected route from
+        # scope["path"] — an auth bypass (GHSA-86qp, unpatched in Starlette <1.0.1,
+        # which no FastAPI supports). scope["path"] is the path the router actually
+        # matched and cannot be poisoned this way.
+        req_path = request.scope["path"]
         public_paths = ("/health", "/health/live", "/docs", "/openapi.json", "/redoc", "/metrics")
         auth_paths = ("/api/v1/auth/login", "/api/v1/auth/sso/saml")
-        if request.url.path in public_paths or any(request.url.path.startswith(p) for p in auth_paths):
+        if req_path in public_paths or any(req_path.startswith(p) for p in auth_paths):
             request.state.tenant = _DEV_TENANT
             return await call_next(request)
 
@@ -114,7 +122,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            logger.warning(f"[Tenant] Missing bearer token: {request.url.path}")
+            logger.warning(f"[Tenant] Missing bearer token: {req_path}")
             return _unauthorized("Missing Authorization: Bearer <token> header")
 
         raw_key = auth_header.removeprefix("Bearer ").strip()
@@ -135,7 +143,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             }
             logger.debug(
                 f"[Tenant] JWT resolved: tenant_id={request.state.tenant['tenant_id']} "
-                f"role={request.state.tenant['role']} path={request.url.path}"
+                f"role={request.state.tenant['role']} path={req_path}"
             )
             return await call_next(request)
 
@@ -176,7 +184,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         logger.debug(
             f"[Tenant] API key resolved: tenant_id={key_meta['tenant_id']} "
-            f"role={key_meta.get('role')} path={request.url.path}"
+            f"role={key_meta.get('role')} path={req_path}"
         )
 
         return await call_next(request)

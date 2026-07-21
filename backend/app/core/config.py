@@ -6,7 +6,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "KAEOS"
-    APP_VERSION: str = "1.1.1"
+    APP_VERSION: str = "1.1.2"
     DEBUG: bool = False
     # Safe default: auth is ENFORCED unless DEV_MODE is explicitly enabled
     # (e.g. DEV_MODE=true in a local .env). Never ship DEV_MODE=true to production.
