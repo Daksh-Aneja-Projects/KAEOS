@@ -3,6 +3,35 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] — 2026-07-21
+
+Security hardening release. Closes a Host-header auth-bypass vector surfaced by
+the Starlette advisory review in 1.1.1, and records the disposition of every
+open Starlette advisory. No functional changes to features.
+
+### Security
+- **Fixed auth-bypass (GHSA-86qp-5c8j-p5mr, in-code mitigation).** Starlette
+  `<1.0.1` rebuilds `request.url` from the attacker-controlled `Host` header, so
+  a malformed `Host: victim/health?x=` made `request.url.path` read `/health`
+  (a public path) while the router still dispatched the real **protected** route
+  from `scope["path"]` — skipping the token check and assigning the dev tenant.
+  The upstream fix ships only in Starlette 1.0.1 (unreachable — no FastAPI
+  supports 1.x), so KAEOS's security gates now key off the raw ASGI
+  `scope["path"]` instead of `request.url.path`:
+  - `app/core/tenant.py` — the tenant/auth public-path gate.
+  - `app/core/middleware.py` — the rate-limit exemption and request-log path.
+  - Regression test: `tests/test_tenant_middleware.py::test_poisoned_host_header_cannot_bypass_auth_gate`.
+- **Advisory disposition table** added to [SECURITY.md](SECURITY.md) covering all
+  six Starlette advisories: 2 fixed by upgrade (1.1.1), 1 mitigated in code
+  (86qp), 2 not-applicable and dismissed (x746 — no `HTTPEndpoint`; wqp7 — no
+  `StaticFiles`/Linux), 1 accepted/tracked (82w8 — ingress-mitigated DoS).
+
+### Fixed
+- **Frontend lockfile drift** — `frontend/package-lock.json` referenced
+  `react@19.2.8` while pinning `react@19.2.5`, breaking `npm ci` (`frontend-build`
+  CI job). Re-pinned `react` + `react-dom` to `19.2.8` in lockstep so the lock is
+  consistent with `package.json`.
+
 ## [1.1.1] — 2026-07-21
 
 Maintenance & dependency-security release. Fixes the CI dependency-resolution

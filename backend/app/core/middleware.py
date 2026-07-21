@@ -33,7 +33,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path in self.SKIP_PATHS:
+        # Use the raw ASGI scope path (the router's matched path), never
+        # request.url.path — the latter is rebuilt from the attacker-controlled
+        # Host header and can be poisoned (GHSA-86qp). Logging the real path keeps
+        # the audit trail truthful when a poisoning attempt is made.
+        req_path = request.scope["path"]
+        if req_path in self.SKIP_PATHS:
             return await call_next(request)
 
         start = time.perf_counter()
@@ -47,7 +52,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         log_level = logging.WARNING if response.status_code >= 400 else logging.INFO
         logger.log(
             log_level,
-            f"[{request.method}] {request.url.path} → {response.status_code} "
+            f"[{request.method}] {req_path} → {response.status_code} "
             f"({duration_ms}ms) tenant={tenant_id} req={request_id}"
         )
 
@@ -73,7 +78,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path in self.EXEMPT_PATHS:
+        # Raw scope path, not request.url.path — a poisoned Host header must not
+        # let a caller mimic an exempt path to escape rate limiting (GHSA-86qp).
+        if request.scope["path"] in self.EXEMPT_PATHS:
             return await call_next(request)
 
         # Identify caller by tenant or IP
