@@ -1,5 +1,5 @@
 """
-KAEOS L9 — LLM Router (merged from Extract-OS)
+KAEOS L9 — LLM Router (KAEOS Data Fabric)
 
 BYOK (Bring Your Own Key) provider-agnostic LLM gateway.
 Uses LiteLLM for unified access to 100+ LLM providers.
@@ -510,29 +510,48 @@ class LLMRouter:
     async def _scrub_for_cloud(self, text: Optional[str]) -> Optional[str]:
         """Redact PII from text before it leaves for a cloud provider.
 
-        Reuses the existing Presidio-backed scrubber (app/transforms/pii_scrubber).
-        Imported lazily so a missing Presidio install degrades gracefully — the
-        scrubber itself falls back to a regex analyzer (email/SSN/IP) and logs a
-        warning. Any failure returns the original text: scrubbing must never take
-        down inference. This path only runs for CLOUD calls; local Ollama skips it.
+        Belt-and-suspenders, because neither layer alone is sufficient:
+          1. Presidio NER (via the shared scrubber) catches names and contextual
+             PII — but at a useful precision threshold it can MISS a bare phone
+             number or SSN, so it cannot be the only line of defence.
+          2. ``redact_structured_pii`` then deterministically removes structured
+             direct identifiers (email/phone/SSN/credit-card/IP/IBAN) regardless
+             of NER confidence. This runs even when Presidio is absent.
+
+        A lower Presidio threshold (0.4) is deliberate here: over-redacting a
+        borderline token before it leaves the region is the safe error. Any
+        failure returns the best text we have — scrubbing must never take down
+        inference. Only CLOUD calls reach this path; local Ollama skips it.
         """
         if not text:
             return text
+        scrubbed = text
         try:
             from app.transforms.pii_scrubber import PIIScrubberNode
             from app.transforms.base import TransformRecord
 
-            node = PIIScrubberNode("llm_cloud_egress_scrub", {"action": "redact"})
+            node = PIIScrubberNode(
+                "llm_cloud_egress_scrub",
+                {"action": "redact", "confidence_threshold": 0.4},
+            )
             record = TransformRecord(
                 id="llm_egress", source_record_id="llm_egress",
                 data={}, text_content=text,
             )
             result = await node.process([record])
-            scrubbed = result.records[0].text_content
-            return scrubbed if scrubbed is not None else text
+            if result.records and result.records[0].text_content is not None:
+                scrubbed = result.records[0].text_content
         except Exception as e:
-            logger.warning(f"[LLM] PII scrub before cloud egress failed, proceeding unscrubbed: {e}")
-            return text
+            logger.warning(f"[LLM] Presidio egress scrub failed, applying structured backstop only: {e}")
+
+        # Deterministic structured backstop — always runs, even if Presidio threw
+        # or is not installed. This is what guarantees a phone/SSN never egresses.
+        try:
+            from app.transforms.pii_scrubber import redact_structured_pii
+            scrubbed, _ = redact_structured_pii(scrubbed)
+        except Exception as e:
+            logger.warning(f"[LLM] structured PII backstop failed, proceeding: {e}")
+        return scrubbed
 
     async def _call_llm(
         self, model: str, prompt: str, system_prompt: Optional[str],

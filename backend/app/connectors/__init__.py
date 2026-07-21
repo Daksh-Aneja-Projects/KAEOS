@@ -1,5 +1,5 @@
 """
-KAEOS L0 — Connector Registry (merged from Extract-OS)
+KAEOS L0 — Connector Registry (KAEOS Data Fabric)
 """
 from app.connectors.base import BaseConnector
 

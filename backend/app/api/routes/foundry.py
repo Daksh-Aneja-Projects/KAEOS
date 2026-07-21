@@ -17,6 +17,7 @@ dataset alongside it.
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import get_tenant_id, require_role
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/foundry", tags=["AI Foundry"])
 @router.post("/feedback")
 async def record_feedback(
     body: dict,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Record a human correction or rating against an agent decision.
@@ -39,7 +40,11 @@ async def record_feedback(
     Body: { execution_id?, corrected_answer?, rating?, instruction?, context? }
     A corrected_answer is the strongest training signal there is - expert ground
     truth. A rating (1-5) is a lighter signal. One of the two is required.
+
+    Requires operator role — this writes a curated training example, the same
+    tier as its sibling POST /foundry/datasets/build.
     """
+    tenant_id = tenant["tenant_id"]
     try:
         example = await dataset_builder.record_human_feedback(
             db,
@@ -112,3 +117,123 @@ async def export_dataset(
         limit=limit,
     )
     return {"tenant_id": tenant_id, "count": len(examples), "examples": examples}
+
+
+# ── Phase 3: Model Evolution (evaluate a candidate, gated promotion) ──────────
+
+def _run_out(run) -> dict:
+    return {
+        "id": run.id,
+        "tier": run.tier,
+        "baseline_model": run.baseline_model,
+        "candidate_model": run.candidate_model,
+        "status": run.status,
+        "eval_size": run.eval_size,
+        "baseline_score": run.baseline_score,
+        "candidate_score": run.candidate_score,
+        "score_delta": run.score_delta,
+        "win": run.win,
+        "simulated": run.simulated,
+        "decision": run.decision,
+        "decided_by": run.decided_by,
+        "detail": run.detail,
+        "error": run.error,
+    }
+
+
+class EvolutionEvalRequest(BaseModel):
+    tier: str                                  # reasoning | classification | fast
+    candidate_model: str
+    baseline_model: str | None = None
+    eval_limit: int = 20
+
+
+@router.post("/evolution/evaluate")
+async def evaluate_candidate_model(
+    body: EvolutionEvalRequest,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Measure a candidate model against the tenant's baseline on held-out
+    governed examples. Real generations, deterministic scoring. Requires operator.
+
+    A win is recorded but NEVER auto-applied — promotion is a separate, admin-gated
+    step. An evaluation with no live provider is flagged ``simulated`` and cannot win.
+    """
+    from app.services.foundry import model_evolution
+    try:
+        run = await model_evolution.run_evaluation(
+            db, tenant["tenant_id"], tier=body.tier,
+            candidate_model=body.candidate_model, baseline_model=body.baseline_model,
+            eval_limit=body.eval_limit,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _run_out(run)
+
+
+@router.get("/evolution/runs")
+async def list_evolution_runs(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.foundry import model_evolution
+    runs = await model_evolution.list_runs(db, tenant_id)
+    return {"runs": [_run_out(r) for r in runs]}
+
+
+@router.get("/evolution/runs/{run_id}")
+async def get_evolution_run(
+    run_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.foundry import model_evolution
+    run = await model_evolution._get_run(db, tenant_id, run_id)
+    if run is None:
+        raise HTTPException(404, "evolution run not found")
+    return _run_out(run)
+
+
+@router.post("/evolution/runs/{run_id}/promote")
+async def promote_evolution_run(
+    run_id: str,
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Promote a winning candidate to the tenant's model for its tier (gated deploy).
+
+    Admin-only and audit-logged. Refuses simulated or non-winning runs. Writes the
+    tenant's BYOK routing and forces a re-probe so the gates re-derive the ceiling.
+    """
+    from app.services.foundry import model_evolution
+    from app.core.audit import record_security_event
+    try:
+        run = await model_evolution.promote(
+            db, tenant["tenant_id"], run_id, approver=tenant.get("name") or "admin",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="model_promotion", resource_id=run.candidate_model,
+        details={"tier": run.tier, "delta": run.score_delta},
+    )
+    return _run_out(run)
+
+
+@router.post("/evolution/runs/{run_id}/reject")
+async def reject_evolution_run(
+    run_id: str,
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.foundry import model_evolution
+    try:
+        run = await model_evolution.reject(
+            db, tenant["tenant_id"], run_id, approver=tenant.get("name") or "admin",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _run_out(run)

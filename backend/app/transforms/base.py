@@ -1,5 +1,5 @@
 """
-KAEOS L1/L2 — Transform Engine Base (merged from Extract-OS)
+KAEOS L1/L2 — Transform Engine Base (KAEOS Data Fabric)
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.services.external_intelligence import ExternalIntelligenceEngine
 from app.services.org_intelligence import OrgIntelligenceEngine
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 
 router = APIRouter(tags=["AEOS Pioneer Layers"])
 
@@ -27,8 +27,9 @@ class CorrelateRequest(BaseModel):
 
 
 @router.post("/intelligence/signals")
-async def ingest_signal(req: SignalIngestRequest, tenant_id: str = Depends(get_tenant_id)):
-    """P1 — Ingest an external signal (regulatory, vendor, market, threat)."""
+async def ingest_signal(req: SignalIngestRequest, tenant: dict = Depends(require_role("operator"))):
+    """P1 — Ingest an external signal (regulatory, vendor, market, threat). Requires operator role (persists a Signal that drives Brain decisions)."""
+    tenant_id = tenant["tenant_id"]
     if req.signal_type not in ext_intel.SIGNAL_TYPES:
         raise HTTPException(400, f"Invalid signal_type. Must be one of: {ext_intel.SIGNAL_TYPES}")
     return await ext_intel.ingest_signal(

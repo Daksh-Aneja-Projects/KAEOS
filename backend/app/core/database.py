@@ -10,6 +10,7 @@ _db_logger = _logging.getLogger(__name__)
 
 _model_modules = [
     "app.models.settings",
+    "app.models.foundry",
     "app.models.agent_factory",
     "app.models.fairness",
     "app.models.calendar",

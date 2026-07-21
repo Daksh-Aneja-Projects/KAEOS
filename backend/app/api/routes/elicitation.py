@@ -1,5 +1,5 @@
 """KAEOS — Elicitation API (L5 Active Elicitation + HITL)"""
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,8 +146,9 @@ async def elicitation_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asy
 
 
 @router.post("/answer")
-async def submit_answer(body: AnswerSubmit, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Process an elicitation answer — L5 Answer Processing Pipeline."""
+async def submit_answer(body: AnswerSubmit, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Process an elicitation answer — L5 Answer Processing Pipeline. Requires operator role (persists an answer + updates employee reputation)."""
+    tenant_id = tenant["tenant_id"]
     result = await db.execute(
         select(ElicitationQuestion).where(ElicitationQuestion.id == body.question_id, ElicitationQuestion.tenant_id == tenant_id)
     )
@@ -195,8 +196,9 @@ class GenerateQuestionRequest(BaseModel):
 
 
 @router.post("/generate")
-async def generate_question(body: GenerateQuestionRequest, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """L5 — Use ElicitationEngine to generate an LLM-powered micro-survey question."""
+async def generate_question(body: GenerateQuestionRequest, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """L5 — Use ElicitationEngine to generate an LLM-powered micro-survey question. Requires operator role (persists a question + incurs LLM cost)."""
+    tenant_id = tenant["tenant_id"]
     from app.services.elicitation import ElicitationEngine
 
     emp_result = await db.execute(select(Employee).where(Employee.id == body.employee_id, Employee.tenant_id == tenant_id))

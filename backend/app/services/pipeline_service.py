@@ -1,5 +1,5 @@
 """
-KAEOS L0 — Pipeline Service (merged from Extract-OS)
+KAEOS L0 — Pipeline Service (KAEOS Data Fabric)
 Orchestrates: Extract → Transform (DAG) → Load → Signal Ingestion
 This is the HARVEST mode engine for the epistemic OS.
 """
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class PipelineService:
     """
-    Core pipeline orchestration — Extract-OS ETL engine adapted for KAEOS.
+    Core pipeline orchestration — KAEOS Data Fabric ETL engine.
     Drives the L0 Data Fabric Connector Mesh.
     """
 

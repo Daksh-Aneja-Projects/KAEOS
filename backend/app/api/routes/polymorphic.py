@@ -1,7 +1,7 @@
 """KAEOS 10X — Polymorphic Operations API"""
 import hashlib
 
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -16,11 +16,15 @@ class SynthesisRequest(BaseModel):
     missing_integration: str
 
 @router.post("/synthesize")
-async def synthesize_tool(request: SynthesisRequest, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def synthesize_tool(request: SynthesisRequest, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     """
-    Executes the polymorphic engine to autonomously write 
+    Executes the polymorphic engine to autonomously write
     and deploy code bridging a missing tool integration gap.
+
+    Requires admin role — this autonomously generates and deploys code and
+    mutates a Skill, the highest-consequence action class on the platform.
     """
+    tenant_id = tenant["tenant_id"]
     try:
         # Scope the mutated Skill lookup to the caller's tenant.
         result = await PolymorphicEngine.auto_patch_skill(

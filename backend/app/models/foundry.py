@@ -17,7 +17,7 @@ sweep in app/core/database.py puts it under the same tenant_isolation policy as
 every other tenant table - one enterprise's training data is never visible to
 another's.
 """
-from sqlalchemy import Column, String, Text, JSON, Float, Boolean, DateTime
+from sqlalchemy import Column, String, Text, JSON, Float, Boolean, DateTime, Integer
 from sqlalchemy.sql import func
 import uuid
 
@@ -59,6 +59,52 @@ class TrainingExample(Base):
     source_execution_id = Column(String, index=True, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ModelEvolutionRun(Base):
+    """Phase 3 — one governed model-evolution evaluation + promotion decision.
+
+    "Model evolution" here is HONEST about what it does: it takes a candidate
+    model (a stronger model, or one fine-tuned externally on this tenant's Phase-2
+    export) and MEASURES it against the tenant's current baseline model on a
+    held-out slice of the tenant's own governed training examples, producing real
+    win/loss scores. A candidate is only ever PROMOTED (made the tenant's model
+    for a tier) if it genuinely beats the baseline AND a human approves — the same
+    gated-deploy discipline the rest of the platform uses.
+
+    Deliberately NOT claimed: this table does not itself fine-tune weights. The
+    actual training step is external/pluggable; what ships here is the real
+    evaluation-and-gated-promotion loop. When evaluation runs without a live LLM
+    provider, ``simulated`` is set and the run can never win or be promoted — a
+    fabricated score must never drive a model swap.
+    """
+    __tablename__ = "model_evolution_runs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+
+    tier = Column(String(24), nullable=False)               # reasoning | classification | fast
+    baseline_model = Column(String(128), nullable=False)
+    candidate_model = Column(String(128), nullable=False)
+
+    # PENDING → EVALUATING → EVALUATED → PENDING_REVIEW → (PROMOTED | REJECTED); FAILED on error
+    status = Column(String(24), default="PENDING", index=True)
+
+    eval_size = Column(Integer, default=0)                   # examples actually scored
+    baseline_score = Column(Float, nullable=True)           # mean 0..1 over the eval set
+    candidate_score = Column(Float, nullable=True)
+    score_delta = Column(Float, nullable=True)              # candidate - baseline
+    win = Column(Boolean, default=False)                    # candidate beat baseline by the margin
+    simulated = Column(Boolean, default=False)              # eval ran without a real provider → not trustworthy
+
+    detail = Column(JSON, default=dict)                     # {margin, metric, per_example:[...], notes}
+    decision = Column(String(24), nullable=True)           # PROMOTED | REJECTED
+    decided_by = Column(String(128), nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 # Evaluation labels, most-valuable first. Kept here so the builder, routes, and

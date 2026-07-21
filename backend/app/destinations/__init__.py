@@ -1,5 +1,5 @@
 """
-KAEOS — Destination Adapters (merged from Extract-OS)
+KAEOS — Destination Adapters (KAEOS Data Fabric)
 Output targets for pipeline data: Local File, Webhook
 """
 from abc import ABC, abstractmethod

@@ -1,5 +1,5 @@
 """
-KAEOS L0 — Connector Framework (merged from Extract-OS)
+KAEOS L0 — Connector Framework (KAEOS Data Fabric)
 
 Every connector implements the Connector interface:
 - authenticate / health_check

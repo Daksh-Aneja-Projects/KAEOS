@@ -77,6 +77,31 @@ class OntologyConfig(Base):
     default_half_life_days = Column(Integer, default=90)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+class RetentionPolicy(Base):
+    """Per-tenant data-retention window for one transient-telemetry data class.
+
+    Retention is OPT-IN and fails safe: a class with no row here — or a row with
+    ``enabled=False`` — is NEVER purged. When enabled, the retention sweep hard-
+    deletes rows in the class's table whose timestamp is older than
+    ``retain_days`` (falling back to the registry default when NULL).
+
+    The set of purgeable classes is a curated allow-list in
+    ``app/services/retention.py``; it deliberately CANNOT point at the
+    hash-chained provenance ledger or the Foundry training lineage, so no amount
+    of misconfiguration here can erase the integrity trail.
+    """
+    __tablename__ = 'retention_policies'
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'data_class', name='uq_retention_tenant_class'),
+    )
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+    data_class = Column(String(64), nullable=False)
+    retain_days = Column(Integer, nullable=True)   # NULL → use the registry default
+    enabled = Column(Boolean, default=False, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class FederatedConfig(Base):
     """Per-tenant federated-sharing opt-in. `department` was globally unique, so
     one tenant could flip another tenant's PRIVACY CONSENT for data sharing."""

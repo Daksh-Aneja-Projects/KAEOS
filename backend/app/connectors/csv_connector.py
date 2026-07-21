@@ -1,5 +1,5 @@
 """
-KAEOS L0 — CSV Connector (merged from Extract-OS)
+KAEOS L0 — CSV Connector (KAEOS Data Fabric)
 Supports CSV, TSV, and structured text files.
 """
 import csv

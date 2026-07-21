@@ -203,8 +203,9 @@ async def agent_heartbeat(agent_name: str, data: Optional[dict] = None, tenant_i
 
 
 @router.post("/infrastructure/agents/{agent_name}/circuit/reset")
-async def reset_circuit(agent_name: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """N3 — Reset circuit breaker for an agent."""
+async def reset_circuit(agent_name: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N3 — Reset circuit breaker for an agent. Requires operator role (operational control action)."""
+    tenant_id = tenant["tenant_id"]
     await AgentProtocolService.reset_circuit(db, tenant_id, agent_name)
     return {"status": "circuit_reset", "agent_name": agent_name}
 
@@ -388,8 +389,8 @@ async def get_schema_mappings(
 
 
 @router.post("/infrastructure/schema-mappings/{mapping_id}/confirm")
-async def confirm_mapping(mapping_id: str, data: dict, db: AsyncSession = Depends(get_db)):
-    """N4 — Admin confirms or corrects a schema mapping."""
+async def confirm_mapping(mapping_id: str, data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """N4 — Confirms or corrects a schema mapping. Requires operator role (persists a confirmed mapping; previously had no auth gate, relying on RLS alone)."""
     return await OnboardingEngineService.confirm_mapping(
         db, mapping_id,
         confirmed_by=data.get("confirmed_by", "admin"),

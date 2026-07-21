@@ -1,5 +1,5 @@
 """
-KAEOS L0 — Universal REST API Connector (merged from Extract-OS)
+KAEOS L0 — Universal REST API Connector (KAEOS Data Fabric)
 """
 import httpx
 from typing import AsyncIterator, Optional

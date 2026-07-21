@@ -1,5 +1,5 @@
 """
-KAEOS — Transform Node Registry & DAG Nodes (merged from Extract-OS)
+KAEOS — Transform Node Registry & DAG Nodes (KAEOS Data Fabric)
 Includes: FieldMapper, Deduplicator, Normalizer, Filter, MetadataInjector
 """
 from app.transforms.base import BaseTransformNode, TransformRecord, TransformResult

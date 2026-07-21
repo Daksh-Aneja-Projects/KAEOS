@@ -39,7 +39,8 @@ from app.api.routes import (
     connectors, conflicts, marketplace, security, pipeline,
     predictive, polymorphic, federated, kaeos10x,
     platform_config, enterprise, agent_factory, pioneer,
-    infrastructure, auth, brain, departments, hitl, ws, executive, chat
+    infrastructure, auth, brain, departments, hitl, ws, executive, chat,
+    privacy,
 )
 from app.hr.api.v1.router import router as hr_router
 from app.finance.api.v1.router import router as finance_router
@@ -173,37 +174,67 @@ async def lifespan(app: FastAPI):
     from app.services.scheduler import init_scheduler
     
     # These are SINGLETON loops. Running them on every replica means N× the LLM
-    # spend and read-then-write races on the same rows. Until there's a proper
-    # leader lock, run them only where RUN_BACKGROUND_JOBS is true (set it false
-    # on all replicas but one). Default true keeps single-instance dev/demo working.
-    precog_task = event_bus_task = scheduler = None
+    # spend and read-then-write races on the same rows. Leadership is now
+    # AUTOMATIC (Redis lock → Postgres advisory → local single-instance), so
+    # every replica boots identically and only the elected leader runs them.
+    # RUN_BACKGROUND_JOBS=false still lets an operator pin a replica to pure API
+    # duty (it never even contends for leadership). Default true keeps
+    # single-instance dev/demo working exactly as before (local backend → always
+    # leader).
+    from app.services.leader_lock import leader_lock, run_election
+
+    _bg = {"precog": None, "event_bus": None, "scheduler": None}
+
+    def _start_background_loops():
+        if _bg["scheduler"] is not None:
+            return  # already running — an idempotent re-acquire must not double-start
+        _bg["precog"] = asyncio.create_task(PreCogEngine().run_ambient_loop())
+        _bg["event_bus"] = asyncio.create_task(event_bus._worker_loop())
+        sched = init_scheduler()
+        sched.start()
+        _bg["scheduler"] = sched
+        logger.info("[Background] leader — singleton loops started (precog, event bus, scheduler)")
+
+    def _stop_background_loops():
+        if _bg["scheduler"] is not None:
+            _bg["scheduler"].shutdown(wait=False)
+            _bg["scheduler"] = None
+        for _k in ("precog", "event_bus"):
+            if _bg[_k] is not None:
+                _bg[_k].cancel()
+                _bg[_k] = None
+
+    election_task = None
     if settings.RUN_BACKGROUND_JOBS:
-        precog_task = asyncio.create_task(PreCogEngine().run_ambient_loop())
-        event_bus_task = asyncio.create_task(event_bus._worker_loop())
-        scheduler = init_scheduler()
-        scheduler.start()
-        logger.info("[Background] singleton loops started (precog, event bus, scheduler)")
+        if await leader_lock.acquire():
+            _start_background_loops()
+        election_task = asyncio.create_task(
+            run_election(leader_lock, on_acquire=_start_background_loops,
+                         on_release=_stop_background_loops)
+        )
+        logger.info("[Background] leader election running (backend=%s)", leader_lock.backend)
     else:
-        logger.info("[Background] RUN_BACKGROUND_JOBS=false — singleton loops NOT started in this instance")
+        logger.info("[Background] RUN_BACKGROUND_JOBS=false — this instance stays API-only (no leadership)")
 
     yield
 
-    # Shutdown Background Tasks
-    if scheduler is not None:
-        scheduler.shutdown()
-    if precog_task is not None:
-        precog_task.cancel()
-    if event_bus_task is not None:
-        event_bus_task.cancel()
+    # Shutdown: stop electing, then stop the loops, draining cancelled tasks.
+    _precog_t, _eventbus_t = _bg.get("precog"), _bg.get("event_bus")
+    if election_task is not None:
+        election_task.cancel()
+        try:
+            await election_task
+        except asyncio.CancelledError:
+            pass
+    _stop_background_loops()
     await close_redis()
 
-    try:
-        if precog_task is not None:
-            await precog_task
-        if event_bus_task is not None:
-            await event_bus_task
-    except asyncio.CancelledError:
-        pass
+    for _t in (_precog_t, _eventbus_t):
+        if _t is not None:
+            try:
+                await _t
+            except asyncio.CancelledError:
+                pass
 
 
 # Interactive docs and the OpenAPI schema hand out the full endpoint map
@@ -298,6 +329,7 @@ app.include_router(polymorphic.router,     prefix=PREFIX)
 app.include_router(federated.router,       prefix=PREFIX)
 app.include_router(kaeos10x.router,    prefix=PREFIX)
 app.include_router(platform_config.router, prefix=PREFIX)
+app.include_router(privacy.router,         prefix=PREFIX)
 app.include_router(enterprise.router,      prefix=PREFIX)
 app.include_router(agent_factory.router,   prefix=PREFIX)
 from app.api.routes import reality

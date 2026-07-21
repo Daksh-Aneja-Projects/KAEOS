@@ -1,5 +1,5 @@
-"""KAEOS — Pipeline API (L0 Data Fabric + Extract-OS ETL Engine)"""
-from app.core.tenant import get_tenant_id
+"""KAEOS — Pipeline API (L0 Data Fabric ETL Engine)"""
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -20,8 +20,9 @@ class PipelineRunRequest(BaseModel):
 
 
 @router.post("/run")
-async def run_pipeline(body: PipelineRunRequest, tenant_id: str = Depends(get_tenant_id)):
-    """Execute a full Extract → Transform → Load pipeline (tenant-scoped)."""
+async def run_pipeline(body: PipelineRunRequest, tenant: dict = Depends(require_role("operator"))):
+    """Execute a full Extract → Transform → Load pipeline (tenant-scoped). Requires operator role (executes a data pipeline and loads to a destination)."""
+    tenant_id = tenant["tenant_id"]
     result = await PipelineService.run_pipeline(
         tenant_id=tenant_id,
         connector_config=body.connector_config,

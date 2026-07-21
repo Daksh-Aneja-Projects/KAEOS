@@ -1,5 +1,5 @@
 """
-KAEOS L1 — PII Scrubber Transform (merged from Extract-OS)
+KAEOS L1 — PII Scrubber Transform (KAEOS Data Fabric)
 Uses Microsoft Presidio for real PII detection.
 
 Actions per entity type:
@@ -12,8 +12,50 @@ Actions per entity type:
 from app.transforms.base import BaseTransformNode, TransformRecord, TransformResult
 import logging
 import asyncio
+import re
 
 logger = logging.getLogger(__name__)
+
+# Direct, structured identifiers that are reliably regex-detectable. Shared by
+# the no-Presidio fallback analyzer AND the deterministic egress backstop, so
+# both stay in lock-step. Names / free-text PII are NOT here — those need NER.
+STRUCTURED_PII_PATTERNS: dict[str, str] = {
+    "EMAIL_ADDRESS": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
+    "US_SSN": r"\b\d{3}-\d{2}-\d{4}\b",
+    "CREDIT_CARD": r"\b(?:\d[ -]?){13,15}\d\b",
+    "PHONE_NUMBER": r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b",
+    "IP_ADDRESS": r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b",
+    "IBAN_CODE": r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b",
+}
+
+
+def redact_structured_pii(text: str) -> tuple[str, int]:
+    """Deterministically redact structured direct identifiers → ``[ENTITY]``.
+
+    Regex-only (no Presidio dependency), so it is safe to run in the LLM egress
+    hot path as a backstop under Presidio's NER — which, at its default
+    confidence threshold, can miss a bare phone number or SSN. Returns
+    ``(redacted_text, num_redactions)``. Overlapping matches are de-duplicated so
+    the reverse-splice never corrupts shifted indices.
+    """
+    if not text:
+        return text, 0
+    spans = []
+    for ent, pat in STRUCTURED_PII_PATTERNS.items():
+        for m in re.finditer(pat, text):
+            spans.append((m.start(), m.end(), ent))
+    if not spans:
+        return text, 0
+    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
+    kept, last_end = [], -1
+    for start, end, ent in spans:
+        if start >= last_end:
+            kept.append((start, end, ent))
+            last_end = end
+    out = text
+    for start, end, ent in sorted(kept, key=lambda s: s[0], reverse=True):
+        out = out[:start] + f"[{ent}]" + out[end:]
+    return out, len(kept)
 
 # Lazy load Presidio
 _presidio_loaded = False
@@ -72,18 +114,25 @@ class PIIScrubberNode(BaseTransformNode):
                 self.end = end
                 self.score = score
         
-        import re
         results = []
-        patterns = {
-            "EMAIL_ADDRESS": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
-            "US_SSN": r"\d{3}-\d{2}-\d{4}",
-            "IP_ADDRESS": r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b"
-        }
+        # Fallback for when Presidio is not installed — shares the structured
+        # identifier patterns with the egress backstop (redact_structured_pii).
         for ent in entity_types:
-            if ent in patterns:
-                for match in re.finditer(patterns[ent], text):
-                    results.append(RegexResult(ent, match.start(), match.end(), 0.9))
-        return results
+            pat = STRUCTURED_PII_PATTERNS.get(ent)
+            if not pat:
+                continue
+            for match in re.finditer(pat, text):
+                results.append(RegexResult(ent, match.start(), match.end(), 0.9))
+        # Drop overlapping matches (keep the earliest-starting / longest) so the
+        # reverse-splice anonymization below never corrupts shifted indices — an
+        # SSN also partially matching the phone pattern must not double-redact.
+        results.sort(key=lambda r: (r.start, -(r.end - r.start)))
+        deduped, last_end = [], -1
+        for r in results:
+            if r.start >= last_end:
+                deduped.append(r)
+                last_end = r.end
+        return deduped
 
     async def process(self, records: list[TransformRecord]) -> TransformResult:
         _load_presidio()

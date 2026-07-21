@@ -48,3 +48,23 @@ THIRD-PARTY SOFTWARE
 This product depends on third-party open-source packages declared in
 `backend/requirements.txt` and `frontend/package.json`. Each remains under its own
 license, held by its respective copyright owners.
+
+The overwhelming majority are permissive (MIT / BSD / Apache-2.0 / ISC / PSF). A
+small number carry weak (file-level) copyleft licenses; all are used UNMODIFIED
+as installed dependencies, which their licenses permit within an Apache-2.0
+distribution. Acknowledged here for completeness:
+
+  * psycopg2-binary — LGPL with OpenSSL exception (PostgreSQL driver)
+  * certifi        — MPL-2.0 (CA certificate bundle)
+  * tqdm           — MPL-2.0 AND MIT (progress bars)
+  * lightningcss   — MPL-2.0 (CSS transform, transitive via Tailwind CSS)
+
+The source for each of these is available from its upstream project (PyPI / npm)
+and its respective repository. No file in any of these packages has been modified
+by this project. This distribution contains no GPL/AGPL, non-commercial, or
+otherwise source-restricted dependencies.
+
+All ETL / data-fabric modules whose headers reference the internal "Data Fabric"
+subsystem (backend/app/connectors, transforms, destinations, pipeline_service,
+llm_router) are original first-party KAEOS code under the Apache-2.0 license
+above — not derived from any third-party project.

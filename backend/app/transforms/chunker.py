@@ -1,5 +1,5 @@
 """
-KAEOS L2 — Chunker Transform (merged from Extract-OS)
+KAEOS L2 — Chunker Transform (KAEOS Data Fabric)
 
 Four production strategies:
 1. Fixed-size chunking — fast, predictable
