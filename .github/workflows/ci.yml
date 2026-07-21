@@ -10,9 +10,9 @@ jobs:
   backend-lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Set up Python 3.12
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
     - name: Install ruff
@@ -25,9 +25,9 @@ jobs:
   backend-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Set up Python 3.12
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
     - name: Install dependencies
@@ -76,9 +76,9 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 10s --health-timeout 3s --health-retries 5
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Set up Python 3.12
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
     - name: Install dependencies
@@ -114,9 +114,9 @@ jobs:
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Set up Node.js 20
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v7
       with:
         node-version: "20"
     - name: Install dependencies
@@ -136,9 +136,9 @@ jobs:
     # remove the continue-on-error flags (or gate on them) to make this blocking.
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Set up Python 3.12
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
     - name: Install scanners
@@ -154,7 +154,7 @@ jobs:
         cd backend
         bandit -r app -ll
     - name: Set up Node.js 20
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v7
       with:
         node-version: "20"
     - name: npm audit (frontend dependencies, high+ severity)
