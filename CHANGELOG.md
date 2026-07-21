@@ -3,6 +3,35 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-07-21
+
+Maintenance & dependency-security release. Fixes the CI dependency-resolution
+break introduced around 1.1.0 and patches upstream Starlette advisories, with no
+functional changes to the platform.
+
+### Security
+- **Starlette `0.38.6` → `0.48.0`** (via **FastAPI `0.115.0` → `0.119.1`**),
+  clearing two upstream advisories:
+  - **GHSA-f96h-pmfr-66vw** (HIGH) — DoS via `multipart/form-data` (fixed 0.40.0).
+  - **GHSA-2c2j-9gv5-cj73** (MEDIUM) — DoS parsing large multipart files (fixed 0.47.2).
+- **GHSA-wqp7-x3pw-xc5r** (HIGH, StaticFiles SSRF/NTLM on Windows) — **not
+  applicable**: KAEOS serves no `StaticFiles` and deploys on Linux
+  (`python:3.11-slim`). Alert dismissed with rationale.
+- **GHSA-82w8-qh3p-5jfq** (HIGH, form-urlencoded DoS) — **accepted / tracked**:
+  only patched in Starlette 1.3.1, which no released FastAPI supports and which
+  breaks `require_role` routing. Mitigated at ingress (reverse-proxy body-size
+  limit). See [SECURITY.md](SECURITY.md).
+
+### Fixed
+- **CI dependency resolution** — the previous `starlette==1.3.1` pin was
+  un-installable against FastAPI (`starlette<0.39.0` required), failing
+  `backend-test` and `backend-e2e-mock`. Now resolves on a supported combo.
+
+### Changed
+- Added **`.github/dependabot.yml`** — grouped, weekly updates for pip / npm /
+  github-actions, with Starlette `>=1.0.0` ignored (FastAPI-incompatible; see
+  SECURITY.md) so the impossible security bump stops recurring.
+
 ## [1.1.0] — 2026-07-21
 
 The **Workflow, Analytics & Collaboration Platform** release. Turns the seven

@@ -1,12 +1,17 @@
 # KAEOS Backend Dependencies
-fastapi==0.115.0
+fastapi==0.119.1
 # Pin Starlette explicitly to a version compatible with this FastAPI.
 # NOTE: Starlette 1.x (e.g. 1.3.1) reworks include_router into an
 # _IncludedRouter mount that has no `.path`, which breaks request routing for
-# require_role-gated endpoints (real 500s + RBAC introspection failures). The
-# 0.38.x line is the verified-working combo with FastAPI 0.115 — do not bump
-# without re-running tests/test_rbac_coverage.py under the resolved versions.
-starlette==0.38.6
+# require_role-gated endpoints (real 500s + RBAC introspection failures), AND
+# no released FastAPI supports it (0.119.x still caps starlette <0.49.0). So
+# 0.48.0 is the newest installable + verified-working combo. It clears the
+# multipart-DoS advisories GHSA-f96h (HIGH, fixed 0.40.0) and GHSA-2c2j
+# (MEDIUM, fixed 0.47.2). The form-urlencoded-DoS GHSA-82w8 is only patched in
+# 1.3.1 and is therefore unreachable until FastAPI adopts Starlette 1.x — it is
+# an accepted, ingress-mitigated known-limitation (see SECURITY.md / CHANGELOG).
+# Do not bump past 0.48.x without re-running tests/test_rbac_coverage.py.
+starlette==0.48.0
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.51
 alembic==1.13.2
@@ -54,7 +59,7 @@ faker==30.3.0                # synthetic enterprise generator + seeders
 # enables them: neo4j (graph store backend), langchain-text-splitters /
 # langchain-experimental / langchain-community (semantic chunking).
 
-# Observability — versions matched to the Starlette 0.38.x / FastAPI 0.115 line.
+# Observability — versions matched to the Starlette 0.48.x / FastAPI 0.119 line.
 prometheus-fastapi-instrumentator==7.1.0   # 7.x requires starlette<1.0.0
 opentelemetry-api==1.42.1
 opentelemetry-sdk==1.42.1
