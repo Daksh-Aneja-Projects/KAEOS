@@ -25,6 +25,9 @@ updates:
       # security bump (GHSA-82w8); this stops it. Revisit — and delete this
       # ignore — once FastAPI ships support for the Starlette 1.x line.
       # See SECURITY.md "Accepted / tracked advisories" and CHANGELOG 1.1.1.
+      # NOTE: Dependabot security updates will still trigger and report
+      # "all_versions_ignored" — that is expected and harmless; the error
+      # means the only patched versions (>=1.x) are blocked by this rule.
       - dependency-name: "starlette"
         versions: [">=1.0.0"]
   # ---- Frontend (npm) -------------------------------------------------------
@@ -33,6 +36,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint 8.x (latest) requires typescript >=4.8.4 <6.1.0.
+      # Dependabot bumped typescript to 7.x which breaks npm ci with an
+      # ERESOLVE peer-dep conflict. Block TS >= 6.1.0 until typescript-eslint
+      # ships a version that supports the TypeScript 7.x line.
+      - dependency-name: "typescript"
+        versions: [">= 6.1.0"]
     groups:
       frontend-npm:
         patterns:
