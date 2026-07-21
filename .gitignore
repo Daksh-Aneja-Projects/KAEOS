@@ -179,3 +179,7 @@ marketing/video_track.mp4
 marketing/probe.mp4
 marketing/render.log
 marketing/qc_*.png
+
+# ─── Local working-tree clutter (stale patch exports of committed work; unreferenced dev screenshots) ───
+/*.patch
+frontend/src/assets/preview-screenshot*.png
