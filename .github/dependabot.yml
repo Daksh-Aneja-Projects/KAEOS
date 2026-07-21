@@ -5,15 +5,17 @@
 version: 2
 updates:
   # ---- Backend (pip) --------------------------------------------------------
+  # SECURITY-ONLY. The backend stack is hand-pinned with per-line justifications
+  # (see backend/requirements.txt); wholesale weekly version bumps fight those
+  # pins and produce a perpetually-failing 30+ package group PR. open-pull-
+  # requests-limit: 0 disables *version* updates while keeping *security* updates
+  # (which need no PR budget) — and the ignore rules below still apply to them,
+  # so the un-installable Starlette 1.x security bump stays suppressed.
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      backend-python:
-        patterns:
-          - "*"
+    open-pull-requests-limit: 0
     ignore:
       # Starlette 1.x is intentionally pinned OUT. No released FastAPI supports
       # it (0.119.x caps starlette <0.49.0), and Starlette 1.x reworks
