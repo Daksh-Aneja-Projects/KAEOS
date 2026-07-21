@@ -1,7 +1,7 @@
 """KAEOS 10X — Polymorphic Operations API"""
 import hashlib
 
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel

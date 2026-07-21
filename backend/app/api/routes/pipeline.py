@@ -1,5 +1,5 @@
 """KAEOS — Pipeline API (L0 Data Fabric ETL Engine)"""
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import require_role
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional

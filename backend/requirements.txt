@@ -1,9 +1,12 @@
 # KAEOS Backend Dependencies
-fastapi==0.139.2
-# Pin Starlette explicitly so the resolved version always matches what this
-# FastAPI expects. Also carries the Host-header validation, UNC-path and
-# multipart DoS fixes (GHSA advisories on older 0.3x/0.4x lines).
-starlette==1.3.1
+fastapi==0.115.0
+# Pin Starlette explicitly to a version compatible with this FastAPI.
+# NOTE: Starlette 1.x (e.g. 1.3.1) reworks include_router into an
+# _IncludedRouter mount that has no `.path`, which breaks request routing for
+# require_role-gated endpoints (real 500s + RBAC introspection failures). The
+# 0.38.x line is the verified-working combo with FastAPI 0.115 — do not bump
+# without re-running tests/test_rbac_coverage.py under the resolved versions.
+starlette==0.38.6
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.51
 alembic==1.13.2
@@ -51,11 +54,11 @@ faker==30.3.0                # synthetic enterprise generator + seeders
 # enables them: neo4j (graph store backend), langchain-text-splitters /
 # langchain-experimental / langchain-community (semantic chunking).
 
-# Observability
-prometheus-fastapi-instrumentator==8.0.2   # 8.x supports starlette 1.x
-opentelemetry-api==1.44.0
-opentelemetry-sdk==1.44.0
-opentelemetry-instrumentation-fastapi==0.65b0   # must match the SDK line; older builds break on FastAPI 0.139
+# Observability — versions matched to the Starlette 0.38.x / FastAPI 0.115 line.
+prometheus-fastapi-instrumentator==7.1.0   # 7.x requires starlette<1.0.0
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
+opentelemetry-instrumentation-fastapi==0.63b1   # pairs with otel-sdk 1.42.x
 structlog==24.4.0
 
 # Testing
