@@ -9,6 +9,8 @@ import { useTheme } from '../context/ThemeContext';
 import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 import { fullTime, timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
@@ -34,6 +36,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
 
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
   const [kbArticles, setKbArticles] = useState<KBArticle[]>([]);
   const [slaMetrics, setSlaMetrics] = useState<SLAMetric[]>([]);
   const [surveys, setSurveys] = useState<CSATSurvey[]>([]);
@@ -121,9 +124,24 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             </h1>
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Support Department</p>
           </div>
-          <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: colors.primary }}>
+              <PlusIcon className="w-3.5 h-3.5" /> New Ticket
+            </button>
+            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+            title="New Ticket" domain="support" entityPath="tickets"
+            fields={[
+              { key: 'subject', label: 'Subject', type: 'text', required: true },
+              { key: 'description', label: 'Description', type: 'textarea', required: true },
+              { key: 'priority', label: 'Priority', type: 'select', options: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], defaultValue: 'MEDIUM' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>

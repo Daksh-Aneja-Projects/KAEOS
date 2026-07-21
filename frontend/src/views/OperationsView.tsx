@@ -11,6 +11,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality' | 'analytics';
 
@@ -39,6 +41,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [procurements, setProcurements] = useState<OpsProcurement[]>([]);
   const [inspections, setInspections] = useState<OpsInspection[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -122,9 +125,25 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
             </h1>
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Operations Department</p>
           </div>
-          <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: colors.primary }}>
+              <PlusIcon className="w-3.5 h-3.5" /> New Purchase Request
+            </button>
+            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+            title="New Purchase Request" domain="operations" entityPath="purchase-requests"
+            fields={[
+              { key: 'item_description', label: 'Item Description', type: 'text', required: true },
+              { key: 'quantity', label: 'Quantity', type: 'number', defaultValue: 1 },
+              { key: 'unit_price', label: 'Unit Price ($)', type: 'number', defaultValue: 0 },
+              { key: 'department', label: 'Department', type: 'text' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: colors.surface1 }}>

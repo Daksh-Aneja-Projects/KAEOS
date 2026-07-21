@@ -27,6 +27,7 @@ const DepartmentDetail = lazy(() => import('./pages/DepartmentDetail'));
 const DeploymentStudio = lazy(() => import('./pages/DeploymentStudio'));
 const DomainPackMarketplace = lazy(() => import('./pages/DomainPackMarketplace'));
 const WorkforceAnalytics = lazy(() => import('./pages/WorkforceAnalytics'));
+const OrgPulse = lazy(() => import('./pages/OrgPulse'));
 const ConnectorStudio = lazy(() => import('./pages/ConnectorStudio'));
 
 // ─── HR DEPARTMENT ─────────────────────────────────────────────────
@@ -84,6 +85,7 @@ const WORKFORCE_NAV: NavItem[] = [
   { path: '/marketplace', label: 'Marketplace', icon: Package },
   { path: '/integrations', label: 'Integrations', icon: Plug },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { path: '/pulse', label: 'Org Pulse', icon: Activity },
 ];
 
 const HR_NAV: NavItem[] = [
@@ -612,6 +614,7 @@ function Shell() {
                 <Route path="/marketplace" element={<ThemeAdapter><DomainPackMarketplace domain={domain} /></ThemeAdapter>} />
                 <Route path="/integrations" element={<ThemeAdapter><ConnectorStudio domain={domain} /></ThemeAdapter>} />
                 <Route path="/analytics" element={<ThemeAdapter><WorkforceAnalytics domain={domain} /></ThemeAdapter>} />
+                <Route path="/pulse" element={<ThemeAdapter><OrgPulse domain={domain} /></ThemeAdapter>} />
 
                 {/* HR DEPARTMENT */}
                 <Route path="/departments/hr" element={<ThemeAdapter><HRDashboard domain={domain} /></ThemeAdapter>} />

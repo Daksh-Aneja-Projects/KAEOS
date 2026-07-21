@@ -353,3 +353,45 @@ async def transition_purchase_order(
     """Move a PO through approval, ordered, received (or cancel)."""
     return await apply_transition(db, WORKFLOW_SPECS["purchase_order"], order_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class PurchaseRequestCreate(BaseModel):
+    item_description: str = Field(..., min_length=1, max_length=256)
+    quantity: int = Field(1, ge=1)
+    unit_price: float = Field(0, ge=0)
+    department: Optional[str] = Field(None, max_length=64)
+    requested_by: Optional[str] = Field(None, max_length=128)
+
+
+@router.post("/purchase-requests", status_code=201)
+async def create_purchase_request(
+    body: PurchaseRequestCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """File a purchase request (starts DRAFT; move via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    pr = PurchaseRequest(
+        tenant_id=tenant_id,
+        item_description=body.item_description,
+        quantity=body.quantity,
+        unit_price=body.unit_price,
+        total_estimated_cost=body.quantity * body.unit_price,
+        department=body.department,
+        requested_by=body.requested_by or tenant.get("name"),
+    )
+    db.add(pr)
+    await db.commit()
+    await db.refresh(pr)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="purchase_request", resource_id=pr.id,
+    )
+    return {"id": pr.id, "item_description": pr.item_description,
+            "status": pr.status.value if hasattr(pr.status, "value") else str(pr.status),
+            "total_estimated_cost": float(pr.total_estimated_cost or 0)}

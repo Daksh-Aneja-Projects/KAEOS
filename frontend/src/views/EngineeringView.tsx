@@ -10,6 +10,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
 
@@ -36,6 +38,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const [incidents, setIncidents] = useState<any[]>([]);
   const [postmortems, setPostmortems] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
@@ -140,14 +143,31 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-[22px] font-bold flex items-center gap-2" style={{ color: colors.ink }}>
-          <Code2 className="w-6 h-6" style={{ color: colors.primary }} />
-          {TAB_LABEL[tab]}
-        </h1>
-        <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>
-          Engineering &amp; IT Ops - service catalog, code review, deployments, and incident response
-        </p>
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-[22px] font-bold flex items-center gap-2" style={{ color: colors.ink }}>
+            <Code2 className="w-6 h-6" style={{ color: colors.primary }} />
+            {TAB_LABEL[tab]}
+          </h1>
+          <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>
+            Engineering &amp; IT Ops - service catalog, code review, deployments, and incident response
+          </p>
+        </div>
+        <button onClick={() => setCreateOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+          style={{ background: colors.primary }}>
+          <PlusIcon className="w-3.5 h-3.5" /> Declare Incident
+        </button>
+        <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+          title="Declare Incident" domain="engineering" entityPath="incidents"
+          fields={[
+            { key: 'title', label: 'Title', type: 'text', required: true },
+            { key: 'description', label: 'What is happening?', type: 'textarea' },
+            { key: 'severity', label: 'Severity', type: 'select', defaultValue: 'SEV3',
+              options: ['SEV1', 'SEV2', 'SEV3', 'SEV4'] },
+            { key: 'affected_users', label: 'Affected Users (est.)', type: 'number' },
+          ]}
+          onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
       </div>
 
       {/* Live DORA posture */}

@@ -26,6 +26,8 @@ CONTRACT_WORKFLOW = WorkflowSpec(
         "ACTIVE": ["EXPIRED", "TERMINATED"],
     },
     on_enter={"ACTIVE": _activated},
+    # Terminating a live contract is a legal event - admin only.
+    role_requirements={"TERMINATED": "admin"},
 )
 
 SPECS = {"contract": CONTRACT_WORKFLOW}

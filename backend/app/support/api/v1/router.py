@@ -357,3 +357,44 @@ async def transition_ticket(
     """Assign / resolve / close / reopen a ticket; stamps SLA timestamps."""
     return await apply_transition(db, WORKFLOW_SPECS["ticket"], ticket_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+import uuid as _uuid_mod  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class TicketCreate(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=256)
+    description: str = Field(..., min_length=1)
+    priority: str = Field("MEDIUM", pattern="^(LOW|MEDIUM|HIGH|URGENT)$")
+    customer_id: Optional[str] = None
+
+
+@router.post("/tickets", status_code=201)
+async def create_ticket(
+    body: TicketCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Open a new support ticket (starts in NEW; lifecycle via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    t = Ticket(
+        tenant_id=tenant_id,
+        ticket_number=f"T-{_uuid_mod.uuid4().hex[:8].upper()}",
+        subject=body.subject,
+        description=body.description,
+        priority=body.priority,
+        customer_id=body.customer_id,
+    )
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="ticket", resource_id=t.id,
+    )
+    return {"id": t.id, "number": t.ticket_number, "subject": t.subject,
+            "status": t.status.value if hasattr(t.status, "value") else str(t.status),
+            "priority": t.priority.value if hasattr(t.priority, "value") else str(t.priority)}

@@ -71,6 +71,10 @@ class TransitionContext:
 # Hook signature: mutate the ORM object in place; runs inside the transaction.
 TransitionHook = Callable[[Any, TransitionContext], None]
 
+# Guard signature: return an error string to BLOCK the transition, None to allow.
+# Guards run after the transition-map check and before any mutation.
+TransitionGuard = Callable[[Any, TransitionContext], Optional[str]]
+
 
 @dataclass
 class WorkflowSpec:
@@ -80,6 +84,11 @@ class WorkflowSpec:
     transitions: Dict[str, List[str]]
     status_attr: str = "status"
     on_enter: Dict[str, TransitionHook] = field(default_factory=dict)
+    # target state -> minimum role required (viewer < operator < admin).
+    # Endpoints already gate at operator; this raises the bar per state.
+    role_requirements: Dict[str, str] = field(default_factory=dict)
+    # target state -> guard callable; a returned string blocks with 409.
+    guards: Dict[str, TransitionGuard] = field(default_factory=dict)
 
     @property
     def states(self) -> List[str]:
@@ -101,6 +110,7 @@ class WorkflowSpec:
             "status_attr": self.status_attr,
             "states": self.states,
             "transitions": {k: list(v) for k, v in self.transitions.items()},
+            "role_requirements": dict(self.role_requirements),
         }
 
 
@@ -164,6 +174,19 @@ async def apply_transition(
             "allowed": allowed,
         })
 
+    # Per-state role floor (on top of the endpoint's operator gate).
+    required_role = spec.role_requirements.get(to_state)
+    if required_role:
+        from app.core.tenant import ROLE_HIERARCHY
+        caller_level = ROLE_HIERARCHY.get(tenant.get("role", "viewer"), 0)
+        if caller_level < ROLE_HIERARCHY.get(required_role, 99):
+            raise HTTPException(403, detail={
+                "error": "role_required",
+                "to_state": to_state,
+                "required_role": required_role,
+                "caller_role": tenant.get("role"),
+            })
+
     ctx = TransitionContext(
         tenant_id=tenant_id,
         actor=tenant.get("name") or tenant.get("email"),
@@ -171,6 +194,18 @@ async def apply_transition(
         note=note,
         now=datetime.now(timezone.utc),
     )
+
+    # Business guard: blocks with the guard's reason (e.g. duplicate-flagged
+    # invoice cannot be paid) even though the transition map would allow it.
+    guard = spec.guards.get(to_state)
+    if guard:
+        reason = guard(obj, ctx)
+        if reason:
+            raise HTTPException(409, detail={
+                "error": "guard_blocked",
+                "to_state": to_state,
+                "reason": reason,
+            })
 
     setattr(obj, spec.status_attr, _coerce_state(spec, to_state))
     hook = spec.on_enter.get(to_state)
@@ -202,6 +237,23 @@ async def apply_transition(
         resource_id=entity_id,
         details={"workflow": f"{from_state} -> {to_state}", "domain": spec.domain},
     )
+
+    # Live UI push: every open view refreshes via useLiveRefresh on any tenant
+    # WS message. Persistence already happened above (WorkflowEvent), so this
+    # is broadcast-only and must never fail the request.
+    try:
+        from app.api.routes.ws import manager as ws_manager
+        await ws_manager.broadcast_to_tenant(tenant_id, {
+            "type": "workflow_transition",
+            "domain": spec.domain,
+            "entity_type": spec.entity_type,
+            "entity_id": entity_id,
+            "from_state": from_state,
+            "to_state": to_state,
+            "actor": ctx.actor,
+        })
+    except Exception:  # pragma: no cover - broadcast is best-effort
+        pass
 
     return {
         "entity_type": spec.entity_type,

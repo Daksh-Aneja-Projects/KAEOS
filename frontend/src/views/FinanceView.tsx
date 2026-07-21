@@ -13,6 +13,8 @@ import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'analytics';
 
@@ -42,6 +44,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [auditFindings, setAuditFindings] = useState<any[]>([]);
   const [soxControls, setSoxControls] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -147,11 +150,26 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Finance Department</p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: colors.primary }}>
+              <PlusIcon className="w-3.5 h-3.5" /> New Expense Report
+            </button>
             <button onClick={loadData} className="p-2 rounded-lg hover:bg-opacity-10 transition-colors"
               style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+          <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+            title="New Expense Report" domain="finance" entityPath="expense-reports"
+            fields={[
+              { key: 'title', label: 'Title', type: 'text', required: true },
+              { key: 'employee_id', label: 'Employee ID', type: 'text', required: true },
+              { key: 'total_amount', label: 'Total Amount ($)', type: 'number', required: true },
+              { key: 'department', label: 'Department', type: 'text' },
+              { key: 'description', label: 'Description', type: 'textarea' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
         {/* Tabs */}

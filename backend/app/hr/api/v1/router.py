@@ -474,3 +474,50 @@ async def transition_requisition(
     """Move a job requisition through draft → approval → open → filled."""
     return await apply_transition(db, WORKFLOW_SPECS["job_requisition"], requisition_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation — time off
+# ═══════════════════════════════════════════════════════════════════════
+from datetime import date as _date  # noqa: E402
+
+
+class TimeOffCreate(BaseModel):
+    employee_id: str
+    leave_type: str = Field("PTO", pattern="^(PTO|SICK|MATERNITY|PATERNITY|BEREAVEMENT|JURY_DUTY|UNPAID)$")
+    start_date: _date
+    end_date: _date
+    hours_requested: float = Field(..., gt=0)
+    reason: Optional[str] = Field(None, max_length=512)
+
+
+@router.post("/time-off-requests", status_code=201)
+async def create_time_off_request(
+    body: TimeOffCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """File a time-off request (starts REQUESTED; decide via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    if body.end_date < body.start_date:
+        raise HTTPException(422, "end_date must be on or after start_date")
+    emp_q = await db.execute(select(HREmployee).where(
+        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))
+    if not emp_q.scalar_one_or_none():
+        raise HTTPException(404, "Employee not found")
+    req = TimeOffRequest(
+        tenant_id=tenant_id, employee_id=body.employee_id,
+        leave_type=body.leave_type, start_date=body.start_date,
+        end_date=body.end_date, hours_requested=body.hours_requested,
+        reason=body.reason,
+    )
+    db.add(req)
+    await db.commit()
+    await db.refresh(req)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="time_off_request", resource_id=req.id,
+    )
+    return {"id": req.id, "employee_id": req.employee_id,
+            "status": req.status.value if hasattr(req.status, "value") else str(req.status),
+            "leave_type": req.leave_type.value if hasattr(req.leave_type, "value") else str(req.leave_type),
+            "hours_requested": req.hours_requested}

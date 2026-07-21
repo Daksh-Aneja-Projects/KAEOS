@@ -419,3 +419,41 @@ async def transition_opportunity(
     """Advance a deal through the pipeline or close it won/lost."""
     return await apply_transition(db, WORKFLOW_SPECS["opportunity"], opportunity_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+from datetime import date as _date  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class OpportunityCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+    amount: float = Field(0, ge=0)
+    probability: float = Field(10, ge=0, le=100)
+    close_date: Optional[_date] = None
+    account_id: Optional[str] = None
+
+
+@router.post("/opportunities", status_code=201)
+async def create_opportunity(
+    body: OpportunityCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Add a deal to the pipeline (starts in PROSPECTING)."""
+    tenant_id = tenant["tenant_id"]
+    o = Opportunity(
+        tenant_id=tenant_id, name=body.name, amount=body.amount,
+        probability=body.probability, close_date=body.close_date,
+        account_id=body.account_id,
+    )
+    db.add(o)
+    await db.commit()
+    await db.refresh(o)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="opportunity", resource_id=o.id,
+    )
+    return {"id": o.id, "name": o.name, "stage": o.stage.value if hasattr(o.stage, "value") else str(o.stage),
+            "amount": float(o.amount or 0), "probability": o.probability}

@@ -17,6 +17,12 @@ def _lost(opp: Opportunity, ctx: TransitionContext) -> None:
         opp.ai_next_step = f"Closed lost: {ctx.note}"[:512]
 
 
+def _guard_won_needs_amount(opp: Opportunity, ctx: TransitionContext):
+    if float(opp.amount or 0) <= 0:
+        return "Cannot close-win a $0 deal - set the opportunity amount first."
+    return None
+
+
 OPPORTUNITY_WORKFLOW = WorkflowSpec(
     domain="sales",
     entity_type="opportunity",
@@ -29,6 +35,7 @@ OPPORTUNITY_WORKFLOW = WorkflowSpec(
         "NEGOTIATION": ["CLOSED_WON", "CLOSED_LOST"],
     },
     on_enter={"CLOSED_WON": _won, "CLOSED_LOST": _lost},
+    guards={"CLOSED_WON": _guard_won_needs_amount},
 )
 
 SPECS = {"opportunity": OPPORTUNITY_WORKFLOW}

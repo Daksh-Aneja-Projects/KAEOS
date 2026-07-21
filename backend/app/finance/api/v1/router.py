@@ -434,3 +434,87 @@ async def transition_expense_report(
     """Guarded expense report lifecycle action (submit, approve, reject, reimburse)."""
     return await apply_transition(db, WORKFLOW_SPECS["expense_report"], report_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+import uuid as _uuid_mod  # noqa: E402
+from datetime import date as _date  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class ExpenseReportCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=128)
+    employee_id: str
+    total_amount: float = Field(..., gt=0)
+    description: Optional[str] = None
+    department: Optional[str] = Field(None, max_length=64)
+
+
+@router.post("/expense-reports", status_code=201)
+async def create_expense_report(
+    body: ExpenseReportCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """File an expense report (starts DRAFT; submit/approve via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    rep = ExpenseReport(
+        tenant_id=tenant_id,
+        report_number=f"EXP-{_uuid_mod.uuid4().hex[:8].upper()}",
+        title=body.title, employee_id=body.employee_id,
+        total_amount=body.total_amount, description=body.description,
+        department=body.department,
+    )
+    db.add(rep)
+    await db.commit()
+    await db.refresh(rep)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="expense_report", resource_id=rep.id,
+    )
+    return {"id": rep.id, "number": rep.report_number, "title": rep.title,
+            "status": rep.status.value if hasattr(rep.status, "value") else str(rep.status),
+            "total": float(rep.total_amount or 0)}
+
+
+class InvoiceCreate(BaseModel):
+    vendor_id: str
+    invoice_number: Optional[str] = Field(None, max_length=64)
+    invoice_date: _date
+    due_date: _date
+    subtotal: float = Field(..., gt=0)
+    tax_amount: float = Field(0, ge=0)
+    po_number: Optional[str] = Field(None, max_length=64)
+
+
+@router.post("/invoices", status_code=201)
+async def create_invoice(
+    body: InvoiceCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Register an AP invoice (starts DRAFT; approval/payment via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    vendor_q = await db.execute(select(Vendor).where(
+        Vendor.id == body.vendor_id, Vendor.tenant_id == tenant_id))
+    if not vendor_q.scalar_one_or_none():
+        raise HTTPException(404, "Vendor not found")
+    total = body.subtotal + body.tax_amount
+    inv = Invoice(
+        tenant_id=tenant_id, vendor_id=body.vendor_id,
+        invoice_number=body.invoice_number or f"INV-{_uuid_mod.uuid4().hex[:8].upper()}",
+        invoice_date=body.invoice_date, due_date=body.due_date,
+        subtotal=body.subtotal, tax_amount=body.tax_amount,
+        total_amount=total, balance_due=total, po_number=body.po_number,
+    )
+    db.add(inv)
+    await db.commit()
+    await db.refresh(inv)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="invoice", resource_id=inv.id,
+    )
+    return {"id": inv.id, "number": inv.invoice_number,
+            "status": inv.status.value if hasattr(inv.status, "value") else str(inv.status),
+            "total": float(inv.total_amount), "balance": float(inv.balance_due)}

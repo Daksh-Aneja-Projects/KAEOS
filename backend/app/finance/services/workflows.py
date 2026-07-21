@@ -18,6 +18,13 @@ def _invoice_paid(inv: Invoice, ctx: TransitionContext) -> None:
     inv.balance_due = 0
 
 
+def _guard_pay_duplicate(inv: Invoice, ctx: TransitionContext):
+    if inv.ai_duplicate_flag:
+        return ("AI flagged this invoice as a possible duplicate - route it "
+                "through DISPUTED and clear the flag before paying.")
+    return None
+
+
 INVOICE_WORKFLOW = WorkflowSpec(
     domain="finance",
     entity_type="invoice",
@@ -34,6 +41,8 @@ INVOICE_WORKFLOW = WorkflowSpec(
         "APPROVED": _invoice_approved,
         "PAID": _invoice_paid,
     },
+    guards={"PAID": _guard_pay_duplicate, "PARTIALLY_PAID": _guard_pay_duplicate},
+    role_requirements={"VOIDED": "admin"},
 )
 
 
@@ -57,6 +66,16 @@ def _expense_reimbursed(rep: ExpenseReport, ctx: TransitionContext) -> None:
     rep.reimbursed_amount = rep.approved_amount or rep.total_amount
 
 
+_LARGE_EXPENSE_ADMIN_FLOOR = 10_000
+
+
+def _guard_large_expense(rep: ExpenseReport, ctx: TransitionContext):
+    if float(rep.total_amount or 0) > _LARGE_EXPENSE_ADMIN_FLOOR and ctx.actor_role != "admin":
+        return (f"Reports over ${_LARGE_EXPENSE_ADMIN_FLOOR:,} need an admin "
+                f"approver (caller role: {ctx.actor_role}).")
+    return None
+
+
 EXPENSE_REPORT_WORKFLOW = WorkflowSpec(
     domain="finance",
     entity_type="expense_report",
@@ -75,6 +94,7 @@ EXPENSE_REPORT_WORKFLOW = WorkflowSpec(
         "REJECTED": _expense_rejected,
         "REIMBURSED": _expense_reimbursed,
     },
+    guards={"APPROVED": _guard_large_expense},
 )
 
 SPECS = {

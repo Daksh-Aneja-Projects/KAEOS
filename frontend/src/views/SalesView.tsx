@@ -11,6 +11,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts' | 'analytics';
 
@@ -37,6 +39,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [accounts, setAccounts] = useState<SalesAccount[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -119,9 +122,25 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             </h1>
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Sales Department</p>
           </div>
-          <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: colors.primary }}>
+              <PlusIcon className="w-3.5 h-3.5" /> New Deal
+            </button>
+            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+            title="New Deal" domain="sales" entityPath="opportunities"
+            fields={[
+              { key: 'name', label: 'Opportunity Name', type: 'text', required: true },
+              { key: 'amount', label: 'Amount ($)', type: 'number', defaultValue: 0 },
+              { key: 'probability', label: 'Win Probability (%)', type: 'number', defaultValue: 10 },
+              { key: 'close_date', label: 'Expected Close', type: 'date' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>

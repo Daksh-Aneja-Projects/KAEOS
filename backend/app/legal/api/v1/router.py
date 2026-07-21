@@ -269,3 +269,43 @@ async def transition_contract(
     """Move a contract through draft, review, approved, signed, active."""
     return await apply_transition(db, WORKFLOW_SPECS["contract"], contract_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+from datetime import date as _date  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class ContractCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=256)
+    counterparty: str = Field(..., min_length=1, max_length=256)
+    contract_type: str = Field(..., min_length=1, max_length=64)
+    contract_value: Optional[float] = Field(None, ge=0)
+    expiry_date: Optional[_date] = None
+    auto_renew: bool = False
+
+
+@router.post("/contracts", status_code=201)
+async def create_contract(
+    body: ContractCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Register a contract (starts DRAFT; lifecycle via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    c = Contract(
+        tenant_id=tenant_id, title=body.title, counterparty=body.counterparty,
+        contract_type=body.contract_type, contract_value=body.contract_value,
+        expiry_date=body.expiry_date, auto_renew=body.auto_renew,
+    )
+    db.add(c)
+    await db.commit()
+    await db.refresh(c)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="contract", resource_id=c.id,
+    )
+    return {"id": c.id, "title": c.title,
+            "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+            "counterparty": c.counterparty, "contract_type": c.contract_type}

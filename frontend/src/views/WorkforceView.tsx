@@ -10,6 +10,8 @@ import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
 interface HREmployee {
@@ -82,6 +84,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   const [timeOff, setTimeOff] = useState<HRTimeOffRequest[]>([]);
   const [reviews, setReviews] = useState<HRPerformanceReview[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   // Filters
   const [searchQ, setSearchQ] = useState('');
@@ -592,11 +595,31 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
           <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Workforce</h1>
           <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>Employee directory, recruiting pipeline, time tracking, and performance management</p>
         </div>
-        <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
-          style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
+            style={{ background: colors.primary }}>
+            <PlusIcon className="w-3.5 h-3.5" /> New Time-Off Request
+          </button>
+          <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
+            style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+        <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+          title="New Time-Off Request" domain="hr" entityPath="time-off-requests"
+          fields={[
+            { key: 'employee_id', label: 'Employee', type: 'select', required: true,
+              options: employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}` })) },
+            { key: 'leave_type', label: 'Leave Type', type: 'select', defaultValue: 'PTO',
+              options: ['PTO', 'SICK', 'MATERNITY', 'PATERNITY', 'BEREAVEMENT', 'JURY_DUTY', 'UNPAID'] },
+            { key: 'start_date', label: 'Start Date', type: 'date', required: true },
+            { key: 'end_date', label: 'End Date', type: 'date', required: true },
+            { key: 'hours_requested', label: 'Hours Requested', type: 'number', required: true, defaultValue: 40 },
+            { key: 'reason', label: 'Reason', type: 'textarea' },
+          ]}
+          onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
       </div>
 
       {/* Tab Selector */}

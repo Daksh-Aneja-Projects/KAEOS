@@ -381,3 +381,47 @@ async def transition_deployment(
     """Promote / fail / roll back a deployment through the guarded engine."""
     return await apply_transition(db, WORKFLOW_SPECS["deployment"], deployment_id,
                                   body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Entity Creation
+# ═══════════════════════════════════════════════════════════════════════
+import uuid as _uuid_mod  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class IncidentCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=256)
+    description: Optional[str] = None
+    severity: str = Field("SEV3", pattern="^SEV[1-4]$")
+    service_id: Optional[str] = None
+    customer_impacting: bool = False
+    affected_users: Optional[int] = Field(None, ge=0)
+
+
+@router.post("/incidents", status_code=201)
+async def create_incident(
+    body: IncidentCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Declare an incident (starts DETECTED; drive via /transition)."""
+    tenant_id = tenant["tenant_id"]
+    inc = Incident(
+        tenant_id=tenant_id,
+        incident_number=f"INC-{_uuid_mod.uuid4().hex[:8].upper()}",
+        title=body.title, description=body.description,
+        severity=body.severity, service_id=body.service_id,
+        customer_impacting=body.customer_impacting,
+        affected_users=body.affected_users,
+        detected_by="ENGINEER",
+    )
+    db.add(inc)
+    await db.commit()
+    await db.refresh(inc)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="incident", resource_id=inc.id,
+    )
+    return {"id": inc.id, "number": inc.incident_number, "title": inc.title,
+            "status": inc.status.value if hasattr(inc.status, "value") else str(inc.status),
+            "severity": inc.severity.value if hasattr(inc.severity, "value") else str(inc.severity)}

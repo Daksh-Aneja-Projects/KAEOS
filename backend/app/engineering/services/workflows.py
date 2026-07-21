@@ -44,6 +44,13 @@ INCIDENT_WORKFLOW = WorkflowSpec(
     on_enter={"TRIAGED": _triaged, "RESOLVED": _resolved},
 )
 
+def _guard_critical_deploy(dep: Deployment, ctx: TransitionContext):
+    risk = getattr(dep.ai_risk_level, "value", dep.ai_risk_level)
+    if risk == "CRITICAL" and ctx.actor_role != "admin":
+        return "CRITICAL-risk deployments need an admin to start the rollout."
+    return None
+
+
 DEPLOYMENT_WORKFLOW = WorkflowSpec(
     domain="engineering",
     entity_type="deployment",
@@ -54,6 +61,7 @@ DEPLOYMENT_WORKFLOW = WorkflowSpec(
         "FAILED": ["ROLLED_BACK"],
         "SUCCEEDED": ["ROLLED_BACK"],
     },
+    guards={"IN_PROGRESS": _guard_critical_deploy},
 )
 
 SPECS = {

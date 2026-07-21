@@ -354,6 +354,9 @@ app.include_router(support_router,         prefix=PREFIX)
 app.include_router(engineering_router,     prefix=PREFIX)
 app.include_router(sales_router,           prefix=PREFIX)
 app.include_router(operations_router,      prefix=PREFIX)
+
+from app.api.routes import org_pulse  # noqa: E402 — cross-domain pulse layer
+app.include_router(org_pulse.router,       prefix=PREFIX)
 # NOTE: app.api.routes.workforce (graph-twin overview) is intentionally NOT
 # registered: it shadowed the Workforce Layer routes below at
 # /workforce/overview and /workforce/departments with zeroed metrics.

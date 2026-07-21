@@ -12,6 +12,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
+import CreateEntityModal from '../components/CreateEntityModal';
+import { Plus as PlusIcon } from 'lucide-react';
 
 type LegalTab = 'contracts' | 'compliance' | 'litigation' | 'privacy' | 'ip' | 'analytics';
 
@@ -35,6 +37,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [patents, setPatents] = useState<any[]>([]);
   const [matters, setMatters] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -119,9 +122,26 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             </h1>
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Legal & Compliance Department</p>
           </div>
-          <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: colors.primary }}>
+              <PlusIcon className="w-3.5 h-3.5" /> New Contract
+            </button>
+            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <CreateEntityModal open={createOpen} onClose={() => setCreateOpen(false)}
+            title="New Contract" domain="legal" entityPath="contracts"
+            fields={[
+              { key: 'title', label: 'Title', type: 'text', required: true },
+              { key: 'counterparty', label: 'Counterparty', type: 'text', required: true },
+              { key: 'contract_type', label: 'Type', type: 'select', options: ['NDA', 'MSA', 'SOW', 'License', 'Employment'], defaultValue: 'NDA' },
+              { key: 'contract_value', label: 'Contract Value ($)', type: 'number' },
+              { key: 'expiry_date', label: 'Expiry Date', type: 'date' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>
