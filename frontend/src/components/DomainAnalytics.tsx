@@ -162,7 +162,7 @@ const DomainAnalytics: React.FC<{ domain: string }> = ({ domain }) => {
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end -mb-2"><LiveBadge lastSync={lastSync} /></div>
+      <div className="flex justify-end"><LiveBadge lastSync={lastSync} /></div>
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {data.kpis.map(kpi => (

@@ -266,6 +266,13 @@ records how past decisions actually turned out (GOOD/NEUTRAL/BAD). Each mark fee
 executing skill's confidence and splits real-world quality by autonomous-vs-human, so autonomy is
 earned against reality, not only against labels at decision time (`GET /outcomes/impact`).
 
+Autonomy that only recommends is a demo; autonomy that **acts** is the product. The **Actions Ledger**
+(Decisions, beside the provenance ledger) records every governed write KAEOS made to a system of record
+- idempotent on retry, reversible via a compensator, and provenance-chained. Agents actuate through
+**Gate 5b**, so a write only fires after the compliance / fairness / HITL / debate gates pass. A drift
+monitor reconciles the system of record against the actions that governed it (`GET /actuation/ledger`,
+`/actuation/drift`).
+
 **What we deliberately do NOT report:** `hours_saved` and `cost_reduction` return `null`, with a note.
 They require a human-baseline duration and a loaded hourly rate per skill - tenant inputs KAEOS
 cannot measure. They were previously "computed" by multiplying executions by a hardcoded 0.5 hours

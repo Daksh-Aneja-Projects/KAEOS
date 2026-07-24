@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale } from 'lucide-react';
+import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap } from 'lucide-react';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
 const ExecutiveCockpit = lazy(() => import('../pages/ExecutiveCockpit'));
@@ -8,6 +8,7 @@ const HITLQueue = lazy(() => import('../pages/HITLQueue'));
 const EvolutionTimeline = lazy(() => import('../pages/EvolutionTimeline'));
 const ComplianceDashboard = lazy(() => import('../pages/ComplianceDashboard'));
 const ProvenanceLedger = lazy(() => import('../pages/ProvenanceLedger'));
+const ActionsLedger = lazy(() => import('../pages/ActionsLedger'));
 const RedTeamDashboard = lazy(() => import('../pages/RedTeamDashboard'));
 const TrustGovernance = lazy(() => import('./TrustGovernance'));
 
@@ -22,6 +23,7 @@ export default function DecisionsView({ domain }: { domain: string }) {
     { id: 'performance', label: 'Feedback & Evolution', icon: TrendingUp },
     { id: 'compliance', label: 'Compliance', icon: Shield },
     { id: 'provenance', label: 'Provenance Ledger', icon: FileText },
+    { id: 'actions', label: 'Actions Ledger', icon: Zap },
     { id: 'redteam', label: 'Red Team Ops', icon: Target },
     { id: 'governance', label: 'Fairness & Debates', icon: Scale }
   ];
@@ -61,6 +63,7 @@ export default function DecisionsView({ domain }: { domain: string }) {
           {activeTab === 'performance' && <EvolutionTimeline domain={domain} />}
           {activeTab === 'compliance' && <ComplianceDashboard />}
           {activeTab === 'provenance' && <ProvenanceLedger />}
+          {activeTab === 'actions' && <ActionsLedger />}
           {activeTab === 'redteam' && <RedTeamDashboard />}
           {activeTab === 'governance' && <TrustGovernance only={['fairness','debates']} />}
         </Suspense>

@@ -97,6 +97,36 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — System-of-Record Actuation, Phase 1)
+- **Autonomy that DOES: governed, idempotent, reversible write-back.** New
+  `services/actuation/` Actuator applies a mutation to a real backing
+  system-of-record row (`sor_objects`), keyed by a deterministic idempotency key
+  (a retry is a no-op that returns the original record, never a duplicate write),
+  captures before/after state, registers a compensator (the exact inverse), and
+  appends to the provenance hash-chain. New `action_records` table + `sor_objects`
+  (migration 0009, RLS on both). API: `POST /actuation/execute` (operator-gated),
+  `POST /actuation/{id}/reverse`, `GET /actuation/ledger`, `GET /actuation/drift`.
+  Wired into the agent runtime as **Gate 5b** — a skill may declare an `actuation`
+  intent and the write-back only fires *after* the compliance / fairness /
+  confidence-HITL / debate gates pass, inheriting full governance (non-fatal: a
+  failed write is recorded, not raised). Tested (create/update/delete, idempotent
+  retry, reverse restores prior state, drift detection, reversal-is-not-drift).
+- **Actions Ledger (UI).** A new tab in **Decisions** beside the Provenance
+  ledger — what KAEOS *did* to a system of record (governed and reversible),
+  distinct from the *decision* ledger. Status summary (applied/reversed/failed), a
+  reconciliation banner (records in sync vs drifted outside the governed path), and
+  a one-click Reverse on any applied action. Verified live end-to-end: three real
+  governed writes recorded, a reversal restored prior state, drift stayed at zero.
+
+### Fixed
+- **Fairness Audit Log score showed "-".** The Trust & Governance fairness log read
+  a non-existent `composite_score` field; the API returns `fairness_score`. Now
+  shows the real score vs threshold, a PASSED/BLOCKED chip, and the rationale
+  (the data was always live — only the display field was wrong).
+- **Analytics "Live" badge overlapped the KPI cards.** A negative margin pulled the
+  KPI grid up under the badge in every domain analytics view; removed it so the
+  live-sync indicator keeps clear separation above the cards.
+
 ### Added (v3 — Outcome Intelligence Loop, Phase 2)
 - **Decision → outcome learning loop.** Record a measured real-world outcome for a
   past decision (`POST /outcomes/{execution_id}`, GOOD/BAD/NEUTRAL) and it feeds

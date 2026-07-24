@@ -1015,6 +1015,12 @@ export const api = {
     request<any>(`/outcomes/${executionId}`, { method: 'POST', body: JSON.stringify({ outcome }) }),
   getDecisionFeed: () => request<any>('/hitl/decision-feed'),
 
+  // SoR Actuation — the Actions Ledger (what KAEOS DID, reversible) + drift
+  getActionsLedger: (limit = 50) => request<any>(`/actuation/ledger?limit=${limit}`),
+  getActuationDrift: () => request<any>('/actuation/drift'),
+  reverseAction: (actionId: string) =>
+    request<any>(`/actuation/${actionId}/reverse`, { method: 'POST' }),
+
   // ─── Finance Department APIs ───
   getFinanceDashboard: () => request<any>('/finance/dashboard'),
   getFinanceVendors: () => request<any[]>('/finance/vendors'),

@@ -159,14 +159,31 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {log.passed ? <CheckCircle2 className="w-4 h-4" style={{ color: colors.success }} /> : <XCircle className="w-4 h-4" style={{ color: colors.error }} />}
-                  <span className="text-[13px] font-medium" style={{ color: colors.ink }}>Score: {log.composite_score?.toFixed(2) || '-'}</span>
+                  <span className="text-[13px] font-medium" style={{ color: colors.ink }}>
+                    Score: {typeof log.fairness_score === 'number' ? log.fairness_score.toFixed(2) : '-'}
+                    {typeof log.threshold === 'number' && (
+                      <span className="text-[11px] font-normal ml-1" style={{ color: colors.inkTertiary }}>/ threshold {log.threshold.toFixed(2)}</span>
+                    )}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: log.passed ? 'rgba(64,192,87,0.12)' : 'rgba(229,83,75,0.12)', color: log.passed ? colors.success : colors.error }}>
+                    {log.passed ? 'PASSED' : 'BLOCKED'}
+                  </span>
                 </div>
                 <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{timeAgo(log.created_at)}</span>
               </div>
+              {(log.action_description || log.rationale) && (
+                <p className="text-[12px] mt-1.5" style={{ color: colors.inkSubtle }}>
+                  {log.action_description || log.rationale}
+                </p>
+              )}
               {log.flagged_attributes?.length > 0 && (
-                <div className="flex gap-1.5 mt-2">{log.flagged_attributes.map((a: string) => (
-                  <span key={a} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{a}</span>
-                ))}</div>
+                <div className="flex gap-1.5 mt-2 items-center">
+                  <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Flagged:</span>
+                  {log.flagged_attributes.map((a: string) => (
+                    <span key={a} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{a}</span>
+                  ))}
+                </div>
               )}
             </div>
           ))}

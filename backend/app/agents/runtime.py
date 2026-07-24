@@ -430,6 +430,32 @@ class AgentExecutor:
             f"{exec_result['steps_completed']} steps in {exec_result['duration_ms']}ms"
         )
 
+        # ── Gate 5b: Governed actuation (autonomy that DOES) ─────────────
+        # A skill may declare an `actuation` intent {system, object_type,
+        # external_id, operation, payload}. Because we only reach here AFTER the
+        # compliance / fairness / confidence-HITL / debate gates have passed, the
+        # write-back inherits full governance. Idempotent + reversible; never
+        # fatal to the decision (a failed write is recorded, not raised).
+        _actuation = skill.get("actuation") if isinstance(skill, dict) else None
+        if _actuation and isinstance(_actuation, dict):
+            try:
+                from app.services.actuation import Actuator
+                from app.core.database import AsyncSessionLocal
+                async with AsyncSessionLocal() as _adb:
+                    _rec = await Actuator.apply_action(
+                        _adb, tenant_id=context["tenant_id"],
+                        system=_actuation.get("system", "sandbox"),
+                        object_type=_actuation.get("object_type", "record"),
+                        external_id=str(_actuation.get("external_id", exec_id)),
+                        operation=_actuation.get("operation", "UPDATE"),
+                        payload=_actuation.get("payload", {}),
+                        execution_id=exec_id,
+                        actor=skill.get("skill_id", "agent"),
+                    )
+                    logger.info(f"[Gate 5b] actuated {_rec.system}:{_rec.external_id} -> {_rec.status}")
+            except Exception as e:
+                logger.warning(f"[Gate 5b] actuation skipped (non-fatal): {e}")
+
         # ── Gate 6: Post-Execution Audit ─────────────────────────────────
         audit_passed = self.compliance.enforce_audit_requirements(
             skill.get("compliance_tags", []), context
