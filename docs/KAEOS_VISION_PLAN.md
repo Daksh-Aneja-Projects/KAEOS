@@ -44,6 +44,23 @@ Hard constraint learned the hard way: a new capability must **live inside a surf
 
 ---
 
+## v4 — Signature IP (the "wow" surfaces, planned properly)
+
+Beyond the v3 layers, a set of **differentiated, demo-defining IP** capabilities — the kind buyers remember. Each is real (no mock), and either **upgrades an existing showcase** or is a genuinely **new** surface where none exists. All hang off the Enterprise Twin.
+
+| # | Signature IP | New or upgrade | Real backend status | Home (no dup) |
+|---|---|---|---|---|
+| IP-1 | **What-If Scenario Simulator** — propose a change in plain language ("cut Finance budget 15%", "off-board the CFO"), get a governed verdict (SAFE/RISKY/BLOCKED), blast radius (rules/skills/departments), ranked risk factors + mitigations, rollback estimate, and a recommendation | NEW UI on an EXISTING real endpoint (`/simulation/what-if`, LLM-driven, currently unused) | ✅ real, orphaned | **Reality Experience** — a "What-If" mode beside the Shock simulator |
+| IP-2 | **Enterprise Flight Simulator upgrade** — the Shock simulator gains multi-shock scenarios, a propagation *timeline*, side-by-side scenario comparison, and save/replay | UPGRADE the existing Shock sim | ✅ `/reality/shock`, physics engine | **Reality Experience** |
+| IP-3 | **Enterprise Time Machine (Decision Replay + Counterfactuals)** — scrub the org's decision history and ask "what if we'd decided differently then?"; replays from the append-only state + provenance | NEW (build from scratch) | ⚙️ needs a replay service over append-only `enterprise_state` + `provenance` | **Reality Experience** (a "Replay" mode) |
+| IP-4 | **Autonomy Wargaming** — adversarially attack the twin (inject cascading failures / red-team scenarios) and score organizational resilience + the agents' safe response | NEW (build) | ⚙️ extends physics + red-team engines | **Reality Experience** (a "Wargame" mode) |
+| IP-5 | **Precog — Org Health Forecast** — forecast the enterprise's state N months out with confidence bands (the `precog_engine` exists) | NEW UI on partial backend | ⚙️ `precog_engine` service exists | **Org Pulse** (forecast section) |
+| IP-6 | **Causal Discovery** — auto-surface causal relationships in the Enterprise Graph ("attrition in Eng → deploy delays → SLA breaches") | NEW (build) | ⚙️ over the graph + impact engine | **Topology Map** (a causal-links overlay) |
+
+**Build order (real, no shortcuts, no dup):** IP-1 (fastest real win — surface the orphaned endpoint), then IP-2 (upgrade the shock sim), then IP-3/IP-4 (new modes on Reality Experience), then IP-5/IP-6.
+
+---
+
 ## Phase 0 — Anti-duplication baseline (DO NOT rebuild)
 
 Already real in KAEOS; new work *extends* these, never re-implements them:
