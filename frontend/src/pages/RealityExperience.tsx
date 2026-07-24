@@ -3,9 +3,10 @@ import { useTheme } from '../context/ThemeContext';
 import {
   Activity, Zap, Database, Eye, Crosshair, Brain, GitPullRequest, X,
   Users, Building2, Boxes, Bot, Package, FolderOpen,
-  Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2, History,
+  Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2, History, Swords,
 } from 'lucide-react';
 import TimeMachinePanel from '../components/TimeMachinePanel';
+import WargamePanel from '../components/WargamePanel';
 
 const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering'];
 const WHATIF_RISK = ['conservative', 'balanced', 'aggressive'];
@@ -62,7 +63,7 @@ export default function RealityExperience() {
   // ── What-If Scenario Simulator (IP-1) — a second mode beside the shock sim.
   // Propose a change in plain language; the real /simulation/what-if engine
   // returns a governed verdict + blast radius + ranked risk factors + rollback.
-  const [mode, setMode] = useState<'shock' | 'whatif' | 'replay'>('shock');
+  const [mode, setMode] = useState<'shock' | 'whatif' | 'replay' | 'wargame'>('shock');
   const [whatIfChange, setWhatIfChange] = useState('');
   const [whatIfDomain, setWhatIfDomain] = useState('All Domains');
   const [whatIfRisk, setWhatIfRisk] = useState('balanced');
@@ -226,26 +227,33 @@ export default function RealityExperience() {
         {/* Left Column: Shock Simulator & Learning */}
         <div className="col-span-3 flex flex-col gap-6">
           <div className="rounded-xl border shadow-sm p-4" style={card}>
-            {/* Mode toggle: Shock (inject a disruption) vs What-If (propose a change) */}
-            <div className="flex gap-1 p-1 rounded-lg mb-4" style={{ background: colors.canvas }}>
+            {/* Mode toggle: Shock / What-If / Replay / Wargame — 2x2 so labels never wrap */}
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg mb-4" style={{ background: colors.canvas }}>
               <button onClick={() => setMode('shock')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
                 style={{ background: mode === 'shock' ? colors.primary : 'transparent', color: mode === 'shock' ? '#fff' : colors.inkSubtle }}>
                 <Zap className="w-3.5 h-3.5" /> Shock
               </button>
               <button onClick={() => setMode('whatif')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
                 style={{ background: mode === 'whatif' ? colors.primary : 'transparent', color: mode === 'whatif' ? '#fff' : colors.inkSubtle }}>
                 <Sparkles className="w-3.5 h-3.5" /> What-If
               </button>
               <button onClick={() => setMode('replay')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
                 style={{ background: mode === 'replay' ? colors.primary : 'transparent', color: mode === 'replay' ? '#fff' : colors.inkSubtle }}>
                 <History className="w-3.5 h-3.5" /> Replay
               </button>
+              <button onClick={() => setMode('wargame')}
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
+                style={{ background: mode === 'wargame' ? colors.primary : 'transparent', color: mode === 'wargame' ? '#fff' : colors.inkSubtle }}>
+                <Swords className="w-3.5 h-3.5" /> Wargame
+              </button>
             </div>
 
-            {mode === 'replay' ? (
+            {mode === 'wargame' ? (
+              <WargamePanel colors={colors} />
+            ) : mode === 'replay' ? (
               <TimeMachinePanel colors={colors} />
             ) : mode === 'shock' ? (
               <div className="space-y-3">

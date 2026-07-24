@@ -135,6 +135,22 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
+### Added (v4 Signature IP — Autonomy Wargaming, IP-4)
+- **Adversarial resilience simulation.** New `services/wargame.py` stresses the twin
+  with a CASCADE of shocks (named playbooks: supply shock, talent crisis, cyber
+  cascade, regulatory storm) and scores how it holds up. Each department's fragility
+  is computed from the REAL twin (skill confidence + recent adverse-event rate);
+  damage COMPOUNDS as integrity falls; and each shock's response is classified
+  autonomous vs human-in-loop by severity. Returns a resilience score + grade, the
+  integrity curve, the weakest link, and the safe-response rate under stress.
+  `GET /wargame/playbooks`, `POST /wargame/run`. Tested (5 cases: compounding
+  degradation, robust-vs-fragile, safe-response classification, custom cascade).
+- **Wargame mode on Reality Experience** (a fourth mode; the mode toggle is now a
+  2×2 grid so labels never wrap): a playbook picker, an animated resilience gauge +
+  grade, the per-shock integrity cascade with autonomous/human badges, and the
+  weakest-link verdict. Verified live: the cyber cascade left the org at 19.6%
+  integrity (grade F), engineering the weakest link.
+
 ### Added (v4 Signature IP — Enterprise Time Machine, IP-3)
 - **Decision replay + counterfactuals.** New `services/time_machine.py`: scrub the
   org's real decision history (the append-only stream of governed executions),

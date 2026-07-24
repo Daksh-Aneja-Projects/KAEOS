@@ -1018,6 +1018,10 @@ export const api = {
   // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
   getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
 
+  // Autonomy Wargaming — adversarial cascade resilience scoring
+  getWargamePlaybooks: () => request<any>('/wargame/playbooks'),
+  runWargame: (playbook: string) => request<any>('/wargame/run', { method: 'POST', body: JSON.stringify({ playbook }) }),
+
   // Time Machine — decision replay + counterfactual recompute of the north-star
   getDecisionTimeline: (days = 45, limit = 200) => request<any>(`/time-machine/timeline?days=${days}&limit=${limit}`),
   getStateAsOf: (at: string, days = 45) => request<any>(`/time-machine/state?at=${encodeURIComponent(at)}&days=${days}`),
