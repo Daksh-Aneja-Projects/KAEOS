@@ -23,6 +23,12 @@ async def _no_provider(self, *args, **kwargs) -> bool:
 
 @pytest.mark.asyncio
 async def test_e2e_deploy_screen_gate_provenance_hitl(monkeypatch):
+    # Drives its OWN no-provider simulation; mutually exclusive with the
+    # KAEOS_FAKE_LLM canned-response lane (which intercepts before the provider
+    # check). Skip under fake-LLM; exercised in the real-model lane.
+    import os
+    if os.environ.get("KAEOS_FAKE_LLM"):
+        pytest.skip("Uses its own no-provider simulation; incompatible with KAEOS_FAKE_LLM")
     # Scope the no-provider patch to this test so it's reverted afterwards and
     # never leaks into other test modules in the same process.
     monkeypatch.setattr(LLMRouter, "provider_available", _no_provider)

@@ -15,6 +15,14 @@ async def _no_provider(self, *args, **kwargs) -> bool:
 
 @pytest.mark.asyncio
 async def test_hr_recruiting_flow(async_client: AsyncClient, monkeypatch):
+    # This test drives its OWN no-provider simulation (patches provider_available)
+    # to exercise the gated fallback path. The KAEOS_FAKE_LLM lane installs a
+    # DIFFERENT fake (a canned JSON from complete()) that intercepts before the
+    # provider check, so the two are mutually exclusive — skip under fake-LLM; this
+    # test is exercised in the real-model lane.
+    import os
+    if os.environ.get("KAEOS_FAKE_LLM"):
+        pytest.skip("Uses its own no-provider simulation; incompatible with KAEOS_FAKE_LLM")
     # Scope the no-provider patch to this test so it's reverted afterwards and
     # never leaks into other test modules in the same process.
     monkeypatch.setattr(LLMRouter, "provider_available", _no_provider)

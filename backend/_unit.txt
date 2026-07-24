@@ -1,28 +1,9 @@
 C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\langsmith\schemas.py:23: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
   from pydantic.v1 import (
-s.............................................................F......... [ 10%]
-...F.................................................................... [ 21%]
-............Fs......................F..F..FF.F......F..........ss....... [ 32%]
-.s..........................................................s........... [ 43%]
-.........s.............................................................. [ 54%]
-F.....................................................s................. [ 65%]
-..............................................................F......... [ 76%]
-....................F................................................... [ 87%]
-........................................................................ [ 98%]
-...........                                                              [100%]
-================================== FAILURES ===================================
-D:\KAEOS\backend\tests\e2e\test_04_legal_department.py:102: assert 500 == 200
-D:\KAEOS\backend\tests\e2e\test_06_support_department.py:40: assert 500 == 200
-C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py:118: httpx.ConnectError: All connection attempts failed
-D:\\KAEOS\\backend\\tests\\e2e\\test_13_auth_rbac.py:26: AssertionError: Login failed \u2192 401: {"detail":"Invalid email or password"}
-D:\\KAEOS\\backend\\tests\\e2e\\test_13_auth_rbac.py:26: AssertionError: Login failed \u2192 401: {"detail":"Invalid email or password"}
-D:\\KAEOS\\backend\\tests\\e2e\\test_13_auth_rbac.py:26: AssertionError: Login failed \u2192 401: {"detail":"Invalid email or password"}
-D:\\KAEOS\\backend\\tests\\e2e\\test_13_auth_rbac.py:26: AssertionError: Login failed \u2192 401: {"detail":"Invalid email or password"}
-D:\\KAEOS\\backend\\tests\\e2e\\test_13_auth_rbac.py:26: AssertionError: Login failed \u2192 401: {"detail":"Invalid email or password"}
-D:\KAEOS\backend\tests\e2e\test_14_skills_pipeline.py:90: AssertionError: Pipeline did not execute: BLOCKED_COMPLIANCE
-D:\KAEOS\backend\tests\e2e\test_24_byok_adaptive.py:172: AssertionError: Model ceiling 0.7 < 0.82 must force HITL on the same skill
-D:\KAEOS\backend\tests\test_e2e_hr_flow.py:105: AssertionError: no provenance/execution reference returned: {'status': 'BLOCKED_FAIRNESS', 'gated': True, 'detail': {'status': 'BLOCKED_FAIRNESS', 'fairness_score': 0.5, 'flagged_attributes': [], 'rationale': '', 'audit_log_id': '852574a3-a2db-42d3-aa85-726888f7cf2e'}}
-D:\KAEOS\backend\tests\test_hr_api_gated.py:53: AssertionError: assert None
+....................................................................F... [ 30%]
+.............................F.......................................... [ 61%]
+........................................................................ [ 91%]
+....................                                                     [100%]
 ============================== warnings summary ===============================
 app\core\config.py:6
   D:\KAEOS\backend\app\core\config.py:6: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
@@ -70,47 +51,18 @@ C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\_pytest\config\__
   
     self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
 
-C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:166: 78819 warnings
+C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:166: 16114 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:166: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
     return asyncio.iscoroutinefunction(obj) or inspect.isasyncgenfunction(obj)
 
-C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:429: 659 warnings
+C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:429: 236 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:429: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
     return asyncio.iscoroutinefunction(func)
 
-tests/e2e/test_01_company_brain.py::TestCompanyBrain::test_brain_overview
+tests/test_actuation.py::test_create_then_idempotent_retry
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:996: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     return asyncio.get_event_loop_policy()
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -125,6 +77,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -161,35 +114,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:749: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     _restore_event_loop_policy(asyncio.get_event_loop_policy()),
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -204,6 +128,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -240,35 +165,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:968: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
     asyncio.set_event_loop_policy(new_loop_policy)
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -283,6 +179,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -319,35 +216,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:969: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     loop = asyncio.get_event_loop_policy().new_event_loop()
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -362,6 +230,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -398,35 +267,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:764: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     policy = asyncio.get_event_loop_policy()
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -441,6 +281,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -477,35 +318,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:811: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     policy = asyncio.get_event_loop_policy()
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -520,6 +332,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -556,35 +369,6 @@ tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:837: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
     asyncio.set_event_loop_policy(previous_policy)
 
-tests/e2e/test_01_company_brain.py: 21 warnings
-tests/e2e/test_02_hr_department.py: 10 warnings
-tests/e2e/test_03_finance_department.py: 19 warnings
-tests/e2e/test_04_legal_department.py: 13 warnings
-tests/e2e/test_05_sales_department.py: 9 warnings
-tests/e2e/test_06_support_department.py: 10 warnings
-tests/e2e/test_07_operations_department.py: 10 warnings
-tests/e2e/test_08_cross_functional.py: 18 warnings
-tests/e2e/test_09_agent_factory.py: 20 warnings
-tests/e2e/test_10_infrastructure.py: 15 warnings
-tests/e2e/test_11_executive_layer.py: 19 warnings
-tests/e2e/test_12_connectors_integrations.py: 16 warnings
-tests/e2e/test_13_auth_rbac.py: 10 warnings
-tests/e2e/test_14_skills_pipeline.py: 15 warnings
-tests/e2e/test_15_rules_lifecycle.py: 15 warnings
-tests/e2e/test_16_advanced_intelligence.py: 21 warnings
-tests/e2e/test_17_platform_infrastructure.py: 25 warnings
-tests/e2e/test_18_workforce_billing.py: 17 warnings
-tests/e2e/test_19_governance_operations.py: 16 warnings
-tests/e2e/test_20_domain_deep_actions.py: 13 warnings
-tests/e2e/test_21_live_connectors.py: 11 warnings
-tests/e2e/test_22_shock_scenarios.py: 8 warnings
-tests/e2e/test_23_coverage_gaps.py: 20 warnings
-tests/e2e/test_24_byok_adaptive.py: 10 warnings
-tests/e2e/test_25_engineering_department.py: 20 warnings
-tests/e2e/test_26_billing_reality_truth.py: 10 warnings
-tests/e2e/test_27_integration_catalog.py: 16 warnings
-tests/e2e/test_28_cross_tenant_denial.py: 11 warnings
-tests/e2e/test_29_foundry_learning.py: 8 warnings
 tests/test_actuation.py: 7 warnings
 tests/test_agent_decision_logic.py: 7 warnings
 tests/test_audit_and_erasure.py: 4 warnings
@@ -599,6 +383,7 @@ tests/test_deployment_reaper.py: 2 warnings
 tests/test_domain_analytics.py: 9 warnings
 tests/test_domain_workflows.py: 10 warnings
 tests/test_e2e_hr_flow.py: 1 warning
+tests/test_embed_cache.py: 3 warnings
 tests/test_event_mesh.py: 5 warnings
 tests/test_fairness_structural.py: 5 warnings
 tests/test_forecast.py: 7 warnings
@@ -634,12 +419,6 @@ tests/test_workflow_v2_and_creation.py: 10 warnings
 tests/test_workspace_automation.py: 14 warnings
   C:\Users\LENOVO\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:849: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
     policy = asyncio.get_event_loop_policy()
-
-tests/e2e/test_20_domain_deep_actions.py::TestCopilotChat::test_chat_stream
-  C:\Program Files\Python314\Lib\asyncio\base_events.py:744: RuntimeWarning: coroutine method 'aclose' of 'BoundAsyncStream.__aiter__' was never awaited
-    self._ready.clear()
-  Enable tracemalloc to get traceback where the object was allocated.
-  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
 
 tests/test_audit_and_erasure.py::test_audit_gate_requires_real_amount_for_sox
   tests\test_audit_and_erasure.py:15: PytestWarning: The test <Function test_audit_gate_requires_real_amount_for_sox> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
@@ -739,17 +518,6 @@ tests/test_state_snapshots.py::test_create_all_allowed_in_dev_and_sqlite
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ===========================
-FAILED tests/e2e/test_04_legal_department.py::TestLegalDepartment::test_legal_patent_eval_agent
-FAILED tests/e2e/test_06_support_department.py::TestSupportDepartment::test_support_resolution_agent
-FAILED tests/e2e/test_11_executive_layer.py::TestExecutiveLayer::test_provenance_feed
-FAILED tests/e2e/test_13_auth_rbac.py::TestAuthRBAC::test_login_demo_user - A...
-FAILED tests/e2e/test_13_auth_rbac.py::TestAuthRBAC::test_me_with_token - Ass...
-FAILED tests/e2e/test_13_auth_rbac.py::TestAuthRBAC::test_list_users_as_admin
-FAILED tests/e2e/test_13_auth_rbac.py::TestAuthRBAC::test_create_and_deactivate_user
-FAILED tests/e2e/test_13_auth_rbac.py::TestAuthRBAC::test_jwt_works_for_tenant_scoped_api
-FAILED tests/e2e/test_14_skills_pipeline.py::TestSkillExecutionPipeline::test_execute_high_confidence_skill
-FAILED tests/e2e/test_24_byok_adaptive.py::TestCeilingDrivesGovernance::test_weak_model_forces_hitl_then_restores
 FAILED tests/test_e2e_hr_flow.py::test_e2e_deploy_screen_gate_provenance_hitl
 FAILED tests/test_hr_api_gated.py::test_hr_recruiting_flow - AssertionError: ...
-12 failed, 639 passed, 8 skipped, 85826 warnings in 3960.14s (1:06:00)
-EXITCODE=1
+2 failed, 234 passed, 19736 warnings in 126.27s (0:02:06)
