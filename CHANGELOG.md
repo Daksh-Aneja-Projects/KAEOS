@@ -135,6 +135,21 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
+### Added (v4 Signature IP — Causal Discovery, IP-6)
+- **Auto-inferred causal structure.** New `services/causal.py` discovers likely
+  cause→effect links between departments from real data — no LLM, no hand-drawn
+  graph. It builds each department's daily adverse-event series (failed / blocked /
+  overridden executions) and measures **lagged Pearson cross-correlation**: if a rise
+  in A's trouble reliably precedes B's by a day, that surfaces as A→B ("attrition in
+  Eng → deploy delays → SLA breaches"). `GET /causal/discover`; honest about thin
+  data (`insufficient`). Tested (5 cases incl. a planted lead-lag recovered as a link).
+- **Interactive Causal Discovery graph** — a new tab in Knowledge beside the Topology
+  Map: a directed graph with department nodes (sized by adverse-event volume) and
+  animated arrows (a moving dash = "leads by a day"), colored by strength. Hover a
+  node to isolate its links, hover an edge for strength/lag, plus a ranked link list.
+  Verified live: inferred human_resources→finance (r 0.73), customer_support→marketing
+  (r 0.73), and more from real execution history.
+
 ### Added (v4 Signature IP — Precog Org-Health Forecast, IP-5)
 - **Forecast the north star.** New `services/forecast.py` — an honest OLS linear-trend
   forecaster with a 95% residual-based prediction interval (no LLM, deterministic,

@@ -1018,6 +1018,9 @@ export const api = {
   // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
   getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
 
+  // Causal Discovery — likely causal links between departments from real data
+  getCausalLinks: (days = 45, minStrength = 0.4) => request<any>(`/causal/discover?days=${days}&min_strength=${minStrength}`),
+
   // Regulatory & Risk Autopilot — risk register, control map, evidence packs
   getRegulatoryOverview: (days = 30) => request<any>(`/regulatory/overview?days=${days}`),
   getRegulatoryEvidence: (framework: string, days = 90) =>

@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { BookOpen, Workflow, Network, FileSearch, Users, UploadCloud } from 'lucide-react';
+import { BookOpen, Workflow, Network, FileSearch, Users, UploadCloud, GitFork } from 'lucide-react';
 
 // Connector management lives in ONE place — the top-level "Integrations" sidebar
 // item (ConnectorStudio). It is not duplicated as Knowledge tabs (the old
@@ -8,6 +8,7 @@ import { BookOpen, Workflow, Network, FileSearch, Users, UploadCloud } from 'luc
 const RulesExplorer = lazy(() => import('../pages/RulesExplorer'));
 const SkillsRegistry = lazy(() => import('../pages/SkillsRegistry'));
 const TopologyVisualizer = lazy(() => import('../pages/TopologyVisualizer'));
+const CausalDiscovery = lazy(() => import('../pages/CausalDiscovery'));
 const ExtractionHub = lazy(() => import('../pages/ExtractionHub'));
 const ElicitationHub = lazy(() => import('../pages/ElicitationHub'));
 const BYOKView = lazy(() => import('../pages/BYOKView'));
@@ -18,6 +19,7 @@ export default function KnowledgeView({ domain }: { domain: string }) {
 
   const tabs = [
     { id: 'topology', label: 'Topology Map', icon: Network },
+    { id: 'causal', label: 'Causal Discovery', icon: GitFork },
     { id: 'rules', label: 'Discovered Rules', icon: BookOpen },
     { id: 'skills', label: 'Skill Builder', icon: Workflow },
     { id: 'extraction', label: 'Extraction Pipeline', icon: FileSearch },
@@ -51,6 +53,7 @@ export default function KnowledgeView({ domain }: { domain: string }) {
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Knowledge Module...</div>}>
           {activeTab === 'byok' && <BYOKView domain={domain} />}
           {activeTab === 'topology' && <TopologyVisualizer />}
+          {activeTab === 'causal' && <CausalDiscovery />}
           {activeTab === 'extraction' && <ExtractionHub />}
           {activeTab === 'rules' && <RulesExplorer domain={domain} />}
           {activeTab === 'skills' && <SkillsRegistry domain={domain} />}
