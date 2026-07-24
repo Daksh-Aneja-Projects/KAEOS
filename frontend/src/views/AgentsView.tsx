@@ -1,9 +1,10 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Rocket, Eye, Wrench, ShoppingBag, Activity, Swords, CircuitBoard, Radio } from 'lucide-react';
+import { Rocket, Wrench, ShoppingBag, Activity, Swords, CircuitBoard } from 'lucide-react';
 
+// "Agent Fleet" (AgentMonitor) read the same skills+executions as the Knowledge
+// "Skill Builder" (SkillsRegistry) — the single home for skills & their runs.
 const AgentFactory = lazy(() => import('../views/AgentFactory'));
-const AgentMonitor = lazy(() => import('../pages/AgentMonitor'));
 const MCPToolManager = lazy(() => import('../pages/MCPToolManager'));
 const Marketplace = lazy(() => import('../pages/Marketplace'));
 const ConflictArena = lazy(() => import('../pages/ConflictArena'));
@@ -17,10 +18,9 @@ export default function AgentsView({ domain }: { domain: string }) {
   const tabs = [
     { id: 'deployment', label: 'Agent Deployment', icon: Rocket },
     { id: 'ooda', label: 'OODA Monitor', icon: Activity },
-    { id: 'monitor', label: 'Agent Fleet', icon: Eye },
     { id: 'infrastructure', label: 'Infrastructure', icon: CircuitBoard },
     { id: 'mcp', label: 'MCP Tools', icon: Wrench },
-    { id: 'marketplace', label: 'Skill Marketplace', icon: ShoppingBag },
+    { id: 'marketplace', label: 'Skill Templates', icon: ShoppingBag },
     { id: 'conflict', label: 'Conflict Arena', icon: Swords }
   ];
 
@@ -50,7 +50,6 @@ export default function AgentsView({ domain }: { domain: string }) {
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Agents Module...</div>}>
           {activeTab === 'deployment' && <AgentFactory domain={domain} />}
           {activeTab === 'ooda' && <OODAMonitor domain={domain} />}
-          {activeTab === 'monitor' && <AgentMonitor domain={domain} />}
           {activeTab === 'infrastructure' && <InfrastructureDashboard domain={domain} />}
           {activeTab === 'mcp' && <MCPToolManager />}
           {activeTab === 'marketplace' && <Marketplace />}

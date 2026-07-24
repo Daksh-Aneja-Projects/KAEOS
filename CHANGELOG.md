@@ -69,6 +69,24 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - GDPR erasure now purges the subject's embeddings from the vector store
   (`VectorStore.delete_subject`), closing the vector-layer coverage gap.
 
+### Changed (frontend de-duplication)
+- Removed duplicate pages/tabs identified by a data-source audit (same `api.*`
+  fingerprint = same functionality): **Analyst Workspace** (its graph belongs to
+  Topology; its audit log was the same `getGlobalLedger()` as Provenance Ledger),
+  the **Agent Fleet** tab (same `getSkills`+`getExecutions` as the Knowledge
+  "Skill Builder"), and the connector triplication (**Connector Studio** +
+  **System Connections** tabs both managed connectors already owned by the
+  top-level `/integrations` page). Deleted `AnalystWorkspace`, `AgentMonitor`,
+  `IntegrationsHub`, and the dead-mock `ExecutiveAdvisor`. Renamed the "Skill
+  Marketplace" tab to "Skill Templates" to end the collision with the
+  `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
+
+### Added (planning)
+- **docs/KAEOS_VISION_PLAN.md** — the v3 "Autonomous Enterprise" plan: new,
+  non-duplicative layers (system-of-record actuation, outcome-intelligence loop,
+  cross-domain autonomous missions, enterprise flight simulator, sense-decide-act
+  event mesh, regulatory autopilot, trust/autonomy-dial, omnipresent touchpoints).
+
 ### Fixed
 - **Workforce Analytics showed 0% automation and 0 active agents** despite 140
   real executions and departments reporting 6/7/5 agents. `agents_active` counted

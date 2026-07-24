@@ -1,9 +1,10 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Database, BookOpen, Workflow, Network, FileSearch, Users, UploadCloud, Plug } from 'lucide-react';
+import { BookOpen, Workflow, Network, FileSearch, Users, UploadCloud } from 'lucide-react';
 
-const ConnectorStudio = lazy(() => import('../pages/ConnectorStudio'));
-const IntegrationsHub = lazy(() => import('../pages/IntegrationsHub'));
+// Connector management lives in ONE place — the top-level "Integrations" sidebar
+// item (ConnectorStudio). It is not duplicated as Knowledge tabs (the old
+// "Connector Studio" + "System Connections" tabs both managed connectors).
 const RulesExplorer = lazy(() => import('../pages/RulesExplorer'));
 const SkillsRegistry = lazy(() => import('../pages/SkillsRegistry'));
 const TopologyVisualizer = lazy(() => import('../pages/TopologyVisualizer'));
@@ -13,16 +14,14 @@ const BYOKView = lazy(() => import('../pages/BYOKView'));
 
 export default function KnowledgeView({ domain }: { domain: string }) {
   const { colors } = useTheme();
-  const [activeTab, setActiveTab] = useState('connector-studio');
+  const [activeTab, setActiveTab] = useState('topology');
 
   const tabs = [
-    { id: 'connector-studio', label: 'Connector Studio', icon: Plug },
-    { id: 'integrations', label: 'System Connections', icon: Database },
-    { id: 'byok', label: 'Bring Your Own Knowledge', icon: UploadCloud },
     { id: 'topology', label: 'Topology Map', icon: Network },
-    { id: 'extraction', label: 'Extraction Pipeline', icon: FileSearch },
     { id: 'rules', label: 'Discovered Rules', icon: BookOpen },
     { id: 'skills', label: 'Skill Builder', icon: Workflow },
+    { id: 'extraction', label: 'Extraction Pipeline', icon: FileSearch },
+    { id: 'byok', label: 'Bring Your Own Knowledge', icon: UploadCloud },
     { id: 'elicitation', label: 'Elicitation Hub', icon: Users }
   ];
 
@@ -50,8 +49,6 @@ export default function KnowledgeView({ domain }: { domain: string }) {
 
       <div className="flex-1 overflow-y-auto">
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Knowledge Module...</div>}>
-          {activeTab === 'connector-studio' && <ConnectorStudio domain={domain} />}
-          {activeTab === 'integrations' && <IntegrationsHub domain={domain} />}
           {activeTab === 'byok' && <BYOKView domain={domain} />}
           {activeTab === 'topology' && <TopologyVisualizer />}
           {activeTab === 'extraction' && <ExtractionHub />}
