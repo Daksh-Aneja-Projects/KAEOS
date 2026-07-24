@@ -10,6 +10,11 @@ Thesis: harden the safety and ops substrate first (earn the right), then ship th
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
 ### Added
+- **Deployment crash recovery (Phase 3).** A leader-guarded scheduler job
+  (`run_deployment_reaper`, every 15m) transitions deployments left stuck in a
+  non-terminal state by a crashed/restarted worker to FAILED (with a recoverable
+  error-log entry), so the fire-and-forget pipeline no longer hangs a deployment
+  forever. (Full durable-queue execution remains a follow-up.)
 - **AI Foundry continuous mining (Phase 4D).** A leader-guarded scheduler job
   (`run_foundry_mining`, every 6h) curates every tenant's governed executions into
   training examples on a cadence, so the improvement loop runs continuously instead

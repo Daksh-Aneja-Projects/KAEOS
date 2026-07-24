@@ -125,6 +125,25 @@ async def run_foundry_mining():
         logger.error(f"[Scheduler] Foundry mining failed: {e}")
 
 
+async def run_deployment_reaper():
+    """Recover deployments orphaned by a crashed/restarted worker.
+
+    The deployment pipeline is a fire-and-forget task; if its worker dies the row
+    hangs in a non-terminal state. This leader-guarded sweep transitions stuck
+    deployments to FAILED so they surface instead of hanging forever.
+    """
+    if not _is_leader():
+        return
+    try:
+        from app.workforce.deployment.studio import DeploymentStudio
+        async with MaintenanceSessionLocal() as db:
+            recovered = await DeploymentStudio.recover_orphaned_deployments(db)
+        if recovered:
+            logger.info("[Scheduler] Deployment reaper recovered %d orphaned deployment(s)", len(recovered))
+    except Exception as e:
+        logger.error(f"[Scheduler] Deployment reaper failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -142,5 +161,11 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_foundry_mining, 'interval', hours=6,
         id='foundry_mining_job', replace_existing=True
+    )
+    # Recover deployments orphaned by a worker crash/restart (fire-and-forget
+    # pipeline has no durable queue yet); frequent + cheap.
+    scheduler.add_job(
+        run_deployment_reaper, 'interval', minutes=15,
+        id='deployment_reaper_job', replace_existing=True
     )
     return scheduler

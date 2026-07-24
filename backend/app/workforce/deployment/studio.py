@@ -31,6 +31,51 @@ class DeploymentStudio:
         
         return deployment.id
         
+    # Terminal states — a deployment here is done and never needs recovery.
+    _TERMINAL = {DeploymentStatus.ACTIVE, DeploymentStatus.FAILED, DeploymentStatus.ROLLED_BACK}
+
+    @staticmethod
+    async def recover_orphaned_deployments(db: AsyncSession, stuck_after_minutes: int = 30) -> list:
+        """Fail deployments left stuck mid-pipeline by a crashed/restarted worker.
+
+        The pipeline runs as a fire-and-forget task in whatever worker received
+        the POST, so a worker restart mid-deploy leaves the row hung in a
+        non-terminal state forever. This transitions any non-terminal deployment
+        whose ``started_at`` is older than the threshold to FAILED (with a
+        recoverable error-log entry) so it is visible and actionable instead of
+        silently stuck. Returns the recovered deployment ids.
+        """
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+        from app.workforce.models.core import WorkforceDeployment
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=stuck_after_minutes)
+        rows = (await db.execute(
+            select(WorkforceDeployment).where(
+                WorkforceDeployment.status.notin_(list(DeploymentStudio._TERMINAL)),
+                WorkforceDeployment.started_at < cutoff,
+            )
+        )).scalars().all()
+
+        recovered = []
+        for d in rows:
+            log = list(d.error_log or [])
+            log.append({
+                "step": d.current_step,
+                "error": "orphaned: no active runner (worker restart?) - auto-failed by reaper",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "recoverable": True,
+            })
+            d.error_log = log
+            d.status = DeploymentStatus.FAILED
+            d.completed_at = datetime.now(timezone.utc)
+            recovered.append(d.id)
+        if recovered:
+            await db.commit()
+            logger.warning("[DeploymentStudio] Reaped %d orphaned deployment(s): %s",
+                           len(recovered), recovered)
+        return recovered
+
     @staticmethod
     async def _run_deployment_pipeline(tenant_id: str, deployment_id: str, config: Dict[str, Any]):
         """The actual background deployment pipeline.
