@@ -1,10 +1,9 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Users, TrendingUp, Shield, FileText, Target, BarChart3, Gauge, Scale } from 'lucide-react';
+import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale } from 'lucide-react';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
 const ExecutiveCockpit = lazy(() => import('../pages/ExecutiveCockpit'));
-const AnalystWorkspace = lazy(() => import('../pages/AnalystWorkspace'));
 const HITLQueue = lazy(() => import('../pages/HITLQueue'));
 const EvolutionTimeline = lazy(() => import('../pages/EvolutionTimeline'));
 const ComplianceDashboard = lazy(() => import('../pages/ComplianceDashboard'));
@@ -18,7 +17,6 @@ export default function DecisionsView({ domain }: { domain: string }) {
 
   const tabs = [
     { id: 'cockpit', label: 'Executive Cockpit', icon: Gauge },
-    { id: 'analyst', label: 'Analyst Workspace', icon: BarChart3 },
     { id: 'live', label: 'Execution Monitor', icon: Activity },
     { id: 'hitl', label: 'HITL Queue', icon: Users },
     { id: 'performance', label: 'Feedback & Evolution', icon: TrendingUp },
@@ -58,7 +56,6 @@ export default function DecisionsView({ domain }: { domain: string }) {
       <div className="flex-1 overflow-y-auto">
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Decisions Module...</div>}>
           {activeTab === 'cockpit' && <ExecutiveCockpit domain={domain} />}
-          {activeTab === 'analyst' && <AnalystWorkspace domain={domain} />}
           {activeTab === 'live' && <CommandCenter domain={domain} />}
           {activeTab === 'hitl' && <HITLQueue domain={domain} />}
           {activeTab === 'performance' && <EvolutionTimeline domain={domain} />}
