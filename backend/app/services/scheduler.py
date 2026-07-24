@@ -91,6 +91,40 @@ async def run_retention_sweep():
         logger.error(f"[Scheduler] Retention sweep failed: {e}")
 
 
+async def run_foundry_mining():
+    """Continuously curate governed executions into training examples (AI Foundry).
+
+    Makes "continuously improve" real: instead of an operator manually POSTing
+    /foundry/datasets/build, the dataset grows on a cadence from every tenant's
+    governed executions. Leader-guarded and idempotent (already-mined executions
+    carry source='mined' and are skipped), so a double-run is safe. Promotion of
+    any resulting model stays HUMAN-gated - this only fills the funnel.
+    """
+    if not _is_leader():
+        return
+    logger.info("[Scheduler] Running AI Foundry dataset mining...")
+    try:
+        from app.services.foundry import dataset_builder
+        from app.models.domain import SkillExecution
+        async with MaintenanceSessionLocal() as db:
+            tenant_ids = (await db.execute(
+                select(SkillExecution.tenant_id).distinct()
+            )).scalars().all()
+            total, tenants = 0, 0
+            for tid in tenant_ids:
+                if not tid:
+                    continue
+                tenants += 1
+                result = await dataset_builder.mine_executions(db, tid)
+                total += int(result.get("created", 0) or 0)
+            logger.info(
+                "[Scheduler] Foundry mining curated %d new example(s) across %d tenant(s)",
+                total, tenants,
+            )
+    except Exception as e:
+        logger.error(f"[Scheduler] Foundry mining failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -102,5 +136,11 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_retention_sweep, 'interval', hours=24,
         id='retention_sweep_job', replace_existing=True
+    )
+    # AI Foundry: mine governed executions into training examples on a cadence so
+    # the improvement loop is continuous, not manual. Promotion stays human-gated.
+    scheduler.add_job(
+        run_foundry_mining, 'interval', hours=6,
+        id='foundry_mining_job', replace_existing=True
     )
     return scheduler

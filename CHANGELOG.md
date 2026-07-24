@@ -10,6 +10,11 @@ Thesis: harden the safety and ops substrate first (earn the right), then ship th
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
 ### Added
+- **AI Foundry continuous mining (Phase 4D).** A leader-guarded scheduler job
+  (`run_foundry_mining`, every 6h) curates every tenant's governed executions into
+  training examples on a cadence, so the improvement loop runs continuously instead
+  of only on a manual API call. Idempotent (already-mined executions are skipped);
+  model promotion stays human-gated.
 - **Safe-autonomy-rate as a first-class metric (Phase 5).** New
   `GET /metrics/safe-autonomy` computes the north-star metric live from logged
   executions: the rate, an explainable fallout breakdown (routed-to-human,
