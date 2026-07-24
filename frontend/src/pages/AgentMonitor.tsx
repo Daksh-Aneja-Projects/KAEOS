@@ -13,18 +13,29 @@ export default function AgentMonitor({ domain = 'All Domains' }: { domain?: stri
   const [selectedExec, setSelectedExec] = useState<ExecutionItem | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      api.getSkills(),
-      ...['handle_refund_request', 'enterprise_discount_approval', 'incident_escalation_p1',
-        'vendor_payment_approval', 'new_hire_onboarding_trigger', 'sales_deal_qualification'
-      ].map((s) => api.getExecutions(s).catch(() => []))
-    ]).then(([reg, ...execArrays]) => {
-      setSkills((reg as any)?.skills || []);
-      const flat = execArrays.flat() as ExecutionItem[];
-      flat.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
-      setAllExecs(flat);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    (async () => {
+      try {
+        // Derive the skill set from the live registry instead of a hardcoded
+        // whitelist, so every skill's executions appear in the feed.
+        const reg = await api.getSkills();
+        const skillList = (reg as any)?.skills || [];
+        setSkills(skillList);
+        const ids: string[] = skillList
+          .map((s: any) => s.skill_id || s.id || s.name)
+          .filter(Boolean)
+          .slice(0, 50);
+        const execArrays = await Promise.all(
+          ids.map((id) => api.getExecutions(id).catch(() => [])),
+        );
+        const flat = execArrays.flat() as ExecutionItem[];
+        flat.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+        setAllExecs(flat);
+      } catch {
+        /* leave empty on failure */
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   // ── If an execution is selected, show the detail view ──────────────────
