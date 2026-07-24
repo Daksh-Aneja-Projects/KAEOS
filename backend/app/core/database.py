@@ -29,6 +29,7 @@ _model_modules = [
     "app.models.intelligence_metrics",
     "app.models.actuation",
     "app.models.missions",
+    "app.models.event_mesh",
     "app.workforce.models.core",
     "app.workforce.models.domain_pack",
     "app.workforce.models.integration",

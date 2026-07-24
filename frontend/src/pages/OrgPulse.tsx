@@ -195,6 +195,112 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
   );
 };
 
+/**
+ * Event Mesh "Signals & Responses" — the enterprise OODA stream. External signals
+ * (regulatory / vendor / security / market) correlated to the twin, each showing
+ * the matched entities and the governed response KAEOS chose. Operators can report
+ * a signal (the same path connectors use); an uncorrelated signal gets no action.
+ */
+const SIGNAL_KINDS = ['REGULATORY', 'VENDOR', 'SECURITY', 'MARKET', 'SUPPLY_CHAIN', 'NEWS'];
+const RESP_COLOR: Record<string, string> = {
+  MISSION: '#8b5cf6', HITL: '#f59e0b', BRIEFING: '#3b82f6', NONE: '#6b7280',
+};
+const SEV_COLOR: Record<string, string> = { critical: '#ef4444', warning: '#f59e0b', info: '#6b7280' };
+
+const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }> = ({ signals, colors, reload }) => {
+  const [kind, setKind] = useState('REGULATORY');
+  const [title, setTitle] = useState('');
+  const [severity, setSeverity] = useState('warning');
+  const [busy, setBusy] = useState(false);
+
+  const ingest = async () => {
+    if (!title.trim()) return;
+    setBusy(true);
+    try { await api.ingestMeshSignal({ kind, title: title.trim(), severity }); setTitle(''); reload(); }
+    catch (e) { console.error(e); }
+    finally { setBusy(false); }
+  };
+
+  const list = signals?.signals || [];
+  const summary = signals?.summary || { total: 0, responded: 0, actioned: 0 };
+
+  return (
+    <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <h2 className="text-[13px] font-bold flex items-center gap-1.5">
+            <Activity className="w-4 h-4" style={{ color: '#3b82f6' }} /> Signals &amp; Responses
+            <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1"
+              style={{ background: '#3b82f618', color: '#3b82f6' }}>
+              <span className="w-1.5 h-1.5 rounded-full precog-now inline-block" style={{ background: '#3b82f6' }} /> LIVE
+            </span>
+          </h2>
+          <p className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
+            External signals correlated to your twin. {summary.total} seen · {summary.actioned} escalated to a governed response.
+          </p>
+        </div>
+        {/* Operator/connector ingest — the real path a signal enters the mesh */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <select value={kind} onChange={e => setKind(e.target.value)}
+            className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
+            style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+            {SIGNAL_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <select value={severity} onChange={e => setSeverity(e.target.value)}
+            className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
+            style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+            {['info', 'warning', 'critical'].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && ingest()}
+            placeholder="Report a signal (e.g. New SEC disclosure rule affects legal)"
+            className="text-[11px] rounded-lg px-2.5 py-1.5 outline-none w-64"
+            style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+          <button onClick={ingest} disabled={busy || !title.trim()}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg text-white"
+            style={{ background: '#3b82f6', opacity: busy || !title.trim() ? 0.5 : 1 }}>
+            {busy ? 'Correlating…' : 'Ingest'}
+          </button>
+        </div>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-[12px] py-4 text-center" style={{ color: colors.inkTertiary }}>
+          No external signals yet. Report one above (or connect a feed) to watch KAEOS correlate it to the twin and respond.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {list.map((s: any) => (
+            <div key={s.id} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 shrink-0"
+                style={{ background: (SEV_COLOR[s.severity] || '#6b7280') + '22', color: SEV_COLOR[s.severity] || '#6b7280' }}>
+                {s.kind}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-medium" style={{ color: colors.ink }}>{s.title}</div>
+                <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{s.correlation_note}</div>
+                {(s.matched_entities || []).length > 0 && (
+                  <div className="flex gap-1 mt-1.5 flex-wrap">
+                    {s.matched_entities.slice(0, 6).map((m: any, i: number) => (
+                      <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full"
+                        style={{ background: colors.surface2, color: colors.inkSubtle }}>
+                        {m.type === 'skill' ? '◆' : '▪'} {m.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                style={{ background: (RESP_COLOR[s.response_kind] || '#6b7280') + '22', color: RESP_COLOR[s.response_kind] || '#6b7280' }}>
+                {s.response_kind === 'NONE' ? 'no action' : s.response_kind}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const OrgPulse: React.FC<{ domain?: string }> = () => {
   const { colors } = useTheme();
   const navigate = useNavigate();
@@ -206,15 +312,17 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   const [escalateMsg, setEscalateMsg] = useState('');
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [forecast, setForecast] = useState<any>(null);
+  const [signals, setSignals] = useState<any>(null);
 
   const load = useCallback(async () => {
-    const [p, a, s, f] = await Promise.allSettled([
-      api.getOrgPulse(), api.getOrgActivity(30), api.getOrgStale(), api.getForecast(45, 14),
+    const [p, a, s, f, sig] = await Promise.allSettled([
+      api.getOrgPulse(), api.getOrgActivity(30), api.getOrgStale(), api.getForecast(45, 14), api.getMeshSignals(20),
     ]);
     if (p.status === 'fulfilled') setPulse(p.value);
     if (a.status === 'fulfilled') setActivity(a.value || []);
     if (s.status === 'fulfilled') setStale(s.value?.breaches || []);
     if (f.status === 'fulfilled') setForecast(f.value);
+    if (sig.status === 'fulfilled') setSignals(sig.value);
     setLastSync(Date.now());
     setLoading(false);
   }, []);
@@ -315,6 +423,9 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
 
       {/* Precog — safe-autonomy forecast with confidence bands */}
       <ForecastSection forecast={forecast} colors={colors} />
+
+      {/* Event Mesh — external signals correlated to the twin, with governed responses */}
+      <SignalsSection signals={signals} colors={colors} reload={load} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Unified insight feed */}

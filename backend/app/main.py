@@ -352,6 +352,8 @@ from app.api.routes import actuation
 app.include_router(actuation.router, prefix=PREFIX)
 from app.api.routes import missions
 app.include_router(missions.router, prefix=PREFIX)
+from app.api.routes import event_mesh
+app.include_router(event_mesh.router, prefix=PREFIX)
 app.include_router(departments.router,     prefix=PREFIX)
 app.include_router(hitl.router,            prefix=PREFIX)
 app.include_router(ws.router) # No prefix to keep it cleanly at /ws/tenant_id

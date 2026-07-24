@@ -97,6 +97,23 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — Sense-Decide-Act Event Mesh, Phase 5)
+- **The enterprise OODA loop.** External-world signals (regulatory / vendor /
+  security / market / supply-chain / news) are ingested, **correlated against the
+  real twin** (the canonical 7 departments + skill ids, alias-normalized), and turned
+  into a governed response: an uncorrelated signal gets no action; a warning briefs
+  the owning team (activity feed); a critical single-department signal routes to HITL;
+  a critical multi-department signal **spawns a cross-domain mission**. New
+  `external_signals` table (migration 0011, RLS), `services/event_mesh.py`, and
+  `POST /signals/ingest` / `GET /signals` / `POST /{id}/respond`. Tested (5 cases:
+  kind-prior + text correlation, uncorrelated→no-action, critical→HITL/MISSION,
+  respond marks responded).
+- **Signals & Responses stream** on Org Pulse (no new nav): a live feed of each
+  signal with its matched twin entities and the governed response badge
+  (BRIEFING/HITL/MISSION/none), plus an operator/connector ingest control. Verified
+  live: a critical security signal correlated to engineering+finance and spawned a
+  real mission; a regulatory signal briefed legal.
+
 ### Added (v4 Signature IP — Precog Org-Health Forecast, IP-5)
 - **Forecast the north star.** New `services/forecast.py` — an honest OLS linear-trend
   forecaster with a 95% residual-based prediction interval (no LLM, deterministic,
