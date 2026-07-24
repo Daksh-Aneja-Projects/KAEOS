@@ -38,6 +38,10 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   (spoofable) approver name; unified into one `approver_identity` helper.
 - PII egress scrubbing fails closed under a data-residency policy
   (`DATA_RESIDENCY` / `SCRUB_PII_BEFORE_LLM`) instead of degrading to unscrubbed.
+- Fairness-gate applicability is now STRUCTURAL: a people-affecting (HCM /
+  protected-class) decision is assessed based on the skill's department, id,
+  tags, and affected-entity type, so it can no longer skip the gate by omitting
+  the `requires_fairness_assessment` flag (the flag still works as an override).
 
 ### Fixed (security-critical)
 - `backend/docker-compose.prod.yml` connected the app as the DB **owner**, which

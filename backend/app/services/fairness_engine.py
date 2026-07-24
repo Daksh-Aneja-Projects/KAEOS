@@ -29,9 +29,49 @@ class FairnessEngine:
     def __init__(self):
         self.llm = LLMRouter()
 
+    # Terms that mark a decision as people-affecting / protected-class impacting.
+    _FAIRNESS_TRIGGER_TERMS = frozenset({
+        "hr", "human_resources", "people", "hiring", "hire", "recruit", "recruiting",
+        "candidate", "applicant", "employee", "termination", "terminate", "layoff",
+        "promotion", "promote", "compensation", "salary", "payroll", "raise",
+        "performance", "review", "appraisal", "eeoc", "protected", "demographic",
+        "benefits", "onboarding", "offboarding", "disciplinary", "bonus", "equity",
+    })
+    _FAIRNESS_ENTITY_TYPES = frozenset({"employee", "candidate", "applicant", "person", "worker"})
+
     def requires_fairness_check(self, skill: Skill, context: dict) -> bool:
-        """Determine if a skill execution needs fairness assessment based on context flags."""
-        return context.get("requires_fairness_assessment", False)
+        """Whether this execution must be fairness-assessed.
+
+        Fairness applicability is DERIVED from the skill and the data it touches,
+        not merely trusted from a caller-supplied ``requires_fairness_assessment``
+        flag: an HCM / protected-class decision that forgot the flag would
+        otherwise skip the gate entirely. The explicit flag is still honored as an
+        override; structural signals (people-affecting department, skill id/name,
+        tags, or affected-entity type) trigger the check on their own.
+        """
+        if context.get("requires_fairness_assessment", False):
+            return True
+
+        dept = str(getattr(skill, "department", "") or "").lower()
+        if dept in ("hr", "human_resources", "people"):
+            return True
+
+        parts = [
+            str(getattr(skill, "skill_id", "") or ""),
+            str(getattr(skill, "name", "") or ""),
+            dept,
+        ]
+        parts += [str(t) for t in (getattr(skill, "tags", None) or [])]
+        parts += [str(t) for t in (getattr(skill, "compliance_tags", None) or [])]
+        blob = " ".join(parts).lower()
+        if any(term in blob for term in self._FAIRNESS_TRIGGER_TERMS):
+            return True
+
+        entity_type = str(context.get("affected_entity_type", "") or "").lower()
+        if entity_type in self._FAIRNESS_ENTITY_TYPES:
+            return True
+
+        return False
 
     async def score_fairness(
         self,
