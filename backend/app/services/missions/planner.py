@@ -113,7 +113,8 @@ async def _optional_narrative(tenant_id: str, goal: str, steps: list[dict]) -> O
             prompt=(f"Mission goal: {goal}\nPlanned steps: {plan_txt}\n"
                     "In 2 sentences, explain why this ordered plan achieves the goal "
                     "and where human review is warranted. Plain text."),
-            model_tier="fast", max_tokens=180,
+            # Decorative narrative only (NOT a governance decision) -> nano tier.
+            model_tier="nano", max_tokens=180,
         ), timeout=45)
         text = res if isinstance(res, str) else res.get("content")
         if text and "fake_llm" not in text and "simulated" not in text.lower():

@@ -28,6 +28,34 @@ logger = logging.getLogger(__name__)
 _OLLAMA_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
 _OLLAMA_PROBE_TTL = 30.0  # seconds
 
+# Embedding cache. An embedding is a PURE function of (model, text): the same text
+# under the same model always yields the same vector, so caching returns a
+# byte-identical result while eliminating a repeat provider call. Content-only
+# (no tenant data), so cross-tenant reuse of identical text is safe. Bounded LRU.
+from collections import OrderedDict as _OrderedDict
+_EMBED_CACHE: "_OrderedDict[str, list]" = _OrderedDict()
+_EMBED_CACHE_MAX = 8192
+_EMBED_CACHE_STATS = {"hits": 0, "misses": 0}
+
+
+def _embed_key(model: str, text: str) -> str:
+    return hashlib.sha1(f"{model}\x00{text}".encode("utf-8", "replace")).hexdigest()
+
+
+def _embed_cache_get(key: str):
+    v = _EMBED_CACHE.get(key)
+    if v is not None:
+        _EMBED_CACHE.move_to_end(key)
+        _EMBED_CACHE_STATS["hits"] += 1
+    return v
+
+
+def _embed_cache_put(key: str, vec: list) -> None:
+    _EMBED_CACHE[key] = vec
+    _EMBED_CACHE.move_to_end(key)
+    while len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
+        _EMBED_CACHE.popitem(last=False)
+
 # Known embedding dimensions by model id (fallback: 1536).
 _EMBEDDING_DIMS = {
     "text-embedding-3-small": 1536,
@@ -120,6 +148,12 @@ class LLMRouter:
         "reasoning": "ollama/qwen2.5-coder:7b",           # Tier 1: debates, fairness, blueprints, agents
         "classification": "ollama/qwen2.5-coder:7b",      # Tier 2: intent classification, extraction, scoring
         "fast": "ollama/qwen2.5-coder:7b",                # Tier 3: formatting, simple ops
+        # Tier 0 (nano): NON-reasoning, decorative/mechanical text only (e.g. a
+        # plan narrative). A 1.5b coder model (~1.4GB VRAM) that can co-reside with
+        # the resident 7b on a 6GB card WITHOUT evicting it — set
+        # OLLAMA_MAX_LOADED_MODELS>=2 (+ a long OLLAMA_KEEP_ALIVE) so switching to
+        # it never triggers a model swap. NEVER used for a governance decision.
+        "nano": "ollama/qwen2.5-coder:1.5b",
         "embedding": "ollama/nomic-embed-text:latest",    # Tier E: embeddings for RAG
     }
 
@@ -128,6 +162,8 @@ class LLMRouter:
         "reasoning": ["ollama/qwen2.5-coder:7b", "claude-opus-4-8", "gpt-4o"],
         "classification": ["ollama/qwen2.5-coder:7b", "ollama/phi4-mini:latest", "gpt-4o-mini"],
         "fast": ["ollama/qwen2.5-coder:7b", "ollama/phi4-mini:latest", "gpt-4o-mini"],
+        # nano falls back to the 7b (never worse quality), then a cheap cloud model.
+        "nano": ["ollama/qwen2.5-coder:1.5b", "ollama/qwen2.5-coder:7b", "gpt-4o-mini"],
     }
 
     MAX_RETRIES = 3
@@ -777,6 +813,22 @@ class LLMRouter:
             logger.info(f"[LLM] No provider available — returning SIMULATED embeddings (dim={dim}).")
             return [self._pseudo_embedding(t, dim) for t in texts]
 
+        # Serve cache hits (byte-identical) and only embed the misses. A fully
+        # cached batch skips the provider call entirely.
+        keys = [_embed_key(model, t) for t in texts]
+        results: list = [None] * len(texts)
+        miss_idx: list[int] = []
+        for i, k in enumerate(keys):
+            cached = _embed_cache_get(k)
+            if cached is not None:
+                results[i] = cached
+            else:
+                miss_idx.append(i)
+        if not miss_idx:
+            self.embeddings_simulated = False
+            return results
+        _EMBED_CACHE_STATS["misses"] += len(miss_idx)
+
         try:
             import litellm
             effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
@@ -784,7 +836,7 @@ class LLMRouter:
             _t0 = time.perf_counter()
             response = await litellm.aembedding(
                 model=model,
-                input=texts,
+                input=[texts[i] for i in miss_idx],
                 api_key=effective_keys.get(self._get_provider(model)),
                 timeout=30,
             )
@@ -800,7 +852,11 @@ class LLMRouter:
                 } if usage else {},
                 latency_ms=int((time.perf_counter() - _t0) * 1000),
             )
-            return [item["embedding"] for item in response.data]
+            for pos, item in zip(miss_idx, response.data):
+                vec = item["embedding"]
+                results[pos] = vec
+                _embed_cache_put(keys[pos], vec)
+            return results
         except ImportError:
             logger.warning("LiteLLM not installed — returning simulated embeddings")
             self.embeddings_simulated = True

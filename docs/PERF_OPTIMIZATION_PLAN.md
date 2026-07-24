@@ -18,7 +18,25 @@ The pipeline is LLM-bound; guessing wastes effort. Add lightweight timing.
   (expectation: Gate 4 debate + Gate 5 execute dominate).
 - **Anti-pattern:** do not optimize a gate before you have its measured ms.
 
-## Phase 1 — Right-size the model tiers (biggest, cheapest win)
+## Hardware reality (researched 2026-07-25) — READ BEFORE tier changes
+Dev box: i5-13450HX (16 threads), 15.7GB RAM (~3.7GB free), **RTX 3050 Laptop 6GB VRAM**.
+- The resident `qwen2.5-coder:7b` uses **4.33GB VRAM**, leaving **~1.7GB free**.
+- Ollama defaults to keeping **ONE** model loaded. So pointing a tier at a *different*
+  model causes a **model swap** (multi-second reload) on every tier switch within a
+  decision — which would make the pipeline SLOWER, not faster. (Measured: 1.5b was not
+  faster than 7b on short structured output; the swap dominates.)
+- Only model that can **co-reside** with the 7b in 6GB is **`qwen2.5-coder:1.5b` (~1.4GB)**
+  (3b/phi4-mini would evict the 7b). Co-residency requires `OLLAMA_MAX_LOADED_MODELS=2`
+  + a long `OLLAMA_KEEP_ALIVE` (both set persistently, User scope; activates on next
+  Ollama restart).
+- **Verdict:** do NOT split the DECISION-PATH tiers on this hardware (thrash + quality
+  risk). Use the lighter `nano` (1.5b) tier ONLY for genuinely non-reasoning, off-path
+  decorative text (e.g. the mission plan narrative — already wired to `nano`). The
+  real safe LLM win here is **eliminating repeat calls via caching** (embedding cache
+  shipped; compliance caching intentionally NOT done — a verdict depends on context, so
+  caching it could rubber-stamp a changed context).
+
+## Phase 1 — Right-size the model tiers (biggest, cheapest win — hardware-gated, see above)
 Today ALL tiers point at `qwen2.5-coder:7b` (`llm_router.py:119-123`), including "fast" and
 "classification". Installed and much faster: `qwen2.5-coder:1.5b`, `qwen2.5-coder:3b`,
 `phi4-mini`. A 1.5–3b model is ~2–4× faster and is fine for formatting/scoring/classification.
