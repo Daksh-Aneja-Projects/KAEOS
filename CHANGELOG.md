@@ -69,6 +69,14 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - GDPR erasure now purges the subject's embeddings from the vector store
   (`VectorStore.delete_subject`), closing the vector-layer coverage gap.
 
+### Fixed
+- **Workforce Analytics showed 0% automation and 0 active agents** despite 140
+  real executions and departments reporting 6/7/5 agents. `agents_active` counted
+  an empty detail table instead of the denormalized `agent_count` sum; automation
+  averaged an unpopulated `Department.automation_coverage` column. Both now compute
+  from real data (agent_count sum; autonomous/total executions, per-department via
+  a skill-department join with slug normalization) — the headline is ~86%, not 0%.
+
 ### Fixed (security-critical)
 - `backend/docker-compose.prod.yml` connected the app as the DB **owner**, which
   silently disables row-level security (owners bypass RLS). It now connects as the
