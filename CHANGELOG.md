@@ -10,6 +10,11 @@ Thesis: harden the safety and ops substrate first (earn the right), then ship th
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
 ### Added
+- **Safe-autonomy-rate as a first-class metric (Phase 5).** New
+  `GET /metrics/safe-autonomy` computes the north-star metric live from logged
+  executions: the rate, an explainable fallout breakdown (routed-to-human,
+  overridden, edited, failed), a per-skill split showing where autonomy leaks,
+  and a daily time-series. Derived from real `skill_executions` rows, never seeded.
 - **Always-on KAEOS Copilot.** A persistent bottom-right chat dock on every screen
   so any authenticated user can ask questions in natural language. Rewrote the
   copilot to send real Bearer auth (it previously sent none), fixed broken SSE
