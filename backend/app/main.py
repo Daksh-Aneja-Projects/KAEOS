@@ -358,6 +358,8 @@ from app.api.routes import regulatory
 app.include_router(regulatory.router, prefix=PREFIX)
 from app.api.routes import causal
 app.include_router(causal.router, prefix=PREFIX)
+from app.api.routes import time_machine as time_machine_routes
+app.include_router(time_machine_routes.router, prefix=PREFIX)
 app.include_router(departments.router,     prefix=PREFIX)
 app.include_router(hitl.router,            prefix=PREFIX)
 app.include_router(ws.router) # No prefix to keep it cleanly at /ws/tenant_id

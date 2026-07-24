@@ -1018,6 +1018,12 @@ export const api = {
   // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
   getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
 
+  // Time Machine — decision replay + counterfactual recompute of the north-star
+  getDecisionTimeline: (days = 45, limit = 200) => request<any>(`/time-machine/timeline?days=${days}&limit=${limit}`),
+  getStateAsOf: (at: string, days = 45) => request<any>(`/time-machine/state?at=${encodeURIComponent(at)}&days=${days}`),
+  runCounterfactual: (executionId: string, flip: 'approve' | 'fail' | 'escalate', days = 45) =>
+    request<any>('/time-machine/counterfactual', { method: 'POST', body: JSON.stringify({ execution_id: executionId, flip, days }) }),
+
   // Causal Discovery — likely causal links between departments from real data
   getCausalLinks: (days = 45, minStrength = 0.4) => request<any>(`/causal/discover?days=${days}&min_strength=${minStrength}`),
 

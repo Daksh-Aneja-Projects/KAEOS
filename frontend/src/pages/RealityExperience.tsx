@@ -3,8 +3,9 @@ import { useTheme } from '../context/ThemeContext';
 import {
   Activity, Zap, Database, Eye, Crosshair, Brain, GitPullRequest, X,
   Users, Building2, Boxes, Bot, Package, FolderOpen,
-  Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2,
+  Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2, History,
 } from 'lucide-react';
+import TimeMachinePanel from '../components/TimeMachinePanel';
 
 const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering'];
 const WHATIF_RISK = ['conservative', 'balanced', 'aggressive'];
@@ -61,7 +62,7 @@ export default function RealityExperience() {
   // ── What-If Scenario Simulator (IP-1) — a second mode beside the shock sim.
   // Propose a change in plain language; the real /simulation/what-if engine
   // returns a governed verdict + blast radius + ranked risk factors + rollback.
-  const [mode, setMode] = useState<'shock' | 'whatif'>('shock');
+  const [mode, setMode] = useState<'shock' | 'whatif' | 'replay'>('shock');
   const [whatIfChange, setWhatIfChange] = useState('');
   const [whatIfDomain, setWhatIfDomain] = useState('All Domains');
   const [whatIfRisk, setWhatIfRisk] = useState('balanced');
@@ -237,9 +238,16 @@ export default function RealityExperience() {
                 style={{ background: mode === 'whatif' ? colors.primary : 'transparent', color: mode === 'whatif' ? '#fff' : colors.inkSubtle }}>
                 <Sparkles className="w-3.5 h-3.5" /> What-If
               </button>
+              <button onClick={() => setMode('replay')}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                style={{ background: mode === 'replay' ? colors.primary : 'transparent', color: mode === 'replay' ? '#fff' : colors.inkSubtle }}>
+                <History className="w-3.5 h-3.5" /> Replay
+              </button>
             </div>
 
-            {mode === 'shock' ? (
+            {mode === 'replay' ? (
+              <TimeMachinePanel colors={colors} />
+            ) : mode === 'shock' ? (
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold mb-1 block">Shock Event</label>
@@ -329,12 +337,12 @@ export default function RealityExperience() {
             )}
           </div>
 
-          <div className="rounded-xl border shadow-sm p-4 flex-1" style={card}>
+          <div className="rounded-xl border shadow-sm p-4 flex-1 flex flex-col" style={card}>
             <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <Brain className="w-4 h-4" /> Learning State
             </h2>
             {learningStats ? (
-              <div className="space-y-4">
+              <div className="space-y-4 flex-1 flex flex-col min-h-0">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                     <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
@@ -345,9 +353,9 @@ export default function RealityExperience() {
                     <div className="text-2xl font-bold text-red-500">-{learningStats.modifiers?.MITIGATE_FAILURE?.toFixed(1) || 0}</div>
                   </div>
                 </div>
-                <div className="text-xs">
+                <div className="text-xs flex-1 flex flex-col min-h-0">
                   <div className="font-semibold mb-2">Recent Outcomes</div>
-                  <div className="max-h-[180px] overflow-y-auto space-y-1">
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
                     {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
                       <div key={i} className="p-2 border rounded font-mono text-[10px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                         <div className="flex justify-between">
@@ -660,7 +668,7 @@ export default function RealityExperience() {
             <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <Activity className="w-4 h-4" /> Reality Feed
             </h2>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2 max-h-[420px]">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-2">
               {realityFeed.slice().reverse().map((f, i) => (
                 <div key={i} className="text-xs p-2 rounded font-mono border" style={{ background: colors.canvas, borderColor: colors.hairline }}>
                   <span className="mr-2" style={{ color: colors.primary }}>[{String(f.id).padStart(4, '0')}]</span>

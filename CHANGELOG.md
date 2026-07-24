@@ -135,6 +135,26 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
+### Added (v4 Signature IP — Enterprise Time Machine, IP-3)
+- **Decision replay + counterfactuals.** New `services/time_machine.py`: scrub the
+  org's real decision history (the append-only stream of governed executions),
+  reconstruct the north-star (safe-autonomy-rate) AS OF any past moment from the
+  decisions up to that point, and run a **real counterfactual** — recompute the
+  same metric with ONE historical decision flipped (approve / fail / escalate). All
+  from real execution rows, nothing fabricated. `GET /time-machine/timeline`,
+  `/state`, `POST /counterfactual`. Tested (5 cases: classification, state-as-of,
+  approve raises / fail lowers the rate, missing execution).
+- **Replay mode on Reality Experience** (a third mode beside Shock and What-If, no
+  new nav): a Time Machine panel with a rewind slider (the reconstructed rate as of
+  any moment) and a decision list where picking one runs the counterfactual live
+  (actual vs counterfactual rate + delta). Verified live: 166 real decisions,
+  approving a fallout decision moved the rate 60.2% → 60.8%.
+
+### Improved
+- **Reality Experience space usage.** The Learning State (Recent Outcomes) and
+  Reality Feed panels now fill their column height instead of capping at a fixed
+  height and leaving dead space.
+
 ### Added (v4 Signature IP — Causal Discovery, IP-6)
 - **Auto-inferred causal structure.** New `services/causal.py` discovers likely
   cause→effect links between departments from real data — no LLM, no hand-drawn
