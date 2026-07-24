@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.services import time_machine
 
 router = APIRouter(prefix="/time-machine", tags=["Time Machine"])
@@ -48,14 +48,15 @@ async def get_state(
 @router.post("/counterfactual")
 async def post_counterfactual(
     body: CounterfactualIn,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Recompute the north-star with one historical decision flipped."""
+    """Recompute the north-star with one historical decision flipped. Role-gated
+    like the other simulation endpoints."""
     if body.flip not in ("approve", "fail", "escalate"):
         raise HTTPException(status_code=400, detail="flip must be approve|fail|escalate")
     res = await time_machine.counterfactual(
-        db, tenant_id, execution_id=body.execution_id, flip=body.flip,
+        db, tenant["tenant_id"], execution_id=body.execution_id, flip=body.flip,
         days=max(1, min(365, body.days)))
     if res.get("error"):
         raise HTTPException(status_code=404, detail=res["error"])

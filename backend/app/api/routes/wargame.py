@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.services.wargame import run_wargame, list_playbooks
 
 router = APIRouter(prefix="/wargame", tags=["Wargaming"])
@@ -26,18 +26,19 @@ async def playbooks():
 @router.post("/run")
 async def run(
     body: WargameIn,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """Run an adversarial cascade against the twin and score resilience + the
-    agents' safe response under compounding stress."""
+    agents' safe response under compounding stress. Role-gated like the other
+    simulation endpoints (shock / what-if)."""
     custom = None
     if body.custom:
         try:
             custom = [(str(s[0]), str(s[1]), int(s[2])) for s in body.custom]
         except Exception:
             raise HTTPException(status_code=400, detail="custom must be [[shock, dept, severity], ...]")
-    res = await run_wargame(db, tenant_id, playbook=body.playbook, custom=custom)
+    res = await run_wargame(db, tenant["tenant_id"], playbook=body.playbook, custom=custom)
     if res.get("error"):
         raise HTTPException(status_code=404, detail=res["error"])
     return res
