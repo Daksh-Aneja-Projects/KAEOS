@@ -261,7 +261,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  {(graduations?.graduated || []).slice(0, 3).map((g: any) => (
+                  {(graduations?.graduated || []).map((g: any) => (
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#22c55e0d' }}>
                       <CheckCircle className="w-4 h-4 shrink-0" style={{ color: '#22c55e' }} />
                       <div className="min-w-0 flex-1">
@@ -275,7 +275,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                       </span>
                     </div>
                   ))}
-                  {(graduations?.earning_trust || []).slice(0, 3).map((g: any) => (
+                  {(graduations?.earning_trust || []).map((g: any) => (
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#f59e0b0d' }}>
                       <Clock className="w-4 h-4 shrink-0" style={{ color: '#f59e0b' }} />
                       <div className="min-w-0 flex-1">

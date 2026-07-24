@@ -1018,6 +1018,11 @@ export const api = {
   // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
   getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
 
+  // Regulatory & Risk Autopilot — risk register, control map, evidence packs
+  getRegulatoryOverview: (days = 30) => request<any>(`/regulatory/overview?days=${days}`),
+  getRegulatoryEvidence: (framework: string, days = 90) =>
+    request<any>(`/regulatory/evidence/${framework}?days=${days}`),
+
   // Event Mesh — external signals correlated to the twin, with governed responses
   getMeshSignals: (limit = 50) => request<any>(`/signals?limit=${limit}`),
   ingestMeshSignal: (payload: { kind: string; title: string; severity?: string; source?: string; body?: string }) =>

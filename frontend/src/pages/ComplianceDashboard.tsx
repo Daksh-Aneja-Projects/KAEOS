@@ -1,19 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import type { ComplianceDashboard as CDType } from '../api/client';
 import { api } from '../api/client';
-import { Shield, CheckCircle, AlertTriangle, XCircle, Check } from 'lucide-react';
+import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+
+const TIER_COLOR: Record<string, string> = { HIGH: '#ef4444', LIMITED: '#f59e0b', MINIMAL: '#22c55e' };
 
 const ComplianceDashboard = () => {
  const { colors } = useTheme();
  const [data, setData] = useState<CDType | null>(null);
+ const [reg, setReg] = useState<any>(null);
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState<string | null>(null);
+ const [evidence, setEvidence] = useState<any>(null);
+ const [evLoading, setEvLoading] = useState<string | null>(null);
 
  const load = () => {
   setError(null);
-  api.getCompliance().then(d => { setData(d); setLoading(false); }).catch((e: any) => { setError(e?.message || 'Failed to load compliance data'); setLoading(false); });
+  Promise.all([api.getCompliance(), api.getRegulatoryOverview(30)])
+   .then(([c, r]) => { setData(c); setReg(r); setLoading(false); })
+   .catch((e: any) => { setError(e?.message || 'Failed to load compliance data'); setLoading(false); });
+ };
+
+ const genEvidence = async (framework: string) => {
+  setEvLoading(framework);
+  try { setEvidence(await api.getRegulatoryEvidence(framework, 90)); }
+  catch (e) { console.error(e); }
+  finally { setEvLoading(null); }
  };
 
  useEffect(() => {
@@ -53,8 +67,8 @@ const ComplianceDashboard = () => {
        <Shield className="w-6 h-6 text-white" />
       </div>
       <div>
-       <h1 className="text-[24px] font-bold tracking-tight">Compliance Engine</h1>
-       <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Regulatory policy enforcement</p>
+       <h1 className="text-[24px] font-bold tracking-tight">Compliance &amp; Regulatory Autopilot</h1>
+       <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Framework coverage, per-agent risk register, live monitor, and one-click evidence</p>
       </div>
      </div>
      <div className="flex gap-3">
@@ -106,6 +120,94 @@ const ComplianceDashboard = () => {
        </div>
       ))}
      </div>
+    )}
+
+    {/* ── Regulatory Autopilot ── */}
+    {reg && (
+     <>
+      {/* Risk summary + live monitor */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+       {([['HIGH', reg.risk_summary?.HIGH ?? 0], ['LIMITED', reg.risk_summary?.LIMITED ?? 0], ['MINIMAL', reg.risk_summary?.MINIMAL ?? 0]] as const).map(([tier, n]) => (
+        <div key={tier} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+         <div className="text-[22px] font-bold" style={{ color: TIER_COLOR[tier] }}>{n}</div>
+         <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{tier} risk</div>
+        </div>
+       ))}
+       {([['compliance_blocks', 'Blocks'], ['audit_failures', 'Audit fails'], ['human_overrides', 'Overrides']] as const).map(([k, label]) => (
+        <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+         <div className="text-[22px] font-bold" style={{ color: (reg.monitor?.[k] ?? 0) > 0 ? colors.warning : colors.ink }}>{reg.monitor?.[k] ?? 0}</div>
+         <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label} (30d)</div>
+        </div>
+       ))}
+      </div>
+
+      {/* Per-agent risk register (EU AI Act style) */}
+      <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+       <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: colors.hairline }}>
+        <ShieldAlert className="w-4 h-4" style={{ color: colors.primary }} />
+        <span className="text-[14px] font-medium">Agent Risk Register</span>
+        <span className="text-[11px]" style={{ color: colors.inkSubtle }}>EU-AI-Act-style classification of every deployed skill</span>
+       </div>
+       <div className="overflow-x-auto">
+        <div className="min-w-[720px]">
+         <div className="grid grid-cols-[1.4fr_0.8fr_1.2fr_0.7fr_0.8fr] gap-3 px-5 py-2 text-[11px] uppercase tracking-wider font-semibold"
+           style={{ background: colors.surface2, color: colors.inkSubtle }}>
+          <span>Skill</span><span>Department</span><span>Frameworks</span><span>Autonomy</span><span>Risk tier</span>
+         </div>
+         {(reg.risk_register || []).slice(0, 20).map((r: any) => (
+          <div key={r.skill_id} className="grid grid-cols-[1.4fr_0.8fr_1.2fr_0.7fr_0.8fr] gap-3 px-5 py-2.5 items-center border-b" style={{ borderColor: colors.hairline }}>
+           <span className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>
+            {r.high_consequence && <span title="high-consequence" style={{ color: colors.warning }}>▲ </span>}{r.skill_id}
+           </span>
+           <span className="text-[12px]" style={{ color: colors.inkSubtle }}>{r.department}</span>
+           <span className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{(r.frameworks || []).join(', ') || '—'}</span>
+           <span className="text-[12px] font-mono" style={{ color: colors.ink }}>{(r.autonomy * 100).toFixed(0)}%</span>
+           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: TIER_COLOR[r.risk_tier] + '22', color: TIER_COLOR[r.risk_tier] }}>{r.risk_tier}</span>
+          </div>
+         ))}
+        </div>
+       </div>
+      </div>
+
+      {/* Evidence packs */}
+      <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+       <div className="flex items-center gap-2 mb-3">
+        <FileCheck className="w-4 h-4" style={{ color: colors.primary }} />
+        <span className="text-[14px] font-medium">Audit Evidence Packs</span>
+        <span className="text-[11px]" style={{ color: colors.inkSubtle }}>assembled live from the provenance + actions ledgers</span>
+       </div>
+       <div className="flex gap-2 flex-wrap">
+        {(reg.frameworks || []).map((fw: any) => (
+         <button key={fw.framework} onClick={() => genEvidence(fw.framework)} disabled={evLoading === fw.framework}
+           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+           style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+          {evLoading === fw.framework ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" style={{ color: colors.primary }} />}
+          {fw.framework} <span style={{ color: colors.inkSubtle }}>({fw.controls})</span>
+         </button>
+        ))}
+        {(reg.frameworks || []).length === 0 && <span className="text-[12px]" style={{ color: colors.inkTertiary }}>No framework-tagged controls yet.</span>}
+       </div>
+       {evidence && (
+        <div className="mt-4 p-4 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+         <div className="flex items-center justify-between mb-2">
+          <span className="text-[13px] font-semibold">{evidence.framework} evidence pack</span>
+          <span className="text-[10px]" style={{ color: colors.inkSubtle }}>{evidence.scope} · {evidence.window_days}d window</span>
+         </div>
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {([['control_count', 'Controls'], ['control_executions', 'Control runs'], ['provenance_entries', 'Ledger entries'], ['actions_recorded', 'Actions']] as const).map(([k, label]) => (
+           <div key={k} className="text-center p-2 rounded-lg" style={{ background: colors.surface1 }}>
+            <div className="text-[18px] font-bold" style={{ color: colors.ink }}>{evidence[k] ?? 0}</div>
+            <div className="text-[9px]" style={{ color: colors.inkSubtle }}>{label}</div>
+           </div>
+          ))}
+         </div>
+         <div className="text-[10px] mt-2" style={{ color: evidence.complete ? colors.success : colors.warning }}>
+          {evidence.complete ? '✓ Evidence assembled from real ledger rows' : 'No controls carry this framework tag yet'} · generated {evidence.generated_at ? new Date(evidence.generated_at).toLocaleString() : ''}
+         </div>
+        </div>
+       )}
+      </div>
+     </>
     )}
    </div>
   </div>

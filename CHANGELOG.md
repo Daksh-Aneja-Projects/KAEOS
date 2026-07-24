@@ -97,6 +97,27 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — Regulatory & Risk Autopilot, Phase 6)
+- **Continuous regulatory intelligence** on top of the compliance gate. New
+  `services/regulatory.py` computes, from real skills and executions: a
+  regulation→control map (which skills carry which framework tags), an
+  **EU-AI-Act-style per-skill risk register** (HIGH / LIMITED / MINIMAL from
+  autonomy + tags + high-consequence surface, with the obligations each tier
+  implies), a live compliance monitor (blocks / audit fails / human overrides in
+  window), and **audit evidence packs** assembled from the real provenance +
+  actions ledgers and control executions. `GET /regulatory/overview` and
+  `GET /regulatory/evidence/{framework}`. Tested (7 cases).
+- **Compliance dashboard upgraded in place** (Decisions → Compliance, no new nav)
+  into "Compliance & Regulatory Autopilot": risk-tier summary + live monitor, the
+  Agent Risk Register table, and one-click evidence-pack generation per framework.
+  Verified live: 3 HIGH / 4 LIMITED / 1 MINIMAL risk skills, and a SOX evidence
+  pack assembled from 2 controls, 42 executions, 28 ledger entries, 3 actions.
+
+### Fixed
+- **Earned Autonomy count mismatch.** The Workforce dashboard summarized all
+  graduated/earning skills (e.g. 7) but the list was capped at 3 each (showed 4).
+  Removed the cap so the list matches the count.
+
 ### Added (v3 — Sense-Decide-Act Event Mesh, Phase 5)
 - **The enterprise OODA loop.** External-world signals (regulatory / vendor /
   security / market / supply-chain / news) are ingested, **correlated against the
