@@ -33,19 +33,30 @@ function formatValue(kpi: DomainKPI): string {
 
 const BarChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
   const { colors } = useTheme();
+  const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(...chart.items.map(i => i.value), 1);
+  const totalV = chart.items.reduce((s, i) => s + i.value, 0) || 1;
   return (
     <div className="space-y-2">
       {chart.items.map((item, idx) => (
-        <div key={item.label} className="flex items-center gap-2">
+        <div key={item.label} className="flex items-center gap-2 cursor-default"
+          onMouseEnter={() => setHover(idx)} onMouseLeave={() => setHover(null)}
+          style={{ opacity: hover == null || hover === idx ? 1 : 0.45, transition: 'opacity .15s' }}>
           <span className="text-[11px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={item.label}>
             {item.label}
           </span>
-          <div className="flex-1 h-4 rounded" style={{ background: colors.canvas }}>
-            <div className="h-4 rounded transition-all" style={{
+          <div className="flex-1 h-4 rounded relative" style={{ background: colors.canvas }}>
+            <div className="h-4 rounded transition-all duration-500" style={{
               width: `${Math.max((item.value / max) * 100, item.value > 0 ? 2 : 0)}%`,
               background: PALETTE[idx % PALETTE.length],
+              filter: hover === idx ? 'brightness(1.15)' : undefined,
             }} />
+            {hover === idx && (
+              <div className="absolute -top-6 left-0 text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
+                style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                {item.value.toLocaleString()} · {((item.value / totalV) * 100).toFixed(0)}% of total
+              </div>
+            )}
           </div>
           <span className="text-[11px] font-mono w-16 shrink-0" style={{ color: colors.ink }}>
             {item.value >= 10_000 ? `${(item.value / 1000).toFixed(0)}K` : item.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -59,21 +70,33 @@ const BarChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
 
 const FunnelChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
   const { colors } = useTheme();
+  const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(...chart.items.map(i => i.value), 1);
   return (
     <div className="space-y-1.5">
       {chart.items.map((item, idx) => {
         const pct = (item.value / max) * 100;
+        const prev = idx > 0 ? chart.items[idx - 1].value : item.value;
+        const conv = prev > 0 ? (item.value / prev) * 100 : 100;
         return (
-          <div key={item.label} className="flex items-center gap-2">
-            <div className="flex-1 flex justify-center">
-              <div className="h-6 rounded flex items-center justify-center transition-all"
+          <div key={item.label} className="flex items-center gap-2 cursor-default"
+            onMouseEnter={() => setHover(idx)} onMouseLeave={() => setHover(null)}
+            style={{ opacity: hover == null || hover === idx ? 1 : 0.5, transition: 'opacity .15s' }}>
+            <div className="flex-1 flex justify-center relative">
+              <div className="h-6 rounded flex items-center justify-center transition-all duration-500"
                 style={{
                   width: `${Math.max(pct, 8)}%`,
                   background: `${PALETTE[idx % PALETTE.length]}${pct > 50 ? 'ff' : 'aa'}`,
+                  filter: hover === idx ? 'brightness(1.15)' : undefined,
                 }}>
                 <span className="text-[10px] font-semibold text-white px-1 truncate">{item.value.toLocaleString()}</span>
               </div>
+              {hover === idx && idx > 0 && (
+                <div className="absolute -top-6 text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
+                  style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: conv >= 50 ? '#22c55e' : '#f59e0b' }}>
+                  {conv.toFixed(0)}% converted from previous stage
+                </div>
+              )}
             </div>
             <span className="text-[11px] w-32 truncate shrink-0" style={{ color: colors.inkSubtle }} title={item.label}>{item.label}</span>
           </div>
@@ -86,26 +109,34 @@ const FunnelChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
 
 const DonutChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
   const { colors } = useTheme();
+  const [hover, setHover] = useState<number | null>(null);
   const total = chart.items.reduce((s, i) => s + i.value, 0);
   let acc = 0;
   const segments = chart.items.map((item, idx) => {
     const start = (acc / (total || 1)) * 360;
     acc += item.value;
     const end = (acc / (total || 1)) * 360;
-    return `${PALETTE[idx % PALETTE.length]} ${start}deg ${end}deg`;
+    const dim = hover != null && hover !== idx;
+    return `${PALETTE[idx % PALETTE.length]}${dim ? '55' : 'ff'} ${start}deg ${end}deg`;
   });
+  const hv = hover != null ? chart.items[hover] : null;
   return (
     <div className="flex items-center gap-4">
-      <div className="w-24 h-24 rounded-full shrink-0 relative" style={{
+      <div className="w-24 h-24 rounded-full shrink-0 relative transition-all" style={{
         background: total > 0 ? `conic-gradient(${segments.join(', ')})` : colors.canvas,
       }}>
-        <div className="absolute inset-3 rounded-full flex items-center justify-center" style={{ background: colors.surface1 }}>
-          <span className="text-[13px] font-bold" style={{ color: colors.ink }}>{total.toLocaleString()}</span>
+        <div className="absolute inset-3 rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
+          <span className="text-[13px] font-bold" style={{ color: hv ? PALETTE[(hover as number) % PALETTE.length] : colors.ink }}>
+            {hv ? hv.value.toLocaleString() : total.toLocaleString()}
+          </span>
+          {hv && <span className="text-[8px]" style={{ color: colors.inkSubtle }}>{((hv.value / (total || 1)) * 100).toFixed(0)}%</span>}
         </div>
       </div>
       <div className="space-y-1 min-w-0">
         {chart.items.map((item, idx) => (
-          <div key={item.label} className="flex items-center gap-1.5 text-[11px]">
+          <div key={item.label} className="flex items-center gap-1.5 text-[11px] cursor-default"
+            onMouseEnter={() => setHover(idx)} onMouseLeave={() => setHover(null)}
+            style={{ opacity: hover == null || hover === idx ? 1 : 0.5, transition: 'opacity .15s' }}>
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: PALETTE[idx % PALETTE.length] }} />
             <span className="truncate" style={{ color: colors.inkSubtle }}>{item.label}</span>
             <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{item.value.toLocaleString()}</span>

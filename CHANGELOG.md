@@ -135,6 +135,17 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
+### Improved (live, interactive graphs across the UI)
+- **Domain analytics charts are now interactive** (the bar / funnel / donut used
+  across all 7 department analytics): hover to highlight a series and dim the rest,
+  with a contextual tooltip — % of total on bars, stage-to-stage conversion on the
+  recruiting funnel, and share-of-total on the donut (with the center value
+  switching to the hovered slice). Bars/segments animate in.
+- **Sparklines feel live**: the "present moment" marker pulses, and hovering the
+  trend reveals a crosshair + the value at any point (used on the Dashboard's
+  safe-autonomy trend). This complements the already-interactive Precog forecast,
+  Causal Discovery graph, Wargame resilience gauge, and Time Machine scrubber.
+
 ### Added (v4 Signature IP — Autonomy Wargaming, IP-4)
 - **Adversarial resilience simulation.** New `services/wargame.py` stresses the twin
   with a CASCADE of shocks (named playbooks: supply shock, talent crisis, cyber
