@@ -113,8 +113,12 @@ async def _optional_narrative(tenant_id: str, goal: str, steps: list[dict]) -> O
             prompt=(f"Mission goal: {goal}\nPlanned steps: {plan_txt}\n"
                     "In 2 sentences, explain why this ordered plan achieves the goal "
                     "and where human review is warranted. Plain text."),
-            # Decorative narrative only (NOT a governance decision) -> nano tier.
-            model_tier="nano", max_tokens=180,
+            # Runs on the resident 'fast' model. (A 'nano' 1.5b tier exists for
+            # decorative text, but on a 6GB-VRAM box it cannot co-reside with the
+            # 7b — loading it evicts the 7b and forces a swap on the next decision,
+            # so routing here is net-negative. Use nano only where a second model
+            # has VRAM headroom.)
+            model_tier="fast", max_tokens=180,
         ), timeout=45)
         text = res if isinstance(res, str) else res.get("content")
         if text and "fake_llm" not in text and "simulated" not in text.lower():

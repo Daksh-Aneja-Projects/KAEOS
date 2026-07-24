@@ -29,12 +29,18 @@ Dev box: i5-13450HX (16 threads), 15.7GB RAM (~3.7GB free), **RTX 3050 Laptop 6G
   (3b/phi4-mini would evict the 7b). Co-residency requires `OLLAMA_MAX_LOADED_MODELS=2`
   + a long `OLLAMA_KEEP_ALIVE` (both set persistently, User scope; activates on next
   Ollama restart).
-- **Verdict:** do NOT split the DECISION-PATH tiers on this hardware (thrash + quality
-  risk). Use the lighter `nano` (1.5b) tier ONLY for genuinely non-reasoning, off-path
-  decorative text (e.g. the mission plan narrative — already wired to `nano`). The
-  real safe LLM win here is **eliminating repeat calls via caching** (embedding cache
-  shipped; compliance caching intentionally NOT done — a verdict depends on context, so
-  caching it could rubber-stamp a changed context).
+- **VERDICT (tested 2026-07-25, definitive):** restarted Ollama with
+  `OLLAMA_MAX_LOADED_MODELS=2` and warmed both — `ollama ps` showed **only one model
+  resident**: loading the 1.5b **evicted** the 4.33GB 7b. So on this 6GB card the
+  7b + a helper genuinely do NOT co-reside (usable VRAM after iGPU/display is < 5.5GB).
+  Therefore tier-splitting to nano would **swap-thrash** and is net-negative — do NOT
+  route any call to `nano` on this box (the mission narrative was reverted to the
+  resident `fast`/7b model). The `nano` tier definition stays for hardware that has the
+  VRAM headroom. **The real safe LLM wins here are: eliminating repeat calls via
+  caching (embedding cache shipped; compliance caching intentionally NOT done — a
+  verdict depends on context, so caching it could rubber-stamp a changed context), and
+  moving long work off the request (async missions shipped).** Bigger model-level gains
+  need more VRAM (a card that fits 7b + a 3b, or a single 3b if a quality A/B passes).
 
 ## Phase 1 — Right-size the model tiers (biggest, cheapest win — hardware-gated, see above)
 Today ALL tiers point at `qwen2.5-coder:7b` (`llm_router.py:119-123`), including "fast" and
