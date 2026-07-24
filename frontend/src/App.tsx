@@ -80,8 +80,9 @@ type NavSection = { title: string; items: NavItem[]; collapsed?: boolean };
 type NavItem = { path: string; label: string; icon: React.ElementType; badge?: string; adminOnly?: boolean };
 
 const WORKFORCE_NAV: NavItem[] = [
-  { path: '/getting-started', label: 'Getting Started', icon: Compass },
+  // Daily-use first: the dashboard and the user's personal inbox lead.
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/my-work', label: 'My Work', icon: Briefcase },
   // Departments (what you run) → Marketplace (browse & add) → Deploy wizard is
   // reached from a marketplace pack, so it's a flow, not a standalone nav item.
   { path: '/departments', label: 'Departments', icon: Building2 },
@@ -89,8 +90,9 @@ const WORKFORCE_NAV: NavItem[] = [
   { path: '/integrations', label: 'Integrations', icon: Plug },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/pulse', label: 'Org Pulse', icon: Activity },
-  { path: '/my-work', label: 'My Work', icon: Briefcase },
   { path: '/automation', label: 'Automation', icon: Zap },
+  // Onboarding lives at the bottom (one-time, not daily).
+  { path: '/getting-started', label: 'Getting Started', icon: Compass },
 ];
 
 // Department sub-sections are navigated via each department page's in-view tabs
@@ -98,12 +100,15 @@ const WORKFORCE_NAV: NavItem[] = [
 // old sidebar/top-bar navigation duplication.
 
 const PLATFORM_NAV: NavItem[] = [
-  { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
-  { path: '/platform/onboarding', label: 'Client Onboarding', icon: UserPlus, adminOnly: true },
-  { path: '/platform/reality', label: 'Reality Experience', icon: Rocket },
+  // Daily-use first.
   { path: '/platform/knowledge', label: 'Knowledge', icon: Database },
   { path: '/platform/agents', label: 'Agents', icon: Bot },
   { path: '/platform/decisions', label: 'Decisions', icon: Activity },
+  // Tooling next.
+  { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
+  { path: '/platform/reality', label: 'Reality Experience', icon: Rocket },
+  // Admin/setup last.
+  { path: '/platform/onboarding', label: 'Client Onboarding', icon: UserPlus, adminOnly: true },
   { path: '/platform/users', label: 'User Management', icon: Shield, adminOnly: true },
   { path: '/platform/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -568,7 +573,6 @@ function Shell() {
                 {/* OPERATIONS DEPARTMENT */}
                 {/* Engineering & IT Ops - the largest slice of enterprise AI spend */}
                 <Route path="/departments/engineering" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="services" /></ThemeAdapter>} />
-                <Route path="/departments/engineering/services" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="services" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/pull-requests" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="pull-requests" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/deployments" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="deployments" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/incidents" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="incidents" /></ThemeAdapter>} />
@@ -599,8 +603,17 @@ function Shell() {
                 <Route path="/platform/users" element={<ThemeAdapter><UserManagement /></ThemeAdapter>} />
                 <Route path="/platform/settings" element={<ThemeAdapter><SettingsView domain={domain} /></ThemeAdapter>} />
 
-                {/* Fallback */}
-                <Route path="*" element={<ThemeAdapter><WorkforceDashboard domain={domain} /></ThemeAdapter>} />
+                {/* Fallback — surface broken links instead of silently rendering
+                    the dashboard (which used to mask 404s). */}
+                <Route path="*" element={
+                  <ThemeAdapter>
+                    <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
+                      <div className="text-[48px] font-bold opacity-20">404</div>
+                      <div className="text-[15px] font-semibold">Page not found</div>
+                      <NavLink to="/" className="text-[13px] underline opacity-70">Back to Dashboard</NavLink>
+                    </div>
+                  </ThemeAdapter>
+                } />
               </Routes>
             </Suspense>
           </ErrorBoundary>
