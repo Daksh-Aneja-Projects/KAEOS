@@ -25,6 +25,25 @@ Through-line: **every phase raises the safe-autonomy-rate or the value of an aut
 
 ---
 
+## THE RULE — every capability extends an existing surface (no new duplicate nav)
+
+Hard constraint learned the hard way: a new capability must **live inside a surface KAEOS already has**, never as a parallel page/tab that duplicates an existing one. Before building any v3 UI, confirm it against this surface map. If a capability's insight overlaps an existing page, it is a *section on that page*, not a new nav item.
+
+| v3 capability | Extends this EXISTING surface (no new top-level nav) |
+|---|---|
+| 1. System-of-Record actuation | **Decisions view** — an "Actions" ledger *beside* the Provenance (decision) ledger; connector write-back status on the existing **Integrations** page |
+| 2. Outcome-intelligence loop | **Dashboard** (impact/ROI row) + **Decisions → Feedback & Evolution** tab (outcomes feed the timeline) |
+| 3. Cross-domain Missions | **Agents view** — a "Missions" tab beside Agent Deployment (goal-level orchestration of the same agents) |
+| 4. Enterprise Flight Simulator | **Reality Experience** (Platform) — upgrade the existing what-if/shock surface into the real simulator; do NOT add a new page |
+| 5. Sense-Decide-Act event mesh | **Org Pulse** — a "Signals & Responses" section on the existing pulse surface |
+| 6. Regulatory & Risk autopilot | **Decisions → Compliance** tab — upgrade the existing Compliance dashboard in place |
+| 7. Trust & Autonomy Dial | **Dashboard** (fallout — DONE) + **Settings → Platform** (the autonomy dial as a platform setting) |
+| 8. Omnipresence & ecosystem | Extend the **Copilot** (proactive/multi-channel) + external Slack/Teams (no in-app nav) + the existing **Marketplace** (`/marketplace`) |
+
+**Guard**: no v3 work adds a sidebar item or a duplicate tab. If it needs a home, it is a section/tab inside the mapped surface. Each PR runs the de-dup check (no two components sharing a primary `api.*` fingerprint).
+
+---
+
 ## Phase 0 — Anti-duplication baseline (DO NOT rebuild)
 
 Already real in KAEOS; new work *extends* these, never re-implements them:
