@@ -121,7 +121,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
       {/* Row 2: Agent Feed + Pioneer Intelligence + Cost */}
       <div className="grid grid-cols-3 gap-4">
         {/* Active Agent Feed - from api.getActivityFeed() */}
-        <div style={card}>
+        <div style={card} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <Activity className="w-4 h-4" style={{ color: colors.primary }} /> Agent Consciousness Stream
@@ -129,7 +129,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
             <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
               style={{ background: '#22c55e15', color: '#22c55e' }}>LIVE</span>
           </div>
-          <div className="space-y-2 max-h-52 overflow-y-auto">
+          <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
             {feed.slice(0, 8).map((e: any, i: number) => {
               const sevColor = e.severity === 'critical' ? '#ef4444' : e.severity === 'warning' ? '#f59e0b' : colors.primary;
               return (
@@ -152,7 +152,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
         </div>
 
         {/* Pioneer Intelligence - FROM cockpit API, NOT HARDCODED */}
-        <div style={card}>
+        <div style={card} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <Globe className="w-4 h-4" style={{ color: '#f59e0b' }} /> Pioneer Intelligence
@@ -161,7 +161,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               {pioneerAlerts.length > 0 ? `${pioneerAlerts.length} signals` : 'No signals'}
             </span>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 flex-1 min-h-0 overflow-y-auto">
             {pioneerAlerts.length === 0 ? (
               <BrainEmpty
                 title="No external intelligence signals."
@@ -191,46 +191,86 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
         </div>
 
         {/* Cost Governor / ROI - FROM cost API, NO FALLBACK NUMBERS */}
-        <div style={card}>
+        <div style={card} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <DollarSign className="w-4 h-4" style={{ color: '#22c55e' }} /> Cost & ROI Tracker
             </h3>
           </div>
           {!costData ? (
-            <BrainEmpty title="No cost telemetry available." action="Execute agents to generate cost data." icon={DollarSign} />
+            <div className="flex-1 flex items-center justify-center">
+              <BrainEmpty title="No cost telemetry available." action="Execute agents to generate cost data." icon={DollarSign} />
+            </div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: colors.canvas }}>
+            <div className="flex-1 flex flex-col justify-between gap-3">
+              {/* Budget ring + headline token/call volume */}
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: colors.canvas }}>
                 <div>
                   <div className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Token Budget Used</div>
-                  <div className="text-[20px] font-bold" style={{ color: colors.ink }}>
+                  <div className="text-[22px] font-bold" style={{ color: colors.ink }}>
                     {costData.budget?.usage_pct ?? 0}%
+                  </div>
+                  <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                    {(costData.budget?.token_used ?? 0).toLocaleString()} / {(costData.budget?.token_limit ?? 0).toLocaleString()} tokens
                   </div>
                 </div>
                 <div className="w-16 h-16 relative">
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     <circle cx="50" cy="50" r="42" fill="none" stroke={colors.hairline} strokeWidth="6" />
                     <circle cx="50" cy="50" r="42" fill="none" stroke="#22c55e" strokeWidth="6"
-                      strokeDasharray={`${(costData.budget?.usage_pct ?? 0) * 2.64} 264`} />
+                      strokeDasharray={`${Math.max(1.5, (costData.budget?.usage_pct ?? 0) * 2.64)} 264`} strokeLinecap="round" />
                   </svg>
                 </div>
               </div>
+
+              {/* Live volume: tokens + LLM calls (last 24h) */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
+                  <div className="text-[18px] font-bold">{(costData.total_tokens ?? 0).toLocaleString()}</div>
+                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Tokens (24h)</div>
+                </div>
+                <div className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
+                  <div className="text-[18px] font-bold">{(costData.total_events ?? 0).toLocaleString()}</div>
+                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>LLM Calls (24h)</div>
+                </div>
+              </div>
+
+              {/* Per-tier live breakdown — where the model spend goes */}
+              {costData.by_tier && Object.keys(costData.by_tier).length > 0 && (() => {
+                const tiers = Object.entries(costData.by_tier as Record<string, any>)
+                  .filter(([, v]) => (v?.tokens ?? 0) > 0)
+                  .sort((a, b) => (b[1]?.tokens ?? 0) - (a[1]?.tokens ?? 0));
+                const maxTok = Math.max(1, ...tiers.map(([, v]) => v?.tokens ?? 0));
+                const tierColor: Record<string, string> = { reasoning: '#8b5cf6', fast: '#3b82f6', classification: '#f59e0b', embedding: '#22c55e', unspecified: colors.inkSubtle };
+                return (
+                  <div className="p-2.5 rounded-lg space-y-1.5" style={{ background: colors.canvas }}>
+                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (tokens · calls)</div>
+                    {tiers.map(([name, v]) => (
+                      <div key={name} className="flex items-center gap-2">
+                        <span className="text-[10px] w-20 truncate capitalize" style={{ color: colors.ink }}>{name}</span>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                          <div className="h-full rounded-full" style={{ width: `${((v?.tokens ?? 0) / maxTok) * 100}%`, background: tierColor[name] || colors.primary }} />
+                        </div>
+                        <span className="text-[9px] font-mono w-24 text-right" style={{ color: colors.inkSubtle }}>
+                          {(v?.tokens ?? 0).toLocaleString()} · {v?.calls ?? 0}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Spend (local models run free — honest $0, not a fabricated cost) */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2 rounded-lg text-center" style={{ background: colors.canvas }}>
-                  <div className="text-[16px] font-bold">${(costData.total_cost_usd ?? 0).toFixed(2)}</div>
+                  <div className="text-[15px] font-bold">${(costData.total_cost_usd ?? 0).toFixed(2)}</div>
                   <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Cost (24h)</div>
                 </div>
                 <div className="p-2 rounded-lg text-center" style={{ background: colors.canvas }}>
-                  <div className="text-[16px] font-bold">${(costData.avg_cost_per_task ?? 0).toFixed(3)}</div>
+                  <div className="text-[15px] font-bold">${(costData.avg_cost_per_task ?? 0).toFixed(3)}</div>
                   <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Avg/Task</div>
                 </div>
               </div>
-              {costData.cost_reduction_pct != null && (
-                <div className="text-[10px] text-center" style={{ color: '#22c55e' }}>
-                  ↓ {costData.cost_reduction_pct}% cost reduction vs baseline
-                </div>
-              )}
             </div>
           )}
         </div>

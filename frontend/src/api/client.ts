@@ -1015,6 +1015,16 @@ export const api = {
     request<any>(`/outcomes/${executionId}`, { method: 'POST', body: JSON.stringify({ outcome }) }),
   getDecisionFeed: () => request<any>('/hitl/decision-feed'),
 
+  // Cross-Domain Missions — goal decomposed into a governed DAG across departments
+  listMissions: (limit = 50) => request<any>(`/missions?limit=${limit}`),
+  getMission: (id: string) => request<any>(`/missions/${id}`),
+  createMission: (goal: string, budget_usd?: number | null) =>
+    request<any>('/missions', { method: 'POST', body: JSON.stringify({ goal, budget_usd: budget_usd ?? null }) }),
+  advanceMission: (id: string) => request<any>(`/missions/${id}/advance`, { method: 'POST' }),
+  resolveMissionHitl: (id: string, seq: number, approved: boolean) =>
+    request<any>(`/missions/${id}/steps/${seq}/hitl`, { method: 'POST', body: JSON.stringify({ approved }) }),
+  abortMission: (id: string) => request<any>(`/missions/${id}/abort`, { method: 'POST' }),
+
   // SoR Actuation — the Actions Ledger (what KAEOS DID, reversible) + drift
   getActionsLedger: (limit = 50) => request<any>(`/actuation/ledger?limit=${limit}`),
   getActuationDrift: () => request<any>('/actuation/drift'),

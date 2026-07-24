@@ -1,10 +1,11 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Rocket, Wrench, ShoppingBag, Activity, Swords, CircuitBoard } from 'lucide-react';
+import { Rocket, Wrench, ShoppingBag, Activity, Swords, CircuitBoard, Target } from 'lucide-react';
 
 // "Agent Fleet" (AgentMonitor) read the same skills+executions as the Knowledge
 // "Skill Builder" (SkillsRegistry) — the single home for skills & their runs.
 const AgentFactory = lazy(() => import('../views/AgentFactory'));
+const MissionControl = lazy(() => import('../pages/MissionControl'));
 const MCPToolManager = lazy(() => import('../pages/MCPToolManager'));
 const Marketplace = lazy(() => import('../pages/Marketplace'));
 const ConflictArena = lazy(() => import('../pages/ConflictArena'));
@@ -17,6 +18,7 @@ export default function AgentsView({ domain }: { domain: string }) {
 
   const tabs = [
     { id: 'deployment', label: 'Agent Deployment', icon: Rocket },
+    { id: 'missions', label: 'Missions', icon: Target },
     { id: 'ooda', label: 'OODA Monitor', icon: Activity },
     { id: 'infrastructure', label: 'Infrastructure', icon: CircuitBoard },
     { id: 'mcp', label: 'MCP Tools', icon: Wrench },
@@ -49,6 +51,7 @@ export default function AgentsView({ domain }: { domain: string }) {
       <div className="flex-1 overflow-y-auto">
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Agents Module...</div>}>
           {activeTab === 'deployment' && <AgentFactory domain={domain} />}
+          {activeTab === 'missions' && <MissionControl domain={domain} />}
           {activeTab === 'ooda' && <OODAMonitor domain={domain} />}
           {activeTab === 'infrastructure' && <InfrastructureDashboard domain={domain} />}
           {activeTab === 'mcp' && <MCPToolManager />}

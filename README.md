@@ -266,6 +266,12 @@ records how past decisions actually turned out (GOOD/NEUTRAL/BAD). Each mark fee
 executing skill's confidence and splits real-world quality by autonomous-vs-human, so autonomy is
 earned against reality, not only against labels at decision time (`GET /outcomes/impact`).
 
+Autonomy that only pursues tasks is a tool; autonomy that pursues **goals** is an operating system.
+**Mission Control** (Agents view) turns a plain-language goal into a governed plan across departments:
+each step is grounded in a real skill, runs through the 7 gates on the live model, routes
+high-consequence departments to a human checkpoint, respects a budget, and streams a mission ledger.
+Autonomous steps run on their own; the ones that need you pause for approval.
+
 Autonomy that only recommends is a demo; autonomy that **acts** is the product. The **Actions Ledger**
 (Decisions, beside the provenance ledger) records every governed write KAEOS made to a system of record
 - idempotent on retry, reversible via a compensator, and provenance-chained. Agents actuate through

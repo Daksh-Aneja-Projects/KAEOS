@@ -320,7 +320,13 @@ class AgentExecutor:
         _skill_blob = " ".join(str(x).lower() for x in _skill_tags) + " " + str(skill.get("skill_id", "")).lower()
         _high_consequence = any(t in _skill_blob for t in _settings.HIGH_CONSEQUENCE_TAGS)
 
-        if _high_consequence or effective_confidence < _threshold:
+        # A mission step that already cleared its mission-level HITL checkpoint
+        # carries an explicit human approval, so Gate 3 must not re-pause it — the
+        # human gate has already been satisfied upstream. This applies ONLY to
+        # pre-approved mission steps; every other path still gates normally.
+        _pre_approved = bool(context.get("hitl_pre_approved"))
+
+        if not _pre_approved and (_high_consequence or effective_confidence < _threshold):
             if _high_consequence:
                 logger.info(f"[Gate3] high-consequence action -> forcing HITL: {skill.get('skill_id')}")
             gate_decision = await self.hitl.request_human_confirmation(skill, context)

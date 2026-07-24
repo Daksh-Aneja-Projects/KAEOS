@@ -97,6 +97,43 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — Cross-Domain Autonomous Missions, Phase 3)
+- **Autonomy that PURSUES goals.** A plain-language goal ("close the quarter: review
+  the vendor contract, approve the budget, brief support") is decomposed into a
+  governed DAG of steps, each **grounded in a real ACTIVE skill** across departments
+  (canonical department aliasing so `human_resources`/`customer_support` match), with
+  a real LLM (local qwen) narrative explaining the plan. New `missions` +
+  `mission_steps` + `mission_events` tables (migration 0010, RLS). Service:
+  `services/missions/` (planner + engine). API: `POST /missions` (plan),
+  `/{id}/advance`, `/{id}/steps/{seq}/hitl`, `/{id}/abort`, plus list/detail.
+- **Governed, one-step-at-a-time execution.** Each step runs as a governed advisory
+  action through the full 7-gate `AgentExecutor` (a mission is goal-level
+  orchestration/planning; transactional compliance + write-back stay in Phase 1 with
+  real entity data). Per-department HITL from the real Autonomy Dial policy, a budget
+  gate, a mission ledger, and honest exception handling: a compliance block on an
+  autonomous step **escalates to a human**, a failed step is flagged as an exception
+  (not a mission-wide crash), and independent steps keep progressing. Abort reverses
+  any actuations the mission caused (Phase 1 compensators).
+- **Mission Control UI** in the Agents view (a tab beside Agent Deployment, no new
+  nav): launch a goal, watch the plan DAG with per-step department/confidence/HITL
+  status, approve/reject checkpoints inline, a budget meter, and the live mission
+  ledger. Verified end-to-end on the real qwen model: a 2-department mission planned,
+  ran sales autonomously, paused support for approval, and completed with real
+  model-authored recommendations. Tested (9 orchestration tests: plan grounding,
+  budget gate, HITL approve/reject, compliance escalation, failure-as-exception,
+  abort).
+- **Run on real models by default.** Confirmed the LLM router uses the local Ollama
+  `qwen2.5-coder:7b` for every gate whenever Ollama is reachable (simulated output is
+  only a fail-closed fallback); the dev backend now runs without `ALLOW_SIMULATED_LLM`
+  so governance decisions are made by the real model.
+
+### Improved
+- **Executive Cockpit layout.** The Agent Consciousness Stream, Pioneer Intelligence,
+  and Cost & ROI cards now fill their row evenly (a capped feed height left dead
+  space). The **Cost & ROI Tracker** gained live metrics: 24h token + LLM-call volume,
+  a per-model-tier breakdown (reasoning/fast/classification tokens · calls) from real
+  telemetry, and the budget ring — all real, with honest $0 cost for local models.
+
 ### Added (v3 — System-of-Record Actuation, Phase 1)
 - **Autonomy that DOES: governed, idempotent, reversible write-back.** New
   `services/actuation/` Actuator applies a mutation to a real backing

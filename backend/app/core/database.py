@@ -28,6 +28,7 @@ _model_modules = [
     "app.models.enterprise_graph",
     "app.models.intelligence_metrics",
     "app.models.actuation",
+    "app.models.missions",
     "app.workforce.models.core",
     "app.workforce.models.domain_pack",
     "app.workforce.models.integration",
