@@ -105,6 +105,16 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   `GET /outcomes/impact` aggregates the distribution, autonomous-vs-human decision
   quality, and per-skill outcome quality. New `outcome_records` table
   (migration 0008, RLS). Tested (confidence feedback + impact split).
+- **Outcome Intelligence panel (UI).** The loop is now closed in the product:
+  Decisions → Feedback & Evolution gains an Outcome Intelligence panel that shows
+  the live good/neutral/bad distribution and the autonomous-vs-human good-rate
+  split (from `GET /outcomes/impact`), plus a recorder that lists recent HITL
+  decisions and lets an operator mark each GOOD/NEUTRAL/BAD in one click; the mark
+  posts the outcome and refreshes the impact in place. No new nav (extends the
+  existing Feedback & Evolution surface). Verified end-to-end in the browser
+  (recording a mark moves the distribution and the human good-rate live). Also
+  fixed a pre-existing NaN in the evolution timeline when the KB score trend is
+  non-numeric ("held steady" instead of "declined NaN%").
 
 ### Added (v3 — Autonomy Dial, Phase 7)
 - **The Autonomy Dial** — executives set a per-department risk appetite (the

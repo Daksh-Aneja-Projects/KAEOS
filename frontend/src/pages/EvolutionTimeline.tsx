@@ -23,14 +23,35 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
   const [executions, setExecCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<EvolutionEvent[]>([]);
+  const [outcomeImpact, setOutcomeImpact] = useState<any>(null);
+  const [decisions, setDecisions] = useState<any[]>([]);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+
+  const recordOutcomeFor = async (executionId: string, outcome: 'GOOD' | 'BAD' | 'NEUTRAL') => {
+    setRecordingId(executionId);
+    try {
+      await api.recordOutcome(executionId, outcome);
+      setDecisions(prev => prev.map(d => (d.execution_id === executionId ? { ...d, _recorded: outcome } : d)));
+      const impact = await api.getOutcomeImpact(30);
+      setOutcomeImpact(impact);
+    } catch (e) {
+      console.error('Record outcome failed', e);
+    } finally {
+      setRecordingId(null);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [h, feed] = await Promise.allSettled([
+      const [h, feed, impact, dfeed] = await Promise.allSettled([
         api.getHealth(),
         api.getActivityFeed(50, false),
+        api.getOutcomeImpact(30),
+        api.getDecisionFeed(),
       ]);
+      if (impact.status === 'fulfilled') setOutcomeImpact(impact.value);
+      if (dfeed.status === 'fulfilled') setDecisions(dfeed.value?.decisions || []);
 
       if (h.status === 'fulfilled') {
         setHealth(h.value);
@@ -58,12 +79,17 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
 
         // Score trend
         if (hv.score_trend) {
+          const trendNum = parseFloat(hv.score_trend);
+          const hasDelta = Number.isFinite(trendNum) && trendNum !== 0;
+          const title = !hasDelta
+            ? 'KB overall score held steady'
+            : `KB overall score ${trendNum > 0 ? 'improved' : 'declined'}`;
           synthesized.push({
             id: 'score-trend',
             type: 'confidence_update',
-            title: `KB overall score ${hv.score_trend.startsWith('+') ? 'improved' : 'declined'}`,
-            description: `Overall knowledge base health moved ${hv.score_trend} to ${hv.overall_score}/100.`,
-            delta: parseFloat(hv.score_trend) / 100,
+            title,
+            description: `Overall knowledge base health is ${hv.overall_score}/100${hasDelta ? ` (moved ${hv.score_trend})` : ' (stable)'}.`,
+            delta: hasDelta ? trendNum / 100 : undefined,
             timestamp: now.toISOString(),
           });
         }
@@ -235,6 +261,84 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
             </React.Fragment>
           ))}
         </div>
+      </div>
+
+      {/* Outcome Intelligence — the decision → outcome learning loop */}
+      <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        <div className="flex items-center gap-2 mb-1">
+          <BarChart3 className="w-4 h-4" style={{ color: colors.primary }} />
+          <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Outcome Intelligence</span>
+        </div>
+        <p className="text-[12px] mb-4" style={{ color: colors.inkSubtle }}>
+          How decisions turned out in reality, and how autonomous vs human decisions compare. Recording an outcome feeds back into the skill's confidence.
+        </p>
+        {outcomeImpact && outcomeImpact.total > 0 ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Good', value: outcomeImpact.distribution?.good ?? 0, color: '#22c55e' },
+                { label: 'Neutral', value: outcomeImpact.distribution?.neutral ?? 0, color: '#8b5cf6' },
+                { label: 'Bad', value: outcomeImpact.distribution?.bad ?? 0, color: '#ef4444' },
+              ].map(s => (
+                <div key={s.label} className="p-3 rounded-lg text-center" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                  <div className="text-[22px] font-bold" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Autonomous decisions', d: outcomeImpact.autonomous },
+                { label: 'Human-gated decisions', d: outcomeImpact.human },
+              ].map(x => (
+                <div key={x.label} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{x.label}</div>
+                  <div className="text-[18px] font-bold" style={{ color: colors.ink }}>
+                    {x.d?.good_rate == null ? '--' : `${(x.d.good_rate * 100).toFixed(0)}%`}
+                    <span className="text-[11px] font-normal ml-1" style={{ color: colors.inkSubtle }}>good ({x.d?.total ?? 0})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-[12px] italic" style={{ color: colors.inkSubtle }}>No outcomes recorded yet. Mark a recent decision below to start the loop.</div>
+        )}
+
+        {decisions.length > 0 && (
+          <div className="mt-5">
+            <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: colors.inkSubtle }}>Record an outcome</div>
+            <div className="space-y-2">
+              {decisions.slice(0, 6).map((d: any) => (
+                <div key={d.execution_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{d.skill_id || d.task_intent || d.execution_id}</div>
+                    <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{d.status}</div>
+                  </div>
+                  {d._recorded ? (
+                    <span className="text-[11px] font-semibold" style={{ color: d._recorded === 'GOOD' ? '#22c55e' : d._recorded === 'BAD' ? '#ef4444' : '#8b5cf6' }}>
+                      {d._recorded} recorded
+                    </span>
+                  ) : (
+                    <div className="flex gap-1.5">
+                      {(['GOOD', 'NEUTRAL', 'BAD'] as const).map(o => {
+                        const c = o === 'GOOD' ? '#22c55e' : o === 'BAD' ? '#ef4444' : '#8b5cf6';
+                        return (
+                          <button key={o} disabled={recordingId === d.execution_id}
+                            onClick={() => recordOutcomeFor(d.execution_id, o)}
+                            className="px-2 py-1 rounded text-[10px] font-semibold transition-opacity"
+                            style={{ background: c + '18', color: c, opacity: recordingId === d.execution_id ? 0.5 : 1 }}>
+                            {o}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Timeline */}

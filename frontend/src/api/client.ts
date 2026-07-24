@@ -1009,6 +1009,12 @@ export const api = {
   // Safe-autonomy-rate (north-star) detail: rate + fallout breakdown + per-skill + time-series
   getSafeAutonomy: (days = 30) => request<any>(`/metrics/safe-autonomy?days=${days}`),
 
+  // Outcome Intelligence Loop — record a decision's real-world outcome + read the impact
+  getOutcomeImpact: (days = 30) => request<any>(`/outcomes/impact?days=${days}`),
+  recordOutcome: (executionId: string, outcome: 'GOOD' | 'BAD' | 'NEUTRAL') =>
+    request<any>(`/outcomes/${executionId}`, { method: 'POST', body: JSON.stringify({ outcome }) }),
+  getDecisionFeed: () => request<any>('/hitl/decision-feed'),
+
   // ─── Finance Department APIs ───
   getFinanceDashboard: () => request<any>('/finance/dashboard'),
   getFinanceVendors: () => request<any[]>('/finance/vendors'),

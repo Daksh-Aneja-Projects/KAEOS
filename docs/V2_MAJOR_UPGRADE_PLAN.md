@@ -9,6 +9,24 @@
 
 ---
 
+## Implementation status (living)
+
+Executed in tested, individually-committed increments on `main`. Backend unit suite green throughout; frontend build + Vitest green.
+
+| Phase | Status | Delivered |
+|---|---|---|
+| 1 — Foundation Discipline | ✅ complete | create_all gated; append-only state + migration 0006; 27 missing tables registered (216-table baseline); fake graph deleted, real-graph fitness/scorecard; RLS-safe prod compose |
+| 2 — Safety Hardening | ✅ complete | default-deny + enforcement test; HITL approver integrity; structural fairness gate; real audit-datum gate; PII fail-closed; vector-embedding erasure |
+| 3 — Durable/Scalable Exec | ◑ partial | deployment crash-recovery reaper (done). Durable job queue, k8s/Helm, shared Redis limiter, secrets mgr, observability-on, CD → remaining |
+| 4 — AI Foundry closed loop | ◑ partial | continuous mining automation (4D, done). Wire orphaned catalog (4A), pluggable trainer (4C), multi-objective eval (4E) → remaining |
+| 5 — Safe-autonomy-rate | ✅ core | live computed metric + explainable breakdown + per-skill + time-series at `GET /metrics/safe-autonomy`. Materialized rollup/alerts → optional follow-up |
+| 6 — Frontend v2 | ◑ partial | Vitest+RTL harness wired to CI (done). TanStack Query, OpenAPI codegen, client resilience, App.tsx decomposition → remaining |
+| 7 — Verification & Release | ◑ ongoing | full regression each milestone; always-on Copilot verified live. Full-fidelity e2e + release tag → remaining |
+
+Also shipped: the **always-on KAEOS Copilot** (persistent dock, real auth, fixed SSE), verified end-to-end in a running browser.
+
+---
+
 ## The Thesis (why this is the right v2.0)
 
 KAEOS's crown jewel is **real, production-grade governance**: the 7-gate `AgentExecutor` pipeline is genuinely wired end-to-end (`backend/app/agents/runtime.py:215-447`), RLS is fail-closed and boot-verified (`core/rls.py`, `main.py:127-131`), cost metering is live (`llm_router.py:455-496`), and the AI Foundry eval→gated-promotion loop is **honest and ~70% real** (`services/foundry/model_evolution.py`) with a deliberate "no fake trainer" stance.

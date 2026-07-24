@@ -261,6 +261,10 @@ explainable fallout breakdown of routed-to-human / overridden / edited / failed,
 showing where autonomy leaks, and a daily time-series). It rises as verified rules accumulate - the
 compounding loop in one number. In the app the **Dashboard** surfaces the rate, its trend, the
 earned-autonomy skills, and the fallout breakdown (where autonomy fell out) - all in one place, live.
+The loop closes under **Decisions → Feedback & Evolution**, where an **Outcome Intelligence** panel
+records how past decisions actually turned out (GOOD/NEUTRAL/BAD). Each mark feeds back into the
+executing skill's confidence and splits real-world quality by autonomous-vs-human, so autonomy is
+earned against reality, not only against labels at decision time (`GET /outcomes/impact`).
 
 **What we deliberately do NOT report:** `hours_saved` and `cost_reduction` return `null`, with a note.
 They require a human-baseline duration and a loaded hourly rate per skill - tenant inputs KAEOS
