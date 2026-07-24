@@ -10,6 +10,12 @@ Thesis: harden the safety and ops substrate first (earn the right), then ship th
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
 ### Added
+- **Frontend test harness (Phase 6).** The frontend had zero tests; added Vitest
+  + jsdom + React Testing Library with a `test` script, a shared setup, and the
+  first suites (pure-util `toPct` + an `ErrorBoundary` render test). Wired
+  `npm test` into the CI `frontend-build` job so it gates merges. (The broader
+  frontend v2 work - server-state library, OpenAPI codegen, resilience - builds
+  on this harness.)
 - **Deployment crash recovery (Phase 3).** A leader-guarded scheduler job
   (`run_deployment_reaper`, every 15m) transitions deployments left stuck in a
   non-terminal state by a crashed/restarted worker to FAILED (with a recoverable
