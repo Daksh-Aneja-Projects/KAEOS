@@ -120,29 +120,40 @@ const DonutChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
     return `${PALETTE[idx % PALETTE.length]}${dim ? '55' : 'ff'} ${start}deg ${end}deg`;
   });
   const hv = hover != null ? chart.items[hover] : null;
+  const pct = (v: number) => ((v / (total || 1)) * 100);
   return (
-    <div className="flex items-center gap-4">
-      <div className="w-24 h-24 rounded-full shrink-0 relative transition-all" style={{
-        background: total > 0 ? `conic-gradient(${segments.join(', ')})` : colors.canvas,
-      }}>
-        <div className="absolute inset-3 rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
-          <span className="text-[13px] font-bold" style={{ color: hv ? PALETTE[(hover as number) % PALETTE.length] : colors.ink }}>
-            {hv ? hv.value.toLocaleString() : total.toLocaleString()}
-          </span>
-          {hv && <span className="text-[8px]" style={{ color: colors.inkSubtle }}>{((hv.value / (total || 1)) * 100).toFixed(0)}%</span>}
-        </div>
-      </div>
-      <div className="space-y-1 min-w-0">
-        {chart.items.map((item, idx) => (
-          <div key={item.label} className="flex items-center gap-1.5 text-[11px] cursor-default"
-            onMouseEnter={() => setHover(idx)} onMouseLeave={() => setHover(null)}
-            style={{ opacity: hover == null || hover === idx ? 1 : 0.5, transition: 'opacity .15s' }}>
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: PALETTE[idx % PALETTE.length] }} />
-            <span className="truncate" style={{ color: colors.inkSubtle }}>{item.label}</span>
-            <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{item.value.toLocaleString()}</span>
+    <div className="flex flex-col gap-5 h-full justify-center">
+      <div className="flex items-center gap-5">
+        <div className="w-28 h-28 rounded-full shrink-0 relative transition-all" style={{
+          background: total > 0 ? `conic-gradient(${segments.join(', ')})` : colors.canvas,
+        }}>
+          <div className="absolute inset-[14px] rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
+            <span className="text-[18px] font-bold leading-none" style={{ color: hv ? PALETTE[(hover as number) % PALETTE.length] : colors.ink }}>
+              {hv ? hv.value.toLocaleString() : total.toLocaleString()}
+            </span>
+            <span className="text-[8px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>
+              {hv ? `${pct(hv.value).toFixed(0)}% ${hv.label}` : 'total'}
+            </span>
           </div>
-        ))}
-        {chart.items.length === 0 && <p className="text-[11px]" style={{ color: colors.inkTertiary }}>No data yet</p>}
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-2.5">
+          {chart.items.map((item, idx) => (
+            <div key={item.label} className="cursor-default"
+              onMouseEnter={() => setHover(idx)} onMouseLeave={() => setHover(null)}
+              style={{ opacity: hover == null || hover === idx ? 1 : 0.5, transition: 'opacity .15s' }}>
+              <div className="flex items-center gap-1.5 text-[11px] mb-1">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: PALETTE[idx % PALETTE.length] }} />
+                <span className="truncate" style={{ color: colors.inkSubtle }}>{item.label}</span>
+                <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{item.value.toLocaleString()}</span>
+                <span className="text-[10px] w-9 text-right" style={{ color: colors.inkSubtle }}>{pct(item.value).toFixed(0)}%</span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.canvas }}>
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct(item.value)}%`, background: PALETTE[idx % PALETTE.length], filter: hover === idx ? 'brightness(1.15)' : undefined }} />
+              </div>
+            </div>
+          ))}
+          {chart.items.length === 0 && <p className="text-[11px]" style={{ color: colors.inkTertiary }}>No data yet</p>}
+        </div>
       </div>
     </div>
   );
@@ -223,14 +234,16 @@ const DomainAnalytics: React.FC<{ domain: string }> = ({ domain }) => {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {data.charts.map(chart => (
-          <div key={chart.key} className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          <div key={chart.key} className="rounded-xl p-5 flex flex-col" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
             <h3 className="text-[12px] font-semibold mb-4 flex items-center gap-1.5" style={{ color: colors.ink }}>
               <TrendingUp className="w-3.5 h-3.5" style={{ color: colors.inkSubtle }} />
               {chart.title}
             </h3>
-            {chart.type === 'funnel' ? <FunnelChart chart={chart} />
-              : chart.type === 'donut' ? <DonutChart chart={chart} />
-              : <BarChart chart={chart} />}
+            <div className="flex-1 flex flex-col justify-center">
+              {chart.type === 'funnel' ? <FunnelChart chart={chart} />
+                : chart.type === 'donut' ? <DonutChart chart={chart} />
+                : <BarChart chart={chart} />}
+            </div>
           </div>
         ))}
       </div>
