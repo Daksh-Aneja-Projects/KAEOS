@@ -183,3 +183,4 @@ marketing/qc_*.png
 # ─── Local working-tree clutter (stale patch exports of committed work; unreferenced dev screenshots) ───
 /*.patch
 frontend/src/assets/preview-screenshot*.png
+backend/_*.txt
