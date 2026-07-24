@@ -195,11 +195,29 @@ async def erase_subject(
             affected["hr_employee_documents"] = int(res.rowcount or 0)
 
     await db.commit()
+
+    # ── Vector embeddings (semantic memory) ───────────────────────────────
+    # Delete any embedding that references the subject so it does not survive in
+    # the vector layer. Best-effort: a vector-store outage must not abort the DB
+    # erasure that already committed.
+    embeddings_deleted = 0
+    try:
+        from app.core.polystore.vector_store import get_vector_store
+        store = get_vector_store()
+        embeddings_deleted = await store.delete_subject(
+            tenant_id,
+            subject_ids=[employee_id] if employee_id else [],
+            subject_texts=[email] if email else [],
+        )
+    except Exception as exc:
+        logger.warning("[PrivacyErasure] vector-embedding purge skipped: %s", exc)
+
     total = sum(affected.values())
     logger.info(
         "[PrivacyErasure] erased subject (employee_id=%s email=%s) for tenant %s: "
-        "%d rows anonymised across %d tables",
+        "%d rows anonymised across %d tables, %d embeddings deleted",
         employee_id, "<redacted>" if email else None, tenant_id, total, len(affected),
+        embeddings_deleted,
     )
     return {
         "tenant_id": tenant_id,
@@ -207,9 +225,11 @@ async def erase_subject(
         "matched_by_email": bool(email),
         "total_rows_anonymised": total,
         "tables": affected,
+        "embeddings_deleted": embeddings_deleted,
         "note": (
-            "Direct identifiers tombstoned on main HR tables. Object-storage blobs "
-            "(resume/document files), vector embeddings, and hash-chained ledger "
-            "references are retained by design; delete those via their own layers."
+            "Direct identifiers tombstoned on main HR tables and subject embeddings "
+            "purged from the vector store. Object-storage blobs (resume/document "
+            "files) and hash-chained ledger references are retained by design; "
+            "delete blobs via the storage layer."
         ),
     }

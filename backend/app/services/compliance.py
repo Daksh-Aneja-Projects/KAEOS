@@ -95,13 +95,24 @@ class ComplianceEngine:
         return violations
 
     def enforce_audit_requirements(self, skill_tags: List[str], execution_outcome: Dict[str, Any]) -> bool:
-        """Ensures post-execution audit requirements are met."""
+        """Ensure post-execution audit requirements are met.
+
+        Not a checkbox: for each regulated tag we require BOTH the "logged" flag
+        AND the actual audited datum to be present in the outcome. A flag set
+        without the underlying value (a financial amount for SOX, a lawful basis
+        for GDPR/HIPAA) does not satisfy the audit — the trail must carry the fact,
+        not just an assertion that it was logged.
+        """
         for tag in skill_tags:
             if tag == "SOX":
                 if not execution_outcome.get("financial_amount_logged"):
                     return False
-            if tag == "GDPR":
+                if execution_outcome.get("amount") in (None, ""):
+                    return False
+            if tag in ("GDPR", "HIPAA", "CCPA"):
                 if not execution_outcome.get("data_processing_basis_logged"):
+                    return False
+                if not execution_outcome.get("legal_basis"):
                     return False
         return True
 

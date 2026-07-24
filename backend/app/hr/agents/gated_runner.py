@@ -78,7 +78,7 @@ async def run_gated_hr_skill(
     }
 
     # Gate 6 audit flags: derive from context, not unconditionally pre-set.
-    if "GDPR" in compliance_tags:
+    if any(t in compliance_tags for t in ("GDPR", "HIPAA", "CCPA")):
         ctx.setdefault("data_processing_basis_logged", bool(context.get("legal_basis")))
     if "SOX" in compliance_tags:
         ctx.setdefault("financial_amount_logged", bool(context.get("amount")))

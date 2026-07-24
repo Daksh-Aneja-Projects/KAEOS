@@ -33,7 +33,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   to the real polystore graph store, and `FitnessCalculator` / `ScorecardEngine`
   compute from the real graph instead of returning fixtures.
 
-### Changed (Phase 2 - Safety Hardening, partial)
+### Changed (Phase 2 - Safety Hardening)
 - HITL approvals record the authenticated principal, not a client-supplied
   (spoofable) approver name; unified into one `approver_identity` helper.
 - PII egress scrubbing fails closed under a data-residency policy
@@ -42,6 +42,11 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   protected-class) decision is assessed based on the skill's department, id,
   tags, and affected-entity type, so it can no longer skip the gate by omitting
   the `requires_fairness_assessment` flag (the flag still works as an override).
+- Post-execution audit gate (Gate 6) now requires the actual audited datum, not
+  just a "logged" flag: SOX needs the financial amount, GDPR/HIPAA/CCPA need a
+  lawful basis. A flag without the underlying value no longer passes.
+- GDPR erasure now purges the subject's embeddings from the vector store
+  (`VectorStore.delete_subject`), closing the vector-layer coverage gap.
 
 ### Fixed (security-critical)
 - `backend/docker-compose.prod.yml` connected the app as the DB **owner**, which

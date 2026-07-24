@@ -68,6 +68,22 @@ class VectorStore(ABC):
         """Patch a single key on a record's metadata JSON."""
 
     @abstractmethod
+    async def delete_subject(
+        self,
+        tenant_id: str,
+        *,
+        subject_ids: Optional[list[str]] = None,
+        subject_texts: Optional[list[str]] = None,
+    ) -> int:
+        """Delete every vector for ``tenant_id`` that references a data subject.
+
+        Matches any of ``subject_ids`` (e.g. employee/candidate id) or
+        ``subject_texts`` (e.g. an email) appearing in the record's metadata or
+        content. Returns the number of embeddings deleted. Used by GDPR Art.17
+        erasure so a subject's embeddings do not survive in the vector layer.
+        """
+
+    @abstractmethod
     async def health(self) -> dict[str, Any]:
         """Return ``{"backend": ..., "available": bool, ...}``."""
 
@@ -187,6 +203,24 @@ class SqliteVectorStore(VectorStore):
             )
             await session.commit()
 
+    async def delete_subject(self, tenant_id, *, subject_ids=None, subject_texts=None) -> int:
+        await self.initialize()
+        terms = [str(s) for s in (subject_ids or []) if s] + [str(s) for s in (subject_texts or []) if s]
+        if not terms:
+            return 0
+        clauses, params = [], {"tenant_id": tenant_id}
+        for i, term in enumerate(terms):
+            params[f"t{i}"] = f"%{term}%"
+            clauses.append(f"(metadata LIKE :t{i} OR content LIKE :t{i})")
+        where = " OR ".join(clauses)
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                text(f"DELETE FROM {_TABLE} WHERE tenant_id = :tenant_id AND ({where})"),  # nosec B608
+                params,
+            )
+            await session.commit()
+            return int(res.rowcount or 0)
+
     async def health(self) -> dict[str, Any]:
         try:
             await self.initialize()
@@ -302,6 +336,25 @@ class PgVectorStore(VectorStore):
                 {"key": key, "value": str(value), "id": vector_id},
             )
             await session.commit()
+
+    async def delete_subject(self, tenant_id, *, subject_ids=None, subject_texts=None) -> int:
+        await self.initialize()
+        terms = [str(s) for s in (subject_ids or []) if s] + [str(s) for s in (subject_texts or []) if s]
+        if not terms:
+            return 0
+        clauses, params = [], {"tenant_id": tenant_id}
+        for i, term in enumerate(terms):
+            params[f"t{i}"] = f"%{term}%"
+            # metadata is JSONB on Postgres; cast to text for substring match.
+            clauses.append(f"(metadata::text LIKE :t{i} OR content LIKE :t{i})")
+        where = " OR ".join(clauses)
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                text(f"DELETE FROM {_TABLE} WHERE tenant_id = :tenant_id AND ({where})"),  # nosec B608
+                params,
+            )
+            await session.commit()
+            return int(res.rowcount or 0)
 
     async def health(self) -> dict[str, Any]:
         try:
