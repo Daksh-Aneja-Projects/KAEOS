@@ -62,19 +62,20 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
     finally { setBusy(null); }
   };
 
-  // The engine advances one governed step per call (a real gated step can take a
-  // while on a live model). Loop until it stops progressing so the UI streams
-  // each step as it lands, then refresh the list.
+  // The backend runs the mission in the background (a real gated step can take a
+  // while on a live model). Kick it off, then POLL for live progress so the UI
+  // streams each step as it lands without blocking on a long request.
   const advance = async (id?: string) => {
     const mid = id || selected?.id;
     if (!mid) return;
     setBusy('advance');
     try {
-      let res = await api.advanceMission(mid);
+      let res = await api.advanceMission(mid);   // spawns the background runner, returns instantly
       setSelected(res);
       let guard = 0;
-      while (res?.status === 'RUNNING' && guard++ < 25) {
-        res = await api.advanceMission(mid);
+      while (res?.status === 'RUNNING' && guard++ < 160) {
+        await new Promise(r => setTimeout(r, 2500));
+        res = await api.getMission(mid);         // poll, don't re-drive
         setSelected(res);
       }
       await loadList();

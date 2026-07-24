@@ -15,7 +15,9 @@ from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.missions import Mission, MissionStep, MissionEvent
-from app.services.missions import plan_mission, advance_mission, abort_mission, resolve_hitl_step
+from app.services.missions import (
+    plan_mission, advance_mission, abort_mission, resolve_hitl_step, start_mission_run,
+)
 
 router = APIRouter(prefix="/missions", tags=["Missions"])
 
@@ -93,10 +95,16 @@ async def advance(
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    res = await advance_mission(db, tenant_id=tenant["tenant_id"], mission_id=mission_id)
-    if res.get("error"):
-        raise HTTPException(status_code=404, detail=res["error"])
-    return await _detail(db, tenant["tenant_id"], mission_id)
+    """Start (or resume) the mission's background runner and return immediately.
+    A gated step can take a while on a real model, so execution runs in the
+    background and the UI polls GET /missions/{id} for live progress."""
+    detail = await _detail(db, tenant["tenant_id"], mission_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="mission not found")
+    if detail["status"] in ("PLANNING", "RUNNING"):
+        await start_mission_run(tenant["tenant_id"], mission_id)
+        detail = await _detail(db, tenant["tenant_id"], mission_id)
+    return detail
 
 
 @router.post("/{mission_id}/steps/{seq}/hitl")
@@ -115,6 +123,9 @@ async def resolve_hitl(
         action="HITL_APPROVE" if body.approved else "HITL_REJECT",
         actor=tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="mission_step", resource_id=f"{mission_id}:{seq}")
+    # On approval the mission is RUNNING again — resume it in the background.
+    if body.approved and res.get("status") == "RUNNING":
+        await start_mission_run(tenant["tenant_id"], mission_id)
     return await _detail(db, tenant["tenant_id"], mission_id)
 
 

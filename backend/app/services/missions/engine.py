@@ -9,9 +9,10 @@ checkpoint or lifts the budget, and it picks up exactly where it paused.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -23,6 +24,37 @@ from app.models.missions import Mission, MissionStep, MissionEvent
 logger = logging.getLogger(__name__)
 
 _TERMINAL_STEP = {"DONE", "FAILED", "SKIPPED"}
+
+# Missions currently being driven by a background task in THIS process. Guards
+# against two concurrent runners for the same mission. (Best-effort, in-process;
+# a stale RUNNING step from a crashed worker is recovered by _recover_stale below.)
+_RUNNING_MISSIONS: set[str] = set()
+_STEP_STALE_AFTER = timedelta(minutes=10)   # a RUNNING step older than this is presumed crashed
+
+
+async def start_mission_run(tenant_id: str, mission_id: str) -> None:
+    """Kick off (or resume) a background runner that advances the mission until it
+    completes or pauses (HITL / budget). Non-blocking and idempotent: a mission
+    already running in this process is a no-op, so the API returns instantly and
+    the UI polls GET /missions/{id} for progress."""
+    if mission_id in _RUNNING_MISSIONS:
+        return
+    _RUNNING_MISSIONS.add(mission_id)
+    asyncio.create_task(_run_bg(tenant_id, mission_id))
+
+
+async def _run_bg(tenant_id: str, mission_id: str) -> None:
+    from app.core.database import AsyncSessionLocal
+    try:
+        for _ in range(200):   # hard bound; a real mission pauses/completes far sooner
+            async with AsyncSessionLocal() as db:
+                res = await advance_mission(db, tenant_id=tenant_id, mission_id=mission_id)
+            if res.get("status") != "RUNNING":
+                break
+    except Exception as e:                     # pragma: no cover - background safety net
+        logger.warning(f"[mission] background runner for {mission_id} stopped: {e}")
+    finally:
+        _RUNNING_MISSIONS.discard(mission_id)
 
 
 async def _load(db: AsyncSession, tenant_id: str, mission_id: str):
@@ -198,6 +230,22 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
     if mission.status in ("COMPLETED", "COMPLETED_WITH_EXCEPTIONS", "FAILED", "ABORTED"):
         return _summary(mission, steps)
 
+    # Crash recovery: a step left RUNNING by a worker that died (its background task
+    # never finished) would wedge the mission. Reset a stale RUNNING step so it can
+    # be re-attempted (execution is idempotent at the governance layer).
+    now = datetime.now(timezone.utc)
+    for s in steps:
+        if s.status == "RUNNING" and s.started_at:
+            started = s.started_at if s.started_at.tzinfo else s.started_at.replace(tzinfo=timezone.utc)
+            if now - started > _STEP_STALE_AFTER:
+                s.status = "READY" if s.hitl_required else "PENDING"
+                _event(db, mission, "STEP_FAILED",
+                       f"Step {s.seq} was stale (worker crash); re-queued.", s.seq)
+        elif s.status == "RUNNING":
+            # A step is actively RUNNING in another task — do not double-execute.
+            await db.commit()
+            return _summary(mission, steps)
+
     by_seq = {s.seq: s for s in steps}
 
     # Pick one executable step: dependencies satisfied and either autonomous or a
@@ -303,12 +351,15 @@ async def resolve_hitl_step(
         return {"error": f"step {seq} is {step.status}, not awaiting approval"}
 
     if approved:
-        step.status = "READY"  # cleared checkpoint; engine will execute it
+        step.status = "READY"  # cleared checkpoint; the runner will execute it
         mission.status = "RUNNING"
         _event(db, mission, "STARTED",
                f"Step {seq} approved by {approver or 'human'}; resuming.", seq)
         await db.commit()
-        return await advance_mission(db, tenant_id=tenant_id, mission_id=mission_id)
+        await db.refresh(mission)
+        # NOTE: the caller (route) resumes execution via start_mission_run so the
+        # engine stays synchronously testable and the async spawn lives at the edge.
+        return _summary(mission, steps)
     else:
         step.status = "SKIPPED"
         step.result_summary = f"Rejected by {approver or 'human'}"

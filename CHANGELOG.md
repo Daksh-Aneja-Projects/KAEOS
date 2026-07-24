@@ -135,6 +135,19 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
+### Improved (performance — no reasoning/quality change)
+- **Async missions.** A gated mission step can take a while on a live model, so
+  `POST /missions/{id}/advance` no longer blocks: it starts a background runner
+  (own DB session, per-mission guard, stale-step crash recovery) and returns
+  immediately; the UI polls `GET /missions/{id}` for live progress. Verified: advance
+  returns in ~0.3s (was ~2 min), the runner executes steps server-side (sales
+  RUNNING→DONE) and pauses at HITL. Same governance, same output — just non-blocking.
+- **Per-model-tier latency measurement** surfaced in the Executive Cockpit (calls ·
+  avg latency) from the existing CostEvent data — makes the pipeline's wall-time
+  visible (reasoning tier dominates).
+- **Embedding cache** (byte-identical) eliminates repeat embedding provider calls;
+  a `nano` (1.5b) tier serves only non-reasoning decorative text (mission narrative).
+
 ### Improved (live, interactive graphs across the UI)
 - **Domain analytics charts are now interactive** (the bar / funnel / donut used
   across all 7 department analytics): hover to highlight a series and dim the rest,
