@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     # cloud LLM provider. On by default when a residency is set; opt-in otherwise.
     SCRUB_PII_BEFORE_LLM: bool = False
 
+    @property
+    def pii_egress_fail_closed(self) -> bool:
+        """Whether a PII-scrub failure must BLOCK a cloud LLM call (vs degrade).
+
+        Under a declared data-residency policy, or when PII scrubbing is
+        explicitly required, a scrubber error must fail closed — silently sending
+        unscrubbed PII to a cloud provider is the worst possible outcome. Outside
+        those postures the scrub degrades so a transient error never takes down
+        inference.
+        """
+        return bool(self.DATA_RESIDENCY) or self.SCRUB_PII_BEFORE_LLM
+
     # Loaded (fully-burdened) hourly labor rate used to convert hours-saved
     # into a cost-savings estimate on the ROI dashboard. This is a documented
     # platform default (blended knowledge-worker loaded cost); override per

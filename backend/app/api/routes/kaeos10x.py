@@ -108,7 +108,7 @@ async def get_polymorphic_events(tenant_id: str = Depends(get_tenant_id), db: As
             })
     return poly_events
 
-@router.post("/precog/force-cycle")
+@router.post("/precog/force-cycle", dependencies=[Depends(require_role("operator"))])
 async def force_precog_cycle(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """Manually trigger the L24 Pre-Cog Engine."""
     from app.services.precog_engine import PreCogEngine
@@ -126,7 +126,7 @@ class PhysicsSimRequest(BaseModel):
     shock_type: str = "MACRO_RATE_HIKE_50BPS"
 
 
-@router.post("/physics/simulate")
+@router.post("/physics/simulate", dependencies=[Depends(require_role("operator"))])
 async def trigger_physics_simulation(
     payload: PhysicsSimRequest | None = None,
     tenant_id: str = Depends(get_tenant_id),

@@ -89,7 +89,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
         <h2 className="text-[13px] font-bold mb-3">Assigned to me ({items.length})</h2>
         {items.length === 0 ? (
           <p className="text-[12px] py-6 text-center" style={{ color: colors.inkTertiary }}>
-            Nothing assigned to you yet — assign work from any department's row actions.
+            Nothing assigned to you yet - assign work from any department's row actions.
           </p>
         ) : (
           <div className="space-y-1.5">

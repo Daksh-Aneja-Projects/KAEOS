@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 
 from app.models.enterprise_state import FinanceState, HRState, OpsState, ITState
 
@@ -31,37 +31,46 @@ class StateService:
     @staticmethod
     async def mutate_state(db: AsyncSession, tenant_id: str, domain: str, mutations: Dict[str, Any]) -> Any:
         """
-        Applies mutations to the current state and creates a new snapshot if necessary,
-        or updates the current one in place.
+        Append a NEW state snapshot for the tenant/domain.
+
+        The Enterprise Twin is a time-series: each mutation inserts a fresh row
+        (prior column values carried forward, then the mutations applied, with a
+        new ``snapshot_at``) instead of overwriting the current one. This
+        preserves full history — ``get_state`` returns the most recent snapshot,
+        and older rows remain queryable for trends/audit. (Requires the
+        non-unique ``tenant_id`` index from migration 0006.)
         """
         model = StateService._get_model_for_domain(domain)
         if not model:
             raise ValueError(f"Unknown domain for state engine: {domain}")
-            
+
         current_state = await StateService.get_state(db, tenant_id, domain)
-        
+
         if not current_state:
-            # Create initial state
             new_state = model(tenant_id=tenant_id, **mutations)
             db.add(new_state)
             await db.commit()
             await db.refresh(new_state)
             logger.info(f"Initialized {domain} state for {tenant_id}")
             return new_state
-            
-        # For full historical tracking, we would insert a new row.
-        # For now, we update in-place to keep it simple.
-        for key, value in mutations.items():
-            if hasattr(current_state, key):
-                setattr(current_state, key, value)
-                
-        current_state.updated_at = datetime.now(timezone.utc)
-        db.add(current_state)
+
+        # Carry prior values forward into a new snapshot row. Drop the identity
+        # and timestamp columns so their defaults generate a fresh id/snapshot_at.
+        columns = {c.key for c in sa_inspect(model).columns}
+        carried = {
+            k: getattr(current_state, k)
+            for k in columns
+            if k not in ("id", "snapshot_at", "updated_at")
+        }
+        carried.update({k: v for k, v in mutations.items() if k in columns})
+
+        new_snapshot = model(**carried)
+        db.add(new_snapshot)
         await db.commit()
-        await db.refresh(current_state)
-        
-        logger.info(f"Mutated {domain} state for {tenant_id}: {mutations}")
-        return current_state
+        await db.refresh(new_snapshot)
+
+        logger.info(f"Snapshotted {domain} state for {tenant_id}: {mutations}")
+        return new_snapshot
 
     @staticmethod
     def _get_model_for_domain(domain: str):

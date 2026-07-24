@@ -10,7 +10,7 @@ import LiveBadge from '../components/LiveBadge';
 import { timeAgo } from '../lib/time';
 
 /**
- * Org Pulse — the cross-domain layer above the 7 department views.
+ * Org Pulse - the cross-domain layer above the 7 department views.
  * One screen answering "how is the whole company doing right now":
  * org health ring, per-domain health grid (click-through), unified
  * severity-ranked insight feed, and the live workflow activity stream.
@@ -33,7 +33,7 @@ const DOMAIN_ROUTE: Record<string, string> = {
 };
 
 const fmtKpi = (v: number | null, format: string) => {
-  if (v === null || v === undefined) return '—';
+  if (v === null || v === undefined) return '-';
   if (format === 'currency') return v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 10_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${Math.round(v).toLocaleString()}`;
   if (format === 'percent') return `${v.toFixed(0)}%`;
   if (format === 'hours') return v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`;
@@ -68,7 +68,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
       const res = await api.escalateStale();
       setEscalateMsg(res.escalated > 0
         ? `Escalated ${res.escalated} breach${res.escalated === 1 ? '' : 'es'} to the activity feed${res.skipped_open ? ` (${res.skipped_open} already open)` : ''}.`
-        : `Nothing new to escalate — ${res.skipped_open} breach${res.skipped_open === 1 ? '' : 'es'} already have open alerts.`);
+        : `Nothing new to escalate - ${res.skipped_open} breach${res.skipped_open === 1 ? '' : 'es'} already have open alerts.`);
       await load();
     } catch (e: any) {
       setEscalateMsg(`Escalation failed: ${e?.message || e}`);
@@ -115,7 +115,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             <div className="absolute inset-2.5 rounded-full flex flex-col items-center justify-center"
               style={{ background: colors.surface1 }}>
               <span className="text-[30px] font-bold" style={{ color: healthColor(orgHealth) }}>
-                {orgHealth ?? '—'}
+                {orgHealth ?? '-'}
               </span>
               <span className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>health</span>
             </div>
@@ -133,7 +133,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               <div className="flex items-center justify-between mb-2">
                 <DomainIcon hint={d.domain} size={22} />
                 <span className="text-[16px] font-bold" style={{ color: healthColor(d.health) }}>
-                  {d.health ?? '—'}
+                  {d.health ?? '-'}
                 </span>
               </div>
               <p className="text-[12px] font-semibold truncate">{DOMAIN_LABEL[d.domain] || d.domain}</p>
@@ -184,7 +184,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             })}
             {(pulse?.insights || []).length === 0 && (
               <p className="text-[12px] py-6 text-center" style={{ color: colors.inkTertiary }}>
-                Nothing needs attention — all domains are clear.
+                Nothing needs attention - all domains are clear.
               </p>
             )}
           </div>
@@ -214,14 +214,14 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             ))}
             {activity.length === 0 && (
               <p className="text-[12px] py-6 text-center" style={{ color: colors.inkTertiary }}>
-                No workflow transitions yet — actions taken in any department appear here.
+                No workflow transitions yet - actions taken in any department appear here.
               </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* SLA breaches — entities sitting past their state's target */}
+      {/* SLA breaches - entities sitting past their state's target */}
       <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-[13px] font-bold flex items-center gap-1.5">
@@ -245,7 +245,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
         </div>
         {stale.length === 0 ? (
           <p className="text-[12px] py-4 text-center" style={{ color: colors.inkTertiary }}>
-            Nothing is sitting past its SLA — every workflow state is inside target.
+            Nothing is sitting past its SLA - every workflow state is inside target.
           </p>
         ) : (
           <div className="overflow-x-auto">

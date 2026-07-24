@@ -44,7 +44,7 @@ class UIRequest(BaseModel):
     intent: str
     data_context: dict
 
-@router.post("/ambient-ui")
+@router.post("/ambient-ui", dependencies=[Depends(require_role("operator"))])
 async def generate_ambient_ui(request: UIRequest):
     """
     L25 Polymorphic Ambient Interface:

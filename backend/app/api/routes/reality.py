@@ -11,7 +11,7 @@ import logging
 from fastapi import Depends, APIRouter
 from pydantic import BaseModel
 
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.services.reality_twin import build_live_twin, twin_stats, traverse_blast_radius
 
 logger = logging.getLogger(__name__)
@@ -224,7 +224,8 @@ _DEFAULT_PROFILE = {"severity_mult": 1.0, "depth": 3, "cost_per_node": 1250,
                     "time_per_node": 2, "description": "Generic shock.", "options": None}
 
 
-@router.post("/shock", summary="Inject a shock and run KAEOS evaluation")
+@router.post("/shock", summary="Inject a shock and run KAEOS evaluation",
+             dependencies=[Depends(require_role("operator"))])
 async def inject_shock(req: ShockRequest, tenant_id: str = Depends(get_tenant_id)):
     nodes, edges = await build_live_twin(tenant_id)
     target = nodes.get(req.target_id)
@@ -339,7 +340,8 @@ async def inject_shock(req: ShockRequest, tenant_id: str = Depends(get_tenant_id
     return result
 
 
-@router.post("/simulate", summary="Run full demo simulation flow")
+@router.post("/simulate", summary="Run full demo simulation flow",
+             dependencies=[Depends(require_role("operator"))])
 async def simulate_flow(tenant_id: str = Depends(get_tenant_id)):
     """Scripted shock for demo purposes — targets the busiest department."""
     nodes, edges = await build_live_twin(tenant_id)

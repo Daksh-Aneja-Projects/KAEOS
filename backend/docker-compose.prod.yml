@@ -1,5 +1,16 @@
 version: '3.8'
 
+# KAEOS Production stack.
+#
+# SECURITY-CRITICAL: the backend connects to Postgres as the NON-OWNER role
+# `kaeos_app`. Postgres exempts a table's OWNER from that table's row-level
+# security, so connecting as the owner (`kaeos_admin`) would install every
+# tenant-isolation policy yet leave them INERT — a silent cross-tenant leak.
+# The owner URL (KAEOS_OWNER_DB_URL) is used ONLY for maintenance paths: DDL,
+# migrations, seeding, and role/RLS bootstrap. The app's own boot-time
+# `assert_rls_effective()` refuses to serve traffic if it detects it is the
+# owner. Verify after deploy with `scripts/verify_rls.py`.
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -10,10 +21,22 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kaeos_admin -d kaeos_prod"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kaeos_admin} -d ${POSTGRES_DB:-kaeos_prod}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   backend:
     build:
@@ -21,13 +44,30 @@ services:
       dockerfile: Dockerfile
     command: /app/start-prod.sh
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kaeos_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for production}@db:5432/${POSTGRES_DB:-kaeos_prod}
+      # App connects as the NON-OWNER role so RLS applies. Its password is
+      # required in production (no insecure default).
+      - DATABASE_URL=postgresql+asyncpg://kaeos_app:${KAEOS_APP_DB_PASSWORD:?KAEOS_APP_DB_PASSWORD must be set}@db:5432/${POSTGRES_DB:-kaeos_prod}
+      # Owner URL for migrations / DDL / seeding / role + RLS bootstrap only.
+      - KAEOS_OWNER_DB_URL=postgresql+asyncpg://${POSTGRES_USER:-kaeos_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for production}@db:5432/${POSTGRES_DB:-kaeos_prod}
+      - KAEOS_APP_DB_PASSWORD=${KAEOS_APP_DB_PASSWORD:?KAEOS_APP_DB_PASSWORD must be set}
+      - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set for production}
+      - ADMIN_SECRET=${ADMIN_SECRET:?ADMIN_SECRET must be set for production}
     ports:
       - "8001:8001"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: always
 
 volumes:
   pgdata:
+  redisdata:

@@ -406,7 +406,7 @@ class SimulationRequest(BaseModel):
     scenario: str  # "decay_30d", "decay_90d", "remove_rule", "boost_confidence"
     params: dict = {}
 
-@router.post("/simulate")
+@router.post("/simulate", dependencies=[Depends(require_role("operator"))])
 async def simulate_scenario(
     body: SimulationRequest,
     tenant_id: str = Depends(get_tenant_id),

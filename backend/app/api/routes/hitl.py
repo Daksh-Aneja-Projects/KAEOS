@@ -1,4 +1,4 @@
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant_id, require_role
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,20 +7,8 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/hitl", tags=["HITL"])
 
-
-def _approver_identity(tenant: dict) -> str:
-    """Attributable approver derived from the AUTHENTICATED principal.
-
-    Never trust a client-supplied approver name: an approval is only worth
-    anything if the ledger can say WHO clicked it. Falls back through the
-    identity fields the tenant principal may carry.
-    """
-    return (
-        tenant.get("email")
-        or tenant.get("user_id")
-        or tenant.get("name")
-        or f"{tenant.get('tenant_id', 'unknown')}:{tenant.get('role', 'unknown')}"
-    )
+# Single source of truth for approver attribution lives in app.core.tenant.
+_approver_identity = approver_identity
 
 
 class HITLResolutionRequest(BaseModel):

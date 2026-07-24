@@ -95,7 +95,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
             <Zap className="w-6 h-6" style={{ color: '#f59e0b' }} /> Automation
           </h1>
           <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>
-            When an entity sits in a state past a threshold, act automatically — transition, assign, or escalate
+            When an entity sits in a state past a threshold, act automatically - transition, assign, or escalate
           </p>
         </div>
         <div className="flex items-center gap-2">

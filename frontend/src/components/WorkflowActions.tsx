@@ -8,7 +8,7 @@ import { timeAgo } from '../lib/time';
 /**
  * Per-row workflow controls: allowed next-state buttons (from the domain's
  * declared spec), plus on-demand panels for the transition history, ownership
- * assignment, and the comment thread — all keyed off the same entity. Every
+ * assignment, and the comment thread - all keyed off the same entity. Every
  * mutation flows through the guarded backend engine (transition map, role
  * floors, guards, audit).
  */

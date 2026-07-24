@@ -52,6 +52,16 @@ class GraphStore(ABC):
         """Upstream dependencies (follow incoming edges)."""
 
     @abstractmethod
+    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Return the whole graph as ``(nodes_by_id, edges)`` for analytics.
+
+        ``nodes_by_id`` maps node id -> ``{"id", "label", **properties}``.
+        ``edges`` is a list of ``{"source", "target", "type"}`` dicts. Used by
+        engines that need aggregate structure (fitness, scorecard) rather than a
+        single-node traversal.
+        """
+
+    @abstractmethod
     async def health(self) -> dict[str, Any]: ...
 
 
@@ -171,6 +181,9 @@ class SqliteGraphStore(GraphStore):
                         queue.append((edge["source"], np, nr))
         return results
 
+    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        return await self._load()
+
     async def health(self) -> dict[str, Any]:
         try:
             nodes, edges = await self._load()
@@ -197,7 +210,10 @@ class Neo4jGraphStore(GraphStore):
 
     async def upsert_node(self, node_id, label, properties) -> str:
         await self.initialize()
-        props = {**(properties or {}), "id": node_id}
+        # Store ``label`` as a property too so snapshot() is uniform with the
+        # SQLite backend (which keeps label in its own column); analytics engines
+        # group nodes by the ``label`` key regardless of backend.
+        props = {**(properties or {}), "id": node_id, "label": label}
         async with self._driver.session() as s:
             await s.run(
                 f"MERGE (n:{label} {{id: $id}}) SET n += $props",
@@ -231,6 +247,24 @@ class Neo4jGraphStore(GraphStore):
                 id=node_id,
             )
             return [{"upstream": dict(rec["m"])} async for rec in res]
+
+    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        await self.initialize()
+        nodes: dict[str, Any] = {}
+        edges: list[dict[str, Any]] = []
+        async with self._driver.session() as s:
+            res = await s.run("MATCH (n) RETURN n")
+            async for rec in res:
+                n = dict(rec["n"])
+                nid = n.get("id")
+                if nid is not None:
+                    nodes[nid] = n
+            res2 = await s.run(
+                "MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS rel_type"
+            )
+            async for rec in res2:
+                edges.append({"source": rec["source"], "target": rec["target"], "type": rec["rel_type"]})
+        return nodes, edges
 
     async def health(self) -> dict[str, Any]:
         try:

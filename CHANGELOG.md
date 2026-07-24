@@ -3,6 +3,48 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - v2.0 "Self-Improving Autonomy Platform" (in progress)
+
+Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJOR_UPGRADE_PLAN.md).
+Thesis: harden the safety and ops substrate first (earn the right), then ship the
+AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
+
+### Added
+- **Always-on KAEOS Copilot.** A persistent bottom-right chat dock on every screen
+  so any authenticated user can ask questions in natural language. Rewrote the
+  copilot to send real Bearer auth (it previously sent none), fixed broken SSE
+  stream parsing, and made it reachable by all roles (read-only Q&A). Verified
+  end-to-end (login to streamed answer).
+- **Router-level default-deny** for state-changing routes, with an enforcement
+  test (`tests/test_default_deny.py`) that fails CI on any new ungated mutation.
+- Real Alembic migration `0006_state_snapshots_append_only` (first migration
+  authored with `op` DDL rather than `create_all`).
+- New regression suites: graph consolidation, append-only state, deploy RLS
+  safety, HITL approver integrity, PII egress fail-closed.
+
+### Changed (Phase 1 - Foundation Discipline)
+- `init_db` gates `create_all` to dev/test; production schema now comes from
+  Alembic. Registered `enterprise_state`/`enterprise_graph`/`intelligence_metrics`
+  (27 tables) that were missing from the bootstrap, so the migration baseline is
+  now complete (216 tables). Made `enterprise_graph` JSONB portable to SQLite.
+- Enterprise State is now append-only (each mutation writes a new snapshot;
+  dropped the UNIQUE `tenant_id` index that forced in-place overwrite).
+- Deleted the fake in-memory "Neo4j" graph provider; `GraphService` now delegates
+  to the real polystore graph store, and `FitnessCalculator` / `ScorecardEngine`
+  compute from the real graph instead of returning fixtures.
+
+### Changed (Phase 2 - Safety Hardening, partial)
+- HITL approvals record the authenticated principal, not a client-supplied
+  (spoofable) approver name; unified into one `approver_identity` helper.
+- PII egress scrubbing fails closed under a data-residency policy
+  (`DATA_RESIDENCY` / `SCRUB_PII_BEFORE_LLM`) instead of degrading to unscrubbed.
+
+### Fixed (security-critical)
+- `backend/docker-compose.prod.yml` connected the app as the DB **owner**, which
+  silently disables row-level security (owners bypass RLS). It now connects as the
+  non-owner `kaeos_app` role with a separate owner URL for migrations; the prod
+  entrypoint runs migrations under the owner URL. Added a guard test.
+
 ## [1.1.2] — 2026-07-21
 
 Security hardening release. Closes a Host-header auth-bypass vector surfaced by

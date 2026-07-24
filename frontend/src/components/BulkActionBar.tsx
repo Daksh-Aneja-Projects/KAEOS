@@ -18,7 +18,7 @@ interface Props {
   bulkAllowed: string[];
   onDone: (msg: string) => void;   // refresh callback
   onClear: () => void;
-  noun?: string;           // "ticket", "deal" — for the empty-intersection hint
+  noun?: string;           // "ticket", "deal" - for the empty-intersection hint
 }
 
 const BulkActionBar: React.FC<Props> = ({ domain, entityType, ids, count, bulkAllowed, onDone, onClear, noun = 'row' }) => {
@@ -54,7 +54,7 @@ const BulkActionBar: React.FC<Props> = ({ domain, entityType, ids, count, bulkAl
       ))}
       {bulkAllowed.length === 0 && (
         <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
-          No transition is legal for every selected {noun} — narrow the selection.
+          No transition is legal for every selected {noun} - narrow the selection.
         </span>
       )}
       <button onClick={onClear} className="ml-auto text-[11px] font-medium" style={{ color: colors.inkSubtle }}>

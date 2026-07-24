@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 /**
  * A compact "this data is live" indicator: a heartbeat dot reflecting the
  * tenant WebSocket connection, plus a "synced Ns ago" ticker that counts up
- * from the last successful load. No glow — just an honest pulse + a clock so
+ * from the last successful load. No glow - just an honest pulse + a clock so
  * the dashboard visibly feels connected to the backend.
  *
  * Parents pass `lastSync` (Date.now() at their last successful fetch); the

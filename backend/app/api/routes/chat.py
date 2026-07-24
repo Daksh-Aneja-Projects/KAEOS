@@ -23,7 +23,12 @@ class ChatRequest(BaseModel):
 
 @router.post("/stream")
 async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_id)):
-    """Stream a chat response from the KAEOS copilot via real LLM."""
+    """Stream a chat response from the KAEOS copilot via real LLM.
+
+    Authenticated-only (any role): this is a read-only conversational Q&A
+    touchpoint for every user — it answers questions and never mutates state, so
+    it is intentionally not role-gated (see the default-deny allowlist).
+    """
     if not request.messages:
         async def empty():
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

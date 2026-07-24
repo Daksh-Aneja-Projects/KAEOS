@@ -20,7 +20,7 @@ class FinanceState(Base):
     __tablename__ = "es_finance_state"
     
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    tenant_id: Mapped[str] = mapped_column(String, index=True, unique=True) # Usually one state record per tenant, or time-series
+    tenant_id: Mapped[str] = mapped_column(String, index=True)  # append-only time-series: many snapshots per tenant (get_state picks latest)
     
     total_cash: Mapped[float] = mapped_column(Float, default=0.0)
     burn_rate: Mapped[float] = mapped_column(Float, default=0.0)
@@ -45,7 +45,7 @@ class HRState(Base):
     __tablename__ = "es_hr_state"
     
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    tenant_id: Mapped[str] = mapped_column(String, index=True, unique=True)
+    tenant_id: Mapped[str] = mapped_column(String, index=True)  # append-only time-series: many snapshots per tenant
     
     total_headcount: Mapped[int] = mapped_column(Integer, default=0)
     open_requisitions: Mapped[int] = mapped_column(Integer, default=0)
@@ -68,7 +68,7 @@ class OpsState(Base):
     __tablename__ = "es_ops_state"
     
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    tenant_id: Mapped[str] = mapped_column(String, index=True, unique=True)
+    tenant_id: Mapped[str] = mapped_column(String, index=True)  # append-only time-series: many snapshots per tenant
     
     active_projects: Mapped[int] = mapped_column(Integer, default=0)
     projects_at_risk: Mapped[int] = mapped_column(Integer, default=0)
@@ -89,7 +89,7 @@ class ITState(Base):
     __tablename__ = "es_it_state"
     
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    tenant_id: Mapped[str] = mapped_column(String, index=True, unique=True)
+    tenant_id: Mapped[str] = mapped_column(String, index=True)  # append-only time-series: many snapshots per tenant
     
     system_uptime: Mapped[float] = mapped_column(Float, default=100.0)
     open_p1_incidents: Mapped[int] = mapped_column(Integer, default=0)

@@ -195,7 +195,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                           </div>
                         </div>
                       )}
-                      {/* Deploy Button — carries the chosen pack into the wizard,
+                      {/* Deploy Button - carries the chosen pack into the wizard,
                           which skips its own catalog step and starts at Connect. */}
                       <button onClick={(e) => { e.stopPropagation(); navigate('/deploy', { state: { packId: pack.id || pack.slug } }); }}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold text-white w-full justify-center"

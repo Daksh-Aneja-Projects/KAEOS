@@ -10,13 +10,13 @@ import LiveBadge from './LiveBadge';
  * Shared analytics layer for the 7 department views.
  * Renders whatever the backend's /{domain}/analytics endpoint computes:
  * KPI cards, bar/funnel/donut charts and severity-ranked insights.
- * Pure CSS visuals — no chart library, theme-aware in both modes.
+ * Pure CSS visuals - no chart library, theme-aware in both modes.
  */
 
 const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'];
 
 function formatValue(kpi: DomainKPI): string {
-  if (kpi.value === null || kpi.value === undefined) return '—';
+  if (kpi.value === null || kpi.value === undefined) return '-';
   switch (kpi.format) {
     case 'currency':
       return kpi.value >= 1_000_000 ? `$${(kpi.value / 1_000_000).toFixed(1)}M`

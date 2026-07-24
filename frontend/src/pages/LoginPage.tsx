@@ -113,7 +113,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* First-run hint: there is no default/public login — the root admin is
+        {/* First-run hint: there is no default/public login - the root admin is
             provisioned from ADMIN_EMAIL / ADMIN_PASSWORD in .env. */}
         <div className="mt-5 text-center px-2">
           <p className="text-[11px] leading-relaxed" style={{ color: colors.inkSubtle }}>

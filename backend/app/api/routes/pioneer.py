@@ -37,12 +37,12 @@ async def ingest_signal(req: SignalIngestRequest, tenant: dict = Depends(require
         tenant_id=tenant_id
     )
 
-@router.post("/intelligence/correlate")
+@router.post("/intelligence/correlate", dependencies=[Depends(require_role("operator"))])
 async def correlate_signal(req: CorrelateRequest, tenant_id: str = Depends(get_tenant_id)):
     """P1 — Correlate an external signal with the Company Brain."""
     return await ext_intel.correlate_with_brain(req.signal_content, tenant_id=tenant_id)
 
-@router.post("/intelligence/proactive-alert")
+@router.post("/intelligence/proactive-alert", dependencies=[Depends(require_role("operator"))])
 async def generate_proactive_alert(req: SignalIngestRequest, tenant_id: str = Depends(get_tenant_id)):
     """P1 — Generate proactive alert from external signal."""
     return await ext_intel.generate_proactive_alert(req.signal_type, req.content, tenant_id=tenant_id)
@@ -59,12 +59,12 @@ class InfluencePathRequest(BaseModel):
     department: str
 
 
-@router.post("/org-intelligence/change-readiness")
+@router.post("/org-intelligence/change-readiness", dependencies=[Depends(require_role("operator"))])
 async def score_change_readiness(req: ChangeReadinessRequest, tenant_id: str = Depends(get_tenant_id)):
     """P2 — Score change readiness for a department."""
     return await org_intel.score_change_readiness(req.department, req.change_description, tenant_id=tenant_id)
 
-@router.post("/org-intelligence/influence-path")
+@router.post("/org-intelligence/influence-path", dependencies=[Depends(require_role("operator"))])
 async def map_influence_path(req: InfluencePathRequest, tenant_id: str = Depends(get_tenant_id)):
     """P2 — Plan optimal stakeholder engagement path."""
     return await org_intel.map_influence_path(req.target_outcome, req.department, tenant_id=tenant_id)
@@ -83,7 +83,7 @@ class SimulationRequest(BaseModel):
     risk_tolerance: str = "MEDIUM"  # LOW | MEDIUM | HIGH
 
 
-@router.post("/simulation/what-if")
+@router.post("/simulation/what-if", dependencies=[Depends(require_role("operator"))])
 async def run_simulation(req: SimulationRequest):
     """L6 — What-if simulation before execution."""
     from app.services.llm_router import LLMRouter

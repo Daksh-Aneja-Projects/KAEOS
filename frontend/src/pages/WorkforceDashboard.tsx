@@ -97,7 +97,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-[24px] font-bold tracking-tight">Enterprise Workforce</h1>
-              {/* Say it out loud when the page is self-updating — a live number
+              {/* Say it out loud when the page is self-updating - a live number
                   is otherwise indistinguishable from a stale one. */}
               <LiveBadge lastSync={syncedAt} />
             </div>

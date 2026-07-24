@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.hr.models.core import HREmployee
 from app.hr.models.recruiting import (
@@ -58,6 +58,9 @@ class StageAdvance(BaseModel):
 
 class HITLDecision(BaseModel):
     reason: str = ""
+    # DEPRECATED / IGNORED: the approver is derived from the authenticated
+    # principal server-side (see hitl_approve/hitl_reject). Kept only so older
+    # clients that still send it do not break; its value is never trusted.
     approver: str = "human"
 
 
@@ -312,20 +315,27 @@ async def hitl_approve(
     body: HITLDecision,
     tenant: dict = Depends(require_role("operator")),
 ):
-    """Approve a pending HITL-gated HR execution."""
+    """Approve a pending HITL-gated HR execution.
+
+    The approver recorded is the AUTHENTICATED principal — the client-supplied
+    ``body.approver`` is ignored (a spoofable approver would undermine every
+    HITL data point that feeds the safe-autonomy metric).
+    """
     tenant_id = tenant["tenant_id"]
+    approver = approver_identity(tenant)
     from app.services.hitl_manager import hitl_manager
     ok = await hitl_manager.resolve_hitl(
-        execution_id, True, body.approver, body.reason, tenant_id=tenant_id
+        execution_id, True, approver, body.reason, tenant_id=tenant_id
     )
     if not ok:
         raise HTTPException(status_code=404, detail="No pending HITL request for that execution")
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver, actor_role=tenant.get("role"),
         resource_type="hitl_execution", resource_id=execution_id,
+        details={"reason": body.reason},
     )
-    return {"execution_id": execution_id, "approved": True}
+    return {"execution_id": execution_id, "approved": True, "approver": approver}
 
 
 @router.post("/hitl/{execution_id}/reject")
@@ -334,20 +344,25 @@ async def hitl_reject(
     body: HITLDecision,
     tenant: dict = Depends(require_role("operator")),
 ):
-    """Reject a pending HITL-gated HR execution."""
+    """Reject a pending HITL-gated HR execution.
+
+    Approver = authenticated principal; ``body.approver`` is ignored.
+    """
     tenant_id = tenant["tenant_id"]
+    approver = approver_identity(tenant)
     from app.services.hitl_manager import hitl_manager
     ok = await hitl_manager.resolve_hitl(
-        execution_id, False, body.approver, body.reason, tenant_id=tenant_id
+        execution_id, False, approver, body.reason, tenant_id=tenant_id
     )
     if not ok:
         raise HTTPException(status_code=404, detail="No pending HITL request for that execution")
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver, actor_role=tenant.get("role"),
         resource_type="hitl_execution", resource_id=execution_id,
+        details={"reason": body.reason},
     )
-    return {"execution_id": execution_id, "approved": False}
+    return {"execution_id": execution_id, "approved": False, "approver": approver}
 
 
 # ── Time & Attendance / Performance (reads) ───────────────────────────────────

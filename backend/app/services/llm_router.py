@@ -97,6 +97,11 @@ class NoLLMProviderError(RuntimeError):
     human) rather than rubber-stamping a decision on a fabricated response."""
 
 
+class PIIScrubError(RuntimeError):
+    """Raised when PII scrubbing fails under a data-residency / strict-egress
+    policy. The cloud LLM call MUST be blocked rather than send unscrubbed PII."""
+
+
 class LLMRouter:
     """
     Provider-agnostic LLM gateway — BYOK model.
@@ -550,6 +555,13 @@ class LLMRouter:
             from app.transforms.pii_scrubber import redact_structured_pii
             scrubbed, _ = redact_structured_pii(scrubbed)
         except Exception as e:
+            from app.core.config import get_settings
+            if get_settings().pii_egress_fail_closed:
+                # Under a data-residency policy we cannot guarantee direct
+                # identifiers were removed — block the cloud call rather than leak.
+                raise PIIScrubError(
+                    f"structured PII backstop failed under data-residency policy: {e}"
+                ) from e
             logger.warning(f"[LLM] structured PII backstop failed, proceeding: {e}")
         return scrubbed
 
@@ -585,14 +597,23 @@ class LLMRouter:
         # is set, or whenever we are NOT pinned local-only (defence in depth).
         # A scrub failure must never break inference — it degrades to unscrubbed.
         if not self._is_local_model(model):
-            try:
-                from app.core.config import get_settings
-                _s = get_settings()
-                if _s.SCRUB_PII_BEFORE_LLM or not _s.local_llm_only:
+            from app.core.config import get_settings
+            _s = get_settings()
+            if _s.SCRUB_PII_BEFORE_LLM or not _s.local_llm_only:
+                try:
                     prompt = await self._scrub_for_cloud(prompt)
                     system_prompt = await self._scrub_for_cloud(system_prompt)
-            except Exception as e:
-                logger.warning(f"[LLM] pre-cloud PII scrub skipped (non-fatal): {e}")
+                except PIIScrubError:
+                    # Fail closed: never send unscrubbed PII to a cloud provider
+                    # under a data-residency policy. Propagate to block the call.
+                    raise
+                except Exception as e:
+                    if _s.pii_egress_fail_closed:
+                        raise PIIScrubError(
+                            f"PII scrub failed under data-residency policy; "
+                            f"blocking cloud egress: {e}"
+                        ) from e
+                    logger.warning(f"[LLM] pre-cloud PII scrub skipped (non-fatal): {e}")
 
         # NEVER set litellm module globals — they are shared across all
         # concurrent coroutines and cause cross-tenant credential leaks under

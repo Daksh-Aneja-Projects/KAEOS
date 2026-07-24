@@ -9,11 +9,15 @@ from typing import Optional
 from datetime import datetime, timezone
 import uuid
 
-from sqlalchemy import String, DateTime, Text, Float, Boolean
+from sqlalchemy import String, DateTime, Text, Float, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
+
+# Portable JSON: native JSONB on Postgres (indexable/queryable), plain JSON on
+# SQLite so the dev/test stack and the alembic baseline's create_all both work.
+_JSONB = JSONB().with_variant(JSON(), "sqlite")
 
 # --- Enterprise Graph Edges ---
 
@@ -35,7 +39,7 @@ class GraphRelationship(Base):
     
     relation_type: Mapped[str] = mapped_column(String, index=True) # e.g., "REPORTS_TO", "DEPENDS_ON", "MITIGATES"
     
-    properties: Mapped[dict] = mapped_column(JSONB, default={})
+    properties: Mapped[dict] = mapped_column(_JSONB, default={})
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -54,7 +58,7 @@ class Organization(Base):
     industry: Mapped[Optional[str]] = mapped_column(String)
     headquarters: Mapped[Optional[str]] = mapped_column(String)
     
-    metadata_json: Mapped[dict] = mapped_column(JSONB, default={})
+    metadata_json: Mapped[dict] = mapped_column(_JSONB, default={})
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -5,7 +5,7 @@ import type { WorkflowSpec } from '../api/client';
  * Shared multi-select + bulk-transition state for the domain views.
  *
  * Given the rows on screen and the workflow spec, it exposes selection
- * helpers and — critically — `bulkAllowed`: the set of target states that are
+ * helpers and - critically - `bulkAllowed`: the set of target states that are
  * legal for EVERY selected row (the intersection of each row's allowed
  * transitions). Offering a state that only some rows can reach would half-fail
  * a bulk action, so the bar only shows moves that apply to all of them.

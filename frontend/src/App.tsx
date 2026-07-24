@@ -727,12 +727,11 @@ function Shell() {
           </ErrorBoundary>
         </div>
 
-        {/* Chat Copilot Overlay */}
-        {chatOpen && (
-          <Suspense fallback={null}>
-            <ChatCopilot onClose={() => setChatOpen(false)} />
-          </Suspense>
-        )}
+        {/* Chat Copilot - always mounted so its bottom-right launcher is
+            available on every screen; the header button also toggles it. */}
+        <Suspense fallback={null}>
+          <ChatCopilot open={chatOpen} onOpenChange={setChatOpen} />
+        </Suspense>
       </main>
     </div>
   );

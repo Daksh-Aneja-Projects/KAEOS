@@ -1,4 +1,4 @@
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -39,7 +39,7 @@ async def get_candidate_rules(tenant_id: str = Depends(get_tenant_id), db: Async
                 
     return {"candidates": candidates}
 
-@router.post("/detect-conflict")
+@router.post("/detect-conflict", dependencies=[Depends(require_role("operator"))])
 async def detect_conflict(candidate: CandidateRule, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     detector = ContradictionDetector()
     existing_rules = await db.execute(

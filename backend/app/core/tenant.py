@@ -251,6 +251,22 @@ def require_role(required_role: str):
     return _checker
 
 
+def approver_identity(tenant: dict) -> str:
+    """Attributable approver derived from the AUTHENTICATED principal.
+
+    An approval is only worth anything if the ledger can say WHO clicked it, so
+    the recorded approver MUST come from the authenticated tenant principal —
+    never from a client-supplied field (which is trivially spoofable). Used by
+    every HITL decision path so non-repudiation is uniform.
+    """
+    return (
+        tenant.get("email")
+        or tenant.get("user_id")
+        or tenant.get("name")
+        or f"{tenant.get('tenant_id', 'unknown')}:{tenant.get('role', 'unknown')}"
+    )
+
+
 # ── Internal helpers ─────────────────────────────────────────────────────────
 
 def _unauthorized(detail: str) -> Response:

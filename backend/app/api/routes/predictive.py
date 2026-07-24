@@ -88,7 +88,7 @@ async def get_ghost_executions(tenant_id: str = Depends(get_tenant_id), db: Asyn
         ]
     }
 
-@router.post("/discover-patterns")
+@router.post("/discover-patterns", dependencies=[Depends(require_role("operator"))])
 async def discover_patterns(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """Triggers the Pattern Discovery Engine to find latent workflow opportunities."""
     from app.services.pattern_discovery_engine import PatternDiscoveryEngine

@@ -264,6 +264,15 @@ They require a human-baseline duration and a loaded hourly rate per skill - tena
 cannot measure. They were previously "computed" by multiplying executions by a hardcoded 0.5 hours
 and $50/hour. Invented numbers are worse than absent ones, so they are absent.
 
+### KAEOS Copilot - always-on conversational touchpoint
+
+Every screen carries a persistent copilot dock in the bottom-right corner. Any
+authenticated user can open it and ask, in plain language, about their agents,
+rules, skills, deployments, or compliance posture. It streams grounded answers
+from the platform (never fabricated data) and is read-only, so it is available to
+every role. Auth is carried on the user's session token; responses stream over
+Server-Sent Events.
+
 ### Agent Factory
 
 Build and deploy custom AI agents from natural language:

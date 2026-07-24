@@ -17,6 +17,16 @@ _model_modules = [
     "app.models.infrastructure",
     "app.models.auth",
     "app.models.events",
+    # These three declare 27 tenant-scoped tables (Enterprise State/Graph/
+    # Intelligence Metrics) but were NOT imported at DB bootstrap — only later,
+    # once a route imported them. They therefore escaped the alembic baseline's
+    # create_all entirely (present at runtime only because main imports routes
+    # before init_db). Once create_all is gated off in production, the schema
+    # must come from these modules being registered here. Same bootstrap hole
+    # that once shipped Engineering with no tables.
+    "app.models.enterprise_state",
+    "app.models.enterprise_graph",
+    "app.models.intelligence_metrics",
     "app.workforce.models.core",
     "app.workforce.models.domain_pack",
     "app.workforce.models.integration",
@@ -233,8 +243,30 @@ async def ensure_app_role(conn) -> bool:
     return True
 
 
+def _create_all_allowed() -> bool:
+    """Whether init_db may build the schema with ``create_all``.
+
+    ``create_all`` is a DEV/TEST convenience, never the production schema
+    authority — Alembic is (``alembic upgrade head`` in the prod entrypoint).
+    Allowed on SQLite and any non-production environment; in production it is
+    refused unless an operator sets ``KAEOS_ALLOW_CREATE_ALL`` for a deliberate
+    bootstrap. This keeps the migration chain the single source of truth for
+    prod schema and prevents silent drift between models and migrations.
+    """
+    if settings.is_sqlite or not settings.is_production_like:
+        return True
+    return _os.environ.get("KAEOS_ALLOW_CREATE_ALL", "").strip().lower() in ("1", "true", "yes")
+
+
 async def init_db():
-    """Create all tables (for dev/demo — use Alembic in production)."""
+    """Prepare the database for serving.
+
+    Dev/test: build the schema from ORM metadata (``create_all``).
+    Production: the schema comes from Alembic; ``create_all`` is skipped. Either
+    way the pgvector extension, the non-owner app role, and the RLS backstop are
+    ensured so a fresh Postgres is safe to serve.
+    """
+    use_create_all = _create_all_allowed()
     async with maintenance_engine.begin() as conn:
         if conn.dialect.name == "postgresql":
             # Semantic-memory tables use pgvector's `vector` type; the compose
@@ -242,7 +274,14 @@ async def init_db():
             # it, so create_all fails on a fresh database without this.
             from sqlalchemy import text as _text
             await conn.execute(_text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
+        if use_create_all:
+            await conn.run_sync(Base.metadata.create_all)
+        else:
+            _db_logger.info(
+                "[DB] Production schema is managed by Alembic — skipping create_all. "
+                "Ensure `alembic upgrade head` ran (prod entrypoint does this). "
+                "Set KAEOS_ALLOW_CREATE_ALL=true only for a deliberate bootstrap."
+            )
         if conn.dialect.name == "postgresql":
             # Bootstrap the non-owner app role so a fresh Docker deploy (no
             # alembic step) can connect as kaeos_app - MUST be before the app
