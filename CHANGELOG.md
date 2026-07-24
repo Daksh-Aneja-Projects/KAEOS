@@ -97,6 +97,15 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — Outcome Intelligence Loop, Phase 2)
+- **Decision → outcome learning loop.** Record a measured real-world outcome for a
+  past decision (`POST /outcomes/{execution_id}`, GOOD/BAD/NEUTRAL) and it feeds
+  back into the executing skill's confidence (GOOD +0.02, BAD -0.05) — so the
+  system learns from reality, not only from human labels at decision time.
+  `GET /outcomes/impact` aggregates the distribution, autonomous-vs-human decision
+  quality, and per-skill outcome quality. New `outcome_records` table
+  (migration 0008, RLS). Tested (confidence feedback + impact split).
+
 ### Added (v3 — Autonomy Dial, Phase 7)
 - **The Autonomy Dial** — executives set a per-department risk appetite (the
   confidence a decision must clear to run without a human) in **Settings → Platform**

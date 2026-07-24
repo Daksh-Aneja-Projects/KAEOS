@@ -4,9 +4,10 @@ Stores the historical accuracy of predictions, recommendations, and simulations 
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, Float, Text, JSON, Integer
+from sqlalchemy import String, DateTime, Float, Text, JSON, Integer, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -268,3 +269,27 @@ class TransformationLibrary(Base):
     
     last_applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class OutcomeRecord(Base):
+    """A measured real-world outcome of a past decision (SkillExecution).
+
+    Closes the loop decision -> reality: a GOOD/BAD/NEUTRAL judgment (with an
+    optional metric) recorded after the fact. Recording an outcome nudges the
+    executing skill's confidence up (GOOD) or down (BAD), so the system learns
+    from measured reality, not only from human labels at decision time.
+    """
+    __tablename__ = "outcome_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    execution_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    skill_id_name: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)  # GOOD | BAD | NEUTRAL
+    autonomous: Mapped[bool] = mapped_column(Boolean, default=False)
+    metric_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    metric_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
