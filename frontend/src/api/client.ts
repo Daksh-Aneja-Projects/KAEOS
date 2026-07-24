@@ -1015,6 +1015,9 @@ export const api = {
     request<any>(`/outcomes/${executionId}`, { method: 'POST', body: JSON.stringify({ outcome }) }),
   getDecisionFeed: () => request<any>('/hitl/decision-feed'),
 
+  // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
+  getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
+
   // Cross-Domain Missions — goal decomposed into a governed DAG across departments
   listMissions: (limit = 50) => request<any>(`/missions?limit=${limit}`),
   getMission: (id: string) => request<any>(`/missions/${id}`),

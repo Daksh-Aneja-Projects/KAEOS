@@ -97,6 +97,19 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v4 Signature IP — Precog Org-Health Forecast, IP-5)
+- **Forecast the north star.** New `services/forecast.py` — an honest OLS linear-trend
+  forecaster with a 95% residual-based prediction interval (no LLM, deterministic,
+  handles gaps, clamps rates to [0,1]). `GET /metrics/forecast` projects the
+  safe-autonomy-rate and daily volume `horizon` days out from the real daily series,
+  with a plain headline (current → projected, direction, R² fit). Too little history
+  returns `insufficient` rather than a fabricated curve. Tested (7 cases: trend
+  direction, band ordering, clamping, gap handling, insufficient-history).
+- **Precog section on Org Pulse** (no new nav): an SVG chart of the observed
+  safe-autonomy history, the projected trend (dashed), and the widening 95%
+  confidence band, with a headline projection. Verified live: 8 observed days →
+  14-day projection (55.9% → 35.5%, declining, R² 0.18).
+
 ### Added (v3 — Cross-Domain Autonomous Missions, Phase 3)
 - **Autonomy that PURSUES goals.** A plain-language goal ("close the quarter: review
   the vendor contract, approve the budget, brief support") is decomposed into a
