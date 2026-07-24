@@ -81,6 +81,13 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   Marketplace" tab to "Skill Templates" to end the collision with the
   `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
 
+### Added (v3 UI)
+- **Safe Autonomy surface** (`/autonomy`, new sidebar item) — the north-star metric
+  given a real home: the live safe-autonomy-rate, an explainable fallout breakdown
+  (routed-to-human / overridden / edited / failed), a per-skill split showing where
+  autonomy leaks, and a daily trend. Wired to `GET /metrics/safe-autonomy`; all real,
+  no mock. Complements (does not duplicate) the dashboard summary tile.
+
 ### Added (planning)
 - **docs/KAEOS_VISION_PLAN.md** — the v3 "Autonomous Enterprise" plan: new,
   non-duplicative layers (system-of-record actuation, outcome-intelligence loop,

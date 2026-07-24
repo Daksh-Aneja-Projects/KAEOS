@@ -255,9 +255,12 @@ will be cancelled by end-2027. In that market the question isn't "can your agent
 "does your agent survive contact with production."
 
 So KAEOS measures **safe autonomy rate**: the share of work completed without human intervention, at
-a fixed error budget, trending over time. It is computed live from real executions at
-`GET /billing/roi` and rises as verified rules accumulate - which is the compounding loop in one
-number.
+a fixed error budget, trending over time. It is computed live from real executions - a headline number
+at `GET /billing/roi`, and a fully broken-out view at `GET /metrics/safe-autonomy` (the rate, an
+explainable fallout breakdown of routed-to-human / overridden / edited / failed, a per-skill split
+showing where autonomy leaks, and a daily time-series). It rises as verified rules accumulate - the
+compounding loop in one number. In the app it has a dedicated **Safe Autonomy** surface (`/autonomy`)
+that surfaces all of the above, live.
 
 **What we deliberately do NOT report:** `hours_saved` and `cost_reduction` return `null`, with a note.
 They require a human-baseline duration and a loaded hourly rate per skill - tenant inputs KAEOS

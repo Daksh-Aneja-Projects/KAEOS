@@ -1001,6 +1001,9 @@ export const api = {
   // Analytics
   getWorkforceAnalytics: () => request<any>('/workforce/analytics'),
 
+  // Safe-autonomy-rate (north-star) detail: rate + fallout breakdown + per-skill + time-series
+  getSafeAutonomy: (days = 30) => request<any>(`/metrics/safe-autonomy?days=${days}`),
+
   // ─── Finance Department APIs ───
   getFinanceDashboard: () => request<any>('/finance/dashboard'),
   getFinanceVendors: () => request<any[]>('/finance/vendors'),

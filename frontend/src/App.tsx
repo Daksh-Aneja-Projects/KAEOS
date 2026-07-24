@@ -65,6 +65,7 @@ const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 
 const RealityExperience = lazy(() => import('./pages/RealityExperience'));
+const SafeAutonomyView = lazy(() => import('./pages/SafeAutonomyView'));
 
 // ─── v2 AI FOUNDRY + CLIENT ONBOARDING ─────────────────────────────
 const AIFoundry = lazy(() => import('./pages/AIFoundry'));
@@ -82,6 +83,7 @@ type NavItem = { path: string; label: string; icon: React.ElementType; badge?: s
 const WORKFORCE_NAV: NavItem[] = [
   // Daily-use first: the dashboard and the user's personal inbox lead.
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/autonomy', label: 'Safe Autonomy', icon: ShieldCheck },
   { path: '/my-work', label: 'My Work', icon: Briefcase },
   // Departments (what you run) → Marketplace (browse & add) → Deploy wizard is
   // reached from a marketplace pack, so it's a flow, not a standalone nav item.
@@ -528,6 +530,7 @@ function Shell() {
                 <Route path="/marketplace" element={<ThemeAdapter><DomainPackMarketplace domain={domain} /></ThemeAdapter>} />
                 <Route path="/integrations" element={<ThemeAdapter><ConnectorStudio domain={domain} /></ThemeAdapter>} />
                 <Route path="/analytics" element={<ThemeAdapter><WorkforceAnalytics domain={domain} /></ThemeAdapter>} />
+                <Route path="/autonomy" element={<ThemeAdapter><SafeAutonomyView /></ThemeAdapter>} />
                 <Route path="/pulse" element={<ThemeAdapter><OrgPulse domain={domain} /></ThemeAdapter>} />
                 <Route path="/my-work" element={<ThemeAdapter><MyWork domain={domain} /></ThemeAdapter>} />
                 <Route path="/automation" element={<ThemeAdapter><Automation domain={domain} /></ThemeAdapter>} />
