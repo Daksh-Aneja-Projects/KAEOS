@@ -203,6 +203,7 @@ class CostGovernorService:
         tokens_sum = func.sum(CostEvent.total_tokens)
         cost_sum = func.sum(CostEvent.cost_usd)
         calls_count = func.count()
+        lat_avg = func.avg(CostEvent.latency_ms)   # perf: where the wall-time goes
 
         # Postgres returns NUMERIC (SUM) as decimal.Decimal while SQLite returns
         # float; coerce every aggregate to int/float once so the returned dict is
@@ -223,13 +224,17 @@ class CostGovernorService:
         total_cost = float(t_cost or 0.0)
         total_events = int(t_calls or 0)
 
-        # By model tier (includes a NULL-tier group, matching prior behaviour)
+        # By model tier (includes a NULL-tier group, matching prior behaviour).
+        # avg_latency_ms surfaces where the LLM wall-time goes (Phase-0 perf metric).
         tier_result = await db.execute(
-            select(CostEvent.model_tier, tokens_sum, cost_sum, calls_count)
+            select(CostEvent.model_tier, tokens_sum, cost_sum, calls_count, lat_avg)
             .where(*base_filter)
             .group_by(CostEvent.model_tier)
         )
-        tier_agg = {tier: _row(tk, cs, ca) for tier, tk, cs, ca in tier_result.all()}
+        tier_agg = {
+            tier: {**_row(tk, cs, ca), "avg_latency_ms": int(la or 0)}
+            for tier, tk, cs, ca, la in tier_result.all()
+        }
 
         # By agent (only rows with a real agent_id, matching `if e.agent_id`)
         agent_result = await db.execute(

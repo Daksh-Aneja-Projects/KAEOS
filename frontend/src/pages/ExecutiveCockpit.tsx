@@ -244,15 +244,15 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 const tierColor: Record<string, string> = { reasoning: '#8b5cf6', fast: '#3b82f6', classification: '#f59e0b', embedding: '#22c55e', unspecified: colors.inkSubtle };
                 return (
                   <div className="p-2.5 rounded-lg space-y-1.5" style={{ background: colors.canvas }}>
-                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (tokens · calls)</div>
+                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (calls · avg latency)</div>
                     {tiers.map(([name, v]) => (
                       <div key={name} className="flex items-center gap-2">
                         <span className="text-[10px] w-20 truncate capitalize" style={{ color: colors.ink }}>{name}</span>
                         <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                           <div className="h-full rounded-full" style={{ width: `${((v?.tokens ?? 0) / maxTok) * 100}%`, background: tierColor[name] || colors.primary }} />
                         </div>
-                        <span className="text-[9px] font-mono w-24 text-right" style={{ color: colors.inkSubtle }}>
-                          {(v?.tokens ?? 0).toLocaleString()} · {v?.calls ?? 0}
+                        <span className="text-[9px] font-mono w-28 text-right" style={{ color: colors.inkSubtle }}>
+                          {v?.calls ?? 0} · {v?.avg_latency_ms ? `${(v.avg_latency_ms / 1000).toFixed(1)}s` : '--'}
                         </span>
                       </div>
                     ))}
