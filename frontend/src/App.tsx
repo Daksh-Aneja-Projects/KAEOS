@@ -93,65 +93,9 @@ const WORKFORCE_NAV: NavItem[] = [
   { path: '/automation', label: 'Automation', icon: Zap },
 ];
 
-const HR_NAV: NavItem[] = [
-  { path: '/departments/hr', label: 'HR Overview', icon: Briefcase },
-  { path: '/departments/hr/recruiting', label: 'Recruiting', icon: Users },
-  { path: '/departments/hr/employees', label: 'Employees', icon: Users },
-  { path: '/departments/hr/time', label: 'Time & Leave', icon: Activity },
-  { path: '/departments/hr/performance', label: 'Performance', icon: BarChart3 },
-];
-
-const FINANCE_NAV: NavItem[] = [
-  { path: '/departments/finance', label: 'Finance Overview', icon: Landmark },
-  { path: '/departments/finance/ap', label: 'Accounts Payable', icon: Receipt },
-  { path: '/departments/finance/ar', label: 'Accounts Receivable', icon: Landmark },
-  { path: '/departments/finance/budgets', label: 'Budgets & Forecasts', icon: BarChart3 },
-  { path: '/departments/finance/expenses', label: 'Expense Reports', icon: Wallet },
-  { path: '/departments/finance/tax', label: 'Tax Center', icon: Scale },
-  { path: '/departments/finance/audit', label: 'Audit & SOX', icon: ShieldAlert },
-];
-
-const LEGAL_NAV: NavItem[] = [
-  { path: '/departments/legal', label: 'Legal Overview', icon: Scale },
-  { path: '/departments/legal/contracts', label: 'Contract Lifecycle', icon: FileText },
-  { path: '/departments/legal/compliance', label: 'Compliance Oblig.', icon: ShieldCheck },
-  { path: '/departments/legal/litigation', label: 'Litigation Support', icon: Landmark },
-  { path: '/departments/legal/privacy', label: 'Privacy Operations', icon: Lock },
-  { path: '/departments/legal/ip', label: 'Intellectual Property', icon: Lightbulb },
-];
-
-const SUPPORT_NAV: NavItem[] = [
-  { path: '/departments/support', label: 'Support Overview', icon: MessageSquare },
-  { path: '/departments/support/tickets', label: 'Ticket Queue', icon: MessageSquare },
-  { path: '/departments/support/kb', label: 'Knowledge Base', icon: BookOpen },
-  { path: '/departments/support/sla', label: 'SLA Dashboard', icon: Clock },
-  { path: '/departments/support/feedback', label: 'CSAT Surveys', icon: Heart },
-];
-
-const SALES_NAV: NavItem[] = [
-  { path: '/departments/sales', label: 'Sales Overview', icon: Compass },
-  { path: '/departments/sales/pipeline', label: 'Deals Pipeline', icon: Compass },
-  { path: '/departments/sales/leads', label: 'Inbound Leads', icon: Target },
-  { path: '/departments/sales/forecasts', label: 'Forecasts', icon: TrendingUp },
-  { path: '/departments/sales/accounts', label: 'Accounts', icon: Landmark },
-];
-
-const OPERATIONS_NAV: NavItem[] = [
-  { path: '/departments/operations', label: 'Ops Overview', icon: CheckSquare },
-  { path: '/departments/operations/projects', label: 'Project Portfolio', icon: CheckSquare },
-  { path: '/departments/operations/resources', label: 'Team Allocations', icon: Users },
-  { path: '/departments/operations/vendors', label: 'Supplier Operations', icon: Clipboard },
-  { path: '/departments/operations/procurement', label: 'Purchases', icon: Wrench },
-  { path: '/departments/operations/quality', label: 'QA & Inspections', icon: ShieldAlert },
-];
-
-const ENGINEERING_NAV: NavItem[] = [
-  { path: '/departments/engineering', label: 'Service Catalog', icon: Server },
-  { path: '/departments/engineering/pull-requests', label: 'Pull Requests', icon: GitPullRequest },
-  { path: '/departments/engineering/deployments', label: 'Deployments', icon: Rocket },
-  { path: '/departments/engineering/incidents', label: 'Incidents', icon: Siren },
-  { path: '/departments/engineering/postmortems', label: 'Postmortems', icon: FileText },
-];
+// Department sub-sections are navigated via each department page's in-view tabs
+// (the single source of truth), NOT via the sidebar — this is what removed the
+// old sidebar/top-bar navigation duplication.
 
 const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
@@ -292,14 +236,20 @@ function Shell() {
   
   const DOMAINS = ['All Domains', 'HR', 'Finance', 'Engineering', 'Sales', 'Support'];
 
-  // Check if current route is under department sections
-  const isHRActive = location.pathname.startsWith('/departments/hr');
-  const isFinanceActive = location.pathname.startsWith('/departments/finance');
-  const isLegalActive = location.pathname.startsWith('/departments/legal');
-  const isSupportActive = location.pathname.startsWith('/departments/support');
-  const isSalesActive = location.pathname.startsWith('/departments/sales');
-  const isOperationsActive = location.pathname.startsWith('/departments/operations');
-  const isEngineeringActive = location.pathname.startsWith('/departments/engineering');
+  // Which department (if any) the current route is under — used only for a small
+  // sidebar context indicator, not to render duplicate sub-navigation.
+  const DEPARTMENT_CONTEXT: { slug: string; label: string; color: string }[] = [
+    { slug: 'hr', label: 'Human Resources', color: '#22c55e' },
+    { slug: 'finance', label: 'Finance', color: '#ec4899' },
+    { slug: 'legal', label: 'Legal & Compliance', color: '#6366f1' },
+    { slug: 'support', label: 'Customer Support', color: '#3b82f6' },
+    { slug: 'sales', label: 'Sales & CRM', color: '#f59e0b' },
+    { slug: 'operations', label: 'Operations', color: '#ef4444' },
+    { slug: 'engineering', label: 'Engineering & IT Ops', color: '#6366f1' },
+  ];
+  const activeDepartment = DEPARTMENT_CONTEXT.find(
+    d => location.pathname.startsWith(`/departments/${d.slug}`),
+  );
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: colors.surface1, color: colors.ink, fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -326,90 +276,19 @@ function Shell() {
             <SidebarNavLink key={n.path} item={n} colors={colors} />
           ))}
 
-          {/* HR DEPARTMENT Section (visible when HR is active/being viewed) */}
-          {isHRActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#22c55e' }}>HR Department</span>
-              </div>
-              {HR_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
+          {/* Department sub-sections are NOT duplicated here — they live as the
+              in-view top-bar tabs on each department page (the single source of
+              truth). The sidebar stops at the department to avoid the exact
+              sidebar/top-bar duplication that used to exist. When inside a
+              department, the "Departments" item above stays highlighted. */}
+          {activeDepartment && (
+            <div className="px-2 pt-4 pb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: activeDepartment.color }} />
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: activeDepartment.color }}>
+                {activeDepartment.label}
+              </span>
+            </div>
           )}
-
-          {/* FINANCE DEPARTMENT Section */}
-          {isFinanceActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#ec4899' }}>Finance</span>
-              </div>
-              {FINANCE_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
-          {/* LEGAL DEPARTMENT Section */}
-          {isLegalActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#6366f1' }}>Legal & Compliance</span>
-              </div>
-              {LEGAL_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
-          {/* SUPPORT DEPARTMENT Section */}
-          {isSupportActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#3b82f6' }}>Customer Support</span>
-              </div>
-              {SUPPORT_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
-          {/* SALES DEPARTMENT Section */}
-          {isSalesActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#f59e0b' }}>Sales & CRM</span>
-              </div>
-              {SALES_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
-          {/* OPERATIONS DEPARTMENT Section */}
-          {isOperationsActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#ef4444' }}>Operations</span>
-              </div>
-              {OPERATIONS_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
-          {/* ENGINEERING DEPARTMENT Section */}
-          {isEngineeringActive && (
-            <>
-              <div className="px-1 pt-4 pb-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#6366f1' }}>Engineering & IT Ops</span>
-              </div>
-              {ENGINEERING_NAV.map(n => (
-                <SidebarNavLink key={n.path} item={n} colors={colors} />
-              ))}
-            </>
-          )}
-
 
           {/* PLATFORM Section */}
           <div className="px-1 pt-4 pb-1">
