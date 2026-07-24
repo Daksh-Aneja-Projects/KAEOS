@@ -150,7 +150,7 @@ export default function LegalDashboard() {
         <div className="grid grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
-            {dept?.capabilities && (
+            {(dept?.capabilities || []).length > 0 && (
               <div style={card}>
                 <h3 className="text-[14px] font-bold mb-4 flex items-center gap-1.5">
                   <Zap className="w-4 h-4 text-amber-500" /> Legal Capabilities
@@ -180,6 +180,9 @@ export default function LegalDashboard() {
               <Bot className="w-4 h-4" style={{ color: colors.primary }} /> Active Legal Agents
             </h3>
             <div className="space-y-3">
+              {(dept?.agent_definitions || []).length === 0 && (
+                <p className="text-[11px]" style={{ color: colors.inkSubtle }}>No agents deployed yet.</p>
+              )}
               {(dept?.agent_definitions || []).map((agent: any) => (
                 <div key={agent.name} className="flex items-center justify-between p-2.5 rounded-lg border" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                   <div className="flex items-center gap-2">

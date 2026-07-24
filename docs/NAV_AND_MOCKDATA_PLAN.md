@@ -47,6 +47,15 @@ Clean template to copy for B-7: `HRDashboard.tsx:151` — `{(dept?.capabilities 
 
 ---
 
+### C. Duplicate PAGES (from the page-audit)
+Three parallel renderers of one "department overview" screen, plus a Dashboard/View split:
+- **6 bespoke `*Dashboard` pages** (`HRDashboard`…`OperationsDashboard`) render `/departments/<dept>`; **`DepartmentDetail.tsx`** (`/departments/:deptId`, `App.tsx:707`) renders the *same* overview shape generically (likely near-dead: static routes outrank the dynamic one). Engineering already has **no** dashboard (`/departments/engineering` → `EngineeringView`, `:691`) — the target pattern.
+- Each `*Dashboard` (overview landing) is separate from its `*View` (workspace with tabs) — one department split across two components/route tiers.
+- `/analytics` (`WorkforceAnalytics`, org-wide) vs the per-department "Analytics" tab (`DomainAnalytics`, per-domain): different components/scopes, but the "Analytics" label appears in 8 nav spots — disambiguate.
+- `WorkforceDashboard` / `ExecutiveCockpit` / `CommandCenter` overlap conceptually but are single-routed — low priority.
+
+**Decision (extends Option B): each `*View` absorbs its `*Dashboard` as an "Overview" first tab; `/departments/<dept>` points at the View with `defaultTab="overview"`; delete the 6 bespoke `*Dashboard` pages and (if confirmed unreachable) `DepartmentDetail`.** Engineering already works this way — copy it.
+
 ## Workstream A — Navigation IA
 
 **Decision: Option B (top-bar tabs own department sub-sections; sidebar stops at the department).** Lowest-risk, matches the existing tabbed UI; the fix is to remove the *duplicate* sidebar sub-nav and make tabs URL-driven.
