@@ -1,53 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import {
-  Network, Sliders, FileSearch, BarChart3, Workflow, Eye, FileText,
-  TrendingDown, TrendingUp, Search, Filter, Download, Loader2,
-  GitBranch, AlertTriangle, CheckCircle, Clock, ArrowRight, Layers
-} from 'lucide-react';
+import { FileText, Loader2, Download } from 'lucide-react';
 
-type Tab = 'graph' | 'audit';
+// The Knowledge Graph lives in ONE place (Topology Map, under Knowledge) — it is
+// not duplicated here. Analyst Workspace focuses on the audit-log browser.
+type Tab = 'audit';
 
 export default function AnalystWorkspace({ domain }: { domain?: string }) {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<Tab>('graph');
-  const [graphData, setGraphData] = useState<any>(null);
+  const [tab] = useState<Tab>('audit');
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.getGraph().catch(() => null),
-      api.getGlobalLedger().catch(() => ({ ledger: [] })),
-    ]).then(([g, l]) => {
-      setGraphData(g);
+    api.getGlobalLedger().catch(() => ({ ledger: [] })).then((l: any) => {
       setLedger(l?.ledger || []);
       setLoading(false);
     });
   }, []);
 
-  // Real deterministic layout: nodes on a circle (stable, no random), edges drawn
-  // between their ACTUAL source/target node positions so the lines represent real
-  // relationships (the previous version hashed positions by index, so the lines
-  // were meaningless). Avg confidence is computed from the real nodes.
-  const layout = React.useMemo(() => {
-    const nodes = (graphData?.nodes || []).slice(0, 40);
-    const N = Math.max(1, nodes.length);
-    const cx = 400, cy = 200, R = 155;
-    const pos: Record<string, { x: number; y: number }> = {};
-    nodes.forEach((n: any, i: number) => {
-      const a = (2 * Math.PI * i) / N - Math.PI / 2;
-      pos[String(n.id ?? i)] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
-    });
-    const avgConf = nodes.length
-      ? nodes.reduce((s: number, n: any) => s + (Number(n.confidence) || 0), 0) / nodes.length
-      : 0;
-    return { nodes, pos, avgConf };
-  }, [graphData]);
-
   const tabs: { id: Tab; label: string; icon: any }[] = [
-    { id: 'graph', label: 'Knowledge Graph Explorer', icon: Network },
     { id: 'audit', label: 'Audit Log Browser', icon: FileText },
   ];
 
@@ -63,15 +36,15 @@ export default function AnalystWorkspace({ domain }: { domain?: string }) {
       {/* Tab Bar */}
       <div className="flex items-center gap-1 px-6 py-2 border-b" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium transition-all"
+          <div key={t.id}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium"
             style={{
               background: tab === t.id ? colors.primary + '18' : 'transparent',
               color: tab === t.id ? colors.primary : colors.inkSubtle,
             }}>
             <t.icon className="w-3.5 h-3.5" />
             {t.label}
-          </button>
+          </div>
         ))}
       </div>
 
@@ -82,85 +55,6 @@ export default function AnalystWorkspace({ domain }: { domain?: string }) {
           </div>
         )}
 
-        {/* Knowledge Graph Explorer */}
-        {!loading && tab === 'graph' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-[18px] font-semibold tracking-tight">Knowledge Graph Explorer</h2>
-                <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
-                  Interactive graph: {graphData?.nodes?.length || 0} nodes, {graphData?.edges?.length || 0} relationships
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
-                  <input placeholder="Search entities..." className="pl-8 pr-3 py-1.5 rounded-lg border text-[12px]"
-                    style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.ink, width: 200 }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Graph Visualization Area — real layout: edges connect actual nodes */}
-            <div className="rounded-xl border relative overflow-hidden" style={{ borderColor: colors.hairline, height: 400, background: colors.surface1 }}>
-              <svg width="100%" height="100%" viewBox="0 0 800 400">
-                {(graphData?.edges || []).map((e: any, i: number) => {
-                  const s = layout.pos[String(e.source ?? e.from ?? e.src)];
-                  const t = layout.pos[String(e.target ?? e.to ?? e.dst)];
-                  if (!s || !t) return null;
-                  return <line key={i} x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke={colors.hairline} strokeWidth="1" opacity="0.5" />;
-                })}
-                {layout.nodes.map((n: any, i: number) => {
-                  const p = layout.pos[String(n.id ?? i)];
-                  if (!p) return null;
-                  const groupColor = n.group === 'rule' ? '#8b5cf6' : n.group === 'skill' ? '#3b82f6' :
-                    n.group === 'workflow' ? '#22c55e' : n.group === 'employee' ? '#f59e0b' : colors.primary;
-                  return (
-                    <g key={n.id ?? i}>
-                      <circle cx={p.x} cy={p.y} r={10 + (Number(n.confidence) || 0.5) * 8} fill={groupColor + '30'} stroke={groupColor} strokeWidth="2" />
-                      <text x={p.x} y={p.y + 22} textAnchor="middle" fill={colors.inkSubtle} fontSize="9" fontFamily="monospace">
-                        {(n.label || '').substring(0, 15)}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-              {/* Legend */}
-              <div className="absolute bottom-3 left-3 flex items-center gap-3 px-3 py-1.5 rounded-lg text-[10px]"
-                style={{ background: colors.canvas + 'ee', border: `1px solid ${colors.hairline}` }}>
-                {[
-                  { label: 'Rules', color: '#8b5cf6' },
-                  { label: 'Skills', color: '#3b82f6' },
-                  { label: 'Workflows', color: '#22c55e' },
-                  { label: 'People', color: '#f59e0b' },
-                ].map(l => (
-                  <span key={l.label} className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />
-                    {l.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Node Stats */}
-            <div className="grid grid-cols-4 gap-3">
-              {[
-                { label: 'Total Nodes', value: graphData?.nodes?.length || 0, icon: Network, color: colors.primary },
-                { label: 'Relationships', value: graphData?.edges?.length || 0, icon: GitBranch, color: '#8b5cf6' },
-                { label: 'Clusters', value: new Set((graphData?.nodes || []).map((n: any) => n.group)).size, icon: Layers, color: '#22c55e' },
-                { label: 'Avg Confidence', value: layout.avgConf.toFixed(2), icon: BarChart3, color: '#f59e0b' },
-              ].map(s => (
-                <div key={s.label} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                  {React.createElement(s.icon, { className: 'w-5 h-5', style: { color: s.color } })}
-                  <div>
-                    <div className="text-[16px] font-bold">{s.value}</div>
-                    <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Audit Log Browser */}
         {!loading && tab === 'audit' && (
