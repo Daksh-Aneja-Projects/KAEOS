@@ -81,6 +81,16 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   Marketplace" tab to "Skill Templates" to end the collision with the
   `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
 
+### Added (v4 Signature IP)
+- **What-If Scenario Simulator** (IP-1) — a second mode beside the Shock simulator
+  in **Reality Experience** (no new nav). Propose a change in plain language and get
+  a governed verdict (SAFE/RISKY/BLOCKED), a **real blast radius** computed from the
+  tenant's data (executable rules + skills + departments actually in scope — not
+  hallucinated), a rollback-time estimate, and (when the LLM is available) ranked
+  risk factors with mitigations + a recommendation. Surfaces the previously-orphaned
+  real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
+  DB so it is meaningful even without a cloud model. Verified live end-to-end.
+
 ### Added (v3 UI)
 - **Autonomy fallout breakdown, folded into the Dashboard** (not a separate page).
   The Dashboard already owns the safe-autonomy rate + trend + earned-autonomy; the

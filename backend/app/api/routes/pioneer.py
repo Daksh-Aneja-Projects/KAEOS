@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from app.services.external_intelligence import ExternalIntelligenceEngine
 from app.services.org_intelligence import OrgIntelligenceEngine
 from app.core.tenant import get_tenant_id, require_role
+from app.core.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["AEOS Pioneer Layers"])
 
@@ -84,27 +86,98 @@ class SimulationRequest(BaseModel):
 
 
 @router.post("/simulation/what-if", dependencies=[Depends(require_role("operator"))])
-async def run_simulation(req: SimulationRequest):
-    """L6 — What-if simulation before execution."""
+async def run_simulation(
+    req: SimulationRequest,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """L6 — What-if simulation before execution.
+
+    The BLAST RADIUS is computed from the tenant's REAL data (how many executable
+    rules and skills are actually in scope, and which departments) — not
+    hallucinated. The LLM adds the qualitative layer (verdict, risk factors,
+    mitigations, recommendation); if it is unavailable or sparse, a deterministic
+    verdict/rollback is derived from the real scope so the result is never empty.
+    """
     from app.services.llm_router import LLMRouter
+    from sqlalchemy import select, func, distinct
+    from app.models.domain import Rule, Skill
     import json
 
-    llm = LLMRouter()
+    domain = (req.target_domain or "all").strip().lower()
+    all_domains = domain in ("", "all", "all domains")
+
+    # ── Real blast radius from the tenant's data ──────────────────────────
+    rule_q = select(func.count(Rule.id)).where(
+        Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True  # noqa: E712
+    )
+    skill_q = select(func.count(Skill.id)).where(Skill.tenant_id == tenant_id)
+    if not all_domains:
+        rule_q = rule_q.where(func.lower(Rule.domain).like(f"%{domain}%"))
+        skill_q = skill_q.where(
+            (func.lower(Skill.department).like(f"%{domain}%"))
+            | (func.lower(Skill.domain).like(f"%{domain}%"))
+        )
+    affected_rules = int((await db.execute(rule_q)).scalar() or 0)
+    affected_skills = int((await db.execute(skill_q)).scalar() or 0)
+
+    all_depts = [d for d in (await db.execute(
+        select(distinct(Skill.department)).where(Skill.tenant_id == tenant_id)
+    )).scalars().all() if d]
+    if all_domains:
+        affected_departments = all_depts
+    else:
+        affected_departments = [d for d in all_depts if domain in d.lower()] or [req.target_domain]
+
+    real_blast = {
+        "affected_rules": affected_rules,
+        "affected_skills": affected_skills,
+        "affected_departments": affected_departments,
+    }
+    scope = affected_rules + affected_skills
+
+    # ── LLM narrative (verdict + risks + recommendation), best-effort ─────
     prompt = (
-        f"You are the AEOS Digital Twin Simulation Engine.\n"
+        f"You are the KAEOS Digital Twin Simulation Engine.\n"
         f"Proposed change: {req.change_description}\n"
         f"Target domain: {req.target_domain}\n"
-        f"Risk tolerance: {req.risk_tolerance}\n\n"
-        f"Simulate the impact of this change. Output JSON:\n"
+        f"Risk tolerance: {req.risk_tolerance}\n"
+        f"Real scope from the enterprise twin: {affected_rules} executable rules, "
+        f"{affected_skills} skills, departments {affected_departments}.\n\n"
+        f"Assess this change. Output ONLY JSON:\n"
         f"{{\"simulation_result\": \"SAFE|RISKY|BLOCKED\", "
-        f"\"blast_radius\": {{\"affected_rules\": int, \"affected_skills\": int, \"affected_departments\": [\"...\"]}}, "
         f"\"risk_factors\": [{{\"factor\": \"...\", \"severity\": \"HIGH|MEDIUM|LOW\", \"mitigation\": \"...\"}}], "
         f"\"estimated_rollback_time_hours\": int, \"recommendation\": \"...\"}}"
     )
-
+    narrative: dict = {}
     try:
-        res = await llm.complete(prompt=prompt, model_tier="reasoning")
+        res = await LLMRouter().complete(prompt=prompt, model_tier="reasoning")
         content = res if isinstance(res, str) else res.get("content", "{}")
-        return {"status": "SIMULATED", **json.loads(content)}
-    except Exception as e:
-        return {"status": "SIMULATION_FAILED", "error": str(e)}
+        parsed = json.loads(content) if content else {}
+        if isinstance(parsed, dict):
+            narrative = parsed
+    except Exception:
+        narrative = {}
+
+    # Deterministic verdict from real scope + risk tolerance when the LLM is sparse.
+    verdict = str(narrative.get("simulation_result", "")).upper()
+    if verdict not in ("SAFE", "RISKY", "BLOCKED"):
+        if scope == 0:
+            verdict = "SAFE"
+        elif req.risk_tolerance == "conservative" or scope > 20:
+            verdict = "RISKY"
+        else:
+            verdict = "RISKY" if scope > 8 else "SAFE"
+
+    rollback = narrative.get("estimated_rollback_time_hours")
+    if not isinstance(rollback, int):
+        rollback = max(1, scope // 2)
+
+    return {
+        "status": "SIMULATED",
+        "simulation_result": verdict,
+        "blast_radius": real_blast,
+        "risk_factors": narrative.get("risk_factors", []),
+        "estimated_rollback_time_hours": rollback,
+        "recommendation": narrative.get("recommendation", ""),
+    }

@@ -3,7 +3,11 @@ import { useTheme } from '../context/ThemeContext';
 import {
   Activity, Zap, Database, Eye, Crosshair, Brain, GitPullRequest, X,
   Users, Building2, Boxes, Bot, Package, FolderOpen,
+  Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2,
 } from 'lucide-react';
+
+const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering'];
+const WHATIF_RISK = ['conservative', 'balanced', 'aggressive'];
 import { request } from '../api/client';
 
 interface TwinNode { id: string; name: string; group: number; label: string; [k: string]: any }
@@ -53,6 +57,17 @@ export default function RealityExperience() {
   const [twinError, setTwinError] = useState<string | null>(null);
   // Surfaced when a shock injection fails so the button doesn't just reset.
   const [shockError, setShockError] = useState<string | null>(null);
+
+  // ── What-If Scenario Simulator (IP-1) — a second mode beside the shock sim.
+  // Propose a change in plain language; the real /simulation/what-if engine
+  // returns a governed verdict + blast radius + ranked risk factors + rollback.
+  const [mode, setMode] = useState<'shock' | 'whatif'>('shock');
+  const [whatIfChange, setWhatIfChange] = useState('');
+  const [whatIfDomain, setWhatIfDomain] = useState('All Domains');
+  const [whatIfRisk, setWhatIfRisk] = useState('balanced');
+  const [whatIfRunning, setWhatIfRunning] = useState(false);
+  const [whatIfResult, setWhatIfResult] = useState<any>(null);
+  const [whatIfError, setWhatIfError] = useState<string | null>(null);
 
   const fetchTwin = useCallback(async () => {
     try {
@@ -123,6 +138,28 @@ export default function RealityExperience() {
     }
   };
 
+  const runWhatIf = async () => {
+    if (!whatIfChange.trim() || whatIfRunning) return;
+    setWhatIfRunning(true);
+    setWhatIfError(null);
+    setWhatIfResult(null);
+    try {
+      const data = await request<any>('/simulation/what-if', {
+        method: 'POST',
+        body: JSON.stringify({
+          change_description: whatIfChange.trim(),
+          target_domain: whatIfDomain === 'All Domains' ? 'all' : whatIfDomain.toLowerCase(),
+          risk_tolerance: whatIfRisk,
+        }),
+      });
+      setWhatIfResult(data);
+    } catch (e: any) {
+      setWhatIfError(e?.message || 'Simulation failed. Please retry.');
+    } finally {
+      setWhatIfRunning(false);
+    }
+  };
+
   const card = { background: colors.surface1, borderColor: colors.hairline };
   const statTiles = [
     { label: 'Employees', value: stats?.employees, icon: Users, color: '#f59e0b' },
@@ -142,7 +179,7 @@ export default function RealityExperience() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Reality Experience</h1>
             <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
-              Live enterprise twin · shock simulation · decision provenance
+              Live enterprise twin · shock + what-if simulation · decision provenance
             </p>
           </div>
         </div>
@@ -172,46 +209,108 @@ export default function RealityExperience() {
         {/* Left Column: Shock Simulator & Learning */}
         <div className="col-span-3 flex flex-col gap-6">
           <div className="rounded-xl border shadow-sm p-4" style={card}>
-            <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
-              <Zap className="w-4 h-4" /> Shock Simulator
-            </h2>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold mb-1 block">Shock Event</label>
-                <select
-                  className="w-full text-sm p-2 border rounded focus:outline-none"
-                  style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                  value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
-                >
-                  {SHOCK_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold mb-1 block">
-                  Target {targetLabel || 'Node'} <span style={{ color: colors.inkTertiary }}>({targetOptions.length} live)</span>
-                </label>
-                <select
-                  className="w-full text-sm p-2 border rounded focus:outline-none"
-                  style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                  value={effectiveTarget} onChange={e => setShockTarget(e.target.value)}
-                >
-                  {targetOptions.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                </select>
-              </div>
-              <button
-                onClick={triggerShock}
-                disabled={isSimulating || !effectiveTarget}
-                className="w-full py-2 rounded text-white font-semibold text-sm transition-opacity"
-                style={{ background: isSimulating ? colors.inkSubtle : colors.primary, opacity: isSimulating || !effectiveTarget ? 0.7 : 1 }}
-              >
-                {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
+            {/* Mode toggle: Shock (inject a disruption) vs What-If (propose a change) */}
+            <div className="flex gap-1 p-1 rounded-lg mb-4" style={{ background: colors.canvas }}>
+              <button onClick={() => setMode('shock')}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                style={{ background: mode === 'shock' ? colors.primary : 'transparent', color: mode === 'shock' ? '#fff' : colors.inkSubtle }}>
+                <Zap className="w-3.5 h-3.5" /> Shock
               </button>
-              {shockError && (
-                <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
-                  {shockError}
-                </div>
-              )}
+              <button onClick={() => setMode('whatif')}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                style={{ background: mode === 'whatif' ? colors.primary : 'transparent', color: mode === 'whatif' ? '#fff' : colors.inkSubtle }}>
+                <Sparkles className="w-3.5 h-3.5" /> What-If
+              </button>
             </div>
+
+            {mode === 'shock' ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold mb-1 block">Shock Event</label>
+                  <select
+                    className="w-full text-sm p-2 border rounded focus:outline-none"
+                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+                    value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
+                  >
+                    {SHOCK_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block">
+                    Target {targetLabel || 'Node'} <span style={{ color: colors.inkTertiary }}>({targetOptions.length} live)</span>
+                  </label>
+                  <select
+                    className="w-full text-sm p-2 border rounded focus:outline-none"
+                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+                    value={effectiveTarget} onChange={e => setShockTarget(e.target.value)}
+                  >
+                    {targetOptions.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                  </select>
+                </div>
+                <button
+                  onClick={triggerShock}
+                  disabled={isSimulating || !effectiveTarget}
+                  className="w-full py-2 rounded text-white font-semibold text-sm transition-opacity"
+                  style={{ background: isSimulating ? colors.inkSubtle : colors.primary, opacity: isSimulating || !effectiveTarget ? 0.7 : 1 }}
+                >
+                  {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
+                </button>
+                {shockError && (
+                  <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+                    {shockError}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold mb-1 block">Proposed change</label>
+                  <textarea
+                    value={whatIfChange}
+                    onChange={e => setWhatIfChange(e.target.value)}
+                    rows={3}
+                    placeholder="e.g. Cut the Finance budget 15% next quarter"
+                    className="w-full text-sm p-2 border rounded focus:outline-none resize-none"
+                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block">Target domain</label>
+                  <select
+                    className="w-full text-sm p-2 border rounded focus:outline-none"
+                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+                    value={whatIfDomain} onChange={e => setWhatIfDomain(e.target.value)}
+                  >
+                    {WHATIF_DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block">Risk tolerance</label>
+                  <div className="flex gap-1 p-1 rounded-lg" style={{ background: colors.canvas }}>
+                    {WHATIF_RISK.map(r => (
+                      <button key={r} onClick={() => setWhatIfRisk(r)}
+                        className="flex-1 py-1 rounded-md text-[11px] font-medium capitalize transition-all"
+                        style={{ background: whatIfRisk === r ? colors.primary + '22' : 'transparent', color: whatIfRisk === r ? colors.primary : colors.inkSubtle }}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={runWhatIf}
+                  disabled={whatIfRunning || !whatIfChange.trim()}
+                  className="w-full py-2 rounded text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
+                  style={{ background: whatIfRunning ? colors.inkSubtle : colors.primary, opacity: whatIfRunning || !whatIfChange.trim() ? 0.7 : 1 }}
+                >
+                  {whatIfRunning ? <><Loader2 className="w-4 h-4 animate-spin" /> SIMULATING…</> : <><Sparkles className="w-4 h-4" /> RUN WHAT-IF</>}
+                </button>
+                {whatIfError && (
+                  <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+                    {whatIfError}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border shadow-sm p-4 flex-1" style={card}>
@@ -274,6 +373,111 @@ export default function RealityExperience() {
               ))}
             </div>
           </div>
+
+          {mode === 'whatif' && (
+            <div className="rounded-xl border shadow-sm p-5" style={card}>
+              <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
+                <Sparkles className="w-4 h-4" /> What-If Scenario Result
+              </h2>
+              {whatIfRunning ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3" style={{ color: colors.inkSubtle }}>
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} />
+                  <span className="text-[13px]">Simulating the change against the enterprise twin…</span>
+                </div>
+              ) : !whatIfResult ? (
+                <div className="text-center py-12">
+                  <Sparkles className="w-8 h-8 mx-auto mb-3" style={{ color: colors.inkSubtle, opacity: 0.5 }} />
+                  <div className="text-[13px] font-medium">Describe a change and run the simulation</div>
+                  <div className="text-[12px]" style={{ color: colors.inkSubtle }}>
+                    The twin returns a governed verdict, blast radius, risk factors, and mitigations.
+                  </div>
+                </div>
+              ) : (() => {
+                const verdict = String(whatIfResult.simulation_result || 'RISKY').toUpperCase();
+                const v = verdict === 'SAFE' ? { c: '#22c55e', Icon: ShieldCheck, label: 'Safe to proceed' }
+                  : verdict === 'BLOCKED' ? { c: '#ef4444', Icon: Ban, label: 'Blocked - do not proceed' }
+                    : { c: '#f59e0b', Icon: AlertTriangle, label: 'Proceed with caution' };
+                const br = whatIfResult.blast_radius || {};
+                const sevRank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+                const sevColor = (s: string) => s === 'HIGH' ? '#ef4444' : s === 'MEDIUM' ? '#f59e0b' : '#22c55e';
+                const risks = [...(whatIfResult.risk_factors || [])].sort(
+                  (a: any, b: any) => (sevRank[String(a.severity).toUpperCase()] ?? 3) - (sevRank[String(b.severity).toUpperCase()] ?? 3));
+                return (
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-4 p-4 rounded-xl" style={{ background: v.c + '12', border: `1px solid ${v.c}44` }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: v.c + '22' }}>
+                        <v.Icon className="w-6 h-6" style={{ color: v.c }} />
+                      </div>
+                      <div>
+                        <div className="text-[20px] font-bold" style={{ color: v.c }}>{verdict}</div>
+                        <div className="text-[12px]" style={{ color: colors.inkSubtle }}>{v.label}</div>
+                      </div>
+                      {typeof whatIfResult.estimated_rollback_time_hours === 'number' && (
+                        <div className="ml-auto text-right">
+                          <div className="flex items-center gap-1.5 justify-end text-[18px] font-bold">
+                            <RotateCcw className="w-4 h-4" style={{ color: colors.inkSubtle }} />~{whatIfResult.estimated_rollback_time_hours}h
+                          </div>
+                          <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>Rollback time</div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: colors.inkSubtle }}>Blast radius</div>
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { label: 'Rules affected', value: br.affected_rules ?? 0 },
+                          { label: 'Skills affected', value: br.affected_skills ?? 0 },
+                          { label: 'Departments', value: (br.affected_departments || []).length },
+                        ].map(s => (
+                          <div key={s.label} className="p-3 rounded-lg text-center" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                            <div className="text-[24px] font-bold">{s.value}</div>
+                            <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {(br.affected_departments || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(br.affected_departments || []).map((d: string, i: number) => (
+                            <span key={i} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>{d}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {risks.length > 0 && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: colors.inkSubtle }}>Risk factors</div>
+                        <div className="space-y-2">
+                          {risks.map((r: any, i: number) => (
+                            <div key={i} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sevColor(String(r.severity).toUpperCase()) }} />
+                                <span className="text-[12px] font-semibold">{r.factor}</span>
+                                <span className="ml-auto text-[10px] font-bold uppercase" style={{ color: sevColor(String(r.severity).toUpperCase()) }}>{r.severity}</span>
+                              </div>
+                              {r.mitigation && (
+                                <div className="text-[11px] pl-4" style={{ color: colors.inkSubtle }}>
+                                  <span className="font-semibold">Mitigation:</span> {r.mitigation}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {whatIfResult.recommendation && (
+                      <div className="p-3 rounded-lg flex gap-2" style={{ background: colors.primary + '0d', border: `1px solid ${colors.primary}33` }}>
+                        <Lightbulb className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: colors.primary }} />
+                        <div className="text-[12px]"><span className="font-semibold">Recommendation: </span>{whatIfResult.recommendation}</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           <div className="rounded-xl border shadow-sm p-4 relative flex flex-col" style={{ ...card, minHeight: 480 }}>
             <h2 className="text-sm font-bold uppercase mb-2 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
