@@ -689,6 +689,11 @@ export const api = {
   rejectHITL: (execId: string) => request(`/skills/hitl/${execId}/reject`, { method: 'POST' }),
 
   // LLM Routing / BYOK
+  // Autonomy Dial — per-domain risk appetite (the confidence a domain must clear to run without a human)
+  getAutonomy: () => request<{ domain: string; min_confidence: number; is_default: boolean }[]>('/config/autonomy'),
+  setAutonomy: (domain: string, min_confidence: number) =>
+    request<any>(`/config/autonomy/${domain}`, { method: 'PUT', body: JSON.stringify({ min_confidence }) }),
+
   getLLMConfig: () => request<LLMConfigItem[]>('/config/llm-routing'),
   updateLLMConfig: (config: LLMConfigInput) => request<LLMConfigItem>('/config/llm-routing', {
     method: 'POST',

@@ -10,8 +10,22 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   const [connectors, setConnectors] = useState<any[]>([]);
   const [calEvents, setCalEvents] = useState<any[]>([]);
   const [platformStats, setPlatformStats] = useState<any>(null);
+  const [autonomy, setAutonomyRows] = useState<any[]>([]);
+  const [savingDomain, setSavingDomain] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState<string | null>(null);
+
+  const updateAutonomy = async (d: string, val: number) => {
+    setSavingDomain(d);
+    try {
+      await api.setAutonomy(d, val);
+      setAutonomyRows(prev => prev.map(r => (r.domain === d ? { ...r, min_confidence: val, is_default: false } : r)));
+    } catch (e) {
+      console.error('Autonomy update failed', e);
+    } finally {
+      setSavingDomain(null);
+    }
+  };
 
   const runProbe = async (layer: string) => {
     setProbing(layer);
@@ -32,16 +46,18 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [l, c, cal, p] = await Promise.allSettled([
+      const [l, c, cal, p, a] = await Promise.allSettled([
         api.getLLMConfig(),
         api.getConnectors(),
         api.getCalendarEvents(),
         api.getSystemStats(),
+        api.getAutonomy(),
       ]);
       if (l.status === 'fulfilled') setLlmConfig(l.value);
       if (c.status === 'fulfilled') setConnectors(c.value?.connectors || []);
       if (cal.status === 'fulfilled') setCalEvents(cal.value?.events || []);
       if (p.status === 'fulfilled') setPlatformStats(p.value);
+      if (a.status === 'fulfilled') setAutonomyRows(a.value || []);
       setLoading(false);
     })();
   }, []);
@@ -232,6 +248,44 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                 {theme === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
                 {theme === 'dark' ? 'Dark' : 'Light'}
               </button>
+            </div>
+          </div>
+
+          {/* Autonomy Dial — per-department risk appetite, wired to Gate 3 */}
+          <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4" style={{ color: colors.primary }} />
+              <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Autonomy Dial</span>
+            </div>
+            <p className="text-[12px] mt-1 mb-4" style={{ color: colors.inkSubtle }}>
+              The confidence a department's decisions must clear to run without a human. Higher means more oversight, lower means more autonomy. High-consequence actions always require a human, whatever the dial.
+            </p>
+            <div className="space-y-3">
+              {autonomy.map(a => (
+                <div key={a.domain} className="flex items-center gap-4">
+                  <div className="w-28 text-[13px] font-medium capitalize" style={{ color: colors.ink }}>{a.domain}</div>
+                  <input
+                    type="range" min={0.5} max={0.99} step={0.01} value={a.min_confidence}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value);
+                      setAutonomyRows(prev => prev.map(r => (r.domain === a.domain ? { ...r, min_confidence: v } : r)));
+                    }}
+                    onMouseUp={e => updateAutonomy(a.domain, parseFloat((e.target as HTMLInputElement).value))}
+                    onTouchEnd={e => updateAutonomy(a.domain, parseFloat((e.target as HTMLInputElement).value))}
+                    className="flex-1 accent-current"
+                    style={{ accentColor: colors.primary }}
+                  />
+                  <div className="w-12 text-right text-[13px] font-mono font-bold" style={{ color: colors.primary }}>
+                    {(a.min_confidence * 100).toFixed(0)}%
+                  </div>
+                  <div className="w-16 text-[10px]" style={{ color: colors.inkSubtle }}>
+                    {savingDomain === a.domain ? 'saving…' : a.is_default ? 'default' : 'custom'}
+                  </div>
+                </div>
+              ))}
+              {autonomy.length === 0 && (
+                <div className="text-[12px] italic" style={{ color: colors.inkSubtle }}>Loading autonomy policy…</div>
+              )}
             </div>
           </div>
 

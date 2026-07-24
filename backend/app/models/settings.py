@@ -1,5 +1,5 @@
 """KAEOS — Platform Settings Models"""
-from sqlalchemy import Column, String, Boolean, Integer, JSON, DateTime, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Integer, JSON, DateTime, Float, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 
@@ -99,6 +99,27 @@ class RetentionPolicy(Base):
     data_class = Column(String(64), nullable=False)
     retain_days = Column(Integer, nullable=True)   # NULL → use the registry default
     enabled = Column(Boolean, default=False, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AutonomyPolicy(Base):
+    """Per-tenant, per-domain autonomy risk appetite — the 'Autonomy Dial'.
+
+    An executive sets how much confidence a domain's agents must clear before
+    acting WITHOUT a human. A domain with no row here uses the platform default
+    (``CONFIDENCE_AUTONOMOUS_EXEC``). Higher ``min_confidence`` = more human
+    oversight (less autonomy); lower = more autonomy. Read by Gate 3
+    (confidence → HITL) in the agent runtime, so the dial has real teeth.
+    High-consequence action tags always force a human regardless of this dial.
+    """
+    __tablename__ = 'autonomy_policies'
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'domain', name='uq_autonomy_tenant_domain'),
+    )
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+    domain = Column(String(64), nullable=False)
+    min_confidence = Column(Float, nullable=False, default=0.82)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

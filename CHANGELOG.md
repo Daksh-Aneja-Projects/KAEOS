@@ -91,6 +91,16 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
+### Added (v3 — Autonomy Dial, Phase 7)
+- **The Autonomy Dial** — executives set a per-department risk appetite (the
+  confidence a decision must clear to run without a human) in **Settings → Platform**
+  (no new nav). It has real teeth: Gate 3 in the agent runtime reads the per-domain
+  threshold (`resolve_min_confidence`, cached) and falls back to the platform default
+  when unset; high-consequence actions still always require a human. New
+  `autonomy_policies` table (migration 0007, RLS), `GET/PUT /config/autonomy`
+  (admin-gated write), and a slider UI. Tested + verified live (drag Finance to 72%
+  → persisted, gate enforces it).
+
 ### Added (v3 UI)
 - **Autonomy fallout breakdown, folded into the Dashboard** (not a separate page).
   The Dashboard already owns the safe-autonomy rate + trend + earned-autonomy; the

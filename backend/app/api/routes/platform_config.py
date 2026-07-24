@@ -369,3 +369,75 @@ async def update_federated(item: FederatedItem, tenant: dict = Depends(require_r
         resource_type="federated_consent", resource_id=item.department,
     )
     return db_item
+
+
+# ── Autonomy Dial (per-domain risk appetite) ─────────────────────────────────
+_AUTONOMY_DOMAINS = ["hr", "finance", "legal", "sales", "support", "operations", "engineering"]
+
+
+class AutonomyItem(BaseModel):
+    domain: str
+    min_confidence: float
+    is_default: bool
+
+
+class AutonomyUpdate(BaseModel):
+    min_confidence: float
+
+
+@router.get("/autonomy", response_model=List[AutonomyItem])
+async def get_autonomy(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-domain autonomy thresholds (the Autonomy Dial). Domains without an
+    explicit policy fall back to the platform default confidence threshold."""
+    from app.models.settings import AutonomyPolicy
+    from app.core.config import get_settings
+    default = get_settings().CONFIDENCE_AUTONOMOUS_EXEC
+    rows = (await db.execute(
+        select(AutonomyPolicy).where(AutonomyPolicy.tenant_id == tenant_id)
+    )).scalars().all()
+    by_domain = {r.domain: r.min_confidence for r in rows}
+    return [
+        AutonomyItem(domain=d, min_confidence=by_domain.get(d, default), is_default=d not in by_domain)
+        for d in _AUTONOMY_DOMAINS
+    ]
+
+
+@router.put("/autonomy/{domain}", response_model=AutonomyItem)
+async def set_autonomy(
+    domain: str,
+    body: AutonomyUpdate,
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a domain's autonomy threshold (admin only). Higher = more human
+    oversight, lower = more autonomy. Clamped to [0.5, 0.99]."""
+    from app.models.settings import AutonomyPolicy
+    d = domain.strip().lower()
+    if d not in _AUTONOMY_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"Unknown domain '{domain}'")
+    val = max(0.5, min(0.99, float(body.min_confidence)))
+    tenant_id = tenant["tenant_id"]
+    existing = (await db.execute(
+        select(AutonomyPolicy).where(
+            AutonomyPolicy.tenant_id == tenant_id, AutonomyPolicy.domain == d)
+    )).scalar_one_or_none()
+    if existing:
+        existing.min_confidence = val
+    else:
+        db.add(AutonomyPolicy(tenant_id=tenant_id, domain=d, min_confidence=val))
+    await db.commit()
+    # Invalidate the runtime cache so the dial takes effect promptly.
+    try:
+        from app.services.autonomy_policy import invalidate as _inv
+        _inv(tenant_id, d)
+    except Exception:
+        pass
+    await record_security_event(
+        tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="autonomy_policy", resource_id=d, details={"min_confidence": val},
+    )
+    return AutonomyItem(domain=d, min_confidence=val, is_default=False)

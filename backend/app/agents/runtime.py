@@ -305,7 +305,13 @@ class AgentExecutor:
         #      money on its own no matter how sure it is.
         from app.core.config import get_settings
         _settings = get_settings()
-        _threshold = _settings.CONFIDENCE_AUTONOMOUS_EXEC
+        # The Autonomy Dial: per-domain risk appetite set by an executive overrides
+        # the platform default threshold (falls back to it when unset). Gives the
+        # dial real teeth at the confidence gate.
+        from app.services.autonomy_policy import resolve_min_confidence
+        _threshold = await resolve_min_confidence(
+            context.get("tenant_id", "default"), skill.get("department"),
+        )
         _skill_tags = set(
             (skill.get("compliance_tags") or [])
             + (skill.get("tags") or [])
