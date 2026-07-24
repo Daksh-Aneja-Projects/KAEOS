@@ -136,6 +136,21 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   real mission; a regulatory signal briefed legal.
 
 ### Improved (performance — no reasoning/quality change)
+- **Composite DB indexes** on the hot analytics read paths: `skill_executions
+  (tenant_id, started_at)` and `cost_events (tenant_id, timestamp)` (migration 0012,
+  idempotent). Every analytics endpoint (safe-autonomy, time-machine, causal,
+  regulatory, cost telemetry) filters exactly on those; the query plan now uses a
+  covering-index seek instead of a scan.
+- **In-flight GET deduplication** in the frontend API client: concurrent identical
+  reads (a page's mount fetch + a live-refresh tick + multiple components) share one
+  request. Zero staleness (only collapses *concurrent* identical GETs), fewer calls.
+- **Bounded debate generation**: the debate gate's LLM calls now cap `max_tokens`
+  with ample headroom over the short JSON verdict — prevents a confused model from
+  runaway generation without ever truncating a well-formed response.
+- **Model strategy (researched, hardware-gated).** On the 6GB dev GPU the 7b cannot
+  co-reside with a helper model (loading a 1.5b evicts the 7b), so tier-splitting to a
+  lighter model would swap-thrash — verified and documented; nothing is routed to the
+  lighter tier here. See docs/PERF_OPTIMIZATION_PLAN.md.
 - **Async missions.** A gated mission step can take a while on a live model, so
   `POST /missions/{id}/advance` no longer blocks: it starts a background runner
   (own DB session, per-mission guard, stale-step crash recovery) and returns

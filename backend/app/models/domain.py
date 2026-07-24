@@ -1,7 +1,7 @@
 """KAEOS — Domain Models (L3 Polystore: PostgreSQL/SQLite Rules Store)"""
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, DateTime, ForeignKey,
-    Text, JSON, Enum,
+    Text, JSON, Enum, Index,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -247,6 +247,12 @@ class Skill(Base):
 class SkillExecution(Base):
     """L9/L10 — Agent Execution Record"""
     __tablename__ = 'skill_executions'
+    # Every analytics read (safe-autonomy, time-machine, causal, regulatory, cost
+    # telemetry) filters WHERE tenant_id = ? AND started_at >= ?; a composite index
+    # turns those range scans into index seeks. Perf-only, no behavior change.
+    __table_args__ = (
+        Index('ix_skill_executions_tenant_started', 'tenant_id', 'started_at'),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     skill_db_id = Column(String, ForeignKey('skills.id'), index=True)

@@ -7,7 +7,7 @@ declare global { interface Window { __kaeos_reloading?: boolean; } }
 
 const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`;
 
-export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('kaeos-token');
   const authHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -46,6 +46,24 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     throw new Error(detail || `API Error ${res.status}`);
   }
   return res.json();
+}
+
+// In-flight GET deduplication: many screens fire the same read on mount AND on a
+// live-refresh tick, and several components can request the same endpoint at once.
+// If an identical GET is already in flight, share its promise instead of issuing a
+// duplicate network call. Zero staleness (it only collapses CONCURRENT identical
+// requests; once one settles the entry is cleared), so live data stays live.
+const _inflightGets = new Map<string, Promise<any>>();
+
+export function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method || 'GET').toUpperCase();
+  if (method !== 'GET') return _exec<T>(path, options);
+  const key = path + (options?.headers ? '|' + JSON.stringify(options.headers) : '');
+  const existing = _inflightGets.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = _exec<T>(path, options).finally(() => _inflightGets.delete(key));
+  _inflightGets.set(key, p);
+  return p;
 }
 
 // ─── Types ───

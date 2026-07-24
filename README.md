@@ -472,6 +472,30 @@ Brain context, and produces an approval-ready blueprint.</sub>
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+### Performance & latency
+
+KAEOS runs governance on **real models** (local Ollama `qwen2.5-coder:7b`; simulated
+output is only a fail-closed fallback), so latency is optimized without weakening a
+gate or changing any decision's reasoning:
+
+- **Nothing blocks on a long model call.** Missions execute in a **background runner**
+  (own DB session, per-mission guard, stale-step crash recovery) — `advance` returns in
+  ~0.2s and the UI polls for live progress instead of holding a multi-minute request.
+- **Repeat work is eliminated, not approximated.** An **embedding cache** returns
+  byte-identical vectors and skips repeat provider calls; the frontend **dedupes
+  concurrent identical GETs**; the debate gate **bounds generation** to its short JSON
+  verdict.
+- **The hot analytics reads are indexed.** Composite indexes on
+  `skill_executions (tenant_id, started_at)` and `cost_events (tenant_id, timestamp)`
+  turn the safe-autonomy / time-machine / causal / regulatory / cost queries into
+  covering-index seeks.
+- **It is measured, not guessed.** Per-model-tier average latency is surfaced live in
+  the Executive Cockpit (from real cost telemetry).
+
+The full plan and the (honest) hardware findings — e.g. why aggressive model
+tier-splitting is net-negative on a 6GB GPU — live in
+[docs/PERF_OPTIMIZATION_PLAN.md](docs/PERF_OPTIMIZATION_PLAN.md).
+
 ---
 
 ## Quick Start

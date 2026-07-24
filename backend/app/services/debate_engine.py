@@ -126,7 +126,9 @@ Provide minimum 3 evidence points grounded in the skill data. Cite specific numb
 {ctx}
 
 Respond in JSON: {{"evidence":["...","...","..."],"conclusion":"...","confidence":0.0-1.0,"grounded_in":["..."]}}"""
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.3)
+            # Short JSON verdict — cap generation with ample headroom (perf; a
+            # well-formed response is far under this, so it never truncates).
+            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.3, max_tokens=700)
             return self._parse_json(resp)
         except Exception as e:
             return {"evidence": [str(e)], "conclusion": "Error", "confidence": 0.3, "grounded_in": []}
@@ -141,7 +143,7 @@ Check if Proposer's claims are grounded. Identify edge cases and blast radius.
 PROPOSER: {self._compact(proposer)}
 
 Respond in JSON: {{"counter_evidence":["..."],"risks":["..."],"conclusion":"...","ungrounded_claims_found":0}}"""
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.4)
+            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.4, max_tokens=700)
             return self._parse_json(resp)
         except Exception as e:
             return {"counter_evidence": [str(e)], "risks": ["Analysis failed"], "conclusion": "Escalate", "ungrounded_claims_found": 0}
@@ -157,7 +159,7 @@ PROPOSER: {self._compact(proposer)}
 ADVOCATE: {self._compact(advocate)}
 
 Respond in JSON: {{"final_confidence":0.0-1.0,"rationale":"...","decision":"PROCEED|ESCALATE|BLOCK","weight_proposer":0.0-1.0,"weight_advocate":0.0-1.0}}"""
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2)
+            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2, max_tokens=500)
             result = self._parse_json(resp)
             c = result.get("final_confidence", 0.5)
             result["decision"] = "PROCEED" if c >= 0.7 else ("ESCALATE" if c >= 0.5 else "BLOCK")

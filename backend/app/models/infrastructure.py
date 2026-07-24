@@ -6,7 +6,7 @@ N3: Inter-Agent Communication Protocol
 N4: Tenant Onboarding Engine
 """
 from sqlalchemy import (
-    Column, String, Boolean, Integer, Float, DateTime, Text, JSON, Enum, Numeric,
+    Column, String, Boolean, Integer, Float, DateTime, Text, JSON, Enum, Numeric, Index,
 )
 from sqlalchemy.sql import func
 import uuid
@@ -111,6 +111,10 @@ class TokenBudget(Base):
 class CostEvent(Base):
     """N2 — Individual token consumption event for attribution."""
     __tablename__ = 'cost_events'
+    # Cost telemetry filters (tenant_id, timestamp) — composite index for seeks.
+    __table_args__ = (
+        Index('ix_cost_events_tenant_ts', 'tenant_id', 'timestamp'),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
