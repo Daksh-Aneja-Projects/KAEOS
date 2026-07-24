@@ -6,6 +6,29 @@
 
 ---
 
+## Implementation status (living) — v3 + v4 DELIVERED
+
+Executed in tested, individually-committed increments on `main`, each verified live on the real local model (Ollama `qwen2.5-coder:7b`). Every capability extends an existing surface (THE RULE) — no duplicate nav.
+
+| Capability | Status | Home |
+|---|---|---|
+| v3-P1 System-of-Record Actuation | ✅ shipped | Decisions → Actions Ledger |
+| v3-P2 Outcome Intelligence Loop | ✅ shipped | Decisions → Feedback & Evolution + Dashboard |
+| v3-P3 Cross-Domain Missions | ✅ shipped | Agents → Missions |
+| v3-P5 Sense-Decide-Act Event Mesh | ✅ shipped | Org Pulse → Signals & Responses |
+| v3-P6 Regulatory & Risk Autopilot | ✅ shipped | Decisions → Compliance (upgraded in place) |
+| v3-P7 Trust & Autonomy Dial | ✅ shipped | Dashboard + Settings → Platform |
+| v4 IP-1 What-If Scenario Simulator | ✅ shipped | Reality Experience → What-If |
+| v4 IP-2 Scenario Comparison | ✅ shipped | Reality Experience |
+| v4 IP-3 Enterprise Time Machine | ✅ shipped | Reality Experience → Replay |
+| v4 IP-4 Autonomy Wargaming | ✅ shipped | Reality Experience → Wargame |
+| v4 IP-5 Precog Org-Health Forecast | ✅ shipped | Org Pulse (forecast) |
+| v4 IP-6 Causal Discovery | ✅ shipped | Knowledge → Causal Discovery |
+
+Cross-cutting: every governance decision runs on the real model (no simulated-LLM lane when Ollama is up); all UI graphs are live + interactive; ~58 new backend tests. See CHANGELOG for per-milestone detail.
+
+---
+
 ## The thesis
 
 KAEOS today **governs, measures, and improves** enterprise decisions: 7 domains, a real 7-gate `AgentExecutor`, RLS multi-tenancy, a live **safe-autonomy-rate** (~86%), the **AI Foundry** (mine→train→eval→promote), an **Enterprise State/Graph digital twin**, a **provenance ledger**, and an always-on **Copilot**.
