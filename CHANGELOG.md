@@ -82,6 +82,12 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
 
 ### Added (v4 Signature IP)
+- **Shock simulator upgrade: Scenario Comparison** (IP-2) — each shock run is now
+  captured and ranked side-by-side by severity, with blast (impacted node count),
+  a severity bar, and the executed decision, so single shocks become scenario
+  planning. Real data (each run is a `/reality/shock` call), in Reality Experience
+  (no new nav). Verified live: Cyber Incident → HR (sev 95) ranked above Employee
+  Termination (sev 60).
 - **What-If Scenario Simulator** (IP-1) — a second mode beside the Shock simulator
   in **Reality Experience** (no new nav). Propose a change in plain language and get
   a governed verdict (SAFE/RISKY/BLOCKED), a **real blast radius** computed from the

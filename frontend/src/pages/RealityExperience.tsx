@@ -69,6 +69,10 @@ export default function RealityExperience() {
   const [whatIfResult, setWhatIfResult] = useState<any>(null);
   const [whatIfError, setWhatIfError] = useState<string | null>(null);
 
+  // Scenario comparison (IP-2): each shock run is captured so several can be
+  // ranked side by side by severity/blast — turning single shocks into planning.
+  const [scenarios, setScenarios] = useState<any[]>([]);
+
   const fetchTwin = useCallback(async () => {
     try {
       const data = await request<any>('/reality/twin');
@@ -128,6 +132,18 @@ export default function RealityExperience() {
         severity: data?.impact?.severity ?? 50,
         ts: Date.now(),
       });
+      // Capture this run for side-by-side scenario comparison (real data).
+      const rec = data?.recommendation;
+      const recText = typeof rec === 'string' ? rec : (rec?.action || rec?.decision || rec?.summary || '');
+      const shockLabel = SHOCK_TYPES.find(s => s.value === shockType)?.label || shockType;
+      const targetName = targetOptions.find(n => n.id === effectiveTarget)?.name || 'target';
+      setScenarios(prev => [{
+        id: Date.now(),
+        label: `${shockLabel} → ${targetName}`,
+        severity: Number(data?.impact?.severity) || 0,
+        impacted: (data?.impact?.impacted_nodes || []).length,
+        recommendation: recText,
+      }, ...prev].slice(0, 8));
       fetchLearning();
       fetchFeed();
     } catch (e: any) {
@@ -373,6 +389,40 @@ export default function RealityExperience() {
               ))}
             </div>
           </div>
+
+          {mode === 'shock' && scenarios.length > 0 && (
+            <div className="rounded-xl border shadow-sm p-5" style={card}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold uppercase flex items-center gap-2" style={{ color: colors.inkSubtle }}>
+                  <GitPullRequest className="w-4 h-4" /> Scenario Comparison
+                </h2>
+                <button onClick={() => setScenarios([])} className="text-[11px] px-2 py-1 rounded hover:bg-red-500/10" style={{ color: colors.inkSubtle }}>Clear</button>
+              </div>
+              <div className="space-y-2">
+                {[...scenarios].sort((a, b) => b.severity - a.severity).map(s => {
+                  const sc = s.severity > 66 ? '#ef4444' : s.severity > 33 ? '#f59e0b' : '#22c55e';
+                  return (
+                    <div key={s.id} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                      <div className="flex items-center gap-3">
+                        <div className="text-[12px] font-semibold flex-1 truncate">{s.label}</div>
+                        <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{s.impacted} nodes</div>
+                        <div className="text-[13px] font-mono font-bold w-10 text-right" style={{ color: sc }}>{s.severity.toFixed(0)}</div>
+                      </div>
+                      <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, s.severity)}%`, background: sc }} />
+                      </div>
+                      {s.recommendation && (
+                        <div className="text-[11px] mt-1.5" style={{ color: colors.inkSubtle }}>{s.recommendation}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] mt-3" style={{ color: colors.inkTertiary }}>
+                Ranked by severity. Inject more shocks to compare their blast side by side.
+              </p>
+            </div>
+          )}
 
           {mode === 'whatif' && (
             <div className="rounded-xl border shadow-sm p-5" style={card}>
