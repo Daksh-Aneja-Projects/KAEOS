@@ -34,6 +34,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
 
   const { lastMessage } = useWebSocket();
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
+  const [sar, setSar] = useState<any>(null);
 
   // Color encodes autonomy posture: green = mostly autonomous, amber = humans
   // carrying the load, red = the fleet is effectively manual.
@@ -50,18 +51,20 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
 
   const load = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
-    const [ov, deps, activity, trendData, grads] = await Promise.all([
+    const [ov, deps, activity, trendData, grads, sarData] = await Promise.all([
       api.getWorkforceOverview().catch(() => null),
       api.getWorkforceDepartments().catch(() => ({ departments: [] })),
       api.getOODAEvents().catch(() => ({ events: [] })),
       api.getAutonomyTrend(30).catch(() => null),
       api.getGraduations().catch(() => null),
+      api.getSafeAutonomy(30).catch(() => null),
     ]);
     setOverview(ov);
     setDepartments(deps?.departments || []);
     setRecentActivity(activity?.events?.slice(0, 8) || []);
     setTrend(trendData);
     setGraduations(grads);
+    setSar(sarData);
     setSyncedAt(Date.now());
     setLoading(false);
   }, []);
@@ -212,6 +215,31 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                 ))}
               </div>
             </div>
+
+            {/* Why work fell out of autonomy - the explainable breakdown behind
+                the rate (folded in from the safe-autonomy detail; not a separate
+                page). Shows exactly where a human was needed, edited, or a run
+                failed. */}
+            {sar?.fallout && (sar.total_executions || 0) > 0 && (
+              <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <div className="text-[11px] uppercase tracking-wider font-semibold mb-3" style={{ color: colors.inkSubtle }}>
+                  Where autonomy fell out (last {sar.window_days}d)
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Routed to human', value: sar.fallout.routed_to_human, color: '#3b82f6' },
+                    { label: 'Human overridden', value: sar.fallout.human_overridden, color: '#f59e0b' },
+                    { label: 'Human edited', value: sar.fallout.human_edited, color: '#8b5cf6' },
+                    { label: 'Failed', value: sar.fallout.failed, color: '#ef4444' },
+                  ].map(f => (
+                    <div key={f.label} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                      <div className="text-[20px] font-bold" style={{ color: f.color }}>{f.value ?? 0}</div>
+                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{f.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Earned autonomy.
                 The aha moment: a skill starts below the confidence gate (every

@@ -82,11 +82,11 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
 
 ### Added (v3 UI)
-- **Safe Autonomy surface** (`/autonomy`, new sidebar item) — the north-star metric
-  given a real home: the live safe-autonomy-rate, an explainable fallout breakdown
-  (routed-to-human / overridden / edited / failed), a per-skill split showing where
-  autonomy leaks, and a daily trend. Wired to `GET /metrics/safe-autonomy`; all real,
-  no mock. Complements (does not duplicate) the dashboard summary tile.
+- **Autonomy fallout breakdown, folded into the Dashboard** (not a separate page).
+  The Dashboard already owns the safe-autonomy rate + trend + earned-autonomy; the
+  one genuinely new insight from `GET /metrics/safe-autonomy` — *why* work fell out
+  of autonomy (routed-to-human / overridden / edited / failed) — is now a row on the
+  Dashboard. No duplicate navigation touchpoint. All real, no mock.
 
 ### Added (planning)
 - **docs/KAEOS_VISION_PLAN.md** — the v3 "Autonomous Enterprise" plan: new,

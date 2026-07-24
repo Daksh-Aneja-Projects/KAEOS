@@ -259,8 +259,8 @@ a fixed error budget, trending over time. It is computed live from real executio
 at `GET /billing/roi`, and a fully broken-out view at `GET /metrics/safe-autonomy` (the rate, an
 explainable fallout breakdown of routed-to-human / overridden / edited / failed, a per-skill split
 showing where autonomy leaks, and a daily time-series). It rises as verified rules accumulate - the
-compounding loop in one number. In the app it has a dedicated **Safe Autonomy** surface (`/autonomy`)
-that surfaces all of the above, live.
+compounding loop in one number. In the app the **Dashboard** surfaces the rate, its trend, the
+earned-autonomy skills, and the fallout breakdown (where autonomy fell out) - all in one place, live.
 
 **What we deliberately do NOT report:** `hours_saved` and `cost_reduction` return `null`, with a note.
 They require a human-baseline duration and a loaded hourly rate per skill - tenant inputs KAEOS
