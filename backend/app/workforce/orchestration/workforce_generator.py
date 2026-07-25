@@ -220,19 +220,58 @@ _HR_AGENT_STEPS: dict[str, list] = {
 }
 
 
+# Department-specific step shapes for the non-HR domains. Each returns a real,
+# domain-grounded load -> analyze -> act sequence rather than a generic
+# assess/act. `{role}` / `{cap}` are filled from the agent def + capability.
+def _domain_steps(pack_slug: str, role: str, cap: str) -> list | None:
+    templates: dict[str, list] = {
+        "finance": [
+            {"id": "load_ledger", "action": f"Retrieve the relevant financial records, GL entries and policy for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "analyze", "action": f"Analyze the {cap} item against GAAP/GL controls and the expense/approval policy; flag variances, duplicates and policy breaches", "tool": "none", "condition": "Always"},
+            {"id": "post", "action": f"Produce the reconciled decision (approve / route / reject) with the audited amount and lawful basis for '{role}'", "tool": "none", "condition": "Always"},
+        ],
+        "legal": [
+            {"id": "load_matter", "action": f"Retrieve the contract/matter, its clauses and the applicable playbook/regulation for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "review", "action": f"Review against the legal playbook and regulatory requirements; identify risky clauses, missing protections and compliance gaps", "tool": "none", "condition": "Always"},
+            {"id": "recommend", "action": f"Produce redlines / a risk rating and a recommended position for '{role}', escalating high-risk items to counsel", "tool": "none", "condition": "Always"},
+        ],
+        "sales": [
+            {"id": "load_opp", "action": f"Retrieve the opportunity/account, pipeline stage and engagement history for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "analyze", "action": f"Analyze deal health, risk and the next-best-action from real CRM signals (no fabricated forecasts)", "tool": "none", "condition": "Always"},
+            {"id": "recommend", "action": f"Produce the recommended next action / forecast adjustment for '{role}' with its supporting evidence", "tool": "none", "condition": "Always"},
+        ],
+        "support": [
+            {"id": "load_ticket", "action": f"Retrieve the ticket, customer context and relevant knowledge-base articles for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "diagnose", "action": f"Diagnose the issue and draft a resolution GROUNDED in the KB; do not invent steps not in the documentation", "tool": "none", "condition": "Always"},
+            {"id": "respond", "action": f"Produce the customer response or an escalation with priority and rationale for '{role}'", "tool": "none", "condition": "Always"},
+        ],
+        "operations": [
+            {"id": "load_context", "action": f"Retrieve the process/incident, its runbook and the governing SLA for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "assess", "action": f"Assess against the runbook and SLA; identify the breach/bottleneck and the safe remediation", "tool": "none", "condition": "Always"},
+            {"id": "act", "action": f"Produce the remediation action / routing decision with its expected impact for '{role}'", "tool": "none", "condition": "Always"},
+        ],
+    }
+    return templates.get((pack_slug or "").lower())
+
+
 def build_agent_skill(agent_def: dict, pack_slug: str, capability) -> dict:
     """Return real skill steps + the bound agent handler for a pack agent def.
 
     For known agent types (all domains) this emits action-bearing steps and records the
-    concrete class/method to invoke. For unmapped agent types it emits a single
-    meaningful step describing the agent's real role (no placeholder no-ops).
+    concrete class/method to invoke. For unmapped agent types it emits
+    department-specific steps (Finance/Legal/Sales/Support/Ops), falling back to a
+    generic-but-real role description only for truly unknown domains.
     """
     agent_type = (agent_def.get("type") or "").lower()
     registry = AGENT_REGISTRY.get(agent_type)  # Check unified registry for all domains
-    steps = _HR_AGENT_STEPS.get(agent_type)  # Only HR has pre-defined steps for now
+    steps = _HR_AGENT_STEPS.get(agent_type)  # HR has per-agent-type steps
 
     if steps is None:
-        # Non-HR (or unmapped) agent — describe the real role rather than no-ops.
+        role = agent_def.get("description") or agent_def.get("name", "agent")
+        # Prefer department-specific steps for the non-HR domains.
+        steps = _domain_steps(pack_slug, role, capability.name)
+    if steps is None:
+        # Truly unmapped domain — describe the real role rather than no-ops.
         role = agent_def.get("description") or agent_def.get("name", "agent")
         steps = [
             {"id": "assess", "action": f"Assess the incoming {capability.name} task for '{role}'", "tool": "none", "condition": "Always"},

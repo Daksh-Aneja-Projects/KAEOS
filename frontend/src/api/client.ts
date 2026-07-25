@@ -1320,16 +1320,17 @@ export const api = {
     const wsBase = (import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`)
       .replace(/^http/, 'ws')
       .replace(/\/api\/v1\/?$/, '');
+    // The token is NOT put in the query string (it would leak into proxy/access
+    // logs and browser history). It is carried in the Sec-WebSocket-Protocol
+    // handshake header instead — see getWebSocketProtocols() + the server handler.
+    return `${wsBase}${path}`;
+  },
+  /** WebSocket subprotocols carrying the bearer token: ['kaeos-bearer', <jwt>].
+   *  The browser sends these as Sec-WebSocket-Protocol; the server reads the
+   *  token from there and echoes 'kaeos-bearer' to complete the handshake. */
+  getWebSocketProtocols: (): string[] | undefined => {
     const token = localStorage.getItem('kaeos-token');
-    // SECURITY (log-leak surface): the JWT rides in the query string because the
-    // browser WebSocket API cannot set an Authorization header on the handshake.
-    // Query strings are prone to landing in proxy/server access logs and browser
-    // history, so this token is more exposed than the Bearer header used for REST.
-    // Prefer a header/subprotocol path (e.g. Sec-WebSocket-Protocol carrying the
-    // token, or a short-lived single-use ticket minted via REST then redeemed on
-    // connect) IF the backend adds support - do not change this without a matching
-    // server-side handler, or live connections will break.
-    return `${wsBase}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    return token ? ['kaeos-bearer', token] : undefined;
   },
 };
 

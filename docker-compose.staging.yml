@@ -7,7 +7,9 @@ services:
     restart: always
     environment:
       POSTGRES_USER: kaeos
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kaeos_staging_secure}
+      # Required — no baked-in default (a forgotten override would ship a known
+      # password to a network-reachable staging box).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for staging}
       POSTGRES_DB: kaeos
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -58,8 +60,8 @@ services:
       # is only for maintenance paths (DDL, migrations, seeding). The
       # kaeos_app role is created by migration b7c1d9e4a201; verify with
       # scripts/verify_rls.py after deploy.
-      - DATABASE_URL=postgresql+asyncpg://kaeos_app:${KAEOS_APP_DB_PASSWORD:-kaeos_app_staging}@postgres:5432/kaeos
-      - KAEOS_OWNER_DB_URL=postgresql+asyncpg://kaeos:${POSTGRES_PASSWORD:-kaeos_staging_secure}@postgres:5432/kaeos
+      - DATABASE_URL=postgresql+asyncpg://kaeos_app:${KAEOS_APP_DB_PASSWORD:?KAEOS_APP_DB_PASSWORD must be set for staging}@postgres:5432/kaeos
+      - KAEOS_OWNER_DB_URL=postgresql+asyncpg://kaeos:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for staging}@postgres:5432/kaeos
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=staging
     depends_on:

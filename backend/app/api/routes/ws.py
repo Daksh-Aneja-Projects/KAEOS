@@ -9,6 +9,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["WebSockets"])
 
 
+def _extract_ws_token(sec_protocol_header: str, query_token: str | None):
+    """Pull the bearer token from the Sec-WebSocket-Protocol header if the client
+    offered ``["kaeos-bearer", <token>]`` (keeps it out of the query string / logs);
+    otherwise fall back to the ``?token=`` query param. Returns (token, subprotocol)."""
+    offered = [p.strip() for p in (sec_protocol_header or "").split(",") if p.strip()]
+    if len(offered) >= 2 and offered[0] == "kaeos-bearer":
+        return offered[1], "kaeos-bearer"
+    return query_token, None
+
+
 class ConnectionManager:
     """Multi-tenant WebSocket connection manager with broadcast support."""
 
@@ -18,14 +28,16 @@ class ConnectionManager:
 
     MAX_CONNECTIONS_PER_TENANT = 50
 
-    async def connect(self, websocket: WebSocket, tenant_id: str):
+    async def connect(self, websocket: WebSocket, tenant_id: str, subprotocol: str | None = None):
         if tenant_id not in self.active_connections:
             self.active_connections[tenant_id] = []
         if len(self.active_connections[tenant_id]) >= self.MAX_CONNECTIONS_PER_TENANT:
             await websocket.close(code=1008, reason="Too many connections for this tenant")
             logger.warning(f"WebSocket rejected for tenant {tenant_id}: connection limit reached")
             return False
-        await websocket.accept()
+        # Echo the negotiated subprotocol (the browser closes the socket if it
+        # offered one and the server does not select it).
+        await websocket.accept(subprotocol=subprotocol)
         self.active_connections[tenant_id].append(websocket)
         logger.info(f"WebSocket connected for tenant {tenant_id}. Active: {len(self.active_connections[tenant_id])}")
 
@@ -93,12 +105,19 @@ async def websocket_endpoint(
     Clients receive: activity_feed, hitl_required, agent_status, system_health.
     Clients send: ping → pong, subscribe → acknowledge.
 
-    Auth: outside DEV_MODE the `token` query param must be a valid JWT or
-    kt_ API key whose tenant matches the path tenant — WebSockets bypass
-    TenantMiddleware, so the check lives here.
+    Auth: outside DEV_MODE the caller must present a valid JWT or kt_ API key
+    whose tenant matches the path tenant — WebSockets bypass TenantMiddleware, so
+    the check lives here. The token is taken from the `Sec-WebSocket-Protocol`
+    header (offered as `["kaeos-bearer", <token>]`) so it does NOT ride in the
+    query string (which lands in proxy/access logs and browser history); the
+    `?token=` query param remains a backward-compatible fallback.
     """
     from app.core.config import get_settings
     settings = get_settings()
+
+    token, selected_subprotocol = _extract_ws_token(
+        websocket.headers.get("sec-websocket-protocol", ""), token)
+
     if not settings.DEV_MODE:
         authorized = False
         if token:
@@ -119,7 +138,7 @@ async def websocket_endpoint(
             await websocket.close(code=1008, reason="Unauthorized")
             return
 
-    connected = await manager.connect(websocket, tenant_id)
+    connected = await manager.connect(websocket, tenant_id, subprotocol=selected_subprotocol)
     if connected is False:
         return
     try:

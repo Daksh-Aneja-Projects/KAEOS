@@ -27,13 +27,15 @@ export function useWebSocket(tenantIdOverride?: string) {
     // Derive the WS endpoint from the API base via the shared client helper -
     // VITE_WS_URL still wins when explicitly configured.
     const explicitBase = import.meta.env.VITE_WS_URL;
-    const token = localStorage.getItem('kaeos-token');
     const connectionUrl = explicitBase
-      ? `${explicitBase}/${tenantId}${token ? `?token=${encodeURIComponent(token)}` : ''}`
+      ? `${explicitBase}/${tenantId}`
       : api.getWebSocketUrl(`/ws/${tenantId}`);
-    
+    // The bearer token rides in the Sec-WebSocket-Protocol handshake header, not
+    // the query string (which leaks into logs/history).
+    const protocols = api.getWebSocketProtocols();
+
     try {
-      ws.current = new WebSocket(connectionUrl);
+      ws.current = new WebSocket(connectionUrl, protocols);
       
       ws.current.onopen = () => {
         if (!isComponentMounted.current) return;

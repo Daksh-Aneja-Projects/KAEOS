@@ -15,6 +15,23 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Fixed / Added (Production-readiness — P2 polish)
+- **WebSocket token no longer in the query string.** The live-feed WS handshake
+  carried the JWT as `?token=` (leaks into proxy/access logs and browser history).
+  It now rides in the `Sec-WebSocket-Protocol` header (`["kaeos-bearer", <jwt>]`),
+  which the server reads and echoes; the query param remains a backward-compatible
+  fallback. Tests: `tests/test_ws_auth.py`.
+- **Domain-specific agent steps for the non-HR departments.** Finance, Legal,
+  Sales, Support, and Operations agents were generated with a generic assess/act
+  template; they now get real, domain-grounded `load -> analyze -> act` steps
+  (ledger/GL, contract/playbook, opportunity/CRM, ticket/KB, runbook/SLA). Truly
+  unknown domains still get an honest role description. Tests:
+  `tests/test_domain_agent_steps.py`.
+- **Staging compose secrets are required.** `docker-compose.staging.yml` no longer
+  bakes in default DB passwords (`kaeos_staging_secure` etc.); the critical
+  secrets now fail-if-unset (`:?`) like production, so a forgotten override can't
+  ship a known password to a network-reachable staging box.
+
 ### Changed / Removed (Production-readiness — ops & cleanup)
 - **Deep health probe.** `GET /health?deep=true` now additionally reports the
   reachability of non-critical dependencies (Redis, the LLM provider) for
