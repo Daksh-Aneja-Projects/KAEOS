@@ -97,7 +97,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # matched and cannot be poisoned this way.
         req_path = request.scope["path"]
         public_paths = ("/health", "/health/live", "/docs", "/openapi.json", "/redoc", "/metrics")
-        auth_paths = ("/api/v1/auth/login", "/api/v1/auth/sso/saml")
+        # Pre-auth auth routes. SSO login/callback/discovery MUST be reachable
+        # without a session (that is the whole point); the SSO *config* endpoints
+        # (/auth/sso/connections) are deliberately NOT here — they require ADMIN.
+        auth_paths = (
+            "/api/v1/auth/login",
+            "/api/v1/auth/sso/saml",
+            "/api/v1/auth/sso/oidc",
+            "/api/v1/auth/sso/discover",
+        )
         if req_path in public_paths or any(req_path.startswith(p) for p in auth_paths):
             request.state.tenant = _DEV_TENANT
             return await call_next(request)

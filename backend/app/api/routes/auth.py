@@ -81,10 +81,16 @@ async def logout(authorization: Optional[str] = Header(None)):
 
 @router.post("/sso/saml")
 async def saml_sso(data: dict):
-    """Enterprise SAML/SSO authentication endpoint — not implemented in v1."""
+    """Enterprise SAML endpoint — not yet implemented.
+
+    OpenID Connect (OIDC) SSO is fully implemented and covers Azure AD, Okta,
+    Google, and Auth0 — see `/auth/sso/oidc/authorize`. SAML support is planned;
+    until then this endpoint honestly reports 501 rather than pretending to work.
+    """
     raise HTTPException(
         status_code=501,
-        detail="SAML SSO is not implemented in v1. Please use email/password login or contact support."
+        detail="SAML is not yet implemented. Use OIDC SSO (/auth/sso/oidc/authorize) "
+               "or email/password login."
     )
 @router.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):

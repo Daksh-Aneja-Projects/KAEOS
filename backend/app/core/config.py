@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     SKILLS_CACHE_TTL: int = 300
 
+    # SSO / OIDC (enterprise single sign-on)
+    # PUBLIC_BASE_URL is this API's externally-reachable origin; the OIDC redirect
+    # URI (registered at the IdP) is derived as {PUBLIC_BASE_URL}{API_PREFIX}/auth/sso/oidc/callback.
+    # Leave empty to derive from the incoming request (dev only — Host-spoofable).
+    PUBLIC_BASE_URL: str = ""
+    # Where the browser is sent back with the freshly-minted session after a
+    # successful SSO login (the SPA reads the token from the URL fragment).
+    FRONTEND_BASE_URL: str = ""
+
     # Neo4j (Graph Store)
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"

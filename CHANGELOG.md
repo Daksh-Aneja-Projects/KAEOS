@@ -9,6 +9,25 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Production-readiness — enterprise auth)
+- **Real OIDC single sign-on (P0).** Enterprise SSO was a 501 stub plus an
+  in-tree mock middleware that accepted a literal `"mock_valid_jwt"` (an auth
+  bypass primitive). Shipped a complete, real OpenID Connect Authorization Code
+  flow (`app/services/sso.py`, `/auth/sso/oidc/authorize` + `/callback`): IdP
+  discovery, `state`+`nonce` carried in a short-lived HMAC-signed token (stateless,
+  multi-worker safe), authorization-code exchange over TLS, **RS256 id_token
+  signature verification via the IdP's JWKS** plus issuer/audience/expiry/nonce
+  checks (PyJWT), and just-in-time user provisioning that mints a normal KAEOS
+  session (provisioned accounts get an unusable password hash — SSO-only, never
+  password-loginable). Covers Azure AD, Okta, Google, and Auth0. Per-tenant IdP
+  config lives in a new `sso_connections` table (migration `0013`, RLS on
+  Postgres) with the **client secret Fernet-encrypted at rest and never returned
+  by the API**; managed through an ADMIN-gated config surface
+  (`/auth/sso/connections`). Deleted the mock middleware. SAML remains an honest
+  501 that points callers to OIDC. Tests: `tests/test_sso.py` (13) cover signed
+  state, secret encryption, real RS256 verification incl. nonce/audience
+  rejection, JIT provisioning/reuse/deactivation, and the config surface.
+
 ### Fixed (Production-readiness — security)
 - **Cross-tenant graph leak closed (P0).** The polystore graph store
   (`polystore_graph_nodes` / `_edges`) had no `tenant_id` column and no RLS, so
