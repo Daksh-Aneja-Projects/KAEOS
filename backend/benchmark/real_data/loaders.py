@@ -23,6 +23,21 @@ from typing import Any, Dict, Iterator, List
 
 RAW_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "kaggle_raw")
 
+
+def _read_parquet(path: str):
+    """Read a parquet file with a crash-safe engine.
+
+    pyarrow's reader can HARD-CRASH the interpreter (native segfault) on some
+    bleeding-edge Python builds - e.g. pyarrow 24 + pandas 3 + CPython 3.14 - and
+    a segfault cannot be caught in-process, so it would take the whole test/onboard
+    run down. Prefer the pure-Python ``fastparquet`` engine when it is installed;
+    only fall back to pandas' default (pyarrow) when it is not.
+    """
+    import importlib.util
+    import pandas as pd
+    engine = "fastparquet" if importlib.util.find_spec("fastparquet") else "auto"
+    return pd.read_parquet(path, engine=engine)
+
 # Provenance — the exact source of every domain's real data.
 DATASET_MANIFEST = {
     "hr_attrition": {
@@ -339,22 +354,22 @@ def load_sales_crm(account_limit: int | None = None,
     """
     import pandas as pd
     base = _path(_SALES_DIR)
-    accounts = pd.read_parquet(f"{base}/accounts.parquet")
+    accounts = _read_parquet(f"{base}/accounts.parquet")
     if account_limit:
         accounts = accounts.head(account_limit)
     keep = set(accounts["account_id"].tolist())
 
-    contacts = pd.read_parquet(f"{base}/contacts.parquet")
+    contacts = _read_parquet(f"{base}/contacts.parquet")
     contacts = contacts[contacts["account_id"].isin(keep)]
 
-    leads = pd.read_parquet(f"{base}/leads.parquet")
+    leads = _read_parquet(f"{base}/leads.parquet")
     leads = leads[leads["account_id"].isin(keep)]
     lead_to_account = dict(zip(leads["lead_id"], leads["account_id"]))
 
-    opps = pd.read_parquet(f"{base}/opportunities.parquet")
+    opps = _read_parquet(f"{base}/opportunities.parquet")
     opps = opps[opps["lead_id"].isin(lead_to_account.keys())]
 
-    acts = pd.read_parquet(f"{base}/sales_activities.parquet")
+    acts = _read_parquet(f"{base}/sales_activities.parquet")
     acts = acts[acts["lead_id"].isin(lead_to_account.keys())].head(activity_cap)
 
     def _acc_rows():
