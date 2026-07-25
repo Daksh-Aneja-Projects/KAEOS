@@ -610,6 +610,21 @@ export const api = {
   mfaConfirm: (code: string) => request<any>('/auth/mfa/confirm', { method: 'POST', body: JSON.stringify({ code }) }),
   mfaDisable: () => request<any>('/auth/mfa/disable', { method: 'POST' }),
 
+  // Data governance — DSAR erasure, retention (privacy.py)
+  privacyErasure: (body: { employee_id?: string; email?: string }) => request<any>('/privacy/erasure', { method: 'POST', body: JSON.stringify(body) }),
+  getRetention: () => request<{ policies: any[] }>('/privacy/retention'),
+  setRetention: (body: { data_class: string; retain_days: number; enabled: boolean }) => request<any>('/privacy/retention', { method: 'PUT', body: JSON.stringify(body) }),
+  applyRetention: () => request<any>('/privacy/retention/apply', { method: 'POST' }),
+
+  // Billing / usage (billing.py)
+  getBillingUsage: () => request<any>('/billing/usage'),
+  getBillingRoi: () => request<any>('/billing/roi'),
+
+  // Webhooks (enterprise.py)
+  getWebhooks: () => request<{ subscriptions: any[] }>('/enterprise/webhooks'),
+  createWebhook: (body: { name: string; endpoint: string; events: string[] }) => request<any>('/enterprise/webhooks', { method: 'POST', body: JSON.stringify(body) }),
+  deleteWebhook: (id: string) => request<any>(`/enterprise/webhooks/${id}`, { method: 'DELETE' }),
+
   // SSO (OIDC) — discovery is unauthenticated (used by the login page)
   discoverSSO: (email: string) => request<{ sso: boolean; provider_label?: string; tenant_id?: string; authorize_url?: string }>(`/auth/sso/discover?email=${encodeURIComponent(email)}`),
   getSSOConnections: () => request<{ connections: any[] }>('/auth/sso/connections'),

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun } from 'lucide-react';
 import SecuritySettings from './SecuritySettings';
+import DataGovernanceSettings from './DataGovernanceSettings';
+import { Lock } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 
 const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   const { colors, theme, toggle } = useTheme();
-  const [tab, setTab] = useState<'llm' | 'integrations' | 'calendar' | 'platform' | 'security'>('llm');
+  const [tab, setTab] = useState<'llm' | 'integrations' | 'calendar' | 'platform' | 'security' | 'governance'>('llm');
   const [llmConfig, setLlmConfig] = useState<any>(null);
   const [connectors, setConnectors] = useState<any[]>([]);
   const [calEvents, setCalEvents] = useState<any[]>([]);
@@ -72,7 +74,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        {([['llm', 'LLM Routing', Cpu], ['integrations', 'Integrations', Plug], ['calendar', 'Calendar', Calendar], ['security', 'Security', Shield], ['platform', 'Platform', Globe2]] as const).map(([id, label, Icon]) => (
+        {([['llm', 'LLM Routing', Cpu], ['integrations', 'Integrations', Plug], ['calendar', 'Calendar', Calendar], ['security', 'Security', Shield], ['governance', 'Data & Privacy', Lock], ['platform', 'Platform', Globe2]] as const).map(([id, label, Icon]) => (
           <button key={id} onClick={() => setTab(id as any)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all"
             style={{ background: tab === id ? colors.primary : 'transparent', color: tab === id ? '#fff' : colors.inkSubtle }}>
             <Icon className="w-3.5 h-3.5" />{label}
@@ -238,6 +240,8 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
 
       {/* Platform */}
       {tab === 'security' && <SecuritySettings />}
+
+      {tab === 'governance' && <DataGovernanceSettings />}
 
       {tab === 'platform' && (
         <div className="space-y-4">
