@@ -15,6 +15,25 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Data — comprehensive Kaggle-backed onboarding)
+- **Real relational sales CRM.** `onboard_real_company` (tenant `tenant_realco`)
+  now builds the FULL pipeline from the sales parquet — Accounts (real
+  firmographics: industry, region, employee band, revenue band) -> Contacts ->
+  Opportunities (real stage + ACV) -> Activities — all relationally linked, instead
+  of a flat lead list. New `loaders.load_sales_crm` returns a referentially-consistent
+  subset. At `--limit 50`: 50 accounts / 152 contacts / 153 opportunities / 746
+  activities (scales ~10x at the default 500).
+- **Real procurement.** Operations onboarding now writes a `PurchaseRequest` +
+  `PurchaseOrder` per real PO (supplier, category, quantity, negotiated price,
+  status) plus a risk Signal for every non-compliant/defective order — previously
+  Signals-only. New `loaders.load_procurement_orders`.
+- **Reality twin seeded from real data.** `seed_state_twin` derives the four
+  Enterprise-State snapshots (Finance/HR/Ops/IT) from the onboarded rows — headcount
+  & attrition from HR, AR from invoices, AP from POs, vendor incidents & supply-chain
+  health from procurement, P1 incidents from engineering — so Org Pulse / cockpit /
+  scorecard render live numbers instead of an empty twin. Tests:
+  `tests/test_real_data_loaders.py` (skip when raw data absent).
+
 ### Fixed / Added (Production-readiness — P2 polish, round 2)
 - **At-rest key decoupled from the JWT key.** Stored secrets (connector creds,
   SSO client secrets, MFA secrets) can now be encrypted with a dedicated

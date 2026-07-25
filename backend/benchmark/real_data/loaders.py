@@ -301,6 +301,128 @@ def load_legal_clause_type(limit: int | None = None) -> Iterator[Dict[str, Any]]
                 emitted += 1
 
 
+# ── Relational sales CRM (parquet) — for rich onboarding, not the benchmark ──
+# The sales/ dir ships a full relational CRM (accounts <- contacts, leads ->
+# opportunities/activities). load_sales_crm returns a coherent, fully-linked
+# SUBSET so onboarding can build real Accounts/Contacts/Opportunities/Activities
+# instead of a flat lead list.
+
+_SALES_DIR = "sales"
+_EMPLOYEE_BAND = {"1-50": 25, "51-200": 120, "200-499": 350, "500-999": 750,
+                  "1000-1999": 1500, "2000+": 3000}
+_REVENUE_BAND = {"$1M-$10M": 5_000_000, "$10M-$50M": 30_000_000,
+                 "$50M-$200M": 125_000_000, "$200M+": 300_000_000}
+_OPP_STAGE = {
+    "closed_won": ("CLOSED_WON", 100.0), "closed_lost": ("CLOSED_LOST", 0.0),
+    "negotiation": ("NEGOTIATION", 75.0), "proposal_sent": ("PROPOSAL", 55.0),
+    "demo_completed": ("QUALIFICATION", 35.0), "demo_scheduled": ("QUALIFICATION", 25.0),
+}
+
+
+def sales_crm_available() -> bool:
+    return os.path.exists(_path(f"{_SALES_DIR}/accounts.parquet"))
+
+
+def load_sales_crm(account_limit: int | None = None,
+                   activity_cap: int = 20000) -> Dict[str, list]:
+    """Return a coherent, relationally-linked CRM subset from the sales parquet.
+
+    Picks the first ``account_limit`` accounts, then keeps only the contacts,
+    leads, opportunities and activities that belong to them (resolving each
+    opportunity/activity's account via its lead). Every returned row's
+    ``account_id`` references an account also in the result.
+    """
+    base = _path(_SALES_DIR)
+    accounts = pd.read_parquet(f"{base}/accounts.parquet")
+    if account_limit:
+        accounts = accounts.head(account_limit)
+    keep = set(accounts["account_id"].tolist())
+
+    contacts = pd.read_parquet(f"{base}/contacts.parquet")
+    contacts = contacts[contacts["account_id"].isin(keep)]
+
+    leads = pd.read_parquet(f"{base}/leads.parquet")
+    leads = leads[leads["account_id"].isin(keep)]
+    lead_to_account = dict(zip(leads["lead_id"], leads["account_id"]))
+
+    opps = pd.read_parquet(f"{base}/opportunities.parquet")
+    opps = opps[opps["lead_id"].isin(lead_to_account.keys())]
+
+    acts = pd.read_parquet(f"{base}/sales_activities.parquet")
+    acts = acts[acts["lead_id"].isin(lead_to_account.keys())].head(activity_cap)
+
+    def _acc_rows():
+        for _, r in accounts.iterrows():
+            yield {
+                "account_id": r["account_id"],
+                "company_name": str(r.get("company_name") or f"Account {r['account_id']}"),
+                "industry": str(r.get("industry") or "").replace("_", " ").title(),
+                "region": str(r.get("region") or ""),
+                "employee_count": _EMPLOYEE_BAND.get(str(r.get("employee_band")), 100),
+                "arr": float(_REVENUE_BAND.get(str(r.get("estimated_revenue_band")), 1_000_000)),
+                "maturity": str(r.get("process_maturity_band") or ""),
+            }
+
+    def _contact_rows():
+        for _, r in contacts.iterrows():
+            yield {
+                "contact_id": r["contact_id"], "account_id": r["account_id"],
+                "job_title": str(r.get("job_title") or "Contact"),
+                "seniority": str(r.get("seniority") or ""),
+                "buyer_role": str(r.get("buyer_role") or ""),
+                "email_domain_type": str(r.get("email_domain_type") or "corporate"),
+            }
+
+    def _opp_rows():
+        for _, r in opps.iterrows():
+            stage, prob = _OPP_STAGE.get(str(r.get("stage")), ("PROSPECTING", 10.0))
+            yield {
+                "opportunity_id": r["opportunity_id"],
+                "account_id": lead_to_account[r["lead_id"]],
+                "stage": stage, "probability": prob,
+                "amount": float(r.get("estimated_acv") or 0),
+                "created_at": r.get("created_at"),
+            }
+
+    def _activity_rows():
+        for _, r in acts.iterrows():
+            yield {
+                "account_id": lead_to_account[r["lead_id"]],
+                "activity_type": str(r.get("activity_type") or "task").upper(),
+                "outcome": str(r.get("activity_outcome") or ""),
+                "timestamp": r.get("activity_timestamp"),
+            }
+
+    return {
+        "accounts": list(_acc_rows()),
+        "contacts": list(_contact_rows()),
+        "opportunities": list(_opp_rows()),
+        "activities": list(_activity_rows()),
+    }
+
+
+def load_procurement_orders(limit: int | None = None) -> Iterator[Dict[str, Any]]:
+    """Raw procurement POs (keeps PO_ID + Supplier) for building real purchase
+    orders and vendors — richer than load_procurement_compliance (which drops them)."""
+    def _num(x):
+        try:
+            return float(x)
+        except (ValueError, TypeError):
+            return 0.0
+    for r in _read_csv(DATASET_MANIFEST["procurement_compliance"]["file"], limit):
+        yield {
+            "po_id": r.get("PO_ID", ""),
+            "supplier": r.get("Supplier", "").strip() or "Unknown Supplier",
+            "item_category": r.get("Item_Category", ""),
+            "order_status": r.get("Order_Status", ""),
+            "quantity": int(_num(r.get("Quantity"))),
+            "unit_price": _num(r.get("Unit_Price")),
+            "negotiated_price": _num(r.get("Negotiated_Price")),
+            "defective_units": int(_num(r.get("Defective_Units"))),
+            "compliant": (r.get("Compliance") or "").strip() == "Yes",
+        }
+
+
 LOADERS = {
     "hr_attrition": load_hr_attrition,
     "support_priority": load_support_priority,
