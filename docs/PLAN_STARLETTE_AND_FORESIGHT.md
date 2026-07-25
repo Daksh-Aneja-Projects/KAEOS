@@ -1,6 +1,29 @@
 # KAEOS — Definitive Plan: Starlette 1.x Upgrade + Foresight USP + Missing Touchpoints
 
-Status: PROPOSED (authored 2026-07-25). One plan, two workstreams, executed in order.
+Status: **DELIVERED** (2026-07-25). Both workstreams executed and verified.
+
+Outcome summary:
+- **Workstream A — done.** FastAPI 0.140.0 / Starlette 1.3.1 /
+  prometheus-fastapi-instrumentator 8.0.2 landed; all 6 Starlette advisories now
+  Fixed or Not-applicable; dependabot ignore removed. The 18 "failures" were 15
+  blind-introspection tests (replaced by `tests/route_introspection.py` + a
+  vacuity guard), 1 security WIN (Starlette patched GHSA-86qp), and 2 unrelated.
+  Two silent production bugs found and fixed en route (`queue_outbound` writing
+  on a detached session so the outbound queue never persisted; benchmark
+  availability probes reporting unloadable datasets as available).
+- **Workstream B — done.** Foresight shipped as the single new page
+  (`/platform/foresight`) with `premortem` / `trajectory` / `commission`
+  endpoints, 7 backend tests, and live verification on a 117-node twin
+  (commissioning moved MERGER_INTEGRATION gap 1.0 -> 0.78). Ghost Executions
+  added to the EXISTING Executive Cockpit. **Phase B4 was correctly SKIPPED**:
+  verification found OrgPulse already renders the full event-mesh feed, so
+  building it again would have been the duplication the user warned against.
+- Verified: backend 350 passed locally, 0 failures; ruff + bandit clean;
+  frontend build + 43 vitest tests green; `npm audit` 0 vulnerabilities.
+
+Original plan follows.
+
+One plan, two workstreams, executed in order.
 Workstream A (secure base) first, then Workstream B (product surface).
 
 Each phase is self-contained for a fresh chat context: it lists exact files, the

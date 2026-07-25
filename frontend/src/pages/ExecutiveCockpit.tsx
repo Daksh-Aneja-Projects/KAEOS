@@ -8,7 +8,7 @@ import { STREAM_INTERVALS } from '../services/realtime';
 import {
   Activity, TrendingUp, TrendingDown, Minus, Shield, Users, Zap, DollarSign,
   BarChart3, MessageSquare, Globe, Target,
-  ArrowUpRight, ArrowDownRight, Brain, Hourglass, HelpCircle
+  ArrowUpRight, ArrowDownRight, Brain, Hourglass, HelpCircle, Ghost
 } from 'lucide-react';
 
 // Shape of the aggregated /dashboard/cockpit payload (only the fields the
@@ -31,6 +31,10 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
     health: () => api.getHealth(),
     feed: () => api.getActivityFeed(15),
     cost: () => api.getCostTelemetry(24),
+    // Ghost executions: the zero-prompt runs KAEOS initiated on its own. This
+    // engine was fully built but headless - nothing in the UI surfaced what the
+    // org was about to do without being asked.
+    ghosts: () => api.getGhostExecutions(),
   });
 
   // Cockpit-specific data - separate stream for live executive intelligence
@@ -45,6 +49,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   const health = results.health;
   const feed = results.feed?.events || [];
   const costData = results.cost;
+  const ghostExecutions = results.ghosts?.ghost_executions || [];
 
   // ── Derived values - ALL from API, ZERO fallbacks ──
   const score = health?.overall_score ?? 0;
@@ -191,6 +196,43 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                     {item.source && (
                       <div className="text-[9px] mt-1" style={{ color: colors.inkSubtle }}>Source: {item.source}</div>
                     )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Ghost Executions - what KAEOS started on its own, no prompt. */}
+        <div className="p-5 flex flex-col" style={card}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[13px] font-semibold flex items-center gap-2">
+              <Ghost className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Ghost Executions
+            </h3>
+            <span className="text-[10px]" style={{ color: colors.inkSubtle }}>
+              {ghostExecutions.length > 0 ? `${ghostExecutions.length} zero-prompt runs` : 'None'}
+            </span>
+          </div>
+          <div className="space-y-3 flex-1 min-h-0 overflow-y-auto">
+            {ghostExecutions.length === 0 ? (
+              <BrainEmpty
+                title="No zero-prompt executions yet."
+                action="KAEOS acts on its own when a signal carries clear latent intent."
+                icon={Ghost}
+              />
+            ) : (
+              ghostExecutions.slice(0, 8).map((g: any) => {
+                const gated = g.hitl_required;
+                const tone = gated ? '#f59e0b' : '#8b5cf6';
+                return (
+                  <div key={g.id} className="p-2.5 rounded-lg" style={{ background: tone + '08', border: `1px solid ${tone}20` }}>
+                    <div className="flex items-center justify-between mb-1 gap-2">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap" style={{ background: tone + '20', color: tone }}>
+                        {gated ? 'AWAITING APPROVAL' : g.status || 'RUNNING'}
+                      </span>
+                      <span className="text-[9px] truncate" style={{ color: colors.inkSubtle }}>{g.skill_name || ''}</span>
+                    </div>
+                    <div className="text-[11px]">{g.task_intent || 'Zero-prompt execution'}</div>
                   </div>
                 );
               })

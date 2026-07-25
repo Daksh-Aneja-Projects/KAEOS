@@ -66,6 +66,7 @@ const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 
 const RealityExperience = lazy(() => import('./pages/RealityExperience'));
+const Foresight = lazy(() => import('./pages/Foresight'));
 
 // ─── v2 AI FOUNDRY + CLIENT ONBOARDING ─────────────────────────────
 const AIFoundry = lazy(() => import('./pages/AIFoundry'));
@@ -108,6 +109,7 @@ const PLATFORM_NAV: NavItem[] = [
   // Tooling next.
   { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
   { path: '/platform/reality', label: 'Reality Experience', icon: Rocket },
+  { path: '/platform/foresight', label: 'Foresight', icon: Compass },
   // Admin/setup last.
   { path: '/platform/onboarding', label: 'Client Onboarding', icon: UserPlus, adminOnly: true },
   { path: '/platform/users', label: 'User Management', icon: Shield, adminOnly: true },
@@ -617,6 +619,7 @@ function Shell() {
                 <Route path="/platform/foundry" element={<ThemeAdapter><AIFoundry /></ThemeAdapter>} />
                 <Route path="/platform/onboarding" element={<ThemeAdapter><ClientOnboarding /></ThemeAdapter>} />
                 <Route path="/platform/reality" element={<ThemeAdapter><RealityExperience /></ThemeAdapter>} />
+                <Route path="/platform/foresight" element={<ThemeAdapter><Foresight /></ThemeAdapter>} />
                 <Route path="/platform/knowledge" element={<ThemeAdapter><KnowledgeView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />

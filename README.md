@@ -386,6 +386,18 @@ All captured from a running instance against PostgreSQL — a live app on a seed
 <sub>Inject a shock (termination, vendor failure, cyber incident) and watch it propagate across the live
 twin, with the reasoning chain and a provenance feed of every decision.</sub>
 
+### Foresight — the machine picks the question
+Shock, What-if, Wargame and Replay are reactive: you pose a premise and watch the twin respond,
+which assumes you already know what to ask. Foresight inverts that. With no prompt it sweeps the
+whole shock catalogue against the live twin and scores every scenario
+`exposure = likelihood x blast_radius x preparedness_gap` — likelihood weighted by your own signals
+and prior shock outcomes, blast radius a real traversal from the worst credible entry point, and the
+gap 1.0 when nothing governs the scenario. What comes back is a ranked board of **Inevitable
+Surprises**: the threats you have no governed answer to. One click drafts a mission to close the gap,
+in `PLANNING` for a human to approve. The second lane projects what KAEOS will do autonomously over
+30/60/90 days, the safe-autonomy north star, and exactly where it will still need you.
+All three factors are shown per scenario, so the score is never a black box.
+
 ### AI Foundry — and an honest roadmap, shown in-product
 ![AI Foundry](docs/screenshots/16-ai-foundry-roadmap.png)
 <sub>Governed decisions are curated into training data. Note the phase strip: **Phase 2 is LIVE**;

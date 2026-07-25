@@ -1110,6 +1110,17 @@ export const api = {
   // Precog — forecast the north-star (safe-autonomy) + volume with confidence bands
   getForecast: (days = 45, horizon = 14) => request<any>(`/metrics/forecast?days=${days}&horizon=${horizon}`),
 
+  // Foresight — the autonomous, prescriptive reality lane (Shock/What-if/Wargame/
+  // Replay are reactive; these run with no prompt and rank what to worry about).
+  getPremortemRadar: (signalDays = 90, limit = 8) =>
+    request<any>(`/foresight/premortem?signal_days=${signalDays}&limit=${limit}`),
+  getForesightTrajectory: (days = 45) => request<any>(`/foresight/trajectory?days=${days}`),
+  commissionGapCloser: (scenario: string) =>
+    request<any>('/foresight/commission', { method: 'POST', body: JSON.stringify({ scenario }) }),
+
+  // Predictive Ops — zero-prompt "ghost" executions: what the org is about to do
+  getGhostExecutions: () => request<any>('/predictive/ghost-executions'),
+
   // Autonomy Wargaming — adversarial cascade resilience scoring
   getWargamePlaybooks: () => request<any>('/wargame/playbooks'),
   runWargame: (playbook: string) => request<any>('/wargame/run', { method: 'POST', body: JSON.stringify({ playbook }) }),

@@ -338,6 +338,10 @@ app.include_router(enterprise.router,      prefix=PREFIX)
 app.include_router(agent_factory.router,   prefix=PREFIX)
 from app.api.routes import reality
 app.include_router(reality.router, prefix="/api/v1/reality", tags=["Reality Experience"])
+# Foresight — the autonomous, prescriptive counterpart to the four reactive
+# reality views (Shock / What-if / Wargame / Replay).
+from app.api.routes import foresight as foresight_routes
+app.include_router(foresight_routes.router, prefix=PREFIX)
 app.include_router(pioneer.router,         prefix=PREFIX)
 app.include_router(infrastructure.router,  prefix=PREFIX)
 app.include_router(auth.router,            prefix=PREFIX)

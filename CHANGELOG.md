@@ -5,6 +5,44 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **KAEOS Foresight** (`/platform/foresight`): a fifth reality capability that is
+  autonomous and prescriptive, where Shock / What-if / Wargame / Replay are
+  reactive. Those four require the executive to already know which question to
+  ask; Foresight sweeps the whole shock catalogue against the live twin with no
+  prompt and answers the two questions a CXO actually has.
+  - **Pre-Mortem Radar** scores every scenario
+    `exposure = likelihood x blast_radius x preparedness_gap`, where likelihood is
+    evidence-weighted from the tenant's own signals and recorded shock outcomes,
+    blast radius is a real twin traversal from the most connected node (the worst
+    credible cascade entry point), and the preparedness gap is 1.0 when no
+    mission or skill governs the scenario. Scenarios with no governed response
+    surface as **Inevitable Surprises**. Each of the three factors is shown in the
+    UI so the score is never a black box, and every item carries an `evidence`
+    block naming what it was computed from - a low-data tenant reads as honest,
+    not confident.
+  - **Prescriptive Trajectory** composes existing sources (the real
+    safe-autonomy series projected with the same `linear_forecast` the Precog
+    route uses, missions in flight, the live HITL queue and gated mission steps)
+    into a 30/60/90-day view of what KAEOS will do autonomously and where it will
+    need a human.
+  - **Commission a gap-closer**: one click drafts a mission targeting the
+    scenario's gap. It is created in `PLANNING` for a human to approve, never
+    auto-executed, and the draft is re-derived server-side so a client cannot
+    dictate the narrative attached to a governed mission. Verified live: 18
+    scenarios scored over a 117-node twin, and commissioning moved
+    MERGER_INTEGRATION from gap 1.0 / exposure 0.240 to gap 0.78 / exposure
+    0.187, off the Inevitable Surprises list.
+  - Endpoints: `GET /foresight/premortem`, `GET /foresight/trajectory`,
+    `POST /foresight/commission` (operator-gated). Covered by
+    `backend/tests/test_foresight.py` (scoring is real, gap-closing measurably
+    lowers exposure, coverage is tenant-scoped).
+- **Ghost Executions surfaced in the Executive Cockpit**: the `predictive`
+  engine's zero-prompt runs ("what the org is about to do without being asked")
+  were fully built but headless - no UI showed them. Added to the existing
+  cockpit rather than a new page, beside Pioneer Intelligence, flagging any run
+  awaiting approval.
+
 ### Security
 - **Starlette security ceiling lifted — all remaining backend advisories fixed.**
   KAEOS was pinned to Starlette 0.48.0 because no released FastAPI supported the
