@@ -9,6 +9,19 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Self-improving autonomy — closed loops, round 2)
+- **L3 Drift -> reconcile / auto-heal.** `compute_drift` only DETECTED drift.
+  Added `Actuator.reconcile_object` (re-asserts the last governed `after_state` as
+  a new governed, reversible action) and `reconcile_all`, exposed via
+  `POST /actuation/reconcile` (operator-gated) so an out-of-band change is pulled
+  back to the state KAEOS is accountable for. Tests: `tests/test_closed_loops_l3_l5.py`.
+- **L5-reverse Autonomy governor.** The dial->gate path was wired but nothing wrote
+  the dial FROM measured reality. New `autonomy_governor` service + 6-hourly
+  leader-guarded job nudges each domain's `min_confidence` from the real
+  safe-autonomy-rate and override/failure fallout — bounded band [0.60, 0.95], small
+  steps, minimum evidence threshold. A new `auto_managed` flag (migration `0017`)
+  means a human-set dial is NEVER overridden by the governor (human override wins).
+
 ### Added (Self-improving autonomy — closed loops)
 - **L7 Missions -> governed actuation.** Mission steps ran advisory-only
   (`tool:"none"`, no `actuation`), so runtime Gate 5b never fired and missions

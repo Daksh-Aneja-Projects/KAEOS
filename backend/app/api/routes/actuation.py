@@ -155,3 +155,24 @@ async def actuation_drift(
 ):
     """Reconcile the sandbox system of record against the governing actions."""
     return await Actuator.compute_drift(db, tenant_id=tenant_id)
+
+
+@router.post("/reconcile")
+async def actuation_reconcile(
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """L3 heal: re-assert the last governed state for every drifted object.
+
+    Auto-healing — detection alone left drift as a dead-end read. Operator-gated;
+    each re-assertion is a governed, reversible action recorded in the ledger.
+    """
+    tenant_id = tenant["tenant_id"]
+    receipt = await Actuator.reconcile_all(db, tenant_id=tenant_id, actor=tenant.get("name") or "reconciler")
+    await record_security_event(
+        tenant_id=tenant_id, event_type="ACTUATION", action="RECONCILE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="sor", resource_id="*",
+        details={"reconciled": receipt["reconciled"], "drift_count": receipt["drift_count"]},
+    )
+    return receipt

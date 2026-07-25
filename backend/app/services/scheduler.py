@@ -152,6 +152,30 @@ async def run_job_queue_reaper():
         logger.error(f"[Scheduler] Job queue reaper failed: {e}")
 
 
+async def run_autonomy_governor_job():
+    """L5-reverse: nudge each tenant's per-domain autonomy dial from the measured
+    safe-autonomy-rate (bounded; respects human-set dials). Leader-guarded."""
+    if not _is_leader():
+        return
+    try:
+        from app.services.autonomy_governor import run_autonomy_governor
+        from app.models.domain import SkillExecution
+        async with MaintenanceSessionLocal() as db:
+            tenant_ids = (await db.execute(
+                select(SkillExecution.tenant_id).distinct()
+            )).scalars().all()
+            adjusted = 0
+            for tid in tenant_ids:
+                if not tid:
+                    continue
+                receipt = await run_autonomy_governor(db, tid)
+                adjusted += receipt.get("adjusted", 0)
+            if adjusted:
+                logger.info("[Scheduler] Autonomy governor adjusted %d domain dial(s)", adjusted)
+    except Exception as e:
+        logger.error(f"[Scheduler] Autonomy governor failed: {e}")
+
+
 async def run_deployment_reaper():
     """Recover deployments orphaned by a crashed/restarted worker.
 
@@ -205,6 +229,12 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_foundry_mining, 'interval', hours=6,
         id='foundry_mining_job', replace_existing=True
+    )
+    # L5-reverse autonomy governor: adapt per-domain dials from the measured
+    # safe-autonomy-rate on a cadence (bounded nudges; human-set dials untouched).
+    scheduler.add_job(
+        run_autonomy_governor_job, 'interval', hours=6,
+        id='autonomy_governor_job', replace_existing=True
     )
     # Recover deployments orphaned by a worker crash/restart (fire-and-forget
     # pipeline has no durable queue yet); frequent + cheap.

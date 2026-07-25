@@ -120,6 +120,10 @@ class AutonomyPolicy(Base):
     tenant_id = Column(String, nullable=False, index=True)
     domain = Column(String(64), nullable=False)
     min_confidence = Column(Float, nullable=False, default=0.82)
+    # True when the autonomy governor (L5-reverse) manages this dial from the
+    # measured safe-autonomy-rate. A human setting the dial flips this to False so
+    # the governor never overrides an explicit executive decision.
+    auto_managed = Column(Boolean, nullable=False, default=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

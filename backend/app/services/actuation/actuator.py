@@ -275,3 +275,51 @@ class Actuator:
             "drift": drifted,
             "note": "Drift = SoR rows changed outside the governed actuation path.",
         }
+
+    @staticmethod
+    async def reconcile_object(db: AsyncSession, *, tenant_id: str, system: str,
+                              object_type: str, external_id: str,
+                              actor: str = "reconciler") -> dict:
+        """L3 closed loop: re-assert the last governed state for a drifted object.
+
+        Detection alone (compute_drift) does not heal anything. This finds the most
+        recent APPLIED action that carried an ``after_state`` and re-applies it as a
+        NEW governed action, so an out-of-band change is pulled back to the last
+        state KAEOS is accountable for. Idempotent (the re-apply is itself keyed) and
+        reversible like any other action.
+        """
+        last = (await db.execute(
+            select(ActionRecord).where(
+                ActionRecord.tenant_id == tenant_id,
+                ActionRecord.system == system,
+                ActionRecord.object_type == object_type,
+                ActionRecord.external_id == external_id,
+                ActionRecord.status == "APPLIED",
+                ActionRecord.after_state.isnot(None),
+            ).order_by(ActionRecord.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if last is None:
+            return {"status": "no_governed_baseline", "external_id": external_id}
+
+        rec = await Actuator.apply_action(
+            db, tenant_id=tenant_id, system=system, object_type=object_type,
+            external_id=external_id, operation="UPDATE", payload=dict(last.after_state or {}),
+            actor=actor,
+        )
+        return {"status": "RECONCILED", "external_id": external_id,
+                "action_id": rec.id, "restored_from": last.id}
+
+    @staticmethod
+    async def reconcile_all(db: AsyncSession, *, tenant_id: str, actor: str = "reconciler") -> dict:
+        """Heal every drifted object back to its last governed state. Returns a receipt."""
+        report = await Actuator.compute_drift(db, tenant_id=tenant_id)
+        healed, skipped = [], []
+        for d in report.get("drift", []):
+            res = await Actuator.reconcile_object(
+                db, tenant_id=tenant_id, system=d["system"], object_type=d["object_type"],
+                external_id=d["external_id"], actor=actor,
+            )
+            (healed if res.get("status") == "RECONCILED" else skipped).append(res)
+        return {"drift_count": report.get("drift_count", 0),
+                "reconciled": len(healed), "skipped": len(skipped),
+                "details": healed + skipped}

@@ -426,8 +426,9 @@ async def set_autonomy(
     )).scalar_one_or_none()
     if existing:
         existing.min_confidence = val
+        existing.auto_managed = False   # explicit human decision — governor must not override
     else:
-        db.add(AutonomyPolicy(tenant_id=tenant_id, domain=d, min_confidence=val))
+        db.add(AutonomyPolicy(tenant_id=tenant_id, domain=d, min_confidence=val, auto_managed=False))
     await db.commit()
     # Invalidate the runtime cache so the dial takes effect promptly.
     try:
