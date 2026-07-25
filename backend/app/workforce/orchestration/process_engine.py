@@ -1,8 +1,15 @@
 """
-KAEOS Workforce Layer — Process Engine
+KAEOS Workforce Layer — Process Engine (state tracker)
 
-Executes BusinessProcess DAGs. Handles agent actions, human checkpoints,
-and fairness gates. Updates ProcessExecution state.
+HONEST SCOPE: this tracks the SEQUENTIAL state of a BusinessProcess execution —
+it starts an execution, records each step's result into the context, and advances
+to the next step until completion. It deliberately makes NO governance decisions:
+it does not run agent actions, human checkpoints, fairness gates, or compliance
+gates (an earlier docstring wrongly claimed it did). The real GOVERNED orchestration
+— the 7-gate pipeline (compliance / fairness / confidence-HITL / debate / execute /
+audit / actuation) and human checkpoints — lives in the missions engine
+(``app/services/missions/engine.py``) and the agent runtime (``app/agents/runtime.py``).
+This engine is a lightweight DAG state machine, not a substitute for those gates.
 """
 import logging
 from datetime import datetime, timezone

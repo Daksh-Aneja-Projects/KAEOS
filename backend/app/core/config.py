@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     API_PREFIX: str = "/api/v1"
     SECRET_KEY: str = ""  # REQUIRED in prod: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    # Dedicated at-rest data key for encrypting stored secrets (connector creds,
+    # SSO client secrets, MFA secrets). Kept SEPARATE from the JWT-signing
+    # SECRET_KEY so a leak of one context does not compromise the other. Falls
+    # back to SECRET_KEY when unset (existing deployments keep decrypting).
+    CONNECTOR_ENCRYPTION_KEY: str = ""
     ADMIN_SECRET: str = ""  # REQUIRED in prod: set a unique admin secret
 
     # ── Admin bootstrap ────────────────────────────────────────────────────

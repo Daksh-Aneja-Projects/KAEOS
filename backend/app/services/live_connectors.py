@@ -56,23 +56,31 @@ _KDF_ITERATIONS = 200_000
 
 
 def _fernet() -> Fernet:
-    """Derive the at-rest encryption key from SECRET_KEY via PBKDF2-HMAC-SHA256.
+    """Derive the at-rest encryption key via PBKDF2-HMAC-SHA256.
+
+    Key separation: prefers a DEDICATED ``CONNECTOR_ENCRYPTION_KEY`` so the
+    at-rest data key is independent of the JWT-signing ``SECRET_KEY`` (a leak of
+    one signing context then does not hand over the other). Falls back to
+    ``SECRET_KEY`` when the dedicated key is unset, so existing deployments keep
+    decrypting their stored secrets unchanged. (Setting a NEW key later rotates
+    it — existing ciphertext must be re-encrypted, the standard rotation caveat.)
 
     Hardened over the old single unsalted sha256:
       - PBKDF2 (200k iterations) instead of one hash pass;
-      - NO insecure hardcoded fallback — a missing/weak SECRET_KEY raises rather
-        than silently using a world-readable default key;
+      - NO insecure hardcoded fallback — a missing/weak key raises rather than
+        silently using a world-readable default key;
       - entropy floor enforced so BYOK secrets aren't protected by a guessable key.
     """
-    secret = get_settings().SECRET_KEY or ""
-    if len(secret) < 16 and not get_settings().DEV_MODE:
+    settings = get_settings()
+    secret = getattr(settings, "CONNECTOR_ENCRYPTION_KEY", "") or settings.SECRET_KEY or ""
+    if len(secret) < 16 and not settings.DEV_MODE:
         raise RuntimeError(
-            "SECRET_KEY is missing or too short (<16 chars) — refusing to encrypt "
-            "customer credentials with a weak key. Set a strong SECRET_KEY."
+            "No strong at-rest key (<16 chars) — refusing to encrypt customer "
+            "credentials. Set CONNECTOR_ENCRYPTION_KEY (preferred) or SECRET_KEY."
         )
     if not secret:
         # DEV_MODE only: still avoid a shared constant by requiring *some* key.
-        raise RuntimeError("SECRET_KEY must be set to store connector credentials.")
+        raise RuntimeError("Set CONNECTOR_ENCRYPTION_KEY or SECRET_KEY to store connector credentials.")
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,

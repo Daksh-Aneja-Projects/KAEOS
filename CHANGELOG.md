@@ -15,6 +15,18 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Fixed / Added (Production-readiness — P2 polish, round 2)
+- **At-rest key decoupled from the JWT key.** Stored secrets (connector creds,
+  SSO client secrets, MFA secrets) can now be encrypted with a dedicated
+  `CONNECTOR_ENCRYPTION_KEY`, independent of the JWT-signing `SECRET_KEY`, so a
+  leak of one signing context no longer compromises the other. Falls back to
+  `SECRET_KEY` when unset (existing deployments decrypt unchanged).
+- **Honest ProcessEngine docstring.** `workforce/orchestration/process_engine.py`
+  claimed it "handles agent actions, human checkpoints, and fairness gates" — it
+  is a sequential DAG state tracker that makes NO governance decisions. The
+  docstring now says so and points to where the real 7-gate orchestration lives
+  (the missions engine + agent runtime).
+
 ### Fixed / Added (Production-readiness — P2 polish)
 - **WebSocket token no longer in the query string.** The live-feed WS handshake
   carried the JWT as `?token=` (leaks into proxy/access logs and browser history).
