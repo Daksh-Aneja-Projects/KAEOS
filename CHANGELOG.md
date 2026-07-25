@@ -3,11 +3,29 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - v2.0 "Self-Improving Autonomy Platform" (in progress)
+## [2.0.0] - 2026-07-25 - "Self-Improving Autonomy Platform"
+
+Production-readiness release. All P0 honesty/security/procurement blockers closed;
+P1 hardening (auth, limits, ops, exports, user management); all six governance
+loops closed (L1-L5 + L7 — governed advice becomes self-improving autonomy);
+enterprise auth complete (OIDC SSO, MFA/TOTP, SCIM); orphaned capabilities wired
+to UI. See the sections below for the full detail.
 
 Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJOR_UPGRADE_PLAN.md).
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
+
+### Changed / Removed (Production-readiness — ops & cleanup)
+- **Deep health probe.** `GET /health?deep=true` now additionally reports the
+  reachability of non-critical dependencies (Redis, the LLM provider) for
+  observability; the default readiness probe stays fast and only the primary
+  datastore gates readiness (503). Tests: `tests/test_health_deep.py`.
+- **Removed dead/misleading code.** Deleted `frontend/.../DecisionStudio.tsx` (an
+  unimported component with a hardcoded "Vendor Bankruptcy / Enterprise Trust: 92%"
+  fake header) and `backend/app/core/validation.py` (an unused preflight that
+  logged a FAKE "Neo4j reachable" line and skipped Redis).
+- **Version bump to 2.0.0** across the backend (`APP_VERSION`) and frontend
+  (`package.json`), and this CHANGELOG cut for the release.
 
 ### Added (Production-readiness — enterprise auth, round 2)
 - **MFA / TOTP second factor (P1-17).** RFC 6238 TOTP implemented with the stdlib

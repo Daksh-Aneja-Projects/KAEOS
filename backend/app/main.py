@@ -414,13 +414,18 @@ async def health_live():
 
 
 @app.get("/health")
-async def health(response: Response):
+async def health(response: Response, deep: bool = False):
     """Readiness: process up AND critical backends reachable.
 
     Returns **503** when a critical backend (the primary database) is
     unavailable, so Docker/k8s and load balancers stop routing traffic to a
     broken instance instead of being told everything is fine. Point
     readinessProbe (and the compose healthcheck) here.
+
+    ``?deep=true`` additionally probes NON-critical dependencies (Redis, the LLM
+    provider) for observability. These never gate readiness — a missing Redis or
+    an offline model degrades features, it does not make the instance unfit to
+    serve — so the deep probe is opt-in to keep the frequent readiness check fast.
     """
     payload = {
         "status": "ok",
@@ -441,10 +446,36 @@ async def health(response: Response):
         payload["backends"] = {"error": str(e)}
         ready = False
 
+    if deep:
+        payload["dependencies"] = await _probe_dependencies()
+
     if not ready:
         payload["status"] = "degraded"
         response.status_code = 503
     return payload
+
+
+async def _probe_dependencies() -> dict:
+    """Best-effort reachability of NON-critical dependencies (never gates readiness)."""
+    deps: dict = {}
+    # Redis (rate limiter / queues share it; optional).
+    try:
+        from app.core.redis import get_redis
+        rc = await get_redis()
+        if rc is None:
+            deps["redis"] = {"available": False, "note": "not configured / unreachable"}
+        else:
+            await rc.ping()
+            deps["redis"] = {"available": True}
+    except Exception as e:
+        deps["redis"] = {"available": False, "error": str(e)[:160]}
+    # LLM provider (a governance decision needs one; degraded, not fatal, if absent).
+    try:
+        from app.services.llm_router import LLMRouter
+        deps["llm"] = {"available": bool(await LLMRouter().provider_available(None))}
+    except Exception as e:
+        deps["llm"] = {"available": False, "error": str(e)[:160]}
+    return deps
 
 
 # ── API Key management endpoints (admin bootstrap) ────────────────────────────
