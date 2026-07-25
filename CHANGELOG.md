@@ -9,6 +9,18 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Fixed (Production-readiness — honesty)
+- **Compliance dashboard no longer fabricates compliance (P0).**
+  `GET /dashboard/compliance` previously hardcoded `violations: 0` and stamped
+  `last_audit` = today for every framework, so GDPR/SOX/HIPAA/PCI/CCPA/SOC2 always
+  rendered COMPLIANT with a fake audit date. It now counts REAL unresolved
+  `ComplianceViolation` rows plus framework-attributed governance blocks
+  (BLOCKED_COMPLIANCE / FAILED_AUDIT / HUMAN_OVERRIDDEN executions), derives
+  `last_audit` from the latest real violation, compliance report, or monitored
+  control execution, and renders **UNKNOWN** (never auto-COMPLIANT) for a framework
+  that has coverage but no monitoring signal. Cross-tenant isolation is enforced and
+  regression-tested (`tests/test_compliance_dashboard.py`).
+
 ### Added
 - **Frontend test harness (Phase 6).** The frontend had zero tests; added Vitest
   + jsdom + React Testing Library with a `test` script, a shared setup, and the

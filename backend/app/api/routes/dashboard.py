@@ -2,7 +2,7 @@
 from app.core.tenant import get_tenant_id
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc, case
 from datetime import datetime, timezone, timedelta
 
 from app.core.database import get_db
@@ -285,14 +285,27 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
 
 @router.get("/compliance", response_model=ComplianceDashboardResponse)
 async def compliance_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """L13 Compliance Engine dashboard — framework coverage + violations."""
-    # Tenant-scoped: rule aggregation filters on tenant_id.
-    all_rules = await db.execute(
-        select(Rule.compliance_tags).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
-    )
-    rows = all_rules.all()
-    total = len(rows)
+    """L13 Compliance Engine dashboard — framework coverage + REAL violations.
 
+    Honesty contract: nothing here is fabricated. `violations` counts real
+    unresolved ``ComplianceViolation`` rows plus framework-attributed governance
+    blocks (BLOCKED_COMPLIANCE / FAILED_AUDIT / HUMAN_OVERRIDDEN executions).
+    ``last_audit`` is a real timestamp from the latest violation, compliance
+    report, or monitored control execution. A framework with coverage but no
+    monitoring signal renders **UNKNOWN**, never auto-COMPLIANT.
+    """
+    from app.hr.models.compliance import ComplianceViolation, ComplianceReport
+
+    _MONITOR_STATES = ("BLOCKED_COMPLIANCE", "FAILED_AUDIT", "HUMAN_OVERRIDDEN")
+
+    def _norm(fw: str) -> str:
+        return (fw or "").upper().replace("-", "_")
+
+    # --- Rule coverage (real): frameworks the tenant's rules are tagged for. ---
+    rows = (await db.execute(
+        select(Rule.compliance_tags).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+    )).all()
+    total = len(rows)
     tag_counts: dict[str, int] = {}
     untagged = 0
     for (tags,) in rows:
@@ -300,29 +313,94 @@ async def compliance_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
             untagged += 1
             continue
         for t in tags:
-            tag_counts[t] = tag_counts.get(t, 0) + 1
+            k = _norm(t)
+            tag_counts[k] = tag_counts.get(k, 0) + 1
 
-    # Dynamic framework fetching from database tags
-    frameworks_info = {}
-    for fw in tag_counts.keys():
-        if fw.upper() in ["GDPR", "SOX", "HIPAA", "PCI_DSS", "CCPA", "SOC2"]:
-            # Real violations would come from the compliance_alerts table, but for now we query if there are conflicting tags
-            # We enforce zero-mock by just setting actual computed violations = 0 unless a specific exception block caught them
-            frameworks_info[fw] = {"last_audit": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "violations": 0}
+    # --- Control map (real): framework -> the ACTIVE skills that carry its tag. ---
+    skills = (await db.execute(
+        select(Skill.skill_id, Skill.compliance_tags)
+        .where(Skill.tenant_id == tenant_id, Skill.status == "ACTIVE")
+    )).all()
+    control_map: dict[str, list[str]] = {}
+    for skill_id, tags in skills:
+        for t in (tags or []):
+            control_map.setdefault(_norm(t), []).append(skill_id)
+
+    # --- Real unresolved violations per framework (count, blockers, latest). ---
+    vrows = (await db.execute(
+        select(
+            ComplianceViolation.framework,
+            sqlfunc.count(),
+            sqlfunc.sum(case((ComplianceViolation.severity == "BLOCKER", 1), else_=0)),
+            sqlfunc.max(ComplianceViolation.created_at),
+        )
+        .where(ComplianceViolation.tenant_id == tenant_id, ComplianceViolation.resolved == False)
+        .group_by(ComplianceViolation.framework)
+    )).all()
+    viol_by_fw = {
+        _norm(fw): {"count": int(c or 0), "blockers": int(b or 0), "last": ts}
+        for fw, c, b, ts in vrows
+    }
+
+    # --- Per-skill execution signal (real): last activity + governance blocks. ---
+    exec_rows = (await db.execute(
+        select(
+            SkillExecution.skill_id_name,
+            sqlfunc.max(SkillExecution.started_at),
+            sqlfunc.sum(case((SkillExecution.status.in_(_MONITOR_STATES), 1), else_=0)),
+        )
+        .where(SkillExecution.tenant_id == tenant_id)
+        .group_by(SkillExecution.skill_id_name)
+    )).all()
+    exec_by_skill = {name: (last, int(bl or 0)) for name, last, bl in exec_rows}
+
+    # --- Real compliance-report generation timestamps per framework. ---
+    rep_rows = (await db.execute(
+        select(ComplianceReport.framework, sqlfunc.max(ComplianceReport.generated_at))
+        .where(ComplianceReport.tenant_id == tenant_id)
+        .group_by(ComplianceReport.framework)
+    )).all()
+    report_by_fw = {
+        _norm(fw.value if hasattr(fw, "value") else str(fw)): ts for fw, ts in rep_rows
+    }
+
+    # Framework universe = anything the tenant actually touches (tags/controls/violations/reports).
+    universe = set(tag_counts) | set(control_map) | set(viol_by_fw) | set(report_by_fw)
 
     statuses = []
-    for fw, info in frameworks_info.items():
-        count = tag_counts.get(fw, 0) + tag_counts.get(fw.replace("_", "-"), 0)
-        cov = round(count / max(total, 1), 2)
-        status = "NOT_APPLICABLE" if count == 0 else (
-            "COMPLIANT" if info["violations"] == 0 else "REVIEW"
+    for fw in sorted(universe):
+        covered = control_map.get(fw, [])
+        exec_blocks = sum(exec_by_skill.get(s, (None, 0))[1] for s in covered)
+        exec_last = max(
+            (exec_by_skill[s][0] for s in covered if s in exec_by_skill and exec_by_skill[s][0]),
+            default=None,
         )
+        vinfo = viol_by_fw.get(fw, {})
+        violations = int(vinfo.get("count", 0)) + exec_blocks
+        blocker_count = int(vinfo.get("blockers", 0))
+
+        # last_audit = latest REAL signal (violation / report / monitored execution), else None.
+        candidates = [t for t in (vinfo.get("last"), report_by_fw.get(fw), exec_last) if t is not None]
+        last_audit_ts = max(candidates) if candidates else None
+
+        count_cov = tag_counts.get(fw, 0)
+        if violations > 0:
+            status = "REVIEW"
+        elif last_audit_ts is not None:
+            # Real monitoring ran and found nothing unresolved.
+            status = "COMPLIANT"
+        elif count_cov == 0 and not covered:
+            status = "NOT_APPLICABLE"
+        else:
+            # Coverage exists but no monitoring signal yet — do not claim compliant.
+            status = "UNKNOWN"
+
         statuses.append(ComplianceStatus(
             framework=fw,
-            coverage_pct=cov,
-            violations=info["violations"],
-            blocker_count=0,
-            last_audit=info["last_audit"],
+            coverage_pct=round(count_cov / max(total, 1), 2),
+            violations=violations,
+            blocker_count=blocker_count,
+            last_audit=last_audit_ts.strftime("%Y-%m-%d") if last_audit_ts else None,
             status=status,
         ))
 

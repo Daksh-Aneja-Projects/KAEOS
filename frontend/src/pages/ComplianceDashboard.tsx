@@ -108,8 +108,8 @@ const ComplianceDashboard = () => {
          </div>
          <div className="flex justify-between text-[13px]">
           <span style={{ color: colors.inkSubtle }}>Violations</span>
-          <span className="flex items-center gap-1 font-medium" style={{ color: fw.violations > 0 ? colors.error : colors.success }}>
-           {fw.violations} {fw.violations === 0 ? <Check className="w-3.5 h-3.5" /> : 'blockers'}
+          <span className="flex items-center gap-1 font-medium" style={{ color: fw.violations > 0 ? colors.error : fw.status === 'COMPLIANT' ? colors.success : colors.inkMuted }}>
+           {fw.violations} {fw.violations > 0 ? (fw.blocker_count > 0 ? `(${fw.blocker_count} blocker${fw.blocker_count === 1 ? '' : 's'})` : 'open') : fw.status === 'COMPLIANT' ? <Check className="w-3.5 h-3.5" /> : 'unmonitored'}
           </span>
          </div>
          <div className="flex justify-between text-[13px]">
