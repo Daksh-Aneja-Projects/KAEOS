@@ -9,6 +9,23 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Production-readiness — reliability)
+- **Durable job queue (P0).** The deployment pipeline ran as fire-and-forget
+  `asyncio.create_task`, so a worker restart mid-deploy lost the task entirely.
+  Added a DB-backed at-least-once job queue (`jobs` table, migration `0014`, RLS
+  on Postgres) that fits KAEOS's existing operational model (leader-elected
+  APScheduler + owner-session sweeps) instead of adding a Celery/Redis broker.
+  Jobs are persisted before execution; a leader-guarded processor
+  (`run_job_queue`, every 15s) claims due jobs with a conditional `WHERE
+  status='QUEUED'` update (so a lost-lease overlap can't double-run), dispatches
+  to a registered handler, and retries with backoff up to `max_attempts` or marks
+  FAILED. A stuck-job reaper (`run_job_queue_reaper`, every 5m) requeues jobs a
+  dead worker left RUNNING (the at-least-once backstop). The deployment pipeline
+  is the first handler (`deploy_pipeline`); the existing deployment reaper stays
+  as a second backstop. Tests: `tests/test_job_queue.py` (7) cover success,
+  no-handler, fail-without-retry, retry-with-backoff (no hot-loop), leader-guard
+  no-op, and stuck-job recovery/exhaustion.
+
 ### Added (Production-readiness — enterprise auth)
 - **Real OIDC single sign-on (P0).** Enterprise SSO was a 501 stub plus an
   in-tree mock middleware that accepted a literal `"mock_valid_jwt"` (an auth

@@ -5,7 +5,6 @@ Orchestrates the actual work of deploying a department.
 Coordinates the state machine, workforce generator, and integrations.
 """
 import logging
-import asyncio
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,14 +20,23 @@ class DeploymentStudio:
     async def start_deployment_workflow(db: AsyncSession, tenant_id: str, pack_id: str, config: Dict[str, Any]) -> str:
         """
         Kicks off the deployment workflow.
-        Returns the deployment_id immediately while the heavy lifting happens in the background.
+        Returns the deployment_id immediately; the heavy lifting runs from the
+        DURABLE job queue (persisted before it starts, so a worker crash between
+        enqueue and completion is recoverable — not a lost fire-and-forget task).
         """
         # 1. Initialize deployment
         deployment = await DeploymentStateMachine.create_deployment(db, tenant_id, pack_id, config)
-        
-        # 2. Start background task for the actual deployment
-        asyncio.create_task(DeploymentStudio._run_deployment_pipeline(tenant_id, deployment.id, config))
-        
+
+        # 2. Enqueue the pipeline as a durable job (max_attempts=1: a mid-run
+        #    crash surfaces as FAILED via the reaper rather than silently
+        #    re-running partially-applied deployment steps).
+        from app.services import job_queue
+        await job_queue.enqueue(
+            db, tenant_id, "deploy_pipeline",
+            {"tenant_id": tenant_id, "deployment_id": deployment.id, "config": config},
+            max_attempts=1,
+        )
+
         return deployment.id
         
     # Terminal states — a deployment here is done and never needs recovery.

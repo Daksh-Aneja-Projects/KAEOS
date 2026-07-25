@@ -125,6 +125,33 @@ async def run_foundry_mining():
         logger.error(f"[Scheduler] Foundry mining failed: {e}")
 
 
+async def run_job_queue():
+    """Drain the durable job queue (leader-guarded).
+
+    Replaces fire-and-forget ``asyncio.create_task`` for long-running work: jobs
+    are persisted before execution, so nothing is lost on a worker crash. The
+    processor itself is leader-guarded inside ``process_jobs``.
+    """
+    try:
+        from app.services import job_queue
+        result = await job_queue.process_jobs()
+        if result.get("succeeded") or result.get("failed") or result.get("retried"):
+            logger.info("[Scheduler] Job queue drained: %s", result)
+    except Exception as e:
+        logger.error(f"[Scheduler] Job queue processing failed: {e}")
+
+
+async def run_job_queue_reaper():
+    """Requeue durable jobs a crashed worker left RUNNING (at-least-once)."""
+    try:
+        from app.services import job_queue
+        recovered = await job_queue.requeue_stuck_jobs()
+        if recovered:
+            logger.info("[Scheduler] Job queue reaper recovered %d job(s)", len(recovered))
+    except Exception as e:
+        logger.error(f"[Scheduler] Job queue reaper failed: {e}")
+
+
 async def run_deployment_reaper():
     """Recover deployments orphaned by a crashed/restarted worker.
 
@@ -145,10 +172,27 @@ async def run_deployment_reaper():
 
 
 def init_scheduler() -> AsyncIOScheduler:
+    # Register durable-job handlers before the processor can tick.
+    try:
+        from app.services.job_handlers import register_all
+        register_all()
+    except Exception as e:
+        logger.error(f"[Scheduler] Failed to register job handlers: {e}")
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         run_decay_checks, 'interval', minutes=60,
         id='decay_checks_job', replace_existing=True
+    )
+    # Durable job queue: drain due jobs frequently (deployments start within a
+    # tick), and reap jobs a crashed worker left RUNNING.
+    scheduler.add_job(
+        run_job_queue, 'interval', seconds=15,
+        id='job_queue_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    scheduler.add_job(
+        run_job_queue_reaper, 'interval', minutes=5,
+        id='job_queue_reaper_job', replace_existing=True
     )
     # Retention enforcement runs daily — windows are day-granular, so an hourly
     # sweep would be pure churn. Only tenants that opted a data class in are touched.

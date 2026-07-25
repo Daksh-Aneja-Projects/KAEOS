@@ -247,6 +247,16 @@ Flow: `PUT /connectors/{id}/credentials` → `POST /connectors/{id}/test` →
 `POST /connectors/{id}/connect` → `POST /connectors/{id}/sync` (mode `LIVE`), with every
 pulled record normalized into a Signal feeding the Company Brain.
 
+### Enterprise SSO (OpenID Connect)
+
+Real OIDC single sign-on: the full Authorization Code flow with IdP discovery,
+`state`+`nonce` CSRF/replay protection, **RS256 `id_token` verification against the
+IdP's JWKS**, and just-in-time user provisioning that mints a normal KAEOS session.
+Works with Azure AD, Okta, Google, and Auth0. Per-tenant IdP config
+(`/auth/sso/connections`, ADMIN-gated) stores the client secret Fernet-encrypted at
+rest and never returns it; the login endpoints (`/auth/sso/oidc/authorize` →
+`/callback`) are the only pre-auth surface. SAML is on the roadmap.
+
 ### Safe Autonomy Rate - the metric that matters
 
 Industry data is brutal: only **16%** of enterprise agent deployments are true autonomous agents,

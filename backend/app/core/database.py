@@ -28,6 +28,7 @@ _model_modules = [
     "app.models.enterprise_graph",
     "app.models.intelligence_metrics",
     "app.models.sso",
+    "app.models.jobs",
     "app.models.actuation",
     "app.models.missions",
     "app.models.event_mesh",
