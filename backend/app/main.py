@@ -343,6 +343,8 @@ app.include_router(infrastructure.router,  prefix=PREFIX)
 app.include_router(auth.router,            prefix=PREFIX)
 from app.api.routes import sso as sso_routes
 app.include_router(sso_routes.router,      prefix=PREFIX)
+from app.api.routes import scim as scim_routes
+app.include_router(scim_routes.router,     prefix=PREFIX)
 app.include_router(brain.router,           prefix=PREFIX)
 from app.api.routes import billing
 app.include_router(billing.router,         prefix=PREFIX)

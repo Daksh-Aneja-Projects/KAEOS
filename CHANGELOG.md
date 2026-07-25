@@ -9,6 +9,19 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Production-readiness — enterprise auth, round 2)
+- **MFA / TOTP second factor (P1-17).** RFC 6238 TOTP implemented with the stdlib
+  (no new dependency). Self-service enroll -> confirm -> enable
+  (`/auth/mfa/enroll|confirm|disable|status`), the shared secret Fernet-encrypted
+  at rest (`user_mfa`, migration `0019`, RLS) and never returned after enrollment.
+  Login now requires a valid code when MFA is enabled (returns a `mfa_required`
+  challenge otherwise). Tests: `tests/test_mfa.py`.
+- **SCIM 2.0 user provisioning (P1-17).** `/scim/v2/Users` (create / list with
+  userName filter / get / PUT / PATCH active / DELETE-as-deactivate) lets Okta /
+  Azure AD / OneLogin manage KAEOS users automatically. ADMIN-gated (the IdP
+  authenticates with a KAEOS admin API key), tenant-scoped, and SCIM-provisioned
+  accounts are SSO-only (unusable local password). Tests: `tests/test_scim.py`.
+
 ### Added (Self-improving autonomy — the loop is closed)
 - **L2 External fine-tune bridge — the 6th and final loop.** Model evolution
   already measured a candidate and gated its promotion; the missing step was

@@ -19,6 +19,7 @@ class LoginRequest(BaseModel):
     handler crashing on `.strip()` of a non-string (which used to 500)."""
     email: str
     password: str
+    mfa_code: Optional[str] = None   # required only when the account has MFA enabled
 
 
 async def get_current_user(
@@ -62,10 +63,15 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         raise HTTPException(status_code=400, detail="Email and password required")
 
     ip = request.client.host if request.client else None
-    result = await AuthService.login(db, email, password, ip_address=ip)
+    result = await AuthService.login(db, email, password, ip_address=ip, mfa_code=data.mfa_code)
     if not result:
         # Same message for bad credentials and lockout — don't reveal which.
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if result.get("mfa_required"):
+        # Password was correct; a valid TOTP code is still required. 401 with a
+        # machine-readable flag so the client prompts for the code and retries.
+        raise HTTPException(status_code=401, detail={"mfa_required": True,
+                                                     "message": "Multi-factor code required"})
 
     return result
 
@@ -221,3 +227,43 @@ async def accept_invite(data: AcceptInviteRequest, db: AsyncSession = Depends(ge
         status = 404 if result["error"] == "user_not_found" else 400
         raise HTTPException(status_code=status, detail=result["error"])
     return result
+
+
+# ── MFA (TOTP) — enroll / confirm / disable / status ──────────────────────────
+
+class MFACodeRequest(BaseModel):
+    code: str
+
+
+@router.get("/mfa/status")
+async def mfa_status(user: dict = Depends(get_current_user)):
+    """Whether the caller has MFA enrolled/enabled."""
+    from app.services import mfa as mfa_svc
+    return await mfa_svc.status(user["id"])
+
+
+@router.post("/mfa/enroll")
+async def mfa_enroll(user: dict = Depends(get_current_user)):
+    """Start MFA enrollment: returns a TOTP secret + otpauth URI (shown once).
+
+    Call `/mfa/confirm` with a code from the authenticator to actually enable it.
+    """
+    from app.services import mfa as mfa_svc
+    return await mfa_svc.begin_enrollment(user["id"], user["tenant_id"], account=user["email"])
+
+
+@router.post("/mfa/confirm")
+async def mfa_confirm(data: MFACodeRequest, user: dict = Depends(get_current_user)):
+    """Confirm enrollment with a code from the authenticator, enabling MFA."""
+    from app.services import mfa as mfa_svc
+    result = await mfa_svc.confirm_enrollment(user["id"], data.code)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/mfa/disable")
+async def mfa_disable(user: dict = Depends(get_current_user)):
+    """Disable MFA for the caller's own account."""
+    from app.services import mfa as mfa_svc
+    return await mfa_svc.disable(user["id"])

@@ -29,6 +29,7 @@ _model_modules = [
     "app.models.intelligence_metrics",
     "app.models.sso",
     "app.models.api_key",
+    "app.models.mfa",
     "app.models.jobs",
     "app.models.actuation",
     "app.models.missions",

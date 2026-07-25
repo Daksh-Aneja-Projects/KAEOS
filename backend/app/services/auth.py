@@ -268,7 +268,7 @@ class AuthService:
 
     @staticmethod
     async def login(db: AsyncSession, email: str, password: str,
-                    ip_address: str | None = None) -> Optional[dict]:
+                    ip_address: str | None = None, mfa_code: str | None = None) -> Optional[dict]:
         """Authenticate user and return JWT token.
 
         Brute-force protection: after LOGIN_MAX_FAILURES failures within
@@ -299,6 +299,18 @@ class AuthService:
 
         # Success — clear the failure counter.
         _failed_logins.pop(email, None)
+
+        # Second factor: if MFA is enabled for this user, a valid TOTP code is
+        # required before a session is issued. Missing/invalid code returns a
+        # challenge (not a token) so the client can prompt for the code.
+        from app.services import mfa as mfa_svc
+        if await mfa_svc.is_enabled(user.id):
+            if not mfa_code or not await mfa_svc.verify_login_code(user.id, mfa_code):
+                await record_security_event(
+                    tenant_id=user.tenant_id, event_type="AUTH_MFA", action="LOGIN",
+                    result="BLOCKED", actor=user.email, ip_address=ip_address,
+                    details={"reason": "mfa_required" if not mfa_code else "mfa_invalid"})
+                return {"mfa_required": True}
 
         # Update login tracking
         user.login_count = (user.login_count or 0) + 1

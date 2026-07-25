@@ -28,6 +28,12 @@ _ALLOWLIST = {
     # Viewer-level self-actions (marking one's own items read — no privilege).
     "/api/v1/agents/activity-feed/mark-read",
     "/api/v1/org/notifications/read",
+    # MFA self-service: a user manages their OWN second factor. Gated by
+    # get_current_user (identity), not a role — enrolling/disabling your own 2FA
+    # needs no elevated privilege.
+    "/api/v1/auth/mfa/enroll",
+    "/api/v1/auth/mfa/confirm",
+    "/api/v1/auth/mfa/disable",
     # Read-like: explains an existing skill, produces no state change.
     "/api/v1/skills/{skill_id}/explain",
     # Conversational Q&A copilot — read-only, answers questions, never mutates
