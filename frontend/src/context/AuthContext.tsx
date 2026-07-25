@@ -33,7 +33,19 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('kaeos-token'));
+  const [token, setToken] = useState<string | null>(() => {
+    // SSO (OIDC) callback delivers the session in the URL fragment (#token=...),
+    // which is never sent to servers or logged. Consume it, persist it, and strip
+    // it from the URL so it does not linger in history.
+    const m = window.location.hash.match(/[#&]token=([^&]+)/);
+    if (m) {
+      const t = decodeURIComponent(m[1]);
+      localStorage.setItem('kaeos-token', t);
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return t;
+    }
+    return localStorage.getItem('kaeos-token');
+  });
   const [loading, setLoading] = useState(true);
 
   // Validate token on mount

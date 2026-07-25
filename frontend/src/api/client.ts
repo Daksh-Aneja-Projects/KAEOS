@@ -601,6 +601,20 @@ export const api = {
   authCreateUser: (data: any) => request<any>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
   authUpdateRole: (id: string, role: string) => request<any>(`/auth/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
   authDeleteUser: (id: string) => request<any>(`/auth/users/${id}`, { method: 'DELETE' }),
+  authReactivateUser: (id: string) => request<any>(`/auth/users/${id}/reactivate`, { method: 'POST' }),
+  authInviteUser: (data: any) => request<any>('/auth/users/invite', { method: 'POST', body: JSON.stringify(data) }),
+
+  // MFA (self-service)
+  mfaStatus: () => request<{ enrolled: boolean; enabled: boolean }>('/auth/mfa/status'),
+  mfaEnroll: () => request<{ secret: string; otpauth_uri: string }>('/auth/mfa/enroll', { method: 'POST' }),
+  mfaConfirm: (code: string) => request<any>('/auth/mfa/confirm', { method: 'POST', body: JSON.stringify({ code }) }),
+  mfaDisable: () => request<any>('/auth/mfa/disable', { method: 'POST' }),
+
+  // SSO (OIDC) — discovery is unauthenticated (used by the login page)
+  discoverSSO: (email: string) => request<{ sso: boolean; provider_label?: string; tenant_id?: string; authorize_url?: string }>(`/auth/sso/discover?email=${encodeURIComponent(email)}`),
+  getSSOConnections: () => request<{ connections: any[] }>('/auth/sso/connections'),
+  upsertSSOConnection: (data: any) => request<any>('/auth/sso/connections', { method: 'POST', body: JSON.stringify(data) }),
+  deleteSSOConnection: (id: string) => request<any>(`/auth/sso/connections/${id}`, { method: 'DELETE' }),
 
   // Dashboard
   getHealth: () => request<KBHealth>('/dashboard/health'),

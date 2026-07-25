@@ -13,6 +13,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
+  const [ssoBusy, setSsoBusy] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -20,6 +22,30 @@ export default function LoginPage() {
     const result = await login(email.trim(), password);
     if (!result.ok) setError(result.error || 'Login failed');
     setLoading(false);
+  };
+
+  // Continue with SSO: look up the email's domain and, if an OIDC connection is
+  // configured for it, hand off to the IdP's authorization endpoint.
+  const handleSSO = async () => {
+    setError('');
+    if (!email.trim()) { setError('Enter your work email to continue with SSO.'); return; }
+    setSsoBusy(true);
+    try {
+      const { api } = await import('../api/client');
+      const res = await api.discoverSSO(email.trim());
+      if (res.sso && res.authorize_url) {
+        // Ask the callback to return us here with the session in the URL fragment.
+        const returnTo = encodeURIComponent(window.location.origin + '/');
+        const sep = res.authorize_url.includes('?') ? '&' : '?';
+        window.location.href = `${res.authorize_url}${sep}return_to=${returnTo}`;
+        return;
+      }
+      setError('No SSO is configured for this email domain. Use your password.');
+    } catch (err: any) {
+      setError(err?.message || 'SSO lookup failed.');
+    } finally {
+      setSsoBusy(false);
+    }
   };
 
   return (
@@ -110,6 +136,18 @@ export default function LoginPage() {
             className="w-full py-2.5 rounded-lg text-[14px] font-semibold text-white flex items-center justify-center gap-2 transition-all hover:brightness-110 disabled:opacity-60"
             style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}dd)` }}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Sign in <ArrowRight className="w-4 h-4" /></>}
+          </button>
+
+          {/* Enterprise SSO (OIDC) */}
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 h-px" style={{ background: colors.hairline }} />
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>or</span>
+            <div className="flex-1 h-px" style={{ background: colors.hairline }} />
+          </div>
+          <button type="button" onClick={handleSSO} disabled={ssoBusy}
+            className="w-full py-2.5 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+            style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
+            {ssoBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Continue with SSO'}
           </button>
         </form>
 
