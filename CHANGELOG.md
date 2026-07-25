@@ -9,6 +9,23 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Fixed (Production-readiness — security)
+- **Cross-tenant graph leak closed (P0).** The polystore graph store
+  (`polystore_graph_nodes` / `_edges`) had no `tenant_id` column and no RLS, so
+  `_load()` / `snapshot()` / traversals returned EVERY tenant's nodes and edges -
+  a reachable cross-tenant path on any Postgres-without-Neo4j deployment (the
+  live `SqliteGraphStore` backend). Every node/edge now carries a `tenant_id`,
+  the node primary key is `(tenant_id, id)` so ids are unique per tenant, and
+  every read/write/traversal is filtered by tenant. `tenant_id` threads through
+  `GraphStore` -> `GraphService` -> the fitness/scorecard/impact/synthetic
+  consumers. On Postgres the tables are additionally placed under row-level
+  security as a backstop (the existing `ensure_rls_policies` sweep plus an
+  immediate enable at lazy-create time). Pre-tenant tables are migrated by
+  dropping-and-recreating tenant-scoped (the graph holds derived/regenerable
+  structure; serving untenanted rows *was* the leak). Regression-tested with a
+  dedicated tenant-isolation case incl. same-id-across-tenants
+  (`tests/test_graph_consolidation.py`).
+
 ### Fixed (Production-readiness — honesty)
 - **Compliance dashboard no longer fabricates compliance (P0).**
   `GET /dashboard/compliance` previously hardcoded `violations: 0` and stamped

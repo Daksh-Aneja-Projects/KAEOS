@@ -54,7 +54,7 @@ class FitnessCalculator:
         edges: List[Dict[str, Any]] = []
         if self.graph is not None:
             try:
-                nodes, edges = await self.graph.snapshot()
+                nodes, edges = await self.graph.snapshot(tenant_id)
             except Exception as exc:  # graph unavailable -> honest neutral, not fake
                 logger.warning("FitnessCalculator: graph snapshot failed (%s); returning neutral fitness.", exc)
 

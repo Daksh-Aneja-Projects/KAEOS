@@ -43,7 +43,7 @@ class ScorecardEngine:
         nodes: Dict[str, Any] = {}
         edges = []
         try:
-            nodes, edges = await self.graph.snapshot()
+            nodes, edges = await self.graph.snapshot(tenant_id)
         except Exception as exc:
             logger.warning("ScorecardEngine: graph snapshot unavailable (%s); scoring on state only.", exc)
 

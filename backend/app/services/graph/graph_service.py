@@ -39,32 +39,32 @@ class GraphService:
             except Exception:
                 pass
 
-    async def register_entity(self, entity_id: str, label: str, properties: Dict[str, Any]):
-        """Register (upsert) a node in the graph. ``id`` is forced to ``entity_id``."""
+    async def register_entity(self, tenant_id: str, entity_id: str, label: str, properties: Dict[str, Any]):
+        """Register (upsert) a node in ONE tenant's graph. ``id`` is forced to ``entity_id``."""
         props = dict(properties or {})
         props["id"] = entity_id
-        await self.store.upsert_node(entity_id, label, props)
+        await self.store.upsert_node(tenant_id, entity_id, label, props)
 
-    async def update_entity(self, entity_id: str, label: str, properties: Dict[str, Any]):
-        """Update a node's properties (upsert semantics)."""
-        await self.store.upsert_node(entity_id, label, dict(properties or {}))
+    async def update_entity(self, tenant_id: str, entity_id: str, label: str, properties: Dict[str, Any]):
+        """Update a node's properties (upsert semantics), within one tenant."""
+        await self.store.upsert_node(tenant_id, entity_id, label, dict(properties or {}))
 
-    async def link_entities(self, source_id: str, target_id: str, relation: str,
+    async def link_entities(self, tenant_id: str, source_id: str, target_id: str, relation: str,
                             properties: Dict[str, Any] = None):
-        """Create a directed relationship between two entities."""
-        await self.store.upsert_edge(source_id, target_id, relation, properties)
+        """Create a directed relationship between two entities in one tenant's graph."""
+        await self.store.upsert_edge(tenant_id, source_id, target_id, relation, properties)
 
-    async def get_impact_radius(self, entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
-        """Downstream blast radius (follow outgoing edges)."""
-        return await self.store.traverse_impact(entity_id, depth)
+    async def get_impact_radius(self, tenant_id: str, entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
+        """Downstream blast radius (follow outgoing edges), within one tenant."""
+        return await self.store.traverse_impact(tenant_id, entity_id, depth)
 
-    async def get_dependencies(self, entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
-        """Upstream dependencies (follow incoming edges)."""
-        return await self.store.traverse_dependencies(entity_id, depth)
+    async def get_dependencies(self, tenant_id: str, entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
+        """Upstream dependencies (follow incoming edges), within one tenant."""
+        return await self.store.traverse_dependencies(tenant_id, entity_id, depth)
 
-    async def snapshot(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """Whole-graph ``(nodes_by_id, edges)`` for aggregate analytics."""
-        return await self.store.snapshot()
+    async def snapshot(self, tenant_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """ONE TENANT's ``(nodes_by_id, edges)`` for aggregate analytics."""
+        return await self.store.snapshot(tenant_id)
 
     async def health(self) -> Dict[str, Any]:
         return await self.store.health()

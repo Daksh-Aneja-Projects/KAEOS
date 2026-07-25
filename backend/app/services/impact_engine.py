@@ -20,15 +20,15 @@ class ImpactPropagationEngine:
         self.graph = graph_service
         self.router = LLMRouter()
     
-    async def propagate_impact(self, event_type: str, source_entity_id: str, depth: int = 3) -> Dict[str, Any]:
+    async def propagate_impact(self, tenant_id: str, event_type: str, source_entity_id: str, depth: int = 3) -> Dict[str, Any]:
         """
-        Calculates the blast radius of an event across the Enterprise Graph.
+        Calculates the blast radius of an event across ONE tenant's Enterprise Graph.
         Returns semantic Causal Chains.
         """
         logger.info(f"ImpactEngine: Calculating causal blast radius for {source_entity_id} (Event: {event_type})")
-        
-        # 1. Ask GraphService for downstream impacts
-        impacts = await self.graph.get_impact_radius(source_entity_id, depth)
+
+        # 1. Ask GraphService for downstream impacts (tenant-scoped)
+        impacts = await self.graph.get_impact_radius(tenant_id, source_entity_id, depth)
         
         # 2. Extract semantic causal chains
         causal_chains = await self._generate_causal_chains(event_type, source_entity_id, impacts)
@@ -92,9 +92,10 @@ class ImpactPropagationEngine:
             
         return chains
 
-    async def get_root_cause_analysis(self, impacted_entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
+    async def get_root_cause_analysis(self, tenant_id: str, impacted_entity_id: str, depth: int = 3) -> List[Dict[str, Any]]:
         """
-        Traverses upstream to find potential root causes of an issue at this node.
+        Traverses upstream to find potential root causes of an issue at this node
+        (tenant-scoped).
         """
-        dependencies = await self.graph.get_dependencies(impacted_entity_id, depth)
+        dependencies = await self.graph.get_dependencies(tenant_id, impacted_entity_id, depth)
         return dependencies

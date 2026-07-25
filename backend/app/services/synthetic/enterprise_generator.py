@@ -32,11 +32,21 @@ class SyntheticEnterpriseGenerator:
         self.tenant_id = "tenant_synthetic"
         self.fake = Faker()
 
+    async def _node(self, entity_id: str, label: str, properties: Dict[str, Any]):
+        """Upsert a node into this generator's tenant graph."""
+        await self.graph.register_entity(self.tenant_id, entity_id, label, properties)
+
+    async def _edge(self, source_id: str, target_id: str, relation: str, properties: Dict[str, Any] = None):
+        """Link two nodes within this generator's tenant graph."""
+        await self.graph.link_entities(self.tenant_id, source_id, target_id, relation, properties)
+
     async def generate_enterprise(self, config: Dict[str, Any]):
         """
         Generates the enterprise graph using dynamic parameters.
         Must provide seed for reproducibility.
         """
+        # Generated topology belongs to one tenant; callers may override the default.
+        self.tenant_id = config.get("tenant_id", self.tenant_id)
         seed = config.get("seed", 42)
         random.seed(seed)
         self.fake.seed_instance(seed)
@@ -53,7 +63,7 @@ class SyntheticEnterpriseGenerator:
         
         org_name = self.fake.company()
         org_id = "org_synthetic_01"
-        await self.graph.register_entity(org_id, "Organization", {"name": org_name})
+        await self._node(org_id, "Organization", {"name": org_name})
         
         # Capabilities
         capabilities = ["AI Engineering", "Software Engineering", "HR Operations", "Sales Operations", "Finance Operations", "Data Science", "Security", "Cloud Engineering"]
@@ -61,27 +71,27 @@ class SyntheticEnterpriseGenerator:
         for i, cap in enumerate(capabilities):
             cap_id = f"cap_{i}"
             cap_ids.append(cap_id)
-            await self.graph.register_entity(cap_id, "Capability", {"name": cap})
+            await self._node(cap_id, "Capability", {"name": cap})
         
         # Departments
         dept_ids = []
         for d in range(dept_count):
             dept_id = f"dept_{d}"
             dept_ids.append(dept_id)
-            await self.graph.register_entity(dept_id, "Department", {"name": f"{self.fake.bs().split()[0].capitalize()} Department"})
-            await self.graph.link_entities(dept_id, org_id, "BELONGS_TO")
+            await self._node(dept_id, "Department", {"name": f"{self.fake.bs().split()[0].capitalize()} Department"})
+            await self._edge(dept_id, org_id, "BELONGS_TO")
             # Department possesses capability
-            await self.graph.link_entities(dept_id, random.choice(cap_ids), "POSSESSES_CAPABILITY")
+            await self._edge(dept_id, random.choice(cap_ids), "POSSESSES_CAPABILITY")
 
         # Goals
         goal_ids = []
         for g in range(goal_count):
             goal_id = f"goal_{g}"
             goal_ids.append(goal_id)
-            await self.graph.register_entity(goal_id, "Goal", {"title": f"Goal: {self.fake.catch_phrase()}"})
-            await self.graph.link_entities(goal_id, org_id, "DRIVES")
+            await self._node(goal_id, "Goal", {"title": f"Goal: {self.fake.catch_phrase()}"})
+            await self._edge(goal_id, org_id, "DRIVES")
             # Capability supports goal
-            await self.graph.link_entities(random.choice(cap_ids), goal_id, "SUPPORTS_GOAL")
+            await self._edge(random.choice(cap_ids), goal_id, "SUPPORTS_GOAL")
             
         # Initiatives
         init_ids = []
@@ -89,9 +99,9 @@ class SyntheticEnterpriseGenerator:
             init_id = f"init_{i}"
             init_ids.append(init_id)
             target_goal = random.choice(goal_ids)
-            await self.graph.register_entity(init_id, "Initiative", {"title": f"Init: {self.fake.bs()}"})
-            await self.graph.link_entities(init_id, target_goal, "SUPPORTS")
-            await self.graph.link_entities(init_id, random.choice(cap_ids), "REQUIRES_CAPABILITY")
+            await self._node(init_id, "Initiative", {"title": f"Init: {self.fake.bs()}"})
+            await self._edge(init_id, target_goal, "SUPPORTS")
+            await self._edge(init_id, random.choice(cap_ids), "REQUIRES_CAPABILITY")
             
         # Projects
         proj_ids = []
@@ -100,26 +110,26 @@ class SyntheticEnterpriseGenerator:
             proj_ids.append(proj_id)
             target_init = random.choice(init_ids)
             target_dept = random.choice(dept_ids)
-            await self.graph.register_entity(proj_id, "Project", {"title": f"Proj: {self.fake.catch_phrase()}"})
-            await self.graph.link_entities(proj_id, target_init, "DELIVERS")
-            await self.graph.link_entities(proj_id, target_dept, "OWNED_BY")
-            await self.graph.link_entities(proj_id, random.choice(cap_ids), "REQUIRES_CAPABILITY")
+            await self._node(proj_id, "Project", {"title": f"Proj: {self.fake.catch_phrase()}"})
+            await self._edge(proj_id, target_init, "DELIVERS")
+            await self._edge(proj_id, target_dept, "OWNED_BY")
+            await self._edge(proj_id, random.choice(cap_ids), "REQUIRES_CAPABILITY")
             
         # Vendors
         vendor_ids = []
         for v in range(vendor_count):
             ven_id = f"vendor_{v}"
             vendor_ids.append(ven_id)
-            await self.graph.register_entity(ven_id, "Vendor", {"name": self.fake.company()})
+            await self._node(ven_id, "Vendor", {"name": self.fake.company()})
             target_proj = random.choice(proj_ids)
-            await self.graph.link_entities(ven_id, target_proj, "SUPPLIES")
+            await self._edge(ven_id, target_proj, "SUPPLIES")
             
         # Risks
         for r in range(risk_count):
             risk_id = f"risk_{r}"
-            await self.graph.register_entity(risk_id, "Risk", {"title": f"Risk: {self.fake.bs()}", "severity": random.choice(["MEDIUM", "HIGH", "CRITICAL"])})
+            await self._node(risk_id, "Risk", {"title": f"Risk: {self.fake.bs()}", "severity": random.choice(["MEDIUM", "HIGH", "CRITICAL"])})
             target_node = random.choice(goal_ids + init_ids + proj_ids + vendor_ids)
-            await self.graph.link_entities(risk_id, target_node, "THREATENS")
+            await self._edge(risk_id, target_node, "THREATENS")
 
         # Employees (Batched)
         batch_size = 500
@@ -130,11 +140,11 @@ class SyntheticEnterpriseGenerator:
                 target_dept = random.choice(dept_ids)
                 target_proj = random.choice(proj_ids) if random.random() > 0.3 else None # 70% of emps are on projects
                 
-                await self.graph.register_entity(emp_id, "Employee", {"name": self.fake.name()})
-                await self.graph.link_entities(emp_id, target_dept, "WORKS_IN")
-                await self.graph.link_entities(emp_id, random.choice(cap_ids), "HAS_CAPABILITY")
+                await self._node(emp_id, "Employee", {"name": self.fake.name()})
+                await self._edge(emp_id, target_dept, "WORKS_IN")
+                await self._edge(emp_id, random.choice(cap_ids), "HAS_CAPABILITY")
                 if target_proj:
-                    await self.graph.link_entities(emp_id, target_proj, "CONTRIBUTES_TO")
+                    await self._edge(emp_id, target_proj, "CONTRIBUTES_TO")
                 
             await asyncio.sleep(0)
             
@@ -147,30 +157,30 @@ class SyntheticEnterpriseGenerator:
             
             # 1. Vendor Concentration
             bad_vendor = "vendor_monopoly"
-            await self.graph.register_entity(bad_vendor, "Vendor", {"name": "Monopoly Corp"})
+            await self._node(bad_vendor, "Vendor", {"name": "Monopoly Corp"})
             for p in proj_ids[:int(len(proj_ids) * 0.8)]: # 80% of projects
-                await self.graph.link_entities(bad_vendor, p, "SUPPLIES")
+                await self._edge(bad_vendor, p, "SUPPLIES")
                 
             # 2. Duplicate Initiatives (Portfolio Waste)
-            await self.graph.register_entity("init_dup_1", "Initiative", {"title": "Cloud Migration Alpha"})
-            await self.graph.register_entity("init_dup_2", "Initiative", {"title": "Cloud Migration Beta (Duplicate)"})
+            await self._node("init_dup_1", "Initiative", {"title": "Cloud Migration Alpha"})
+            await self._node("init_dup_2", "Initiative", {"title": "Cloud Migration Beta (Duplicate)"})
             target_goal = goal_ids[0]
-            await self.graph.link_entities("init_dup_1", target_goal, "SUPPORTS")
-            await self.graph.link_entities("init_dup_2", target_goal, "SUPPORTS")
-            await self.graph.link_entities("init_dup_1", cap_ids[0], "REQUIRES_CAPABILITY")
-            await self.graph.link_entities("init_dup_2", cap_ids[0], "REQUIRES_CAPABILITY")
+            await self._edge("init_dup_1", target_goal, "SUPPORTS")
+            await self._edge("init_dup_2", target_goal, "SUPPORTS")
+            await self._edge("init_dup_1", cap_ids[0], "REQUIRES_CAPABILITY")
+            await self._edge("init_dup_2", cap_ids[0], "REQUIRES_CAPABILITY")
             
             # 3. Capability Gap
-            await self.graph.register_entity("cap_missing", "Capability", {"name": "Quantum Computing"})
-            await self.graph.register_entity("init_quantum", "Initiative", {"title": "Quantum R&D"})
-            await self.graph.link_entities("init_quantum", "cap_missing", "REQUIRES_CAPABILITY")
-            await self.graph.link_entities("init_quantum", goal_ids[1], "SUPPORTS")
+            await self._node("cap_missing", "Capability", {"name": "Quantum Computing"})
+            await self._node("init_quantum", "Initiative", {"title": "Quantum R&D"})
+            await self._edge("init_quantum", "cap_missing", "REQUIRES_CAPABILITY")
+            await self._edge("init_quantum", goal_ids[1], "SUPPORTS")
             # No employees get HAS_CAPABILITY cap_missing
             
             # 4. Overloaded Team
             overloaded_proj = proj_ids[0]
             # Assign 200 employees to this single project
             for i in range(200):
-                await self.graph.link_entities(f"emp_{i}", overloaded_proj, "CONTRIBUTES_TO")
+                await self._edge(f"emp_{i}", overloaded_proj, "CONTRIBUTES_TO")
 
         logger.info("Synthetic Enterprise Generation Complete.")

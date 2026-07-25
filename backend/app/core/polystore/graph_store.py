@@ -38,27 +38,27 @@ class GraphStore(ABC):
     async def initialize(self) -> None: ...
 
     @abstractmethod
-    async def upsert_node(self, node_id: str, label: str, properties: dict) -> str: ...
+    async def upsert_node(self, tenant_id: str, node_id: str, label: str, properties: dict) -> str: ...
 
     @abstractmethod
-    async def upsert_edge(self, source_id: str, target_id: str, rel_type: str, properties: Optional[dict] = None) -> None: ...
+    async def upsert_edge(self, tenant_id: str, source_id: str, target_id: str, rel_type: str, properties: Optional[dict] = None) -> None: ...
 
     @abstractmethod
-    async def traverse_impact(self, node_id: str, max_depth: int = 3) -> list[dict[str, Any]]:
-        """Downstream blast radius (follow outgoing edges)."""
+    async def traverse_impact(self, tenant_id: str, node_id: str, max_depth: int = 3) -> list[dict[str, Any]]:
+        """Downstream blast radius (follow outgoing edges), within one tenant."""
 
     @abstractmethod
-    async def traverse_dependencies(self, node_id: str, max_depth: int = 3) -> list[dict[str, Any]]:
-        """Upstream dependencies (follow incoming edges)."""
+    async def traverse_dependencies(self, tenant_id: str, node_id: str, max_depth: int = 3) -> list[dict[str, Any]]:
+        """Upstream dependencies (follow incoming edges), within one tenant."""
 
     @abstractmethod
-    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Return the whole graph as ``(nodes_by_id, edges)`` for analytics.
+    async def snapshot(self, tenant_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Return ONE TENANT's graph as ``(nodes_by_id, edges)`` for analytics.
 
         ``nodes_by_id`` maps node id -> ``{"id", "label", **properties}``.
         ``edges`` is a list of ``{"source", "target", "type"}`` dicts. Used by
         engines that need aggregate structure (fitness, scorecard) rather than a
-        single-node traversal.
+        single-node traversal. Every returned row belongs to ``tenant_id``.
         """
 
     @abstractmethod
@@ -66,68 +66,134 @@ class GraphStore(ABC):
 
 
 class SqliteGraphStore(GraphStore):
-    """Durable graph in the app DB (works on SQLite and Postgres alike)."""
+    """Durable, TENANT-SCOPED graph in the app DB (SQLite and Postgres alike).
+
+    Every node/edge carries a ``tenant_id`` and every read/write is filtered by
+    it, so one tenant can never see or traverse into another tenant's graph.
+    Node ids are unique *per tenant* (composite primary key), so two tenants may
+    reuse the same id without colliding. On Postgres the tables are additionally
+    placed under row-level security as a backstop.
+    """
 
     backend_name = "sqlite"
 
+    def __init__(self) -> None:
+        self._ready = False
+
     async def initialize(self) -> None:
+        if self._ready:
+            return
         # DDL on the OWNER engine — the app role cannot CREATE under RLS setups.
         from app.core.database import MaintenanceSessionLocal
         async with MaintenanceSessionLocal() as session:
+            dialect = session.bind.dialect.name
+            # Tables that predate tenant scoping have no tenant_id column and
+            # therefore leak across tenants. The graph holds derived/regenerable
+            # structure, so the safe migration is to drop the untenanted table
+            # and recreate it tenant-scoped rather than serve orphaned rows.
+            for tbl in (_NODES, _EDGES):
+                if await self._table_missing_tenant(session, tbl, dialect):
+                    await session.execute(text(f"DROP TABLE IF EXISTS {tbl}"))  # nosec B608
+                    logger.warning(
+                        "[Polystore] dropped pre-tenant %s (no tenant_id column) — "
+                        "recreating tenant-scoped", tbl,
+                    )
             await session.execute(text(
                 f"CREATE TABLE IF NOT EXISTS {_NODES} ("
-                "id TEXT PRIMARY KEY, label TEXT, properties TEXT)"
+                "tenant_id TEXT NOT NULL, id TEXT NOT NULL, label TEXT, properties TEXT, "
+                "PRIMARY KEY (tenant_id, id))"
             ))
             await session.execute(text(
                 f"CREATE TABLE IF NOT EXISTS {_EDGES} ("
-                "source TEXT, target TEXT, rel_type TEXT, properties TEXT)"
+                "tenant_id TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL, "
+                "rel_type TEXT, properties TEXT)"
             ))
             await session.execute(text(
-                f"CREATE INDEX IF NOT EXISTS ix_{_EDGES}_source ON {_EDGES}(source)"
+                f"CREATE INDEX IF NOT EXISTS ix_{_EDGES}_src ON {_EDGES}(tenant_id, source)"
             ))
             await session.execute(text(
-                f"CREATE INDEX IF NOT EXISTS ix_{_EDGES}_target ON {_EDGES}(target)"
+                f"CREATE INDEX IF NOT EXISTS ix_{_EDGES}_tgt ON {_EDGES}(tenant_id, target)"
             ))
             await session.commit()
+            # Postgres backstop: these tables are created lazily (after the
+            # init_db RLS sweep), so enable isolation here too. Idempotent.
+            if dialect == "postgresql":
+                from app.core.rls import rls_enable_statements
+                for tbl in (_NODES, _EDGES):
+                    for stmt in rls_enable_statements(tbl):
+                        await session.execute(text(stmt))
+                await session.commit()
+        self._ready = True
 
-    async def upsert_node(self, node_id, label, properties) -> str:
+    @staticmethod
+    async def _table_missing_tenant(session, table: str, dialect: str) -> bool:
+        """True only if ``table`` EXISTS and lacks a ``tenant_id`` column."""
+        if dialect == "sqlite":
+            rows = (await session.execute(text(f"PRAGMA table_info({table})"))).all()  # nosec B608
+            if not rows:
+                return False  # doesn't exist yet — nothing to migrate
+            return "tenant_id" not in {r[1] for r in rows}
+        # Postgres
+        exists = (await session.execute(
+            text("SELECT 1 FROM information_schema.tables "
+                 "WHERE table_schema='public' AND table_name=:t"), {"t": table}
+        )).first()
+        if not exists:
+            return False
+        has_col = (await session.execute(
+            text("SELECT 1 FROM information_schema.columns "
+                 "WHERE table_schema='public' AND table_name=:t AND column_name='tenant_id'"),
+            {"t": table},
+        )).first()
+        return has_col is None
+
+    async def upsert_node(self, tenant_id, node_id, label, properties) -> str:
         await self.initialize()
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    f"INSERT INTO {_NODES} (id, label, properties) VALUES (:id, :label, :props) "  # nosec B608
-                    "ON CONFLICT(id) DO UPDATE SET label=excluded.label, properties=excluded.properties"
+                    f"INSERT INTO {_NODES} (tenant_id, id, label, properties) "  # nosec B608
+                    "VALUES (:tid, :id, :label, :props) "
+                    "ON CONFLICT(tenant_id, id) DO UPDATE SET label=excluded.label, properties=excluded.properties"
                 ),
-                {"id": node_id, "label": label, "props": json.dumps({**(properties or {}), "id": node_id})},
+                {"tid": tenant_id, "id": node_id, "label": label,
+                 "props": json.dumps({**(properties or {}), "id": node_id})},
             )
             await session.commit()
         return node_id
 
-    async def upsert_edge(self, source_id, target_id, rel_type, properties=None) -> None:
+    async def upsert_edge(self, tenant_id, source_id, target_id, rel_type, properties=None) -> None:
         await self.initialize()
         async with AsyncSessionLocal() as session:
-            # De-dupe identical edges.
+            # De-dupe identical edges within the tenant.
             existing = await session.execute(
                 text(
-                    f"SELECT 1 FROM {_EDGES} WHERE source=:s AND target=:t AND rel_type=:r"  # nosec B608
+                    f"SELECT 1 FROM {_EDGES} WHERE tenant_id=:tid AND source=:s AND target=:t AND rel_type=:r"  # nosec B608
                 ),
-                {"s": source_id, "t": target_id, "r": rel_type},
+                {"tid": tenant_id, "s": source_id, "t": target_id, "r": rel_type},
             )
             if existing.first() is None:
                 await session.execute(
                     text(
-                        f"INSERT INTO {_EDGES} (source, target, rel_type, properties) "  # nosec B608
-                        "VALUES (:s, :t, :r, :p)"
+                        f"INSERT INTO {_EDGES} (tenant_id, source, target, rel_type, properties) "  # nosec B608
+                        "VALUES (:tid, :s, :t, :r, :p)"
                     ),
-                    {"s": source_id, "t": target_id, "r": rel_type, "p": json.dumps(properties or {})},
+                    {"tid": tenant_id, "s": source_id, "t": target_id, "r": rel_type,
+                     "p": json.dumps(properties or {})},
                 )
                 await session.commit()
 
-    async def _load(self) -> tuple[dict, list]:
+    async def _load(self, tenant_id: str) -> tuple[dict, list]:
         await self.initialize()
         async with AsyncSessionLocal() as session:
-            n = await session.execute(text(f"SELECT id, label, properties FROM {_NODES}"))  # nosec B608
-            e = await session.execute(text(f"SELECT source, target, rel_type FROM {_EDGES}"))  # nosec B608
+            n = await session.execute(
+                text(f"SELECT id, label, properties FROM {_NODES} WHERE tenant_id=:tid"),  # nosec B608
+                {"tid": tenant_id},
+            )
+            e = await session.execute(
+                text(f"SELECT source, target, rel_type FROM {_EDGES} WHERE tenant_id=:tid"),  # nosec B608
+                {"tid": tenant_id},
+            )
             nodes = {}
             for row in n.mappings().all():
                 try:
@@ -139,8 +205,8 @@ class SqliteGraphStore(GraphStore):
                      for r in e.mappings().all()]
         return nodes, edges
 
-    async def traverse_impact(self, node_id, max_depth=3) -> list[dict[str, Any]]:
-        nodes, edges = await self._load()
+    async def traverse_impact(self, tenant_id, node_id, max_depth=3) -> list[dict[str, Any]]:
+        nodes, edges = await self._load(tenant_id)
         start = nodes.get(node_id)
         if not start:
             return []
@@ -160,8 +226,8 @@ class SqliteGraphStore(GraphStore):
                         queue.append((edge["target"], np, nr))
         return results
 
-    async def traverse_dependencies(self, node_id, max_depth=3) -> list[dict[str, Any]]:
-        nodes, edges = await self._load()
+    async def traverse_dependencies(self, tenant_id, node_id, max_depth=3) -> list[dict[str, Any]]:
+        nodes, edges = await self._load(tenant_id)
         start = nodes.get(node_id)
         if not start:
             return []
@@ -181,14 +247,20 @@ class SqliteGraphStore(GraphStore):
                         queue.append((edge["source"], np, nr))
         return results
 
-    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        return await self._load()
+    async def snapshot(self, tenant_id) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        return await self._load(tenant_id)
 
     async def health(self) -> dict[str, Any]:
+        # Ops probe: total row counts across tenants (no per-tenant data returned).
+        # Uses the owner session so RLS does not hide the true totals on Postgres.
         try:
-            nodes, edges = await self._load()
+            await self.initialize()
+            from app.core.database import MaintenanceSessionLocal
+            async with MaintenanceSessionLocal() as session:
+                nc = (await session.execute(text(f"SELECT count(*) FROM {_NODES}"))).scalar() or 0  # nosec B608
+                ec = (await session.execute(text(f"SELECT count(*) FROM {_EDGES}"))).scalar() or 0  # nosec B608
             return {"backend": self.backend_name, "available": True,
-                    "nodes": len(nodes), "edges": len(edges)}
+                    "nodes": int(nc), "edges": int(ec)}
         except Exception as e:
             return {"backend": self.backend_name, "available": False, "error": str(e)}
 
@@ -208,59 +280,64 @@ class Neo4jGraphStore(GraphStore):
         from neo4j import AsyncGraphDatabase  # type: ignore
         self._driver = AsyncGraphDatabase.driver(self._uri, auth=(self._user, self._password))
 
-    async def upsert_node(self, node_id, label, properties) -> str:
+    async def upsert_node(self, tenant_id, node_id, label, properties) -> str:
         await self.initialize()
-        # Store ``label`` as a property too so snapshot() is uniform with the
-        # SQLite backend (which keeps label in its own column); analytics engines
-        # group nodes by the ``label`` key regardless of backend.
-        props = {**(properties or {}), "id": node_id, "label": label}
+        # Store ``label`` and ``tenant_id`` as properties too so snapshot() is
+        # uniform with the SQLite backend and every match can be tenant-scoped.
+        # MERGE keys on (tenant_id, id) so two tenants may reuse the same id.
+        props = {**(properties or {}), "id": node_id, "label": label, "tenant_id": tenant_id}
         async with self._driver.session() as s:
             await s.run(
-                f"MERGE (n:{label} {{id: $id}}) SET n += $props",
-                id=node_id, props=props,
+                f"MERGE (n:{label} {{id: $id, tenant_id: $tid}}) SET n += $props",
+                id=node_id, tid=tenant_id, props=props,
             )
         return node_id
 
-    async def upsert_edge(self, source_id, target_id, rel_type, properties=None) -> None:
+    async def upsert_edge(self, tenant_id, source_id, target_id, rel_type, properties=None) -> None:
         await self.initialize()
+        props = {**(properties or {}), "tenant_id": tenant_id}
         async with self._driver.session() as s:
             await s.run(
-                "MATCH (a {id: $s}), (b {id: $t}) "
+                "MATCH (a {id: $s, tenant_id: $tid}), (b {id: $t, tenant_id: $tid}) "
                 f"MERGE (a)-[r:{rel_type}]->(b) SET r += $props",
-                s=source_id, t=target_id, props=properties or {},
+                s=source_id, t=target_id, tid=tenant_id, props=props,
             )
 
-    async def traverse_impact(self, node_id, max_depth=3) -> list[dict[str, Any]]:
+    async def traverse_impact(self, tenant_id, node_id, max_depth=3) -> list[dict[str, Any]]:
         await self.initialize()
         async with self._driver.session() as s:
             res = await s.run(
-                f"MATCH path = (n {{id: $id}})-[*1..{int(max_depth)}]->(m) RETURN m, path",
-                id=node_id,
+                f"MATCH path = (n {{id: $id, tenant_id: $tid}})-[*1..{int(max_depth)}]->"
+                "(m {tenant_id: $tid}) RETURN m, path",
+                id=node_id, tid=tenant_id,
             )
             return [{"downstream": dict(rec["m"])} async for rec in res]
 
-    async def traverse_dependencies(self, node_id, max_depth=3) -> list[dict[str, Any]]:
+    async def traverse_dependencies(self, tenant_id, node_id, max_depth=3) -> list[dict[str, Any]]:
         await self.initialize()
         async with self._driver.session() as s:
             res = await s.run(
-                f"MATCH path = (m)-[*1..{int(max_depth)}]->(n {{id: $id}}) RETURN m, path",
-                id=node_id,
+                f"MATCH path = (m {{tenant_id: $tid}})-[*1..{int(max_depth)}]->"
+                "(n {id: $id, tenant_id: $tid}) RETURN m, path",
+                id=node_id, tid=tenant_id,
             )
             return [{"upstream": dict(rec["m"])} async for rec in res]
 
-    async def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    async def snapshot(self, tenant_id) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         await self.initialize()
         nodes: dict[str, Any] = {}
         edges: list[dict[str, Any]] = []
         async with self._driver.session() as s:
-            res = await s.run("MATCH (n) RETURN n")
+            res = await s.run("MATCH (n {tenant_id: $tid}) RETURN n", tid=tenant_id)
             async for rec in res:
                 n = dict(rec["n"])
                 nid = n.get("id")
                 if nid is not None:
                     nodes[nid] = n
             res2 = await s.run(
-                "MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS rel_type"
+                "MATCH (a {tenant_id: $tid})-[r]->(b {tenant_id: $tid}) "
+                "RETURN a.id AS source, b.id AS target, type(r) AS rel_type",
+                tid=tenant_id,
             )
             async for rec in res2:
                 edges.append({"source": rec["source"], "target": rec["target"], "type": rec["rel_type"]})
