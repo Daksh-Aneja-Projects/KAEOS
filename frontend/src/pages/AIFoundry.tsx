@@ -13,7 +13,7 @@ import { BrainLoading, BrainError, LiveIndicator } from '../components/BrainStat
 const ROADMAP = [
   { phase: 'Phase 1', label: 'Company Brain', icon: Boxes, status: 'done', blurb: 'Understand, reason, act on enterprise knowledge.' },
   { phase: 'Phase 2', label: 'Learning Intelligence', icon: Sparkles, status: 'live', blurb: 'Curate governed activity into training data.' },
-  { phase: 'Phase 3', label: 'Model Evolution', icon: FlaskConical, status: 'planned', blurb: 'Synthetic data, fine-tuning, evaluation, safe rollout.' },
+  { phase: 'Phase 3', label: 'Model Evolution', icon: FlaskConical, status: 'live', blurb: 'Evaluate a candidate against the baseline; promotion stays human-gated.' },
   { phase: 'Phase 4', label: 'Specialized Models', icon: Route, status: 'planned', blurb: 'A dedicated expert model per department.' },
   { phase: 'Phase 5', label: 'Autonomous Foundry', icon: Repeat, status: 'planned', blurb: 'The loop runs itself under governance.' },
 ];
@@ -42,11 +42,27 @@ export default function AIFoundry() {
   const [flash, setFlash] = useState<string | null>(null);
   const [positiveOnly, setPositiveOnly] = useState(true);
 
+  // Phase 3 — model evolution + fine-tune bridge. The endpoints and the gated
+  // promotion logic already existed and were tested; nothing in the UI could
+  // reach them, so a candidate model could never be evaluated or promoted.
+  const [runs, setRuns] = useState<any[]>([]);
+  const [ftJobs, setFtJobs] = useState<any[]>([]);
+  const [tier, setTier] = useState('reasoning');
+  const [candidate, setCandidate] = useState('');
+  const [evaluating, setEvaluating] = useState(false);
+  const [actingOn, setActingOn] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       setError(null);
-      const s = await api.getFoundryStats();
+      const [s, r, j] = await Promise.all([
+        api.getFoundryStats(),
+        api.listEvolutionRuns(10).catch(() => ({ runs: [] })),
+        api.listFinetuneJobs(10).catch(() => ({ jobs: [] })),
+      ]);
       setStats(s);
+      setRuns(r?.runs || []);
+      setFtJobs(j?.jobs || []);
     } catch (e: any) {
       setError(e.message || 'Failed to load the training dataset');
     } finally {
@@ -91,6 +107,53 @@ export default function AIFoundry() {
       flashMsg(`Export failed: ${e.message}`);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const runEvaluation = async () => {
+    if (!candidate.trim()) return;
+    setEvaluating(true);
+    try {
+      const r = await api.evaluateCandidateModel({ tier, candidate_model: candidate.trim() });
+      await load();
+      flashMsg(r.simulated
+        ? 'Evaluation ran with no live provider - scores are simulated and cannot justify promotion.'
+        : `Evaluated: baseline ${r.baseline_score ?? '-'} vs candidate ${r.candidate_score ?? '-'}.`);
+    } catch (e: any) {
+      flashMsg(`Evaluation failed: ${e.message}`);
+    } finally {
+      setEvaluating(false);
+    }
+  };
+
+  const decideRun = async (runId: string, decision: 'promote' | 'reject') => {
+    setActingOn(runId);
+    try {
+      if (decision === 'promote') await api.promoteEvolutionRun(runId);
+      else await api.rejectEvolutionRun(runId);
+      await load();
+      flashMsg(decision === 'promote'
+        ? 'Candidate promoted - it is now this tenant’s model for that tier.'
+        : 'Candidate rejected.');
+    } catch (e: any) {
+      flashMsg(`${decision === 'promote' ? 'Promotion' : 'Rejection'} failed: ${e.message}`);
+    } finally {
+      setActingOn(null);
+    }
+  };
+
+  const submitFinetune = async () => {
+    setActingOn('finetune');
+    try {
+      const j = await api.submitFinetune({ tier });
+      await load();
+      flashMsg(j.status === 'FAILED'
+        ? `Fine-tune could not start: ${j.error || 'no provider configured'}`
+        : `Fine-tune job ${j.status?.toLowerCase() || 'submitted'} for the ${tier} tier.`);
+    } catch (e: any) {
+      flashMsg(`Fine-tune submit failed: ${e.message}`);
+    } finally {
+      setActingOn(null);
     }
   };
 
@@ -355,6 +418,125 @@ export default function AIFoundry() {
             Because every example is derived from a governed execution, nothing blocked at the compliance gate - or
             rejected by a human - ever becomes training data. The dataset inherits the platform’s governance.
           </p>
+        </div>
+
+        {/* Phase 3 — Model Evolution. Evaluate a candidate against the tenant's
+            baseline on held-out governed examples; promotion is human-gated and a
+            simulated run can never win. */}
+        <div className="p-6" style={card}>
+          <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+            <div>
+              <h2 className="text-[15px] font-semibold flex items-center gap-2" style={{ color: colors.ink }}>
+                <FlaskConical className="w-4 h-4" style={{ color: colors.primary }} />
+                Model Evolution
+              </h2>
+              <p className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
+                Score a candidate model against the baseline on held-out governed examples. A win is recorded,
+                never auto-applied: promotion is a separate human decision, and a run with no live provider is
+                flagged simulated and cannot be promoted.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-end gap-2 flex-wrap mb-4">
+            <div>
+              <label className="text-[10px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Tier</label>
+              <select value={tier} onChange={e => setTier(e.target.value)}
+                className="text-[12px] rounded-lg px-2.5 py-2 outline-none"
+                style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                {['reasoning', 'classification', 'fast'].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[220px]">
+              <label className="text-[10px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Candidate model</label>
+              <input value={candidate} onChange={e => setCandidate(e.target.value)}
+                placeholder="e.g. ollama/qwen2.5-coder:14b"
+                className="text-[12px] rounded-lg px-2.5 py-2 outline-none w-full"
+                style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+            </div>
+            <button onClick={runEvaluation} disabled={evaluating || !candidate.trim()}
+              className="text-[12px] font-semibold px-4 py-2 rounded-lg text-white"
+              style={{ background: colors.primary, opacity: evaluating || !candidate.trim() ? 0.5 : 1 }}>
+              {evaluating ? 'Evaluating…' : 'Evaluate'}
+            </button>
+            <button onClick={submitFinetune} disabled={actingOn === 'finetune'}
+              title="Submit curated examples to the configured external fine-tuner"
+              className="text-[12px] font-semibold px-4 py-2 rounded-lg"
+              style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink, opacity: actingOn === 'finetune' ? 0.5 : 1 }}>
+              {actingOn === 'finetune' ? 'Submitting…' : 'Fine-tune this tier'}
+            </button>
+          </div>
+
+          {runs.length === 0 ? (
+            <p className="text-[11px] py-3" style={{ color: colors.inkTertiary }}>
+              No evaluation runs yet. Evaluate a candidate to compare it against the baseline.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {runs.map((r: any) => {
+                const decided = !!r.decision;
+                const promotable = r.win && !r.simulated && !decided;
+                return (
+                  <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg flex-wrap"
+                    style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                      style={{ background: (r.win ? '#27a644' : '#6b7280') + '22', color: r.win ? '#27a644' : '#6b7280' }}>
+                      {r.win ? 'WIN' : r.status || 'RUN'}
+                    </span>
+                    <div className="flex-1 min-w-[180px]">
+                      <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>
+                        {r.candidate_model} <span style={{ color: colors.inkTertiary }}>vs</span> {r.baseline_model}
+                      </div>
+                      <div className="text-[10px] mt-0.5" style={{ color: colors.inkSubtle }}>
+                        {r.tier} · baseline {r.baseline_score ?? '-'} · candidate {r.candidate_score ?? '-'}
+                        {r.score_delta != null && ` · delta ${r.score_delta}`}
+                        {r.eval_size ? ` · n=${r.eval_size}` : ''}
+                      </div>
+                    </div>
+                    {r.simulated && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                        style={{ background: '#f59e0b22', color: '#f59e0b' }} title="No live provider ran; cannot be promoted">
+                        SIMULATED
+                      </span>
+                    )}
+                    {decided ? (
+                      <span className="text-[10px] font-semibold shrink-0" style={{ color: colors.inkSubtle }}>{r.decision}</span>
+                    ) : (
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => decideRun(r.id, 'promote')} disabled={!promotable || actingOn === r.id}
+                          title={promotable ? 'Promote this candidate for its tier' : 'Only a non-simulated winning run can be promoted'}
+                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-white"
+                          style={{ background: '#27a644', opacity: promotable && actingOn !== r.id ? 1 : 0.4 }}>
+                          Promote
+                        </button>
+                        <button onClick={() => decideRun(r.id, 'reject')} disabled={actingOn === r.id}
+                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg"
+                          style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {ftJobs.length > 0 && (
+            <div className="mt-4 pt-3 border-t" style={{ borderColor: colors.hairline }}>
+              <h3 className="text-[12px] font-semibold mb-2" style={{ color: colors.ink }}>Fine-tune jobs</h3>
+              <div className="space-y-1.5">
+                {ftJobs.map((j: any) => (
+                  <div key={j.id} className="flex items-center gap-3 text-[11px]" style={{ color: colors.inkSubtle }}>
+                    <span className="font-semibold" style={{ color: colors.ink }}>{j.status}</span>
+                    <span>{j.tier}</span>
+                    {j.result_model && <span className="truncate">{j.result_model}</span>}
+                    {j.error && <span style={{ color: '#e5534b' }} className="truncate">{j.error}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

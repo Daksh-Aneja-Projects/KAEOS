@@ -1143,6 +1143,11 @@ export const api = {
   getMeshSignals: (limit = 50) => request<any>(`/signals?limit=${limit}`),
   ingestMeshSignal: (payload: { kind: string; title: string; severity?: string; source?: string; body?: string }) =>
     request<any>('/signals/ingest', { method: 'POST', body: JSON.stringify(payload) }),
+  // Enact the governed response for a correlated signal. The backend could
+  // always do this; until now nothing in the UI could trigger it, so a signal
+  // that correlated to the twin had no way to be acted on.
+  respondToMeshSignal: (signalId: string) =>
+    request<any>(`/signals/${signalId}/respond`, { method: 'POST' }),
 
   // Cross-Domain Missions — goal decomposed into a governed DAG across departments
   listMissions: (limit = 50) => request<any>(`/missions?limit=${limit}`),
@@ -1291,6 +1296,23 @@ export const api = {
     return request<{ tenant_id: string; count: number; examples: FoundryExample[] }>(
       `/foundry/datasets/export${q ? `?${q}` : ''}`);
   },
+
+  // Foundry Phase 3 — model evolution + the external fine-tune bridge. The whole
+  // gated-promotion loop existed and was tested server-side but had no UI, so a
+  // candidate model could never actually be evaluated or promoted from the app.
+  // Promotion stays human-gated: a run must win a NON-simulated evaluation.
+  listEvolutionRuns: (limit = 20) => request<any>(`/foundry/evolution/runs?limit=${limit}`),
+  getEvolutionRun: (runId: string) => request<any>(`/foundry/evolution/runs/${runId}`),
+  evaluateCandidateModel: (payload: { tier: string; candidate_model: string; baseline_model?: string; eval_limit?: number }) =>
+    request<any>('/foundry/evolution/evaluate', { method: 'POST', body: JSON.stringify(payload) }),
+  promoteEvolutionRun: (runId: string) =>
+    request<any>(`/foundry/evolution/runs/${runId}/promote`, { method: 'POST' }),
+  rejectEvolutionRun: (runId: string) =>
+    request<any>(`/foundry/evolution/runs/${runId}/reject`, { method: 'POST' }),
+  listFinetuneJobs: (limit = 20) => request<any>(`/foundry/finetune/jobs?limit=${limit}`),
+  submitFinetune: (payload: { tier: string }) =>
+    request<any>('/foundry/finetune/submit', { method: 'POST', body: JSON.stringify(payload) }),
+  pollFinetuneJobs: () => request<any>('/foundry/finetune/poll', { method: 'POST' }),
 
   // ─── Domain Analytics & Workflow Layer (shared across the 7 domains) ───
   // Every domain exposes the same computed-analytics shape and a declared

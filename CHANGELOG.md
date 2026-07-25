@@ -42,6 +42,25 @@ All notable changes to KAEOS are documented here. This project adheres to
   were fully built but headless - no UI showed them. Added to the existing
   cockpit rather than a new page, beside Pioneer Intelligence, flagging any run
   awaiting approval.
+- **Model Evolution (Foundry Phase 3) is now reachable from the app.** The whole
+  gated-promotion loop - evaluate a candidate against the tenant's baseline on
+  held-out governed examples, then promote or reject - existed server-side and
+  was tested, but had no UI, so a candidate could never actually be evaluated or
+  promoted by a user. Added to the EXISTING AI Foundry page: tier + candidate
+  selection, an evaluation run list showing baseline vs candidate scores and
+  delta, `SIMULATED` flagging, Promote/Reject actions (Promote enabled only for a
+  non-simulated winning run), and the fine-tune job list with submit. The roadmap
+  strip said Phase 3 was "planned" while it was in fact live - corrected.
+  Verified with a real local model, not a stub: baseline `phi4-mini` 0.0895 vs
+  candidate `llama3.2:1b` 0.0526 (delta -0.0369, `simulated: false`), the
+  candidate correctly did not win, and promoting it was refused with "only a
+  candidate that won its evaluation can be promoted".
+- **Event-mesh signals can now be actioned.** `POST /signals/{id}/respond`
+  ("manually enact the governed response") had no client method and no control,
+  so a signal that correlated to the twin was a dead end - OrgPulse could show
+  `no action` but offered no way to act. Added a Respond control on unactioned
+  signals in the existing OrgPulse feed. Verified live: an ingested regulatory
+  signal correlated to legal, produced a BRIEFING response, and was enacted.
 
 ### Security
 - **Starlette security ceiling lifted — all remaining backend advisories fixed.**

@@ -214,12 +214,24 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
   const [severity, setSeverity] = useState('warning');
   const [busy, setBusy] = useState(false);
 
+  const [responding, setResponding] = useState<string | null>(null);
+
   const ingest = async () => {
     if (!title.trim()) return;
     setBusy(true);
     try { await api.ingestMeshSignal({ kind, title: title.trim(), severity }); setTitle(''); reload(); }
     catch (e) { console.error(e); }
     finally { setBusy(false); }
+  };
+
+  // Enact the governed response for a signal that correlated to the twin but was
+  // never actioned. The endpoint existed; the UI had no way to reach it, so a
+  // correlated signal was a dead end.
+  const respond = async (signalId: string) => {
+    setResponding(signalId);
+    try { await api.respondToMeshSignal(signalId); reload(); }
+    catch (e) { console.error(e); }
+    finally { setResponding(null); }
   };
 
   const list = signals?.signals || [];
@@ -290,10 +302,20 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
                   </div>
                 )}
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                style={{ background: (RESP_COLOR[s.response_kind] || '#6b7280') + '22', color: RESP_COLOR[s.response_kind] || '#6b7280' }}>
-                {s.response_kind === 'NONE' ? 'no action' : s.response_kind}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: (RESP_COLOR[s.response_kind] || '#6b7280') + '22', color: RESP_COLOR[s.response_kind] || '#6b7280' }}>
+                  {s.response_kind === 'NONE' ? 'no action' : s.response_kind}
+                </span>
+                {(!s.response_kind || s.response_kind === 'NONE') && (
+                  <button onClick={() => respond(s.id)} disabled={responding === s.id}
+                    title="Enact the governed response for this signal"
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: '#8b5cf622', color: '#8b5cf6', opacity: responding === s.id ? 0.5 : 1 }}>
+                    {responding === s.id ? 'Responding…' : 'Respond'}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
