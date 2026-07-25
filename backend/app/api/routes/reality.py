@@ -489,6 +489,19 @@ SHOCK_PROFILES: dict[str, dict] = {
 _DEFAULT_PROFILE = {"severity_mult": 1.0, "depth": 3, "cost_per_node": 1250,
                     "time_per_node": 2, "description": "Generic shock.", "options": None}
 
+# Inherent severity floor per scenario, so a Ransomware reads far hotter than a
+# Budget trim even when both touch a similarly dense slice of the twin. Final
+# severity blends this base with a bounded blast-radius contribution (below), so
+# scenarios spread across the scale instead of all pinning at the ceiling.
+BASE_SEVERITY: dict[str, float] = {
+    "DATA_BREACH_PII": 66, "RANSOMWARE": 62, "CYBER_INCIDENT": 60,
+    "LIQUIDITY_CRUNCH": 58, "REGULATORY_ACTION": 56, "MERGER_INTEGRATION": 55,
+    "SEV1_ESCALATION": 52, "PRODUCT_RECALL": 50, "SUPPLY_CHAIN_DISRUPTION": 44,
+    "CAPABILITY_LOSS": 42, "CONTRACT_DISPUTE": 40, "TALENT_EXODUS": 40,
+    "EXECUTIVE_DEPARTURE": 38, "VENDOR_FAILURE": 38, "KEY_ACCOUNT_AT_RISK": 34,
+    "SYSTEM_OUTAGE": 34, "BUDGET_CUT": 24, "EMPLOYEE_TERMINATION": 22,
+}
+
 
 @router.post("/shock", summary="Inject a shock and run KAEOS evaluation",
              dependencies=[Depends(require_role("operator"))])
@@ -504,7 +517,10 @@ async def inject_shock(req: ShockRequest, tenant_id: str = Depends(get_tenant_id
                                     max_depth=profile["depth"])
     impact_count = len(impacts)
 
-    severity = min(95.0, max(15.0, impact_count * 3.0 * profile["severity_mult"]))
+    # Blend the scenario's inherent severity with a bounded blast contribution.
+    base = BASE_SEVERITY.get(req.shock_type.upper(), 40.0)
+    blast = min(25.0, impact_count * profile["severity_mult"] * 0.4)
+    severity = round(min(96.0, max(12.0, base + blast)), 1)
     impacted_caps = sum(1 for i in impacts if i["downstream"]["label"] == "Capability")
     impacted_projs = sum(1 for i in impacts if i["downstream"]["label"] == "Project")
     impacted_agents = sum(1 for i in impacts if i["downstream"]["label"] == "Agent")
