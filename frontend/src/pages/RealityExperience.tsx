@@ -38,15 +38,32 @@ interface ModeActivity {
 // severity multipliers, scenario-specific decision options) - they were missing
 // from this list, so the backend's two best scenarios were unreachable from the UI.
 const SHOCK_TYPES = [
-  { value: 'MERGER_INTEGRATION', label: 'M&A Integration', targetLabel: 'Department' },
-  { value: 'CYBER_INCIDENT', label: 'Cyber Incident', targetLabel: 'Department' },
-  { value: 'EMPLOYEE_TERMINATION', label: 'Employee Termination', targetLabel: 'Employee' },
-  { value: 'TALENT_EXODUS', label: 'Talent Exodus', targetLabel: 'Department' },
-  { value: 'VENDOR_FAILURE', label: 'Vendor Failure', targetLabel: 'Vendor' },
-  { value: 'BUDGET_CUT', label: 'Budget Reduction', targetLabel: 'Department' },
-  { value: 'SYSTEM_OUTAGE', label: 'System Outage', targetLabel: 'Department' },
-  { value: 'CAPABILITY_LOSS', label: 'Capability Loss', targetLabel: 'Capability' },
+  // Security & Reliability
+  { value: 'CYBER_INCIDENT', label: 'Cyber Incident', targetLabel: 'Department', group: 'Security & Reliability' },
+  { value: 'DATA_BREACH_PII', label: 'PII Data Breach', targetLabel: 'Department', group: 'Security & Reliability' },
+  { value: 'RANSOMWARE', label: 'Ransomware Attack', targetLabel: 'Department', group: 'Security & Reliability' },
+  { value: 'SEV1_ESCALATION', label: 'SEV-1 Incident', targetLabel: 'Incident', group: 'Security & Reliability' },
+  { value: 'SYSTEM_OUTAGE', label: 'System Outage', targetLabel: 'Department', group: 'Security & Reliability' },
+  // Legal & Regulatory
+  { value: 'REGULATORY_ACTION', label: 'Regulatory Action', targetLabel: 'Department', group: 'Legal & Regulatory' },
+  { value: 'CONTRACT_DISPUTE', label: 'Contract Dispute', targetLabel: 'Contract', group: 'Legal & Regulatory' },
+  { value: 'PRODUCT_RECALL', label: 'Product Recall', targetLabel: 'Department', group: 'Legal & Regulatory' },
+  // Financial
+  { value: 'LIQUIDITY_CRUNCH', label: 'Liquidity Crunch', targetLabel: 'Department', group: 'Financial' },
+  { value: 'BUDGET_CUT', label: 'Budget Reduction', targetLabel: 'Department', group: 'Financial' },
+  // Commercial
+  { value: 'KEY_ACCOUNT_AT_RISK', label: 'Key Account At Risk', targetLabel: 'Account', group: 'Commercial' },
+  { value: 'VENDOR_FAILURE', label: 'Vendor Failure', targetLabel: 'Vendor', group: 'Commercial' },
+  { value: 'SUPPLY_CHAIN_DISRUPTION', label: 'Supply-Chain Disruption', targetLabel: 'Vendor', group: 'Commercial' },
+  // People
+  { value: 'EXECUTIVE_DEPARTURE', label: 'Executive Departure', targetLabel: 'Employee', group: 'People' },
+  { value: 'TALENT_EXODUS', label: 'Talent Exodus', targetLabel: 'Department', group: 'People' },
+  { value: 'EMPLOYEE_TERMINATION', label: 'Employee Termination', targetLabel: 'Employee', group: 'People' },
+  // Strategic
+  { value: 'MERGER_INTEGRATION', label: 'M&A Integration', targetLabel: 'Department', group: 'Strategic' },
+  { value: 'CAPABILITY_LOSS', label: 'Capability Loss', targetLabel: 'Capability', group: 'Strategic' },
 ];
+const SHOCK_GROUPS = Array.from(new Set(SHOCK_TYPES.map(s => s.group)));
 
 const TwinGraph = React.lazy(() => import('../components/TwinGraph'));
 
@@ -383,7 +400,13 @@ export default function RealityExperience() {
               style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
               value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
             >
-              {SHOCK_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {SHOCK_GROUPS.map(g => (
+                <optgroup key={g} label={g}>
+                  {SHOCK_TYPES.filter(s => s.group === g).map(s => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div>

@@ -35,6 +35,18 @@ browser against the production Postgres tenant with real Ollama.
   panels sitting empty outside shock mode. Reality Feed reflowed to a readable
   full-width card grid.
 
+- **A real shock-scenario catalog.** The shock simulator went from 8 mostly-generic
+  events (two with tailored options, six falling back to "Standard Mitigation /
+  Aggressive Recovery") to **18 bespoke scenarios** across six categories -
+  Security & Reliability (Cyber, PII Breach, Ransomware, SEV-1, Outage), Legal &
+  Regulatory (Regulatory Action, Contract Dispute, Product Recall), Financial
+  (Liquidity Crunch, Budget), Commercial (Key Account At Risk, Vendor Failure,
+  Supply-Chain), People (Exec Departure, Talent Exodus, Termination) and Strategic
+  (M&A, Capability Loss). Every scenario has its own causal model and three
+  tailored, scored decision options, and they target the right twin entity -
+  Contract Dispute picks a real contract, Key Account At Risk an account, SEV-1 an
+  incident. The event picker is grouped by category.
+
 ### Fixed
 - **Deployment adoption skipped the backbone.** `generate_department_structure`
   adopted an existing department (created by onboarding) but returned before

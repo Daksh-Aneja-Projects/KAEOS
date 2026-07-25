@@ -205,25 +205,284 @@ SHOCK_PROFILES: dict[str, dict] = {
              "cost_mult": 0.4, "time_mult": 0.4, "risk_mult": 2.2, "modifier": 0.0},
         ],
     },
-    "BUDGET_CUT": {
-        "severity_mult": 1.0, "depth": 3, "cost_per_node": 1250, "time_per_node": 2,
-        "description": "Budget reduction: capability and project descoping pressure.",
-        "options": None,  # default option set
+    "DATA_BREACH_PII": {
+        "severity_mult": 2.6, "depth": 4, "cost_per_node": 5800, "time_per_node": 2,
+        "description": "PII data breach: customer records exposed, the breach-notification "
+                       "clock is running, class-action and regulatory exposure open.",
+        "options": lambda ctx: [
+            {"action": "Notify + Credit Monitoring",
+             "description": f"Disclose within the statutory window and offer monitoring to affected "
+                            f"customers across {ctx['count']} touchpoints; reputational hit, legal safe-harbor.",
+             "cost_mult": 1.4, "time_mult": 1.0, "risk_mult": 0.5, "modifier": 4.0},
+            {"action": "Privilege Review First",
+             "description": "Scope exposure under legal privilege before disclosing; measured, "
+                            "but risks blowing the notification clock.",
+             "cost_mult": 1.1, "time_mult": 1.6, "risk_mult": 1.3, "modifier": 1.0},
+            {"action": "Full Public Disclosure",
+             "description": "Immediate transparent disclosure and remediation; maximum trust play, "
+                            "maximum short-term damage.",
+             "cost_mult": 1.7, "time_mult": 0.6, "risk_mult": 0.8, "modifier": 2.5},
+        ],
+    },
+    "RANSOMWARE": {
+        "severity_mult": 2.7, "depth": 4, "cost_per_node": 6400, "time_per_node": 2,
+        "description": "Ransomware: systems encrypted, operations halted, an extortion "
+                       "demand with a countdown - recovery vs. ransom trade-off.",
+        "options": lambda ctx: [
+            {"action": "Restore from Immutable Backup",
+             "description": f"Rebuild {ctx['count']} impacted systems from air-gapped backups; "
+                            f"no ransom paid, longer downtime.",
+             "cost_mult": 1.2, "time_mult": 1.4, "risk_mult": 0.5, "modifier": 4.5},
+            {"action": "Negotiate Decryption",
+             "description": "Engage a negotiator for a decryptor; fastest theoretical recovery, "
+                            "funds the adversary, no guarantee.",
+             "cost_mult": 2.8, "time_mult": 0.6, "risk_mult": 2.3, "modifier": 0.0},
+            {"action": "Clean-Room Rebuild",
+             "description": f"Stand up a fresh environment for {ctx['caps']} capabilities and migrate "
+                            f"verified data; safest, slowest.",
+             "cost_mult": 1.9, "time_mult": 2.4, "risk_mult": 0.6, "modifier": 2.5},
+        ],
+    },
+    "REGULATORY_ACTION": {
+        "severity_mult": 2.0, "depth": 3, "cost_per_node": 5400, "time_per_node": 5,
+        "description": "Regulatory enforcement: a finding lands with a remediation clock "
+                       "and fine exposure across legal, finance and the cited function.",
+        "options": lambda ctx: [
+            {"action": "Remediate & Self-Report",
+             "description": f"Fix the {ctx['caps']} cited capabilities and voluntarily disclose; "
+                            f"cooperation credit lowers penalties.",
+             "cost_mult": 1.0, "time_mult": 1.3, "risk_mult": 0.5, "modifier": 4.0},
+            {"action": "Contest the Finding",
+             "description": f"Challenge the ruling with outside counsel across {ctx['count']} entities; "
+                            f"prolonged uncertainty.",
+             "cost_mult": 1.8, "time_mult": 2.5, "risk_mult": 1.6, "modifier": 0.0},
+            {"action": "Negotiated Settlement",
+             "description": "Consent decree with agreed controls; fastest closure, on-record finding.",
+             "cost_mult": 1.3, "time_mult": 0.7, "risk_mult": 0.8, "modifier": 2.0},
+        ],
+    },
+    "CONTRACT_DISPUTE": {
+        "severity_mult": 1.4, "depth": 3, "cost_per_node": 4100, "time_per_node": 4,
+        "description": "Contract dispute: a counterparty breach threatens revenue recognition "
+                       "and triggers legal exposure on the flagged agreement.",
+        "options": lambda ctx: [
+            {"action": "Enforce & Litigate",
+             "description": "Assert rights and pursue damages; strongest position, longest and costliest path.",
+             "cost_mult": 1.9, "time_mult": 2.6, "risk_mult": 1.4, "modifier": 1.0},
+            {"action": "Renegotiate Terms",
+             "description": f"Amend the agreement to preserve the relationship across {ctx['count']} "
+                            f"touchpoints; pragmatic.",
+             "cost_mult": 0.9, "time_mult": 1.0, "risk_mult": 0.6, "modifier": 4.0},
+            {"action": "Settle & Release",
+             "description": "Mutual release for a defined payment; certainty now, precedent risk.",
+             "cost_mult": 1.3, "time_mult": 0.5, "risk_mult": 0.8, "modifier": 2.0},
+        ],
+    },
+    "SUPPLY_CHAIN_DISRUPTION": {
+        "severity_mult": 1.6, "depth": 3, "cost_per_node": 3600, "time_per_node": 3,
+        "description": "Supply-chain disruption: a critical supplier fails, breaking "
+                       "procurement continuity for dependent operations.",
+        "options": lambda ctx: [
+            {"action": "Activate Dual-Source",
+             "description": f"Shift volume to the qualified backup supplier for {ctx['count']} lines; "
+                            f"higher unit cost, continuity preserved.",
+             "cost_mult": 1.3, "time_mult": 0.8, "risk_mult": 0.5, "modifier": 3.5},
+            {"action": "Air-Freight Buffer",
+             "description": "Expedite inventory to bridge the gap; premium logistics, fastest recovery.",
+             "cost_mult": 2.2, "time_mult": 0.3, "risk_mult": 0.7, "modifier": 1.5},
+            {"action": "Re-engineer the BoM",
+             "description": f"Redesign to remove the single point of failure across {ctx['caps']} "
+                            f"capabilities; slow but durable.",
+             "cost_mult": 1.6, "time_mult": 3.0, "risk_mult": 1.1, "modifier": 2.0},
+        ],
+    },
+    "PRODUCT_RECALL": {
+        "severity_mult": 1.9, "depth": 3, "cost_per_node": 4700, "time_per_node": 3,
+        "description": "Product recall: a quality defect surfaces, forcing a safety, cost "
+                       "and reputation decision across ops, support and legal.",
+        "options": lambda ctx: [
+            {"action": "Voluntary Recall",
+             "description": f"Proactively recall across {ctx['count']} impacted lines; highest cost, "
+                            f"protects trust and pre-empts regulators.",
+             "cost_mult": 2.0, "time_mult": 1.2, "risk_mult": 0.5, "modifier": 4.0},
+            {"action": "Field Retrofit",
+             "description": "Fix units in place via service; lower cost, slower coverage.",
+             "cost_mult": 1.1, "time_mult": 1.8, "risk_mult": 1.0, "modifier": 2.0},
+            {"action": "Monitor + Advisory",
+             "description": "Issue a usage advisory and watch failure rates; cheapest, carries liability "
+                            "if defects spread.",
+             "cost_mult": 0.4, "time_mult": 0.6, "risk_mult": 2.0, "modifier": 0.0},
+        ],
+    },
+    "KEY_ACCOUNT_AT_RISK": {
+        "severity_mult": 1.5, "depth": 3, "cost_per_node": 2600, "time_per_node": 2,
+        "description": "Strategic account at risk: the flagged account signals churn, threatening "
+                       "revenue and reference value across sales, support and finance.",
+        "options": lambda ctx: [
+            {"action": "Executive Save Play",
+             "description": "CRO-led save with a tailored success plan and roadmap commitments; "
+                            "high-touch, high-retention.",
+             "cost_mult": 1.2, "time_mult": 0.8, "risk_mult": 0.5, "modifier": 4.0},
+            {"action": "Retention Discount",
+             "description": "Multi-year renewal at a concession; protects the logo, compresses margin.",
+             "cost_mult": 1.6, "time_mult": 0.4, "risk_mult": 0.7, "modifier": 1.5},
+            {"action": "Managed Offboarding",
+             "description": "Accept the churn, secure a reference and orderly wind-down; preserves goodwill.",
+             "cost_mult": 0.5, "time_mult": 1.2, "risk_mult": 1.4, "modifier": 0.0},
+        ],
+    },
+    "LIQUIDITY_CRUNCH": {
+        "severity_mult": 2.1, "depth": 4, "cost_per_node": 2200, "time_per_node": 3,
+        "description": "Liquidity crunch: cash runway compresses, forcing a financing, cost "
+                       "or asset decision across the whole org.",
+        "options": lambda ctx: [
+            {"action": "Bridge Financing",
+             "description": "Raise a bridge facility to extend runway; dilution/interest cost, operations intact.",
+             "cost_mult": 1.5, "time_mult": 0.7, "risk_mult": 0.8, "modifier": 3.0},
+            {"action": "Cost Freeze + RIF",
+             "description": f"Freeze spend and reduce force across {ctx['caps']} capabilities; preserves "
+                            f"cash, real capability loss.",
+             "cost_mult": 0.4, "time_mult": 1.0, "risk_mult": 1.6, "modifier": 1.0},
+            {"action": "Non-Core Asset Sale",
+             "description": "Divest a non-core unit for immediate cash; one-time inflow, narrower footprint.",
+             "cost_mult": 0.8, "time_mult": 1.4, "risk_mult": 1.0, "modifier": 2.5},
+        ],
+    },
+    "SEV1_ESCALATION": {
+        "severity_mult": 1.8, "depth": 3, "cost_per_node": 2400, "time_per_node": 0.8,
+        "description": "SEV-1 incident: a production-critical failure escalates, hitting "
+                       "availability, support load and customer trust.",
+        "options": lambda ctx: [
+            {"action": "All-Hands War Room",
+             "description": f"Convene a cross-functional war room on the {ctx['count']} impacted "
+                            f"entities; fastest resolution, high burn.",
+             "cost_mult": 1.6, "time_mult": 0.3, "risk_mult": 0.5, "modifier": 4.0},
+            {"action": "Rollback + Failover",
+             "description": "Revert the change and fail over to standby; quick and safe if a clean version exists.",
+             "cost_mult": 0.7, "time_mult": 0.5, "risk_mult": 0.9, "modifier": 2.5},
+            {"action": "Degrade Gracefully",
+             "description": "Shed non-critical features to stabilize core service; buys time, partial outage persists.",
+             "cost_mult": 0.5, "time_mult": 0.8, "risk_mult": 1.3, "modifier": 1.0},
+        ],
+    },
+    "EXECUTIVE_DEPARTURE": {
+        "severity_mult": 1.5, "depth": 3, "cost_per_node": 5000, "time_per_node": 6,
+        "description": "Executive departure: a key leader exits, creating decision, morale "
+                       "and continuity risk across owned functions.",
+        "options": lambda ctx: [
+            {"action": "Internal Promotion",
+             "description": f"Elevate a proven internal leader over the {ctx['agents']} affected teams; "
+                            f"continuity, unproven at scale.",
+             "cost_mult": 0.8, "time_mult": 0.6, "risk_mult": 0.8, "modifier": 3.5},
+            {"action": "External Executive Search",
+             "description": "Run a retained search for a seasoned hire; best-fit talent, long vacancy and ramp.",
+             "cost_mult": 1.8, "time_mult": 2.4, "risk_mult": 1.0, "modifier": 1.5},
+            {"action": "Interim + Retention",
+             "description": "Appoint an interim and lock in the leadership bench; stabilizes, defers the decision.",
+             "cost_mult": 1.1, "time_mult": 1.0, "risk_mult": 0.7, "modifier": 2.5},
+        ],
+    },
+    "EMPLOYEE_TERMINATION": {
+        "severity_mult": 0.9, "depth": 2, "cost_per_node": 2100, "time_per_node": 3,
+        "description": "Key-employee termination: concentrated knowledge and access loss on "
+                       "the owned capability, with re-hire and coverage gaps.",
+        "options": lambda ctx: [
+            {"action": "Backfill + Knowledge Transfer",
+             "description": "Structured handover and a targeted backfill; continuity-first, moderate cost.",
+             "cost_mult": 1.0, "time_mult": 1.2, "risk_mult": 0.5, "modifier": 3.5},
+            {"action": "Redistribute Load",
+             "description": f"Absorb the work across the remaining {ctx['agents']} owners; no hire, "
+                            f"burnout risk.",
+             "cost_mult": 0.3, "time_mult": 0.8, "risk_mult": 1.4, "modifier": 1.0},
+            {"action": "Automate the Role",
+             "description": "Deploy a governed agent for the routine work and hire for the judgment; durable, slower.",
+             "cost_mult": 1.4, "time_mult": 2.0, "risk_mult": 0.8, "modifier": 2.5},
+        ],
     },
     "TALENT_EXODUS": {
         "severity_mult": 1.5, "depth": 3, "cost_per_node": 4200, "time_per_node": 4,
-        "description": "Key-person departures: knowledge loss concentrated on owned capabilities.",
-        "options": None,
+        "description": "Talent exodus: several key people leave together, concentrating "
+                       "knowledge loss on owned capabilities.",
+        "options": lambda ctx: [
+            {"action": "Retention Counter-Offers",
+             "description": f"Targeted counters and re-vesting for the {ctx['agents']} highest-risk owners; "
+                            f"fast, precedent risk.",
+             "cost_mult": 1.5, "time_mult": 0.4, "risk_mult": 0.7, "modifier": 3.0},
+            {"action": "Knowledge Capture Sprint",
+             "description": f"Runbook and cross-train across {ctx['caps']} capabilities before departures land; "
+                            f"durable, race against the clock.",
+             "cost_mult": 0.9, "time_mult": 1.4, "risk_mult": 0.9, "modifier": 3.5},
+            {"action": "Rebuild the Bench",
+             "description": "Accept the loss and hire/develop a new bench; long ramp, clean slate.",
+             "cost_mult": 1.7, "time_mult": 2.6, "risk_mult": 1.2, "modifier": 1.0},
+        ],
     },
     "VENDOR_FAILURE": {
         "severity_mult": 1.4, "depth": 3, "cost_per_node": 3100, "time_per_node": 3,
-        "description": "Vendor failure: supply/service continuity break for dependent capabilities.",
-        "options": None,
+        "description": "Vendor failure: a service/supply provider breaks continuity for "
+                       "dependent capabilities.",
+        "options": lambda ctx: [
+            {"action": "Failover to Backup Vendor",
+             "description": f"Cut over the {ctx['count']} dependent entities to a qualified alternate; "
+                            f"continuity, switching cost.",
+             "cost_mult": 1.3, "time_mult": 0.7, "risk_mult": 0.6, "modifier": 3.5},
+            {"action": "Insource Temporarily",
+             "description": "Stand the service up in-house as a stopgap; control regained, capacity strain.",
+             "cost_mult": 1.6, "time_mult": 1.5, "risk_mult": 1.0, "modifier": 2.0},
+            {"action": "Renegotiate + Remediate",
+             "description": "Hold the vendor to an SLA-backed recovery plan; cheapest, dependency persists.",
+             "cost_mult": 0.6, "time_mult": 1.0, "risk_mult": 1.5, "modifier": 1.0},
+        ],
+    },
+    "BUDGET_CUT": {
+        "severity_mult": 1.0, "depth": 3, "cost_per_node": 1250, "time_per_node": 2,
+        "description": "Budget reduction: descoping pressure on capabilities and projects.",
+        "options": lambda ctx: [
+            {"action": "Protect the Core",
+             "description": f"Ring-fence the {ctx['caps']} highest-value capabilities, cut the tail; "
+                            f"focus-first, opportunity cost.",
+             "cost_mult": 0.6, "time_mult": 0.8, "risk_mult": 0.7, "modifier": 3.5},
+            {"action": "Efficiency + Automation",
+             "description": "Hold scope, cut unit cost via automation and vendor consolidation; durable, slower payoff.",
+             "cost_mult": 1.1, "time_mult": 1.6, "risk_mult": 0.9, "modifier": 3.0},
+            {"action": "Across-the-Board Trim",
+             "description": f"Flat reduction across all {ctx['count']} entities; equitable optics, dilutes everything.",
+             "cost_mult": 0.4, "time_mult": 0.5, "risk_mult": 1.6, "modifier": 0.5},
+        ],
     },
     "SYSTEM_OUTAGE": {
         "severity_mult": 1.2, "depth": 3, "cost_per_node": 1800, "time_per_node": 1,
         "description": "System outage: availability loss cascading to dependent processes.",
-        "options": None,
+        "options": lambda ctx: [
+            {"action": "Failover to Standby",
+             "description": f"Redirect the {ctx['count']} dependent entities to the standby region; "
+                            f"fast, requires healthy DR.",
+             "cost_mult": 1.0, "time_mult": 0.4, "risk_mult": 0.6, "modifier": 4.0},
+            {"action": "Root-Cause + Patch",
+             "description": "Diagnose and fix forward; durable, longer time-to-restore.",
+             "cost_mult": 0.9, "time_mult": 1.4, "risk_mult": 1.0, "modifier": 2.0},
+            {"action": "Manual Workaround",
+             "description": "Bridge critical processes manually while engineering recovers; cheap, error-prone.",
+             "cost_mult": 0.5, "time_mult": 0.7, "risk_mult": 1.5, "modifier": 0.5},
+        ],
+    },
+    "CAPABILITY_LOSS": {
+        "severity_mult": 1.6, "depth": 3, "cost_per_node": 3400, "time_per_node": 4,
+        "description": "Capability loss: an owned capability degrades or goes offline, "
+                       "stalling the processes and agents that depend on it.",
+        "options": lambda ctx: [
+            {"action": "Rebuild the Capability",
+             "description": "Re-staff and re-tool to full strength; complete restoration, real time and cost.",
+             "cost_mult": 1.5, "time_mult": 2.0, "risk_mult": 0.6, "modifier": 3.5},
+            {"action": "Source Externally",
+             "description": f"Contract the capability out to cover the {ctx['count']} dependents; fast, "
+                            f"ongoing dependency and margin.",
+             "cost_mult": 1.7, "time_mult": 0.6, "risk_mult": 1.0, "modifier": 2.0},
+            {"action": "Deprecate + Re-route",
+             "description": f"Retire it and re-route work to adjacent capabilities across {ctx['caps']} "
+                            f"functions; lean, coverage gaps.",
+             "cost_mult": 0.5, "time_mult": 1.0, "risk_mult": 1.5, "modifier": 1.0},
+        ],
     },
 }
 
