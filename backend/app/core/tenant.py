@@ -6,7 +6,7 @@ HOW IT WORKS
 ─────────────
 1. TenantMiddleware (Starlette BaseHTTPMiddleware) runs on every request.
    It reads the Authorization: Bearer <kt_xxx> header, resolves the tenant
-   via the existing _API_KEYS store in auth.py, and writes the tenant context
+   via the DB-backed api_keys table (auth.py), and writes the tenant context
    to request.state.tenant.
 
 2. get_tenant() is a FastAPI Depends() function that reads request.state.tenant.
@@ -62,9 +62,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
     Starlette middleware that resolves the tenant for every request.
 
     Flow:
-      1. No Authorization header  → dev mode tenant (if _API_KEYS is empty)
-                                  → 401 if _API_KEYS is populated (production)
-      2. Authorization: Bearer <key>  → hash key → lookup in _API_KEYS
+      1. No Authorization header  → dev mode tenant (DEV_MODE)
+                                  → 401 in production
+      2. Authorization: Bearer <key>  → hash key → lookup in the api_keys table
                                       → 401 if not found / inactive
       3. On success: writes tenant context to request.state.tenant
 
@@ -110,7 +110,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.tenant = _DEV_TENANT
             return await call_next(request)
 
-        from app.core.auth import _API_KEYS, hash_key
+        from app.core.auth import get_api_key_by_hash, hash_key
         from app.core.config import get_settings
         settings = get_settings()
 
@@ -160,7 +160,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             return _unauthorized("Invalid token format (must be 'kt_xxx' API key or 'xxx.yyy' JWT)")
 
         hashed = hash_key(raw_key)
-        key_meta = _API_KEYS.get(hashed)
+        key_meta = await get_api_key_by_hash(hashed)
 
         if not key_meta:
             logger.warning(f"[Tenant] Unknown API key presented: {raw_key[:12]}…")

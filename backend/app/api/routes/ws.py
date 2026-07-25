@@ -103,8 +103,8 @@ async def websocket_endpoint(
         authorized = False
         if token:
             if token.startswith("kt_"):
-                from app.core.auth import _API_KEYS, hash_key
-                key_meta = _API_KEYS.get(hash_key(token))
+                from app.core.auth import get_api_key_by_hash, hash_key
+                key_meta = await get_api_key_by_hash(hash_key(token))
                 authorized = bool(
                     key_meta
                     and key_meta.get("active", True)

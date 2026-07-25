@@ -9,6 +9,16 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Changed (Production-readiness — reliability)
+- **API keys moved to a DB-backed store (P1).** The key store was a module-global
+  JSON dict loaded once at import, so a key generated or revoked in one gunicorn
+  worker / replica was invisible to the others until a restart — runtime revocation
+  did not actually take effect fleet-wide. Added an `api_keys` table (migration
+  `0015`, RLS on Postgres, only the SHA-256 hash stored) and routed every lookup,
+  generation, and revocation through it (`core/auth.py`, the tenant middleware, the
+  WebSocket auth, and the admin issue/revoke endpoints). Revocation now propagates
+  immediately across all workers/replicas. Tests: `tests/test_api_keys.py`.
+
 ### Fixed (Production-readiness — honesty & hardening)
 - **Removed over-labeled confidence/coverage (P1).** Template workflows no longer
   ship a fabricated `coverage_score=0.85` (now `0.0` until real runs measure it);

@@ -468,7 +468,7 @@ async def create_api_key(tenant_id: str, name: str, role: str = "operator", x_ad
     """Bootstrap: create an API key for a tenant. Requires a configured ADMIN_SECRET."""
     _verify_admin_secret(x_admin_secret)
     from app.core.auth import generate_api_key
-    key_data = generate_api_key(tenant_id=tenant_id, name=name, role=role)
+    key_data = await generate_api_key(tenant_id=tenant_id, name=name, role=role)
     logger.info(f"[Admin] API key created for tenant={tenant_id} role={role}")
     return key_data
 
@@ -478,7 +478,7 @@ async def revoke_api_key(key_prefix: str, x_admin_secret: str = Header(None)):
     """Revoke an API key by its first 12 characters. Requires a configured ADMIN_SECRET."""
     _verify_admin_secret(x_admin_secret)
     from app.core.auth import revoke_api_key as _revoke
-    revoked = _revoke(key_prefix)
+    revoked = await _revoke(key_prefix)
     if not revoked:
         raise HTTPException(status_code=404, detail="Key not found")
     return {"status": "revoked", "key_prefix": key_prefix}

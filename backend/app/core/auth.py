@@ -1,40 +1,25 @@
-"""KAEOS — Authentication & API Key Middleware (L17 Security Fabric)"""
-import logging
+"""KAEOS — Authentication & API Key store (L17 Security Fabric).
 
-logger = logging.getLogger(__name__)
-from fastapi import Request, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime, timezone
-from typing import Optional
+DB-backed platform API keys. The previous module-global JSON dict meant a key
+generated or revoked in one worker/replica was invisible to the others until a
+restart — runtime revocation did not propagate. Every lookup and mutation now
+goes through the ``api_keys`` table, so revocation is immediate fleet-wide.
+
+The pre-auth lookup resolves the tenant FROM the key before any tenant context
+exists, so it runs on the owner (maintenance) session — the same necessary
+cross-tenant carve-out as email->tenant login.
+"""
+import logging
 import hashlib
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
 
+from fastapi import Request, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
 
-import os
-import json
-
-KEYS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "api_keys.json")
-
-def load_keys():
-    if os.path.exists(KEYS_FILE):
-        try:
-            with open(KEYS_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load API keys: {e}")
-    return {}
-
-def save_keys(keys):
-    os.makedirs(os.path.dirname(KEYS_FILE), exist_ok=True)
-    try:
-        with open(KEYS_FILE, "w") as f:
-            json.dump(keys, f, indent=2)
-    except Exception as e:
-        logger.error(f"Failed to save API keys: {e}")
-
-# Persistent API key store
-# Format: { hashed_key: { tenant_id, role, name, created_at, rate_limit } }
-_API_KEYS = load_keys()
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
@@ -43,57 +28,79 @@ def hash_key(raw_key: str) -> str:
     return hashlib.sha256(raw_key.encode()).hexdigest()
 
 
-def generate_api_key(tenant_id: str, name: str, role: str = "operator") -> dict:
-    """Generate a new API key for a tenant."""
+def _to_meta(k) -> dict:
+    """Normalize an ApiKey row into the dict shape callers expect."""
+    return {
+        "tenant_id": k.tenant_id,
+        "role": k.role,
+        "name": k.name,
+        "active": k.active,
+        "rate_limit": k.rate_limit,
+        "allowed_ips": k.allowed_ips or [],
+        "allowed_origins": k.allowed_origins or [],
+        "key_id": k.hashed_key[:12],
+    }
+
+
+async def get_api_key_by_hash(hashed: str) -> Optional[dict]:
+    """Resolve a key by its hash (owner session; readable pre-tenant-context).
+
+    Returns the normalized metadata dict, or None if the key is unknown. Revoked
+    keys are returned too (with active=False) so callers can distinguish
+    "unknown" from "revoked" for accurate error messages.
+    """
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.api_key import ApiKey
+    async with MaintenanceSessionLocal() as db:
+        row = (await db.execute(
+            select(ApiKey).where(ApiKey.hashed_key == hashed)
+        )).scalar_one_or_none()
+    return _to_meta(row) if row else None
+
+
+async def generate_api_key(tenant_id: str, name: str, role: str = "operator") -> dict:
+    """Mint a new API key for a tenant and persist it. Returns the raw key ONCE."""
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.api_key import ApiKey
     raw_key = f"kt_{uuid.uuid4().hex}"
     hashed = hash_key(raw_key)
-    _API_KEYS[hashed] = {
-        "tenant_id": tenant_id,
-        "name": name,
-        "role": role,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "rate_limit": 1000,  # requests/hour
-        "active": True,
-    }
-    save_keys(_API_KEYS)
+    async with MaintenanceSessionLocal() as db:
+        db.add(ApiKey(tenant_id=tenant_id, hashed_key=hashed, name=name, role=role))
+        await db.commit()
+    logger.info("[AUTH] Issued API key %s… for tenant=%s role=%s", hashed[:12], tenant_id, role)
     return {"api_key": raw_key, "key_id": hashed[:12], "tenant_id": tenant_id, "role": role}
 
 
-def revoke_api_key(key_id_prefix: str) -> bool:
-    """Revoke an API key by its prefix."""
-    for hashed, meta in _API_KEYS.items():
-        if hashed.startswith(key_id_prefix):
-            meta["active"] = False
-            save_keys(_API_KEYS)
-            return True
-    return False
+async def revoke_api_key(key_id_prefix: str) -> bool:
+    """Revoke a key by its id prefix. Propagates immediately (DB-backed)."""
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.api_key import ApiKey
+    async with MaintenanceSessionLocal() as db:
+        row = (await db.execute(
+            select(ApiKey).where(ApiKey.hashed_key.like(f"{key_id_prefix}%"), ApiKey.active == True)  # noqa: E712
+        )).scalars().first()
+        if not row:
+            return False
+        row.active = False
+        row.revoked_at = datetime.now(timezone.utc)
+        await db.commit()
+    logger.info("[AUTH] Revoked API key %s…", key_id_prefix)
+    return True
 
 
 async def get_current_tenant(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
-    """
-    Extracts tenant context from API key.
-    In dev mode (no keys registered), returns a default tenant.
-    """
-    # Dev mode bypass — respect DEV_MODE flag
+    """Extract tenant context from an API key (dev mode returns a default tenant)."""
     from app.core.config import get_settings
-    settings = get_settings()
-    if settings.DEV_MODE:
-        return {
-            "tenant_id": "tenant_acme",
-            "role": "admin",
-            "name": "dev_mode",
-            "authenticated": False,
-        }
+    if get_settings().DEV_MODE:
+        return {"tenant_id": "tenant_acme", "role": "admin", "name": "dev_mode", "authenticated": False}
 
     if not credentials:
         raise HTTPException(401, "Missing API key. Use Authorization: Bearer kt_...")
 
-    hashed = hash_key(credentials.credentials)
-    key_meta = _API_KEYS.get(hashed)
-
+    key_meta = await get_api_key_by_hash(hash_key(credentials.credentials))
     if not key_meta:
         raise HTTPException(401, "Invalid API key")
     if not key_meta.get("active", True):
@@ -107,9 +114,18 @@ async def get_current_tenant(
     }
 
 
-def initialize_dev_mode():
-    """Seed a default dev key if no keys exist and in DEV_MODE."""
+async def initialize_dev_mode():
+    """Seed a default dev key if none exist and in DEV_MODE (best-effort)."""
     from app.core.config import get_settings
-    if get_settings().DEV_MODE and not _API_KEYS:
-        dev_key = generate_api_key("tenant_acme", "dev_default", "admin")
-        logger.info(f"[AUTH] Dev API Key generated: {dev_key['api_key'][:8]}... (truncated)")
+    if not get_settings().DEV_MODE:
+        return
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.api_key import ApiKey
+    try:
+        async with MaintenanceSessionLocal() as db:
+            existing = (await db.execute(select(ApiKey).limit(1))).scalar_one_or_none()
+        if existing is None:
+            dev_key = await generate_api_key("tenant_acme", "dev_default", "admin")
+            logger.info("[AUTH] Dev API key generated: %s… (truncated)", dev_key["api_key"][:8])
+    except Exception as e:
+        logger.warning("[AUTH] dev-key seed skipped: %s", e)

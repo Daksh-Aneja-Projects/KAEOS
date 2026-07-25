@@ -28,6 +28,7 @@ _model_modules = [
     "app.models.enterprise_graph",
     "app.models.intelligence_metrics",
     "app.models.sso",
+    "app.models.api_key",
     "app.models.jobs",
     "app.models.actuation",
     "app.models.missions",
