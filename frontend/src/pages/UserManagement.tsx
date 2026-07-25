@@ -25,6 +25,7 @@ export default function UserManagement() {
   const { token, isAdmin, user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editingRole, setEditingRole] = useState<string | null>(null);
 
@@ -42,7 +43,11 @@ export default function UserManagement() {
     try {
       const data = await api.authUsers();
       setUsers(data);
-    } catch (err) { console.error('[UserManagement] fetch failed:', err); }
+      setFetchError(null);
+    } catch (err: any) {
+      console.error('[UserManagement] fetch failed:', err);
+      setFetchError(err?.message || 'Failed to load users');
+    }
     setLoading(false);
   };
 
@@ -190,6 +195,15 @@ export default function UserManagement() {
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} />
+        </div>
+      ) : fetchError && users.length === 0 ? (
+        <div className="rounded-xl border p-8 text-center" style={{ borderColor: colors.hairline }}>
+          <p className="text-[13px] font-medium" style={{ color: colors.error }}>{fetchError}</p>
+          <button onClick={() => { setLoading(true); fetchUsers(); }}
+            className="mt-3 px-4 py-2 rounded-lg text-[12px] font-semibold"
+            style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
+            Retry
+          </button>
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>

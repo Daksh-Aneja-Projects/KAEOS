@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import DomainIcon from '../components/DomainIcon';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 
 /**
  * Mission Control — goal-level autonomous orchestration. A plain-language goal is
@@ -34,12 +34,14 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
   const [goal, setGoal] = useState('');
   const [budget, setBudget] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     try {
       const d = await api.listMissions(30);
       setMissions(d.missions || []);
-    } catch (e) { console.error(e); }
+      setError(null);
+    } catch (e: any) { setError(e?.message || 'Failed to load missions'); }
     finally { setLoading(false); }
   }, []);
 
@@ -106,6 +108,7 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
   };
 
   if (loading) return <BrainLoading message="Loading Mission Control…" />;
+  if (error && missions.length === 0) return <BrainError message={error} onRetry={() => { setLoading(true); loadList(); }} />;
 
   const budgetPct = selected?.budget_usd
     ? Math.min(100, ((selected.spent_usd || 0) / selected.budget_usd) * 100) : 0;

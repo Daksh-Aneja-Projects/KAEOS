@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   LifeBuoy, MessageSquare, BookOpen, Clock, Heart,
   ArrowRight, Bot, Zap, Shield, Users
@@ -19,19 +19,23 @@ export default function SupportDashboard() {
   const [dept, setDept] = useState<any>(null);
   const [supStats, setSupStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getWorkforceDepartment('support').catch(() => null),
-      api.getSupportDashboard().catch(() => null),
+  const load = () => {
+    Promise.allSettled([
+      api.getWorkforceDepartment('support'),
+      api.getSupportDashboard(),
     ]).then(([d, s]) => {
-      setDept(d);
-      setSupStats(s);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (s.status === 'fulfilled') { setSupStats(s.value); setError(null); }
+      else if (d.status === 'rejected') setError((s.reason as any)?.message || 'Failed to load Support');
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (loading) return <BrainLoading message="Loading Support Metrics..." />;
+  if (error && !dept && !supStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = {
     background: colors.surface1,

@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   Scale, FileText, ShieldAlert, ShieldCheck, Lock, Lightbulb,
   ArrowRight, Zap, Bot, Landmark, AlertTriangle
@@ -19,19 +19,23 @@ export default function LegalDashboard() {
   const [dept, setDept] = useState<any>(null);
   const [legStats, setLegStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getWorkforceDepartment('legal').catch(() => null),
-      api.getLegalDashboard().catch(() => null),
+  const load = () => {
+    Promise.allSettled([
+      api.getWorkforceDepartment('legal'),
+      api.getLegalDashboard(),
     ]).then(([d, l]) => {
-      setDept(d);
-      setLegStats(l);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (l.status === 'fulfilled') { setLegStats(l.value); setError(null); }
+      else if (d.status === 'rejected') setError((l.reason as any)?.message || 'Failed to load Legal');
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (loading) return <BrainLoading message="Gathering Legal Intelligence..." />;
+  if (error && !dept && !legStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = {
     background: colors.surface1,

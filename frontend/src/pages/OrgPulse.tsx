@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainIcon from '../components/DomainIcon';
 import LiveBadge from '../components/LiveBadge';
+import { BrainError } from '../components/BrainStates';
 import { timeAgo } from '../lib/time';
 
 /**
@@ -313,12 +314,15 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [forecast, setForecast] = useState<any>(null);
   const [signals, setSignals] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [p, a, s, f, sig] = await Promise.allSettled([
       api.getOrgPulse(), api.getOrgActivity(30), api.getOrgStale(), api.getForecast(45, 14), api.getMeshSignals(20),
     ]);
-    if (p.status === 'fulfilled') setPulse(p.value);
+    if (p.status === 'fulfilled') { setPulse(p.value); setError(null); }
+    // The primary payload failing is a real error, not "no data yet".
+    else setError((p.reason as any)?.message || 'Failed to load Org Pulse');
     if (a.status === 'fulfilled') setActivity(a.value || []);
     if (s.status === 'fulfilled') setStale(s.value?.breaches || []);
     if (f.status === 'fulfilled') setForecast(f.value);
@@ -347,6 +351,10 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
 
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>;
+  }
+
+  if (error && !pulse) {
+    return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
   }
 
   const orgHealth = pulse?.org_health ?? null;

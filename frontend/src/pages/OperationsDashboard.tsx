@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   Wrench, CheckSquare, Clipboard, Users, ShieldAlert,
   ArrowRight, Bot, Zap, Shield, Sparkles
@@ -19,19 +19,23 @@ export default function OperationsDashboard() {
   const [dept, setDept] = useState<any>(null);
   const [opsStats, setOpsStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getWorkforceDepartment('operations').catch(() => null),
-      api.getOperationsDashboard().catch(() => null),
+  const load = () => {
+    Promise.allSettled([
+      api.getWorkforceDepartment('operations'),
+      api.getOperationsDashboard(),
     ]).then(([d, o]) => {
-      setDept(d);
-      setOpsStats(o);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (o.status === 'fulfilled') { setOpsStats(o.value); setError(null); }
+      else if (d.status === 'rejected') setError((o.reason as any)?.message || 'Failed to load Operations');
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (loading) return <BrainLoading message="Loading Operational Infrastructure status..." />;
+  if (error && !dept && !opsStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = {
     background: colors.surface1,

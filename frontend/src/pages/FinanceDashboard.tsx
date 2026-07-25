@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   DollarSign, Briefcase, Landmark, ShieldAlert, Scale,
   BarChart3, Bot, Zap, ArrowRight, TrendingUp, CheckCircle,
@@ -20,19 +20,24 @@ export default function FinanceDashboard() {
   const [dept, setDept] = useState<any>(null);
   const [finStats, setFinStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getWorkforceDepartment('finance').catch(() => null),
-      api.getFinanceDashboard().catch(() => null),
+  const load = () => {
+    Promise.allSettled([
+      api.getWorkforceDepartment('finance'),
+      api.getFinanceDashboard(),
     ]).then(([d, f]) => {
-      setDept(d);
-      setFinStats(f);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (f.status === 'fulfilled') { setFinStats(f.value); setError(null); }
+      // Both requests failing is an outage, not an undeployed department.
+      else if (d.status === 'rejected') setError((f.reason as any)?.message || 'Failed to load Finance');
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (loading) return <BrainLoading message="Loading Financial Intelligence..." />;
+  if (error && !dept && !finStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = {
     background: colors.surface1,

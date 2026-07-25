@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   TrendingUp, Compass, Target, DollarSign, Award,
   ArrowRight, Bot, Zap, Shield, Sparkles
@@ -19,19 +19,23 @@ export default function SalesDashboard() {
   const [dept, setDept] = useState<any>(null);
   const [salesStats, setSalesStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getWorkforceDepartment('sales').catch(() => null),
-      api.getSalesDashboard().catch(() => null),
+  const load = () => {
+    Promise.allSettled([
+      api.getWorkforceDepartment('sales'),
+      api.getSalesDashboard(),
     ]).then(([d, s]) => {
-      setDept(d);
-      setSalesStats(s);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (s.status === 'fulfilled') { setSalesStats(s.value); setError(null); }
+      else if (d.status === 'rejected') setError((s.reason as any)?.message || 'Failed to load Sales');
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (loading) return <BrainLoading message="Gathering Sales Pipeline Statistics..." />;
+  if (error && !dept && !salesStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = {
     background: colors.surface1,
