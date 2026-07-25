@@ -29,6 +29,8 @@ FRAMEWORKS = {
     "PCI": "Payment card data security",
     "EU_AI_ACT": "EU AI system risk governance",
     "SEC": "Securities disclosure",
+    "SOC2": "Service org security & availability",
+    "ISO27001": "Information security management",
 }
 
 # High-consequence surface (money movement, terminations, contract execution, deletes).
@@ -108,9 +110,12 @@ async def build_overview(db: AsyncSession, tenant_id: str, days: int = 30) -> di
 
     return {
         "window_days": days,
+        # Only surface frameworks we can actually assemble an evidence pack for -
+        # skills also carry non-regulatory tags (e.g. SLA, I9) that would 404 the
+        # evidence route if rendered as clickable buttons.
         "frameworks": [
-            {"framework": fw, "scope": FRAMEWORKS.get(fw, ""), "controls": len(skills_)}
-            for fw, skills_ in sorted(control_map.items())
+            {"framework": fw, "scope": FRAMEWORKS[fw], "controls": len(skills_)}
+            for fw, skills_ in sorted(control_map.items()) if fw in FRAMEWORKS
         ],
         "risk_register": sorted(register, key=lambda r: {"HIGH": 0, "LIMITED": 1, "MINIMAL": 2}[r["risk_tier"]]),
         "risk_summary": tier_counts,

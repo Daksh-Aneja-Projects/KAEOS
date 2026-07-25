@@ -299,7 +299,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5">
                         <MapPin className="w-3 h-3" style={{ color: colors.inkTertiary }} />
-                        <span className="text-[12px]" style={{ color: colors.inkMuted }}>{emp.location || 'Remote'}</span>
+                        <span className="text-[12px]" style={{ color: colors.inkMuted }}>{emp.location || '-'}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3"><Badge status={emp.status} /></td>
@@ -353,7 +353,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                 <div className="flex-1">
                   <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{req.title}</span>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{req.department || 'Engineering'}</span>
+                    <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{req.department || '-'}</span>
                     {req.headcount && <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{req.headcount} headcount</span>}
                     {req.target_salary_min && req.target_salary_max && (
                       <span className="text-[11px]" style={{ color: colors.inkTertiary }}>${(req.target_salary_min / 1000).toFixed(0)}k - ${(req.target_salary_max / 1000).toFixed(0)}k</span>
@@ -506,7 +506,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                   </td>
                   <td className="px-5 py-3 text-[12px] font-mono" style={{ color: colors.inkMuted }}>{t.employee_id.slice(0, 8)}…</td>
                   <td className="px-5 py-3">
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: colors.surface2, color: colors.inkSubtle }}>{(t.leave_type || 'PTO').replace(/_/g, ' ')}</span>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: colors.surface2, color: colors.inkSubtle }}>{(t.leave_type || '-').replace(/_/g, ' ')}</span>
                   </td>
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.start_date || '-'}</td>
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.end_date || '-'}</td>

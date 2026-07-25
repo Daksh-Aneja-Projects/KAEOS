@@ -48,6 +48,18 @@ browser against the production Postgres tenant with real Ollama.
   incident. The event picker is grouped by category.
 
 ### Fixed
+- **Compliance evidence 404 on SOC2/ISO27001.** The regulatory overview surfaced
+  an evidence-pack button for every skill `compliance_tag`, but the evidence route
+  only whitelisted 8 frameworks - so clicking a SOC2/ISO27001 (or SLA/I9) button
+  returned "unknown framework". SOC2 and ISO27001 are now first-class frameworks
+  (evidence packs assemble generically from tagged skills), and the overview only
+  renders buttons for frameworks that can actually produce a pack, so non-framework
+  tags no longer appear as dead buttons.
+- **Fabricated field fallbacks in the workforce view.** Employee location,
+  requisition department and time-off type showed invented defaults ("Remote",
+  "Engineering", "PTO") when the real field was empty; they now show `-` like the
+  adjacent columns. (A frontend-wide audit otherwise found the dashboards, views,
+  components and platform pages fully API-backed - no hardcoded business data.)
 - **Deployment adoption skipped the backbone.** `generate_department_structure`
   adopted an existing department (created by onboarding) but returned before
   creating its capabilities/processes, so `deploy_agents` found nothing to bind
