@@ -411,6 +411,28 @@ async def compliance_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
     )
 
 
+@router.get("/compliance/export")
+async def compliance_export(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Download the compliance framework status as CSV (auditor evidence)."""
+    from app.core.csv_export import csv_response
+    resp = await compliance_dashboard(tenant_id=tenant_id, db=db)
+    rows = [
+        {
+            "framework": f.framework,
+            "status": f.status,
+            "coverage_pct": round(f.coverage_pct * 100, 1),
+            "violations": f.violations,
+            "blocker_count": f.blocker_count,
+            "last_audit": f.last_audit or "",
+        }
+        for f in resp.frameworks
+    ]
+    return csv_response(
+        rows, "compliance_status.csv",
+        columns=["framework", "status", "coverage_pct", "violations", "blocker_count", "last_audit"],
+    )
+
+
 @router.get("/cockpit")
 async def executive_cockpit(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """S4 Executive Cockpit — aggregated intelligence for C-suite dashboard."""

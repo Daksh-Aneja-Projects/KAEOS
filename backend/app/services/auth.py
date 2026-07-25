@@ -462,3 +462,75 @@ class AuthService:
         user.is_active = False
         await db.commit()
         return {"id": user.id, "is_active": False}
+
+    @staticmethod
+    async def reactivate_user(db: AsyncSession, user_id: str, tenant_id: str) -> dict:
+        """Re-enable a previously deactivated account WITHIN the caller's tenant."""
+        user = (await db.execute(
+            select(User).where(User.id == user_id, User.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        if not user:
+            return {"error": "user_not_found"}
+        user.is_active = True
+        await db.commit()
+        return {"id": user.id, "is_active": True}
+
+    @staticmethod
+    async def invite_user(db: AsyncSession, email: str, display_name: str, role: UserRole,
+                          created_by: str, tenant_id: str) -> dict:
+        """Invite a user WITHOUT the admin typing their password.
+
+        Creates an INACTIVE account with an unusable random password and returns a
+        signed, short-lived invite token. The invitee sets their own password via
+        ``accept_invite`` (a magic-link flow), so no plaintext password is ever
+        handled by the admin. Email delivery of the link is a deployment concern.
+        """
+        import jwt
+        email = (email or "").strip().lower()
+        if not email:
+            return {"error": "email_required"}
+        if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
+            return {"error": "email_already_exists"}
+
+        user = User(
+            email=email, display_name=display_name or email,
+            hashed_password=_hash_password(secrets.token_urlsafe(32)),  # unusable until accepted
+            role=role, tenant_id=tenant_id, created_by=created_by, is_active=False,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        now = datetime.now(timezone.utc)
+        token = jwt.encode(
+            {"purpose": "invite", "user_id": user.id, "tenant_id": tenant_id,
+             "aud": "kaeos-invite", "iat": now, "exp": now + timedelta(days=7)},
+            _get_secret_key(), algorithm="HS256",
+        )
+        logger.info(f"[Auth] Invited {email} (role={role.value}) by {created_by}")
+        return {"id": user.id, "email": email, "role": role.value,
+                "invite_token": token, "expires_in_days": 7, "is_active": False}
+
+    @staticmethod
+    async def accept_invite(db: AsyncSession, token: str, password: str) -> dict:
+        """Complete an invite: validate the token, set the password, activate."""
+        import jwt
+        min_len = get_settings().MIN_PASSWORD_LENGTH
+        if not password or len(password) < min_len:
+            return {"error": "weak_password",
+                    "detail": f"Password must be at least {min_len} characters."}
+        try:
+            claims = jwt.decode(token, _get_secret_key(), algorithms=["HS256"], audience="kaeos-invite")
+        except jwt.PyJWTError:
+            return {"error": "invalid_or_expired_invite"}
+        if claims.get("purpose") != "invite":
+            return {"error": "invalid_or_expired_invite"}
+
+        user = (await db.execute(select(User).where(User.id == claims["user_id"]))).scalar_one_or_none()
+        if not user:
+            return {"error": "user_not_found"}
+        user.hashed_password = _hash_password(password)
+        user.is_active = True
+        await db.commit()
+        logger.info(f"[Auth] Invite accepted: {user.email}")
+        return {"id": user.id, "email": user.email, "is_active": True}

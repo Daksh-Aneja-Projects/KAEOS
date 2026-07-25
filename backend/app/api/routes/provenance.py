@@ -38,6 +38,30 @@ async def get_global_ledger(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
     return {"ledger": ledger}
 
 
+@router.get("/global/ledger/export")
+async def export_global_ledger(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Download the Provenance (decision) Ledger as CSV.
+
+    Tenant-safe: scoped via an INNER join to the caller's own rules, so no other
+    tenant's ledger rows are exported (stricter than the paged view).
+    """
+    from app.core.csv_export import csv_response
+    result = await db.execute(
+        select(
+            ProvenanceLedger.id, ProvenanceLedger.rule_id, ProvenanceLedger.event_type,
+            ProvenanceLedger.timestamp, Rule.statement.label("rule_statement"),
+        )
+        .join(Rule, (ProvenanceLedger.rule_id == Rule.id) & (Rule.tenant_id == tenant_id))
+        .order_by(ProvenanceLedger.timestamp.desc())
+        .limit(50000)
+    )
+    rows = [dict(m) for m in result.mappings().all()]
+    return csv_response(
+        rows, "provenance_ledger.csv",
+        columns=["id", "rule_id", "event_type", "timestamp", "rule_statement"],
+    )
+
+
 @router.get("/{rule_id}/verify")
 async def verify_chain_integrity(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """L11 — Verify tamper-evident integrity of the provenance chain for a rule."""

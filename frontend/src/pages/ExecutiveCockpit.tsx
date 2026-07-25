@@ -3,7 +3,7 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { useParallelApi } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
-import { BrainLoading, BrainEmpty, LiveIndicator } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
 import { STREAM_INTERVALS } from '../services/realtime';
 import {
   Activity, TrendingUp, TrendingDown, Minus, Shield, Users, Zap, DollarSign,
@@ -27,7 +27,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
 
   // ── LIVE DATA - ALL FROM BACKEND, ZERO MOCK ──
   // Parallel query: health + activity feed + cost telemetry
-  const { results, loading: initialLoading } = useParallelApi({
+  const { results, loading: initialLoading, anyError, refetchAll } = useParallelApi({
     health: () => api.getHealth(),
     feed: () => api.getActivityFeed(15),
     cost: () => api.getCostTelemetry(24),
@@ -67,6 +67,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   // ── COGNITIVE LOADING STATE ──
   if (initialLoading) {
     return <BrainLoading message="Aggregating executive intelligence…" />;
+  }
+
+  // A backend outage must read as an error with a retry, not a silent "No data yet".
+  if (anyError && !results.health) {
+    return <BrainError message={anyError} onRetry={refetchAll} />;
   }
 
   return (

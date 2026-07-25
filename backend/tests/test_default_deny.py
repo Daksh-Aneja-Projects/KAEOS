@@ -23,6 +23,7 @@ _ALLOWLIST = {
     # Public authentication endpoints (must be reachable without a session).
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
+    "/api/v1/auth/accept-invite",   # invitee sets their own password (magic-link)
     "/api/v1/auth/sso/saml",
     # Viewer-level self-actions (marking one's own items read — no privilege).
     "/api/v1/agents/activity-feed/mark-read",

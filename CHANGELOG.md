@@ -9,6 +9,25 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Production-readiness — audit export & user management)
+- **CSV export for audit/compliance evidence (P1).** New `GET
+  /actuation/ledger/export`, `GET /provenance/global/ledger/export`, and `GET
+  /dashboard/compliance/export` return downloadable CSVs so operators can hand
+  auditors the Actions Ledger, Provenance (decision) Ledger, and per-framework
+  compliance status without screen-scraping. The provenance export is tenant-safe
+  (inner-joined to the caller's own rules). Shared helper `core/csv_export.py`.
+- **Invite-based user onboarding + reactivation (P1).** Admins no longer type a
+  new user's plaintext password: `POST /auth/users/invite` creates an inactive
+  account and returns a signed, 7-day magic-link token; the invitee sets their own
+  password via the public `POST /auth/accept-invite`. Deactivated users can be
+  restored with `POST /auth/users/{id}/reactivate` (tenant-scoped). Tests:
+  `tests/test_user_invite_export.py`.
+- **Fetch-error UI on the Executive Cockpit (P1).** The cockpit dropped
+  `anyError`, so a backend outage rendered as "No data yet"; it now renders
+  `BrainError` with a retry. (The same sweep across the other top pages —
+  OrgPulse, FinanceView, MissionControl, the 7 domain views, UserManagement — plus
+  the orphaned-capability UIs, DSAR/billing/webhooks, remain a tracked follow-up.)
+
 ### Changed (Production-readiness — reliability)
 - **API keys moved to a DB-backed store (P1).** The key store was a module-global
   JSON dict loaded once at import, so a key generated or revoked in one gunicorn

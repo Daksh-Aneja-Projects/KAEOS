@@ -132,6 +132,22 @@ async def actions_ledger(
     }
 
 
+@router.get("/ledger/export")
+async def actions_ledger_export(
+    limit: int = 5000,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the Actions Ledger as CSV (audit/compliance evidence)."""
+    from app.core.csv_export import csv_response
+    limit = max(1, min(50000, limit))
+    rows = (await db.execute(
+        select(ActionRecord).where(ActionRecord.tenant_id == tenant_id)
+        .order_by(ActionRecord.created_at.desc()).limit(limit)
+    )).scalars().all()
+    return csv_response([_to_dict(r) for r in rows], "actions_ledger.csv")
+
+
 @router.get("/drift")
 async def actuation_drift(
     tenant_id: str = Depends(get_tenant_id),

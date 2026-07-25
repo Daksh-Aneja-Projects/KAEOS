@@ -102,6 +102,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # (/auth/sso/connections) are deliberately NOT here — they require ADMIN.
         auth_paths = (
             "/api/v1/auth/login",
+            "/api/v1/auth/accept-invite",   # invitee sets their password pre-session
             "/api/v1/auth/sso/saml",
             "/api/v1/auth/sso/oidc",
             "/api/v1/auth/sso/discover",

@@ -172,3 +172,52 @@ async def deactivate_user(
         status = 404 if result["error"] == "user_not_found" else 400
         raise HTTPException(status_code=status, detail=result["error"])
     return result
+
+
+@router.post("/users/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: str,
+    user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-enable a deactivated user — ADMIN, within your own tenant."""
+    result = await AuthService.reactivate_user(db, user_id, tenant_id=user["tenant_id"])
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@router.post("/users/invite")
+async def invite_user(
+    data: dict,
+    user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Invite a user via a magic-link token instead of the admin typing a password."""
+    tenant_id = user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Authenticated user has no tenant context")
+    role_map = {"ADMIN": UserRole.ADMIN, "ANALYST": UserRole.ANALYST, "VIEWER": UserRole.VIEWER}
+    role = role_map.get(data.get("role", "VIEWER"), UserRole.VIEWER)
+    result = await AuthService.invite_user(
+        db, email=data.get("email", ""), display_name=data.get("display_name", ""),
+        role=role, created_by=user["id"], tenant_id=tenant_id,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/accept-invite")
+async def accept_invite(data: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+    """Complete an invite (public): set the password and activate the account."""
+    result = await AuthService.accept_invite(db, data.token, data.password)
+    if "error" in result:
+        status = 404 if result["error"] == "user_not_found" else 400
+        raise HTTPException(status_code=status, detail=result["error"])
+    return result
