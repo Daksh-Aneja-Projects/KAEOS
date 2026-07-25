@@ -50,6 +50,12 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.VIEWER, nullable=False)
     tenant_id = Column(String, default="default", nullable=False, index=True)
+    # Department scope: NULL = org-wide (all departments); a slug like "hr"
+    # confines the user to that department's operational surface. Cross-domain
+    # AGGREGATE insight (org pulse, the twin) stays readable for everyone -
+    # that correlation is the product's IP - but other departments' records
+    # and actions are denied (see require_department in app/core/tenant.py).
+    department = Column(String(32), nullable=True)
 
     is_active = Column(Boolean, default=True)
     is_demo = Column(Boolean, default=False)

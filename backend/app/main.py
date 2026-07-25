@@ -375,13 +375,27 @@ app.include_router(wargame.router, prefix=PREFIX)
 app.include_router(departments.router,     prefix=PREFIX)
 app.include_router(hitl.router,            prefix=PREFIX)
 app.include_router(ws.router) # No prefix to keep it cleanly at /ws/tenant_id
-app.include_router(hr_router,              prefix=PREFIX)
-app.include_router(finance_router,         prefix=PREFIX)
-app.include_router(legal_router,           prefix=PREFIX)
-app.include_router(support_router,         prefix=PREFIX)
-app.include_router(engineering_router,     prefix=PREFIX)
-app.include_router(sales_router,           prefix=PREFIX)
-app.include_router(operations_router,      prefix=PREFIX)
+# Department-scoped RBAC: each domain's operational surface is gated at the
+# mount, single point of enforcement. Org-wide users (no department claim)
+# pass every gate; a scoped user (department='hr') is confined to their own
+# domain. Cross-domain aggregates (org pulse, the twin, analytics) are
+# deliberately NOT gated - that correlation is the product's IP.
+from fastapi import Depends as _Depends  # noqa: E402
+from app.core.tenant import require_department as _req_dept  # noqa: E402
+app.include_router(hr_router,              prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("hr"))])
+app.include_router(finance_router,         prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("finance"))])
+app.include_router(legal_router,           prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("legal"))])
+app.include_router(support_router,         prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("support"))])
+app.include_router(engineering_router,     prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("engineering"))])
+app.include_router(sales_router,           prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("sales"))])
+app.include_router(operations_router,      prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("operations"))])
 
 from app.api.routes import org_pulse  # noqa: E402 — cross-domain pulse layer
 app.include_router(org_pulse.router,       prefix=PREFIX)

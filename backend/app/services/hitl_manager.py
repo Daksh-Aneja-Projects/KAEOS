@@ -83,20 +83,6 @@ class HITLManager:
             requires_action=True,
         )
 
-        # Reach the approver where they live (email/Slack/webhook), not just the
-        # in-app queue - a governance loop that pauses silently stalls autonomy.
-        from app.services.notifier import notify_fire_and_forget
-        notify_fire_and_forget(
-            tenant_id, "hitl.pending",
-            subject=f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}",
-            body=(f"A governed execution paused for human approval.\n"
-                  f"Skill: {skill.get('skill_id', 'unknown')}\n"
-                  f"Department: {skill.get('department', 'general')}\n"
-                  f"Execution: {exec_id}\n"
-                  f"Review it in KAEOS under My Work."),
-            data={"execution_id": exec_id, "skill_id": skill.get("skill_id")},
-        )
-
         # Persist pending approval in Redis (immediately)
         redis = await self._get_redis()
         pending_data = {
@@ -161,6 +147,22 @@ class HITLManager:
         except Exception as e:
             logger.warning(f"[HITL] Could not persist PENDING_HITL row: {e}")
 
+        # Reach the approver where they live (email/Slack/webhook), not just the
+        # in-app queue - a governance loop that pauses silently stalls autonomy.
+        # Scheduled AFTER the pause is durably persisted: never announce an
+        # approval that is not yet in the queue.
+        from app.services.notifier import notify_fire_and_forget
+        notify_fire_and_forget(
+            tenant_id, "hitl.pending",
+            subject=f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}",
+            body=(f"A governed execution paused for human approval.\n"
+                  f"Skill: {skill.get('skill_id', 'unknown')}\n"
+                  f"Department: {skill.get('department', 'general')}\n"
+                  f"Execution: {exec_id}\n"
+                  f"Review it in KAEOS under My Work."),
+            data={"execution_id": exec_id, "skill_id": skill.get("skill_id")},
+        )
+
         # Return immediately with execution_id so caller can poll or subscribe for updates
         return {
             "approved": None,
@@ -184,6 +186,13 @@ class HITLManager:
             await redis.setex(self._redis_key(execution_id), ttl, json.dumps(data))
         else:
             self._memory[execution_id] = data
+
+    async def get_record_department(self, execution_id: str) -> str | None:
+        """The department of a pending approval's skill (for scope checks)."""
+        record = await self._get_record(execution_id)
+        if not record:
+            return None
+        return (record.get("skill_def") or {}).get("department")
 
     async def list_pending(self, tenant_id: str) -> list:
         """All PENDING approvals for a tenant, from Redis or the memory store."""

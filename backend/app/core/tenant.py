@@ -144,11 +144,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return _unauthorized("Invalid or expired token")
             # Map user RBAC roles (ADMIN/ANALYST/VIEWER) onto tenant roles
             jwt_role_map = {"ADMIN": "admin", "ANALYST": "operator", "VIEWER": "viewer"}
+            # department claim: None/absent = org-wide user
             request.state.tenant = {
                 "tenant_id": payload.get("tenant_id", "default"),
                 "role": jwt_role_map.get(payload.get("role", ""), "viewer"),
                 "name": payload.get("email", "user"),
                 "user_id": payload.get("user_id"),
+                "department": payload.get("department"),
             }
             logger.debug(
                 f"[Tenant] JWT resolved: tenant_id={request.state.tenant['tenant_id']} "
@@ -258,6 +260,50 @@ def require_role(required_role: str):
         return tenant
 
     return _checker
+
+
+def require_department(department: str):
+    """FastAPI Depends() factory - confines a surface to one department.
+
+    Department-scoped RBAC: a user whose JWT carries department='hr' may only
+    use the HR operational surface (data, agents, missions, approvals). Users
+    with no department claim (org-wide users, API keys, dev mode) pass every
+    department gate - scoping is opt-in per user.
+
+    Deliberately NOT applied to cross-domain aggregates (org pulse, the twin,
+    analytics) - correlating signal across departments is the product's IP and
+    stays readable for every authenticated user. What a scoped user loses is
+    other departments' RECORDS and ACTIONS, not the org-level insight.
+
+    Usage (single point, on the router mount):
+        app.include_router(hr_router, prefix=PREFIX,
+                           dependencies=[Depends(require_department("hr"))])
+    """
+    def _checker(tenant: dict = Depends(get_tenant)) -> dict:
+        scope = tenant.get("department")
+        if scope and scope != department:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Department scope '{scope}' cannot access the "
+                       f"'{department}' surface.",
+            )
+        return tenant
+
+    return _checker
+
+
+def check_department_scope(tenant: dict, department: str | None) -> None:
+    """Imperative variant of require_department for per-row checks.
+
+    Raises 403 when a scoped caller touches a row belonging to another
+    department. ``department`` None/empty counts as unscoped data (allowed).
+    """
+    scope = tenant.get("department")
+    if scope and department and scope != department:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Department scope '{scope}' cannot act on '{department}' items.",
+        )
 
 
 def require_service_or_role(required_role: str):

@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, ArrowRight, Users, Bot, Zap, Activity, Package } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
 import { toPct } from '../lib/format';
+import { canSeeDepartment } from '../lib/departments';
 
 /**
  * Departments directory - the single place to jump into any of the governed AI
@@ -13,9 +15,14 @@ import { toPct } from '../lib/format';
  */
 export default function DepartmentsHub() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [depts, setDepts] = useState<any[]>([]);
+  const [allDepts, setAllDepts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Department-scoped users only see their own department here; org-wide
+  // users (department = null) see the full directory.
+  const depts = allDepts.filter(d => canSeeDepartment(user?.department, d.slug || d.id));
 
   useEffect(() => {
     let cancelled = false;
@@ -23,9 +30,9 @@ export default function DepartmentsHub() {
       .then((d: any) => {
         if (cancelled) return;
         const arr = Array.isArray(d) ? d : (d?.departments || []);
-        setDepts(arr);
+        setAllDepts(arr);
       })
-      .catch(() => setDepts([]))
+      .catch(() => setAllDepts([]))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);

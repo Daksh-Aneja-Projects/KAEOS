@@ -1,4 +1,4 @@
-from app.core.tenant import approver_identity, get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant, get_tenant_id, require_role
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,8 +45,12 @@ async def resolve_hitl(
     """
     from app.services.hitl_manager import hitl_manager
     from app.core.audit import record_security_event
+    from app.core.tenant import check_department_scope
     approver = _approver_identity(tenant)
     tenant_id = tenant["tenant_id"]
+    # Department-scoped approvers may only decide their own department's items.
+    check_department_scope(
+        tenant, await hitl_manager.get_record_department(req.execution_id))
     success = await hitl_manager.resolve_hitl(
         req.execution_id, req.approved, approver, req.reason, tenant_id=tenant_id
     )
@@ -74,8 +78,11 @@ async def approve_hitl(
     """Approve a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager
     from app.core.audit import record_security_event
+    from app.core.tenant import check_department_scope
     approver = _approver_identity(tenant)
     tenant_id = tenant["tenant_id"]
+    check_department_scope(
+        tenant, await hitl_manager.get_record_department(execution_id))
     reason = data.reason if data else ""
     success = await hitl_manager.resolve_hitl(
         execution_id, approved=True, approver=approver, reason=reason, tenant_id=tenant_id
@@ -104,8 +111,11 @@ async def reject_hitl(
     """Reject a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager
     from app.core.audit import record_security_event
+    from app.core.tenant import check_department_scope
     approver = _approver_identity(tenant)
     tenant_id = tenant["tenant_id"]
+    check_department_scope(
+        tenant, await hitl_manager.get_record_department(execution_id))
     reason = data.reason if data else ""
     success = await hitl_manager.resolve_hitl(
         execution_id, approved=False, approver=approver, reason=reason, tenant_id=tenant_id
@@ -126,13 +136,21 @@ async def reject_hitl(
 
 
 @router.get("/pending")
-async def list_pending_hitl(tenant_id: str = Depends(get_tenant_id)):
-    """List all pending HITL approvals for this tenant (Redis or memory fallback)."""
+async def list_pending_hitl(tenant: dict = Depends(get_tenant)):
+    """List all pending HITL approvals for this tenant (Redis or memory fallback).
+
+    Department-scoped users see only their own department's approvals.
+    """
     from app.services.hitl_manager import hitl_manager
-    pending = await hitl_manager.list_pending(tenant_id)
+    pending = await hitl_manager.list_pending(tenant["tenant_id"])
+    scope = tenant.get("department")
+    if scope:
+        pending = [p for p in pending
+                   if (p.get("skill_def") or {}).get("department") in (scope, None, "general")]
     # don't ship the full stored context over the wire
     slim = [
         {**{k: v for k, v in p.items() if k not in ("context", "skill_def")},
+         "department": (p.get("skill_def") or {}).get("department"),
          "execution_id": p.get("exec_id")}
         for p in pending
     ]

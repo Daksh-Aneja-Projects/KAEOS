@@ -6,7 +6,7 @@ These are REAL workforce departments (Department-as-a-Service), not
 Rule.domain aggregations. Each department owns capabilities, agents,
 processes, and has a full deployment lifecycle.
 """
-from app.core.tenant import get_tenant_id
+from app.core.tenant import check_department_scope, get_tenant, get_tenant_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -78,13 +78,20 @@ async def list_departments(
 @router.get("/departments/{dept_id}")
 async def get_department(
     dept_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single department (by id or slug) with capabilities and agents."""
+    """Get a single department (by id or slug) with capabilities and agents.
+
+    Department-scoped users may only open THEIR department's detail (its
+    agents, capabilities, processes are operational surface); the departments
+    LIST stays readable for nav and the twin.
+    """
+    tenant_id = tenant["tenant_id"]
     dept = await _resolve_department(db, dept_id, tenant_id)
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
+    check_department_scope(tenant, dept.slug)
 
     # Capabilities
     cap_result = await db.execute(
@@ -181,13 +188,15 @@ async def get_department(
 @router.get("/departments/{dept_id}/capabilities")
 async def get_department_capabilities(
     dept_id: str,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """Get capabilities for a department (by id or slug) with their processes."""
+    tenant_id = tenant["tenant_id"]
     dept = await _resolve_department(db, dept_id, tenant_id)
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
+    check_department_scope(tenant, dept.slug)
     dept_id = dept.id
     cap_result = await db.execute(
         select(Capability)

@@ -99,8 +99,13 @@ def revoke_token(token: str) -> bool:
     return False
 
 
-def _create_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
-    """Mint a signed JWT for an authenticated session."""
+def _create_token(user_id: str, email: str, role: str, tenant_id: str,
+                  department: Optional[str] = None) -> str:
+    """Mint a signed JWT for an authenticated session.
+
+    ``department`` carries the user's department scope (None = org-wide) so
+    per-request enforcement never needs a DB lookup.
+    """
     import jwt
     import uuid
     now = datetime.now(timezone.utc)
@@ -110,6 +115,7 @@ def _create_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
         "email": email,
         "role": role,
         "tenant_id": tenant_id,
+        "department": department,
         "jti": uuid.uuid4().hex,   # per-session id, enables revocation (logout)
         "iss": _JWT_ISS,
         "aud": _JWT_AUD,
@@ -322,7 +328,8 @@ class AuthService:
             result="ALLOWED", actor=user.email, actor_role=user.role.value,
             ip_address=ip_address)
 
-        token = _create_token(user.id, user.email, user.role.value, user.tenant_id)
+        token = _create_token(user.id, user.email, user.role.value, user.tenant_id,
+                              department=getattr(user, "department", None))
         return {
             "token": token,
             "user": {
@@ -331,6 +338,7 @@ class AuthService:
                 "display_name": user.display_name,
                 "role": user.role.value,
                 "tenant_id": user.tenant_id,
+                "department": getattr(user, "department", None),
                 "is_demo": user.is_demo,
             }
         }
@@ -411,6 +419,7 @@ class AuthService:
             "email": u.email,
             "display_name": u.display_name,
             "role": u.role.value,
+            "department": getattr(u, "department", None),
             "is_active": u.is_active,
             "is_demo": u.is_demo,
             "login_count": u.login_count,
@@ -489,7 +498,8 @@ class AuthService:
 
     @staticmethod
     async def invite_user(db: AsyncSession, email: str, display_name: str, role: UserRole,
-                          created_by: str, tenant_id: str) -> dict:
+                          created_by: str, tenant_id: str,
+                          department: Optional[str] = None) -> dict:
         """Invite a user WITHOUT the admin typing their password.
 
         Creates an INACTIVE account with an unusable random password and returns a
@@ -508,6 +518,7 @@ class AuthService:
             email=email, display_name=display_name or email,
             hashed_password=_hash_password(secrets.token_urlsafe(32)),  # unusable until accepted
             role=role, tenant_id=tenant_id, created_by=created_by, is_active=False,
+            department=department,
         )
         db.add(user)
         await db.commit()

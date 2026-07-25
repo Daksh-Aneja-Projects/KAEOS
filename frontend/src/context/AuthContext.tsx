@@ -8,6 +8,8 @@ interface AuthUser {
   role: 'ADMIN' | 'ANALYST' | 'VIEWER';
   tenant_id: string;
   is_demo: boolean;
+  /** Department scope from the login JWT. null/undefined = org-wide access. */
+  department?: string | null;
 }
 
 interface AuthContextType {

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { api, type PendingHITLItem, type AppNotification } from './api/client';
+import { canSeeDepartment, DEPARTMENT_LABELS } from './lib/departments';
 import KaeosLogo from './components/KaeosLogo';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ThemeAdapter from './components/ThemeAdapter';
@@ -155,6 +156,23 @@ function Shell() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Department-scoped RBAC: a scoped user's sidebar shows only their own
+  // department entry; every other department's operational surface is hidden.
+  // Cross-domain aggregates (Dashboard, Org Pulse, Analytics, Reality
+  // Experience, My Work) stay visible on purpose: correlating signal across
+  // departments is the product's IP, and the backend only gates other
+  // departments' RECORDS and ACTIONS, not the org-level insight.
+  const userDept = user?.department || null;
+  const workforceNav: NavItem[] = WORKFORCE_NAV.map(n =>
+    n.path === '/departments' && userDept
+      ? {
+          ...n,
+          path: `/departments/${userDept}`,
+          label: (DEPARTMENT_LABELS as Record<string, string>)[userDept] || 'My Department',
+        }
+      : n,
+  );
+
   // Notifications: real pending human-in-the-loop approvals (the actionable
   // queue), polled every 30s. The bell badge lights only when there are items.
   useEffect(() => {
@@ -208,8 +226,13 @@ function Shell() {
     { path: '/platform/onboarding', label: 'Client Onboarding', keywords: 'onboard tenant client provision new customer setup' },
     { path: '/getting-started', label: 'Getting Started', keywords: 'getting started onboarding checklist activate setup first' },
   ];
+  // Scoped users don't get "Go to" entries for other departments' surfaces.
+  const visibleModules = SEARCHABLE_MODULES.filter(m => {
+    const deptMatch = m.path.match(/^\/departments\/([^/]+)/);
+    return !deptMatch || canSeeDepartment(userDept, deptMatch[1]);
+  });
   const searchResults = searchQuery.length >= 2
-    ? SEARCHABLE_MODULES.filter(m =>
+    ? visibleModules.filter(m =>
         m.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.keywords.includes(searchQuery.toLowerCase())
       )
@@ -277,7 +300,7 @@ function Shell() {
           <div className="px-1 pt-2 pb-1">
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: colors.primary }}>Workforce</span>
           </div>
-          {WORKFORCE_NAV.map(n => (
+          {workforceNav.map(n => (
             <SidebarNavLink key={n.path} item={n} colors={colors} />
           ))}
 

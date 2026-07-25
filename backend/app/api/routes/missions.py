@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.missions import Mission, MissionStep, MissionEvent
 from app.services.missions import (
@@ -58,14 +58,19 @@ async def create_mission(
 @router.get("")
 async def list_missions(
     limit: int = 50,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    tenant_id = tenant["tenant_id"]
     limit = max(1, min(200, limit))
     rows = (await db.execute(
         select(Mission).where(Mission.tenant_id == tenant_id)
         .order_by(Mission.created_at.desc()).limit(limit)
     )).scalars().all()
+    # Department-scoped users see only missions that touch their department.
+    scope = tenant.get("department")
+    if scope:
+        rows = [m for m in rows if scope in (m.departments or [])]
     return {
         "missions": [
             {"id": m.id, "goal": m.goal, "status": m.status,
@@ -89,12 +94,43 @@ async def get_mission(
     return detail
 
 
+async def _guard_mission_scope(db: AsyncSession, tenant: dict, mission_id: str,
+                               step_seq: Optional[int] = None) -> None:
+    """Department-scoped callers may only ACT on work inside their scope.
+
+    - step action (HITL): the step's own department must match the scope.
+    - whole-mission action (advance/abort): every department the mission spans
+      must be within scope - advancing a cross-department mission executes
+      other departments' steps, which a scoped user must not be able to do.
+    Org-wide callers (no scope) pass untouched.
+    """
+    scope = tenant.get("department")
+    if not scope:
+        return
+    if step_seq is not None:
+        step = (await db.execute(
+            select(MissionStep).where(MissionStep.mission_id == mission_id,
+                                      MissionStep.seq == step_seq)
+        )).scalar_one_or_none()
+        if step is not None:
+            check_department_scope(tenant, step.department)
+        return
+    mission = (await db.execute(
+        select(Mission).where(Mission.id == mission_id,
+                              Mission.tenant_id == tenant["tenant_id"])
+    )).scalar_one_or_none()
+    if mission is not None:
+        for dept in (mission.departments or []):
+            check_department_scope(tenant, dept)
+
+
 @router.post("/{mission_id}/advance")
 async def advance(
     mission_id: str,
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
+    await _guard_mission_scope(db, tenant, mission_id)
     """Start (or resume) the mission's background runner and return immediately.
     A gated step can take a while on a real model, so execution runs in the
     background and the UI polls GET /missions/{id} for live progress."""
@@ -113,6 +149,7 @@ async def resolve_hitl(
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
+    await _guard_mission_scope(db, tenant, mission_id, step_seq=seq)
     res = await resolve_hitl_step(
         db, tenant_id=tenant["tenant_id"], mission_id=mission_id, seq=seq,
         approved=body.approved, approver=tenant.get("name"))
@@ -135,6 +172,7 @@ async def abort(
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
+    await _guard_mission_scope(db, tenant, mission_id)
     res = await abort_mission(db, tenant_id=tenant["tenant_id"], mission_id=mission_id,
                               actor=tenant.get("name"))
     if res.get("error"):

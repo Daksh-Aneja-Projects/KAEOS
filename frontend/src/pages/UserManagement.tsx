@@ -4,14 +4,16 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import {
   UserPlus, Shield, Eye, Pencil, Trash2, CheckCircle, XCircle,
-  Loader2, Users, Crown, BarChart3, ChevronDown
+  Loader2, Users, Crown, BarChart3, ChevronDown, Info
 } from 'lucide-react';
+import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from '../lib/departments';
 
 interface UserRecord {
   id: string;
   email: string;
   display_name: string;
   role: 'ADMIN' | 'ANALYST' | 'VIEWER';
+  department?: string | null;
   is_active: boolean;
   is_demo: boolean;
   login_count: number;
@@ -28,12 +30,16 @@ export default function UserManagement() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [editingDept, setEditingDept] = useState<string | null>(null);
+  // "Scope applies from next login" hint shown after a department change.
+  const [deptNotice, setDeptNotice] = useState<string | null>(null);
 
   // Create form
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'ADMIN' | 'ANALYST' | 'VIEWER'>('VIEWER');
+  const [newDepartment, setNewDepartment] = useState<string>(''); // '' = Org-wide
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -58,9 +64,15 @@ export default function UserManagement() {
     setCreateError('');
     setCreating(true);
     try {
-      await api.authCreateUser({ email: newEmail, display_name: newName, password: newPassword, role: newRole });
+      const created = await api.authCreateUser({ email: newEmail, display_name: newName, password: newPassword, role: newRole });
+      // POST /auth/users has no department field; scope the new account with
+      // the dedicated endpoint right after creation.
+      if (newDepartment && created?.id) {
+        const res = await api.updateUserDepartment(created.id, newDepartment);
+        showDeptNotice(res?.note);
+      }
       setShowCreate(false);
-      setNewEmail(''); setNewName(''); setNewPassword(''); setNewRole('VIEWER');
+      setNewEmail(''); setNewName(''); setNewPassword(''); setNewRole('VIEWER'); setNewDepartment('');
       fetchUsers();
     } catch (err: any) {
       setCreateError(err.message || 'Failed to create user');
@@ -75,6 +87,27 @@ export default function UserManagement() {
       fetchUsers();
     } catch (err) { console.error('[UserManagement] role update failed:', err); }
   };
+
+  const showDeptNotice = (note?: string) => {
+    setDeptNotice(note || "Scope applies from the user's next login.");
+    window.setTimeout(() => setDeptNotice(null), 8000);
+  };
+
+  const handleDepartmentChange = async (userId: string, department: string | null) => {
+    try {
+      const res = await api.updateUserDepartment(userId, department);
+      setEditingDept(null);
+      showDeptNotice(res?.note);
+      fetchUsers();
+    } catch (err) {
+      console.error('[UserManagement] department update failed:', err);
+      setEditingDept(null);
+    }
+  };
+
+  const deptLabel = (d: string) => (DEPARTMENT_LABELS as Record<string, string>)[d] || d;
+  const deptColor = (d: string) => (DEPARTMENT_COLORS as Record<string, string>)[d] || '#6366f1';
+  const deptShort = (d: string) => d === 'hr' ? 'HR' : d.charAt(0).toUpperCase() + d.slice(1);
 
   const handleDeactivate = async (userId: string) => {
     if (!confirm('Deactivate this user?')) return;
@@ -106,7 +139,7 @@ export default function UserManagement() {
         <div>
           <h2 className="text-[20px] font-bold tracking-tight">User Management</h2>
           <p className="text-[13px]" style={{ color: colors.inkSubtle }}>
-            {users.length} users • RBAC: Admin / Analyst / Viewer
+            {users.length} users • RBAC: Admin / Analyst / Viewer • Department scopes
           </p>
         </div>
         <button onClick={() => setShowCreate(!showCreate)}
@@ -158,6 +191,20 @@ export default function UserManagement() {
                 <option value="ADMIN">Admin - Full access</option>
               </select>
             </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Department</label>
+              <select value={newDepartment} onChange={e => setNewDepartment(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border text-[13px]"
+                style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}>
+                <option value="">Org-wide - All departments</option>
+                {DEPARTMENTS.map(d => (
+                  <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
+                ))}
+              </select>
+              <p className="text-[10px] mt-1" style={{ color: colors.inkSubtle }}>
+                Scoped users only see their own department's operational pages.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 justify-end">
             <button type="button" onClick={() => setShowCreate(false)}
@@ -191,6 +238,15 @@ export default function UserManagement() {
         ))}
       </div>
 
+      {/* Department scope change hint */}
+      {deptNotice && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px]"
+          style={{ background: colors.primary + '12', color: colors.primary, border: `1px solid ${colors.primary}30` }}>
+          <Info className="w-3.5 h-3.5 shrink-0" />
+          <span>{deptNotice}</span>
+        </div>
+      )}
+
       {/* User Table */}
       {loading ? (
         <div className="flex justify-center py-12">
@@ -209,11 +265,12 @@ export default function UserManagement() {
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
           <div className="grid grid-cols-12 text-[10px] font-semibold uppercase tracking-wider px-5 py-3"
             style={{ background: colors.surface1, color: colors.inkSubtle }}>
-            <div className="col-span-3">User</div>
+            <div className="col-span-2">User</div>
             <div className="col-span-3">Email</div>
             <div className="col-span-2 text-center">Role</div>
+            <div className="col-span-2 text-center">Department</div>
             <div className="col-span-1 text-center">Logins</div>
-            <div className="col-span-2">Last Login</div>
+            <div className="col-span-1">Last Login</div>
             <div className="col-span-1 text-center">Actions</div>
           </div>
           {users.map(u => {
@@ -221,17 +278,17 @@ export default function UserManagement() {
             return (
               <div key={u.id} className="grid grid-cols-12 items-center px-5 py-3 text-[13px]"
                 style={{ borderTop: `1px solid ${colors.hairline}`, opacity: u.is_active ? 1 : 0.5 }}>
-                <div className="col-span-3 flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[12px] font-bold"
+                <div className="col-span-2 flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[12px] font-bold shrink-0"
                     style={{ background: roleColor(u.role) + '15', color: roleColor(u.role) }}>
                     {u.display_name.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <div className="font-medium">{u.display_name}</div>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{u.display_name}</div>
                     {u.is_demo && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>DEMO</span>}
                   </div>
                 </div>
-                <div className="col-span-3 text-[12px]" style={{ color: colors.inkSubtle }}>{u.email}</div>
+                <div className="col-span-3 text-[12px] truncate pr-2" style={{ color: colors.inkSubtle }}>{u.email}</div>
                 <div className="col-span-2 text-center relative">
                   {editingRole === u.id ? (
                     <select value={u.role} onChange={e => handleRoleChange(u.id, e.target.value)}
@@ -250,8 +307,36 @@ export default function UserManagement() {
                     </span>
                   )}
                 </div>
+                <div className="col-span-2 text-center">
+                  {editingDept === u.id ? (
+                    <select value={u.department || ''}
+                      onChange={e => handleDepartmentChange(u.id, e.target.value || null)}
+                      onBlur={() => setEditingDept(null)} autoFocus
+                      className="px-2 py-1 rounded border text-[11px] max-w-full"
+                      style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}>
+                      <option value="">Org-wide</option>
+                      {DEPARTMENTS.map(d => (
+                        <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
+                      ))}
+                    </select>
+                  ) : u.department ? (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold cursor-pointer"
+                      onClick={() => setEditingDept(u.id)}
+                      title={`Scoped to ${deptLabel(u.department)}. Click to change.`}
+                      style={{ background: deptColor(u.department) + '15', color: deptColor(u.department) }}>
+                      {deptShort(u.department)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium cursor-pointer"
+                      onClick={() => setEditingDept(u.id)}
+                      title="Org-wide access. Click to scope to a department."
+                      style={{ color: colors.inkSubtle, background: colors.surface2 }}>
+                      Org-wide
+                    </span>
+                  )}
+                </div>
                 <div className="col-span-1 text-center font-mono text-[12px]">{u.login_count || 0}</div>
-                <div className="col-span-2 text-[11px]" style={{ color: colors.inkSubtle }}>
+                <div className="col-span-1 text-[11px]" style={{ color: colors.inkSubtle }}>
                   {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}
                 </div>
                 <div className="col-span-1 text-center">

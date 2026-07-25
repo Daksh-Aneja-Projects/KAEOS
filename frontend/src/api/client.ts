@@ -53,6 +53,8 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
     }
     throw new Error(detail || `API Error ${res.status}`);
   }
+  // 204 No Content (e.g. DELETE /notifications/channels/{id}) has no body to parse.
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
@@ -600,6 +602,27 @@ export interface FoundryExample {
   domain: string;
 }
 
+// ─── Notification channels (notifications.py) types ───
+export type NotificationKind = 'smtp' | 'slack' | 'webhook';
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  kind: NotificationKind;
+  config: Record<string, any>; // secrets come back masked (e.g. "***" / "http://1...")
+  events: string[]; // empty array = subscribed to all events
+  enabled: boolean;
+  created_at: string;
+}
+export interface NotificationDelivery {
+  id: string;
+  channel_id: string;
+  event: string;
+  subject: string;
+  status: string; // SENT | FAILED
+  error: string | null;
+  created_at: string;
+}
+
 // ─── API Functions ───
 export const api = {
   // Auth
@@ -608,9 +631,15 @@ export const api = {
   authUsers: () => request<any>('/auth/users'),
   authCreateUser: (data: any) => request<any>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
   authUpdateRole: (id: string, role: string) => request<any>(`/auth/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  /** Set (or clear with null) a user's department scope - ADMIN only.
+   *  The scope rides in the JWT, so it applies from the user's next login. */
+  updateUserDepartment: (id: string, department: string | null) =>
+    request<{ id: string; email: string; department: string | null; note: string }>(
+      `/auth/users/${id}/department`, { method: 'PUT', body: JSON.stringify({ department }) }),
   authDeleteUser: (id: string) => request<any>(`/auth/users/${id}`, { method: 'DELETE' }),
   authReactivateUser: (id: string) => request<any>(`/auth/users/${id}/reactivate`, { method: 'POST' }),
-  authInviteUser: (data: any) => request<any>('/auth/users/invite', { method: 'POST', body: JSON.stringify(data) }),
+  authInviteUser: (data: { email: string; display_name?: string; role?: string; department?: string | null }) =>
+    request<any>('/auth/users/invite', { method: 'POST', body: JSON.stringify(data) }),
 
   // MFA (self-service)
   mfaStatus: () => request<{ enrolled: boolean; enabled: boolean }>('/auth/mfa/status'),
@@ -632,6 +661,17 @@ export const api = {
   getWebhooks: () => request<{ subscriptions: any[] }>('/enterprise/webhooks'),
   createWebhook: (body: { name: string; endpoint: string; events: string[] }) => request<any>('/enterprise/webhooks', { method: 'POST', body: JSON.stringify(body) }),
   deleteWebhook: (id: string) => request<any>(`/enterprise/webhooks/${id}`, { method: 'DELETE' }),
+
+  // Notification channels (notifications.py) — SMTP / Slack / webhook fan-out
+  getNotificationEvents: () => request<{ events: string[]; kinds: NotificationKind[] }>('/notifications/events'),
+  getNotificationChannels: () => request<{ channels: NotificationChannel[] }>('/notifications/channels'),
+  createNotificationChannel: (body: { name: string; kind: NotificationKind; config: Record<string, any>; events: string[]; enabled: boolean }) =>
+    request<NotificationChannel>('/notifications/channels', { method: 'POST', body: JSON.stringify(body) }),
+  updateNotificationChannel: (id: string, body: { name?: string; config?: Record<string, any>; events?: string[]; enabled?: boolean }) =>
+    request<NotificationChannel>(`/notifications/channels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteNotificationChannel: (id: string) => request<void>(`/notifications/channels/${id}`, { method: 'DELETE' }),
+  testNotificationChannel: (id: string) => request<{ ok: boolean; error: string | null }>(`/notifications/channels/${id}/test`, { method: 'POST' }),
+  getNotificationDeliveries: (limit: number = 50) => request<{ deliveries: NotificationDelivery[] }>(`/notifications/deliveries?limit=${limit}`),
 
   // SSO (OIDC) — discovery is unauthenticated (used by the login page)
   discoverSSO: (email: string) => request<{ sso: boolean; provider_label?: string; tenant_id?: string; authorize_url?: string }>(`/auth/sso/discover?email=${encodeURIComponent(email)}`),
