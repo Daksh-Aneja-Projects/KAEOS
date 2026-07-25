@@ -162,6 +162,24 @@ class Actuator:
         db.add(record)
         await db.commit()
         await db.refresh(record)
+
+        # Bidirectional sync: a governed internal mutation is queued for
+        # write-back to the connected external system, AFTER the internal
+        # commit (durable queue - a crash here leaves a PENDING row the
+        # dispatcher retries, never a silently-diverged SoR).
+        try:
+            from app.services.sync_engine import queue_outbound
+            await queue_outbound(
+                tenant_id=tenant_id,
+                entity_type=object_type.lower(),
+                internal_id=record.id,
+                op="UPSERT" if operation in ("CREATE", "UPDATE") else "DELETE",
+                payload={"system": system, "operation": operation,
+                         "state": after_state or {}},
+                external_id=external_id,
+            )
+        except Exception as sync_err:  # write-back must never fail the action
+            logger.warning("[Actuator] outbound sync queue failed: %s", sync_err)
         return record
 
     @staticmethod

@@ -31,6 +31,7 @@ _model_modules = [
     "app.models.api_key",
     "app.models.mfa",
     "app.models.notifications",
+    "app.models.sync",
     "app.models.jobs",
     "app.models.actuation",
     "app.models.missions",

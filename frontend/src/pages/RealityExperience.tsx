@@ -394,9 +394,9 @@ export default function RealityExperience() {
       ) : mode === 'shock' ? (
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold mb-1 block">Shock Event</label>
+            <label className="text-[11px] font-semibold mb-1 block">Shock Event</label>
             <select
-              className="w-full text-sm p-2 border rounded focus:outline-none"
+              className="w-full text-[12px] p-1.5 border rounded focus:outline-none"
               style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
               value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
             >
@@ -410,11 +410,11 @@ export default function RealityExperience() {
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold mb-1 block">
+            <label className="text-[11px] font-semibold mb-1 block">
               Target {targetLabel || 'Node'} <span style={{ color: colors.inkTertiary }}>({targetOptions.length} live)</span>
             </label>
             <select
-              className="w-full text-sm p-2 border rounded focus:outline-none"
+              className="w-full text-[12px] p-1.5 border rounded focus:outline-none"
               style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
               value={effectiveTarget} onChange={e => setShockTarget(e.target.value)}
             >
@@ -424,7 +424,7 @@ export default function RealityExperience() {
           <button
             onClick={triggerShock}
             disabled={isSimulating || !effectiveTarget}
-            className="w-full py-2 rounded text-white font-semibold text-sm transition-opacity"
+            className="w-full py-1.5 rounded text-white font-semibold text-[12px] transition-opacity"
             style={{ background: isSimulating ? colors.inkSubtle : colors.primary, opacity: isSimulating || !effectiveTarget ? 0.7 : 1 }}
           >
             {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
@@ -438,20 +438,20 @@ export default function RealityExperience() {
       ) : (
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold mb-1 block">Proposed change</label>
+            <label className="text-[11px] font-semibold mb-1 block">Proposed change</label>
             <textarea
               value={whatIfChange}
               onChange={e => setWhatIfChange(e.target.value)}
               rows={3}
               placeholder="e.g. Cut the Finance budget 15% next quarter"
-              className="w-full text-sm p-2 border rounded focus:outline-none resize-none"
+              className="w-full text-[12px] p-1.5 border rounded focus:outline-none resize-none"
               style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
             />
           </div>
           <div>
-            <label className="text-xs font-semibold mb-1 block">Target domain</label>
+            <label className="text-[11px] font-semibold mb-1 block">Target domain</label>
             <select
-              className="w-full text-sm p-2 border rounded focus:outline-none"
+              className="w-full text-[12px] p-1.5 border rounded focus:outline-none"
               style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
               value={whatIfDomain} onChange={e => setWhatIfDomain(e.target.value)}
             >
@@ -459,7 +459,7 @@ export default function RealityExperience() {
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold mb-1 block">Risk tolerance</label>
+            <label className="text-[11px] font-semibold mb-1 block">Risk tolerance</label>
             <div className="flex gap-1 p-1 rounded-lg" style={{ background: colors.canvas }}>
               {WHATIF_RISK.map(r => (
                 <button key={r} onClick={() => setWhatIfRisk(r)}
@@ -473,7 +473,7 @@ export default function RealityExperience() {
           <button
             onClick={runWhatIf}
             disabled={whatIfRunning || !whatIfChange.trim()}
-            className="w-full py-2 rounded text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
+            className="w-full py-1.5 rounded text-white font-semibold text-[12px] flex items-center justify-center gap-2 transition-opacity"
             style={{ background: whatIfRunning ? colors.inkSubtle : colors.primary, opacity: whatIfRunning || !whatIfChange.trim() ? 0.7 : 1 }}
           >
             {whatIfRunning ? <><Loader2 className="w-4 h-4 animate-spin" /> SIMULATING…</> : <><Sparkles className="w-4 h-4" /> RUN WHAT-IF</>}

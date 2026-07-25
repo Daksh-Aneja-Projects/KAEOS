@@ -350,6 +350,8 @@ from app.api.routes import billing
 app.include_router(billing.router,         prefix=PREFIX)
 from app.api.routes import notifications as notification_routes
 app.include_router(notification_routes.router, prefix=PREFIX)
+from app.api.routes import sync as sync_routes
+app.include_router(sync_routes.router, prefix=PREFIX)
 from app.api.routes import genome_evolution
 app.include_router(genome_evolution.router, prefix=PREFIX)
 from app.api.routes import foundry

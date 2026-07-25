@@ -97,6 +97,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # matched and cannot be poisoned this way.
         req_path = request.scope["path"]
         public_paths = ("/health", "/health/live", "/docs", "/openapi.json", "/redoc", "/metrics")
+        # Inbound sync ingest is PUBLIC BY DESIGN: external systems (Workday,
+        # Salesforce, relays) cannot hold KAEOS JWTs. Each request is instead
+        # authenticated by an HMAC-SHA256 signature over the raw body using the
+        # connector's webhook secret (see app/services/sync_engine.ingest_webhook)
+        # - the unguessable connector id alone grants nothing.
+        if req_path.startswith("/api/v1/integrations/ingest/"):
+            request.state.tenant = None
+            return await call_next(request)
         # Pre-auth auth routes. SSO login/callback/discovery MUST be reachable
         # without a session (that is the whole point); the SSO *config* endpoints
         # (/auth/sso/connections) are deliberately NOT here — they require ADMIN.

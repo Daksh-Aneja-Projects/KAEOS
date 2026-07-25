@@ -213,6 +213,19 @@ async def run_deployment_reaper():
         logger.error(f"[Scheduler] Deployment reaper failed: {e}")
 
 
+async def run_outbound_sync_dispatch():
+    """Leader-guarded: deliver queued outbound write-backs to external systems."""
+    if not _is_leader():
+        return
+    try:
+        from app.services.sync_engine import dispatch_outbound
+        result = await dispatch_outbound()
+        if result.get("sent") or result.get("failed"):
+            logger.info("[Scheduler] outbound sync: %s", result)
+    except Exception as e:
+        logger.error(f"[Scheduler] outbound sync dispatch failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -235,6 +248,13 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_job_queue_reaper, 'interval', minutes=5,
         id='job_queue_reaper_job', replace_existing=True
+    )
+    # Bidirectional sync: push queued governed mutations out to connected
+    # external systems every minute (inbound is realtime via webhooks; this is
+    # the outbound half plus retry of transient failures).
+    scheduler.add_job(
+        run_outbound_sync_dispatch, 'interval', minutes=1,
+        id='outbound_sync_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Retention enforcement runs daily — windows are day-granular, so an hourly
     # sweep would be pure churn. Only tenants that opted a data class in are touched.
