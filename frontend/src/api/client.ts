@@ -15,6 +15,14 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   if (token) {
     authHeaders['Authorization'] = `Bearer ${token}`;
   }
+  // DEV-ONLY tenant override: when `kaeos-dev-tenant` is set in localStorage the
+  // client asks the backend to serve that tenant. The backend honors X-Tenant-ID
+  // ONLY in DEV_MODE (see TenantMiddleware); in production the header is ignored
+  // and the tenant is derived from the JWT — so this is a no-op there.
+  const devTenant = localStorage.getItem('kaeos-dev-tenant');
+  if (devTenant) {
+    authHeaders['X-Tenant-ID'] = devTenant;
+  }
   // Spread options FIRST, then set the merged headers - otherwise `...options`
   // (when a caller passes its own `headers`, e.g. X-Admin-Secret) would clobber
   // the merged object and drop Content-Type/Authorization, which FastAPI then

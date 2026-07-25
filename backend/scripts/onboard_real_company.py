@@ -55,7 +55,16 @@ def _now() -> datetime:
 
 
 async def _clear(session):
-    """Remove any prior RealCo data so onboarding is idempotent."""
+    """Remove any prior onboarded data for TENANT so onboarding is idempotent.
+
+    When onboarding into a tenant that ALSO has a seeded KB/domain layer (e.g.
+    tenant_acme), other seeded child rows (job requisitions, lead scores, receipts,
+    postmortems...) hold foreign keys into the tables we clear. On Postgres those
+    FKs are enforced, so we defer FK checks for the duration of the clear
+    (session_replication_role=replica — the standard bulk-reload technique; the
+    onboarder runs as the DB owner). On SQLite this is a harmless no-op.
+    """
+    from sqlalchemy import text
     from app.hr.models.core import HREmployee
     from app.support.models.tickets import Ticket
     from app.engineering.models.incidents import Incident
@@ -68,14 +77,24 @@ async def _clear(session):
     from app.legal.models.contracts import Contract as LegalContract, ContractClause
     from app.models.enterprise_state import FinanceState, HRState, OpsState, ITState
 
-    # Children before parents (FK order: activities/opps/contacts -> accounts, PO -> PR,
-    # clause -> contract, invoice -> customer).
+    is_pg = session.bind.dialect.name == "postgresql"
+    if is_pg:
+        # Defer FK enforcement so we can clear parents whose seeded children we
+        # don't enumerate. Superuser/owner-only; safe for a whole-tenant wipe.
+        try:
+            await session.execute(text("SET session_replication_role = replica"))
+        except Exception:
+            is_pg = False  # not permitted; fall back to ordered deletes only
+
     for model in (HREmployee, Ticket, Incident, Lead,
                   AccountActivity, Opportunity, Contact, Account,
                   PurchaseOrder, PurchaseRequest, Signal,
                   ContractClause, LegalContract, CustomerInvoice, Customer,
                   FinanceState, HRState, OpsState, ITState):
         await session.execute(delete(model).where(model.tenant_id == TENANT))
+
+    if is_pg:
+        await session.execute(text("SET session_replication_role = origin"))
     await session.commit()
 
 
@@ -217,6 +236,9 @@ async def onboard_sales(session, limit: int) -> tuple[int, int]:
                 industry=(a["industry"] or None), employee_count=a["employee_count"],
                 annual_recurring_revenue=a["arr"], health_score=0.8))
             n_rec += 1
+        # Flush accounts so the contacts/opportunities/activities FK to sls_accounts
+        # is satisfiable on Postgres (no ORM relationship to auto-order the inserts).
+        await session.flush()
         for c in crm["contacts"]:
             acc = acc_map.get(c["account_id"])
             if not acc:
@@ -260,20 +282,18 @@ async def onboard_operations(session, limit: int) -> tuple[int, int]:
     non-compliant or defective order so the ops risk feed is real."""
     from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, ProcurementStatus
     n_rec = n_sig = 0
+    pos: list[tuple] = []   # (pr_id, po_number, vendor, total, status) — added AFTER PRs flush
     for i, po in enumerate(loaders.load_procurement_orders(limit=limit)):
         total = round(po["quantity"] * (po["negotiated_price"] or po["unit_price"]), 2)
         status = ProcurementStatus(_OPS_STATUS.get(po["order_status"], "PENDING_APPROVAL"))
-        pr = PurchaseRequest(
-            id=_id(), tenant_id=TENANT,
+        pr_id = _id()
+        session.add(PurchaseRequest(
+            id=pr_id, tenant_id=TENANT,
             item_description=f"{po['item_category']} (PO {po['po_id']})"[:256],
             quantity=po["quantity"], unit_price=po["negotiated_price"] or po["unit_price"],
             total_estimated_cost=total, status=status, department="operations",
-            requested_by="procurement-agent")
-        session.add(pr)
-        session.add(PurchaseOrder(
-            id=_id(), tenant_id=TENANT, purchase_request_id=pr.id,
-            po_number=(po["po_id"] or f"PO-{i:05d}")[:32], vendor_name=po["supplier"][:256],
-            total_amount=total, status=status))
+            requested_by="procurement-agent"))
+        pos.append((pr_id, (po["po_id"] or f"PO-{i:05d}")[:32], po["supplier"][:256], total, status))
         n_rec += 2
         if not po["compliant"] or po["defective_units"] > 0:
             session.add(_signal(
@@ -281,6 +301,12 @@ async def onboard_operations(session, limit: int) -> tuple[int, int]:
                 f"{po['item_category']} from {po['supplier']} — defects {po['defective_units']}, "
                 f"compliant={po['compliant']}", authority=0.9, pii=False))
             n_sig += 1
+    # Flush the parents (PurchaseRequests) so the PO -> PR FK is satisfiable on Postgres.
+    await session.flush()
+    for pr_id, po_number, vendor, total, status in pos:
+        session.add(PurchaseOrder(
+            id=_id(), tenant_id=TENANT, purchase_request_id=pr_id,
+            po_number=po_number, vendor_name=vendor, total_amount=total, status=status))
     await session.commit()
     return n_rec, n_sig
 
@@ -563,5 +589,13 @@ async def onboard(limit: int = 500):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=500)
+    ap.add_argument("--tenant", default="tenant_realco",
+                    help="Target tenant to onboard the real data into (default tenant_realco). "
+                         "Use an existing tenant (e.g. tenant_acme) to give a tenant BOTH its KB "
+                         "layer and this rich real domain data.")
+    ap.add_argument("--company", default=None, help="Display label for the company")
     args = ap.parse_args()
+    # The onboard_* helpers reference the module-level TENANT/COMPANY; retarget them.
+    TENANT = args.tenant
+    COMPANY = args.company or ("RealCo, Inc." if args.tenant == "tenant_realco" else args.tenant)
     asyncio.run(onboard(limit=args.limit))
