@@ -5,7 +5,55 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Security
+- **Starlette security ceiling lifted — all remaining backend advisories fixed.**
+  KAEOS was pinned to Starlette 0.48.0 because no released FastAPI supported the
+  1.x line (0.119.x capped `starlette <0.49.0`), which left every advisory
+  patched only in >=1.x *structurally unreachable*. FastAPI 0.140.0 removed that
+  cap, so the stack moved to **FastAPI 0.140.0 / Starlette 1.3.1**
+  (`prometheus-fastapi-instrumentator` co-bumped 7.1.0 -> 8.0.2; 7.x caps
+  `starlette<1.0.0`). This clears PYSEC-2026-161/248/249/1942/2280/2281,
+  including the form-urlencoded DoS (GHSA-82w8) and the Host-header auth-bypass
+  (GHSA-86qp). The `starlette >=1.0.0` ignore rule was removed from
+  `.github/dependabot.yml`, and SECURITY.md now records every Starlette advisory
+  as Fixed or Not-applicable - none remain "accepted".
+- **Authorization-coverage lints no longer go blind on a framework change.**
+  FastAPI now stores each `include_router` as one `_IncludedRouter` entry instead
+  of flattening children onto `app.routes`, so the default-deny and RBAC-coverage
+  tests (which walked `app.routes` and read `route.dependant`) found almost no
+  routes - a lint that would have passed *vacuously* while hundreds of mutations
+  went unchecked. Added `backend/tests/route_introspection.py`, a walker that
+  enumerates leaf routes on both layouts (462 routes discovered, verified), plus
+  `test_route_enumeration_is_not_vacuous` which fails loudly if a future change
+  ever blinds the walk again. Runtime enforcement was never affected: gated
+  routes still return 403 to a viewer (`test_viewer_denied_on_gated_endpoint`).
+- `test_poisoned_host_header_cannot_bypass_auth_gate` no longer asserts the
+  *vulnerable* `request.url.path` value as a precondition (which would fail on a
+  patched Starlette, i.e. break on a security improvement). It now asserts the
+  invariant that matters on both patched and unpatched versions: a poisoned Host
+  yields 401 and never reaches the handler. The `scope["path"]` mitigation is
+  retained as defense in depth.
+- Frontend: cleared the `brace-expansion` DoS advisory (GHSA-mh99-v99m-4gvg,
+  high) via a transitive lockfile bump; `npm audit` now reports 0
+  vulnerabilities.
+
 ### Fixed
+- **Outbound write-back was silently failing on every governed action.**
+  `sync_engine.queue_outbound` always opened its own `AsyncSessionLocal` instead
+  of using the caller's session, so the queue row was committed on a separate
+  connection and transaction from the mutation that caused it. Two consequences:
+  the write-back was not atomic with its action (a caller that rolled back could
+  still leave a queued write for a mutation that never happened), and every
+  actuation logged a swallowed `sqlite3.OperationalError: no such table:
+  outbound_writes` — the queue simply never persisted. It now accepts the
+  caller's session (`db=`) and flushes into that transaction, falling back to its
+  own session only for background sweeps with no session in hand.
+- **`benchmark.real_data` availability probes reported unloadable datasets as
+  available.** `sales_crm_available()` / `available()` checked only that the
+  file existed on disk, not that `pandas` (a benchmark-only dependency, not in
+  `requirements.txt`) could be imported. Any environment with the data but
+  without pandas got a hard `ModuleNotFoundError` where the caller's `skipif`
+  guard should have skipped. Availability now means loadable.
 - **CI backend-test green**: `Actuator.compute_drift` raised
   `TypeError: can't compare offset-naive and offset-aware datetimes` on the
   SQLite test lane, failing `test_drift_detects_untracked_write` and

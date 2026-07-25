@@ -14,9 +14,8 @@ import inspect
 
 import pytest
 
-from fastapi.routing import APIRoute
-
 from app.main import app
+from tests.route_introspection import mutating_routes
 
 # Reviewed exceptions. Each entry is intentionally NOT role-gated, with a reason.
 _ALLOWLIST = {
@@ -58,8 +57,15 @@ _ALLOWLIST = {
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
-def _is_protected(route: APIRoute) -> bool:
-    stack = list(route.dependant.dependencies)
+def _is_protected(route) -> bool:
+    # Router-level gates: include_router(..., dependencies=[Depends(require_role(...))]).
+    for dep in route.router_dependencies:
+        call = getattr(dep, "dependency", dep)
+        qn = getattr(call, "__qualname__", "") or ""
+        if "require_role" in qn or "require_service_or_role" in qn:
+            return True
+
+    stack = list(getattr(route.dependant, "dependencies", []) or [])
     seen = 0
     while stack:
         dep = stack.pop()
@@ -79,10 +85,20 @@ def _is_protected(route: APIRoute) -> bool:
 
 
 def _mutating_routes():
-    return [
-        r for r in app.routes
-        if isinstance(r, APIRoute) and (r.methods - _SAFE_METHODS)
-    ]
+    return mutating_routes(app, safe_methods=_SAFE_METHODS)
+
+
+def test_route_enumeration_is_not_vacuous():
+    """Guard the guard: if the walker stops finding routes, this lint passes
+    vacuously and every ungated mutation sails through. FastAPI changed its
+    include_router layout once already (flat APIRoute -> _IncludedRouter); this
+    fails loudly if that happens again instead of silently losing coverage."""
+    routes = _mutating_routes()
+    assert len(routes) > 200, (
+        f"only {len(routes)} mutating routes discovered — the route walker in "
+        "tests/route_introspection.py is likely blind to a new FastAPI/Starlette "
+        "routing layout. Fix the walker; do NOT lower this threshold."
+    )
 
 
 def test_no_ungated_mutation_outside_allowlist():

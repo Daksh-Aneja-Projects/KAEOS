@@ -37,6 +37,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sync import OutboundWrite, SyncLedger
 
@@ -350,19 +351,38 @@ def select_connector_for_update(connector_id: str):
 async def queue_outbound(tenant_id: str, entity_type: str, internal_id: str,
                          op: str, payload: Dict[str, Any],
                          external_id: Optional[str] = None,
-                         provider: Optional[str] = None) -> Optional[str]:
-    """Queue a governed mutation for write-back. Never raises into callers."""
-    from app.core.database import AsyncSessionLocal
+                         provider: Optional[str] = None,
+                         db: Optional[AsyncSession] = None) -> Optional[str]:
+    """Queue a governed mutation for write-back. Never raises into callers.
+
+    ``db`` is the CALLER's session and should be passed whenever one exists: the
+    queue row then lives in the same transaction as the change that caused it, so
+    a caller that rolls back does not leave an orphaned write-back queued for a
+    mutation that never happened. Opening an independent AsyncSessionLocal (the
+    previous unconditional behaviour) committed the queue row on a separate
+    connection and transaction, which both broke that atomicity and, in tests,
+    wrote to a different engine than the one the fixtures created the schema on
+    (surfacing as a swallowed "no such table: outbound_writes" on every sync).
+
+    Falls back to its own session only for callers with no session in hand
+    (background sweeps).
+    """
+    row = OutboundWrite(
+        tenant_id=tenant_id, provider=provider,
+        category=_ENTITY_CATEGORY.get(entity_type),
+        entity_type=entity_type, internal_id=internal_id,
+        external_id=external_id, op=op.upper(), payload=payload,
+    )
     try:
-        async with AsyncSessionLocal() as db:
-            row = OutboundWrite(
-                tenant_id=tenant_id, provider=provider,
-                category=_ENTITY_CATEGORY.get(entity_type),
-                entity_type=entity_type, internal_id=internal_id,
-                external_id=external_id, op=op.upper(), payload=payload,
-            )
+        if db is not None:
             db.add(row)
-            await db.commit()
+            # Flush, don't commit: the caller owns the transaction boundary.
+            await db.flush()
+            return row.id
+        from app.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as own:
+            own.add(row)
+            await own.commit()
             return row.id
     except Exception as e:
         logger.error("[Sync] queue_outbound failed: %s", e)

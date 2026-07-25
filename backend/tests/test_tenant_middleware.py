@@ -65,11 +65,23 @@ async def test_poisoned_host_header_cannot_bypass_auth_gate():
 
         request = Request(scope, receive)
 
-        # Precondition: confirm the poisoning actually works on the pinned
-        # Starlette (proves this test exercises the bypass). If a future
-        # Starlette bump patches GHSA-86qp, this will flip to the real path —
-        # revisit the pin/ignore in that case.
-        assert request.url.path == "/health"
+        # Which regime are we on? Starlette <1.0.1 rebuilds request.url from the
+        # Host header, so the poisoning lands and request.url.path reads
+        # "/health" (GHSA-86qp). Starlette >=1.0.1 patches it and the real path
+        # comes back. BOTH are acceptable here — what must hold either way is the
+        # security property asserted below: the gate keys off scope["path"], so a
+        # poisoned Host can never reach a protected route unauthenticated.
+        # Asserting the vulnerable value as a precondition would make this test
+        # fail on a PATCHED Starlette, i.e. break on a security improvement.
+        upstream_vulnerable = request.url.path == "/health"
+        assert request.url.path in ("/health", "/api/v1/workforce/departments"), (
+            f"unexpected url.path {request.url.path!r} — Starlette changed URL "
+            "reconstruction again; re-check the gate's scope['path'] usage"
+        )
+        assert request.scope["path"] == "/api/v1/workforce/departments", (
+            "scope['path'] is the router's matched path and must never be "
+            "influenced by the Host header"
+        )
 
         called = False
 
@@ -81,8 +93,14 @@ async def test_poisoned_host_header_cannot_bypass_auth_gate():
         response = await mw.dispatch(request, call_next)
 
         # The gate must treat this as the PROTECTED route: missing bearer -> 401,
-        # and the downstream handler must never run.
-        assert response.status_code == 401
+        # and the downstream handler must never run. This is the invariant that
+        # matters, and it holds on a vulnerable AND a patched Starlette — the
+        # scope["path"] mitigation stays as defense in depth either way.
+        assert response.status_code == 401, (
+            "poisoned Host reached a protected route "
+            f"(upstream_vulnerable={upstream_vulnerable}) — the gate must read "
+            "request.scope['path'], never request.url.path"
+        )
         assert called is False
     finally:
         settings.DEV_MODE = prev

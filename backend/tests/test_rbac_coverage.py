@@ -25,6 +25,7 @@ from app.main import app
 from app.core.config import get_settings
 from app.core.tenant import require_role
 from app.services.auth import _create_token
+from tests.route_introspection import iter_api_routes
 
 # ── The endpoints hardened in this pass ──────────────────────────────────────
 # (HTTP method, route path as registered — includes the /api/v1 prefix and any
@@ -58,8 +59,10 @@ def _dependant_uses_require_role(dependant) -> bool:
 
 
 def _find_route(method: str, path: str):
-    for route in app.routes:
-        if getattr(route, "path", None) == path and method in getattr(route, "methods", set()):
+    # Walks BOTH FastAPI layouts (flat APIRoute and _IncludedRouter); see
+    # tests/route_introspection.py for why a naive app.routes scan goes blind.
+    for route in iter_api_routes(app):
+        if route.path == path and method in route.methods:
             return route
     return None
 
@@ -69,7 +72,11 @@ def test_gated_route_declares_require_role(method, path):
     """Each hardened endpoint must carry a require_role dependency (regression lock)."""
     route = _find_route(method, path)
     assert route is not None, f"Route {method} {path} not found — path may have changed"
-    assert _dependant_uses_require_role(route.dependant), (
+    router_level = any(
+        "require_role" in (getattr(getattr(d, "dependency", d), "__qualname__", "") or "")
+        for d in route.router_dependencies
+    )
+    assert router_level or _dependant_uses_require_role(route.dependant), (
         f"{method} {path} lost its require_role gate"
     )
 

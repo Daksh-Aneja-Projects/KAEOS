@@ -193,7 +193,12 @@ class Actuator:
                 payload={"system": system, "operation": operation,
                          "state": after_state or {}},
                 external_id=external_id,
+                db=db,
             )
+            # The action itself is already committed above; commit the queue row
+            # too so the durable-queue guarantee holds (a crash after this leaves
+            # a PENDING row the dispatcher retries, never a diverged SoR).
+            await db.commit()
         except Exception as sync_err:  # write-back must never fail the action
             import logging
             logging.getLogger(__name__).warning(

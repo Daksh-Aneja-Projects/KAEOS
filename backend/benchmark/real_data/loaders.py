@@ -95,9 +95,22 @@ def _path(rel: str) -> str:
     return os.path.join(RAW_DIR, rel)
 
 
+# Datasets whose loader needs pandas (a benchmark-only dependency that is
+# deliberately NOT in requirements.txt). "Available" must mean LOADABLE, not just
+# present on disk — otherwise a caller skips nothing and then dies on
+# ModuleNotFoundError. Keep in sync with the loaders that `import pandas`.
+_PANDAS_BACKED = {"incident_priority", "sales_conversion"}
+
+
 def available() -> Dict[str, bool]:
-    """Which datasets are present locally (raw data is gitignored)."""
-    return {k: os.path.exists(_path(v["file"])) for k, v in DATASET_MANIFEST.items()}
+    """Which datasets are present locally AND loadable (raw data is gitignored)."""
+    import importlib.util
+
+    has_pandas = importlib.util.find_spec("pandas") is not None
+    return {
+        k: os.path.exists(_path(v["file"])) and (has_pandas or k not in _PANDAS_BACKED)
+        for k, v in DATASET_MANIFEST.items()
+    }
 
 
 def _read_csv(rel: str, limit: int | None = None) -> List[Dict[str, Any]]:
@@ -339,7 +352,21 @@ _OPP_STAGE = {
 
 
 def sales_crm_available() -> bool:
-    return os.path.exists(_path(f"{_SALES_DIR}/accounts.parquet"))
+    """True only if the parquet EXISTS and can actually be read.
+
+    The file alone is not enough: the load needs pandas (a benchmark-only
+    dependency that is deliberately NOT in requirements.txt). Probing only the
+    path made callers - including the skipif guard in
+    tests/test_real_data_loaders.py - believe the data was usable in any
+    environment that had the parquet but no pandas, turning a should-skip into a
+    hard RuntimeError ("No module named 'pandas'"). Availability must mean
+    loadable, not merely present.
+    """
+    import importlib.util
+
+    if not os.path.exists(_path(f"{_SALES_DIR}/accounts.parquet")):
+        return False
+    return importlib.util.find_spec("pandas") is not None
 
 
 def load_sales_crm(account_limit: int | None = None,
