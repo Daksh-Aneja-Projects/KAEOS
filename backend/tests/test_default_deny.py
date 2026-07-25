@@ -25,6 +25,15 @@ _ALLOWLIST = {
     "/api/v1/auth/logout",
     "/api/v1/auth/accept-invite",   # invitee sets their own password (magic-link)
     "/api/v1/auth/sso/saml",
+    # Realtime sync + security-event ingest: external systems (Workday,
+    # Salesforce, SIEM relays) cannot hold KAEOS JWTs, so these are public BY
+    # DESIGN and authenticated by an HMAC-SHA256 signature over the raw body
+    # with the connector's webhook secret (see app/services/sync_engine.py:
+    # verify_signature; bad/missing signature -> 401; unguessable connector id
+    # alone grants nothing). Covered by tests/test_sync_engine.py and
+    # tests/test_security_response.py.
+    "/api/v1/integrations/ingest/{connector_id}",
+    "/api/v1/integrations/ingest/{connector_id}/security",
     # Viewer-level self-actions (marking one's own items read — no privilege).
     "/api/v1/agents/activity-feed/mark-read",
     "/api/v1/org/notifications/read",

@@ -133,7 +133,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
             filteredItems.map(item => (
               <div key={item.id} style={card} className="p-6 group">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2.5 mb-2 flex-wrap">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
                         style={{ background: colors.warning + '18', color: colors.warning }}>
@@ -178,8 +178,10 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                           style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
                           {step.step}
                         </div>
-                        <span style={{ color: colors.inkMuted }}>{step.action}</span>
-                        <span className="font-mono text-[11px] ml-auto" style={{ color: colors.inkTertiary }}>CONF: {step.confidence?.toFixed(2)}</span>
+                        <span className="flex-1 min-w-0 break-words" style={{ color: colors.inkMuted }}>{step.action}</span>
+                        {step.confidence != null && (
+                          <span className="font-mono text-[11px] ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>CONF: {step.confidence.toFixed(2)}</span>
+                        )}
                       </div>
                     ))}
                     <div className="flex items-center gap-3 text-[13px] mt-4 pt-3 border-t" style={{ borderColor: colors.hairline }}>

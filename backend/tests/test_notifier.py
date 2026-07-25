@@ -187,8 +187,7 @@ async def test_event_filter_and_failure_ledger(http_receiver):
 
 @pytest.mark.asyncio
 async def test_smtp_delivery_against_real_smtp_server():
-    aiosmtpd = pytest.importorskip("aiosmtpd.controller",
-                                   reason="aiosmtpd not installed")
+    pytest.importorskip("aiosmtpd.controller", reason="aiosmtpd not installed")
     from aiosmtpd.controller import Controller
 
     class _Collector:

@@ -223,7 +223,7 @@ export default function UserManagement() {
       )}
 
       {/* RBAC Legend */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
         {[
           { role: 'ADMIN', desc: 'Full access + user mgmt' },
           { role: 'ANALYST', desc: 'Read + execute agents' },
@@ -284,11 +284,11 @@ export default function UserManagement() {
                     {u.display_name.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{u.display_name}</div>
+                    <div className="font-medium truncate" title={u.display_name}>{u.display_name}</div>
                     {u.is_demo && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>DEMO</span>}
                   </div>
                 </div>
-                <div className="col-span-3 text-[12px] truncate pr-2" style={{ color: colors.inkSubtle }}>{u.email}</div>
+                <div className="col-span-3 text-[12px] truncate pr-2" title={u.email} style={{ color: colors.inkSubtle }}>{u.email}</div>
                 <div className="col-span-2 text-center relative">
                   {editingRole === u.id ? (
                     <select value={u.role} onChange={e => handleRoleChange(u.id, e.target.value)}
@@ -336,7 +336,7 @@ export default function UserManagement() {
                   )}
                 </div>
                 <div className="col-span-1 text-center font-mono text-[12px]">{u.login_count || 0}</div>
-                <div className="col-span-1 text-[11px]" style={{ color: colors.inkSubtle }}>
+                <div className="col-span-1 text-[11px] truncate whitespace-nowrap" title={u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never logged in'} style={{ color: colors.inkSubtle }}>
                   {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}
                 </div>
                 <div className="col-span-1 text-center">

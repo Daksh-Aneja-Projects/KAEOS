@@ -195,10 +195,10 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                 {/* Mission header */}
                 <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[15px] font-semibold">{selected.goal}</span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
                           style={{ background: (STATUS_COLOR[selected.status] || colors.inkSubtle) + '22', color: STATUS_COLOR[selected.status] || colors.inkSubtle }}>
                           {selected.status}
                         </span>

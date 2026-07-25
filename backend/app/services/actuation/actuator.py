@@ -179,7 +179,9 @@ class Actuator:
                 external_id=external_id,
             )
         except Exception as sync_err:  # write-back must never fail the action
-            logger.warning("[Actuator] outbound sync queue failed: %s", sync_err)
+            import logging
+            logging.getLogger(__name__).warning(
+                "[Actuator] outbound sync queue failed: %s", sync_err)
         return record
 
     @staticmethod

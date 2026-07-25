@@ -11,10 +11,9 @@ approver identity recorded is the token's subject, and the decision still runs
 through the same resolve path (and audit trail) as an in-app approval.
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import jwt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.core.audit import record_security_event

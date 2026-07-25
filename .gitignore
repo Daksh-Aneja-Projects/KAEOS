@@ -187,3 +187,4 @@ marketing/qc_*.png
 /*.patch
 frontend/src/assets/preview-screenshot*.png
 backend/_*.txt
+frontend/test-results/

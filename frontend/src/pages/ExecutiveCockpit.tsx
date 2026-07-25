@@ -8,7 +8,7 @@ import { STREAM_INTERVALS } from '../services/realtime';
 import {
   Activity, TrendingUp, TrendingDown, Minus, Shield, Users, Zap, DollarSign,
   BarChart3, MessageSquare, Globe, Target,
-  ArrowUpRight, ArrowDownRight, Brain
+  ArrowUpRight, ArrowDownRight, Brain, Hourglass, HelpCircle
 } from 'lucide-react';
 
 // Shape of the aggregated /dashboard/cockpit payload (only the fields the
@@ -108,17 +108,20 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
 
         {/* KPI Cards - values come from health API, show 0 when no data */}
         {[
-          { label: 'Total Rules', value: health?.total_rules ?? 0, icon: Shield, color: '#8b5cf6' },
-          { label: 'Active Skills', value: health?.total_skills ?? 0, icon: Zap, color: '#3b82f6' },
-          { label: 'Executions (7d)', value: health?.agent_metrics?.total_executions_7d ?? 0, icon: Activity, color: '#22c55e' },
-          { label: 'Success Rate', value: health?.agent_metrics?.success_rate != null ? `${(health.agent_metrics.success_rate * 100).toFixed(1)}%` : '-', icon: Target, color: '#f59e0b' },
+          { label: 'Total Rules', value: health?.total_rules ?? 0, icon: Shield, color: '#8b5cf6', sub: health?.total_executions != null ? `${health.total_executions.toLocaleString()} executions all-time` : null },
+          { label: 'Active Skills', value: health?.total_skills ?? 0, icon: Zap, color: '#3b82f6', sub: health?.agent_metrics?.skills_used != null ? `${health.agent_metrics.skills_used} used in 7d` : null },
+          { label: 'Executions (7d)', value: health?.agent_metrics?.total_executions_7d ?? 0, icon: Activity, color: '#22c55e', sub: health?.agent_metrics?.avg_duration_ms != null ? `avg ${(health.agent_metrics.avg_duration_ms / 1000).toFixed(1)}s per run` : null },
+          { label: 'Success Rate', value: health?.agent_metrics?.success_rate != null ? `${(health.agent_metrics.success_rate * 100).toFixed(1)}%` : '-', icon: Target, color: '#f59e0b', sub: health?.agent_metrics?.human_overrides != null ? `${health.agent_metrics.human_overrides} human overrides` : null },
         ].map((kpi, i) => (
           <div key={i} style={card} className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: colors.inkSubtle }}>{kpi.label}</span>
-              {React.createElement(kpi.icon, { className: 'w-4 h-4', style: { color: kpi.color } })}
+              <span className="text-[11px] font-medium uppercase tracking-wider truncate" style={{ color: colors.inkSubtle }}>{kpi.label}</span>
+              {React.createElement(kpi.icon, { className: 'w-4 h-4 flex-shrink-0', style: { color: kpi.color } })}
             </div>
             <div className="text-[24px] font-bold tracking-tight" style={{ color: colors.ink }}>{kpi.value}</div>
+            {kpi.sub && (
+              <div className="text-[10px] truncate" style={{ color: colors.inkSubtle }} title={kpi.sub}>{kpi.sub}</div>
+            )}
           </div>
         ))}
       </div>
@@ -339,15 +342,22 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               orgReadiness.map((bu: OrgReadinessItem) => {
                 const buScore = bu.score ?? 0;
                 const color = bu.status === 'green' ? '#22c55e' : bu.status === 'red' ? '#ef4444' : '#f59e0b';
+                // Coverage trend for this department, from health.coverage
+                const cov = (health?.coverage || []).find((c: any) => c.department === bu.bu);
+                const TrendGlyph = cov?.trend === 'up' ? TrendingUp : cov?.trend === 'down' ? TrendingDown : Minus;
+                const trendCol = cov?.trend === 'up' ? '#22c55e' : cov?.trend === 'down' ? '#ef4444' : colors.inkSubtle;
                 return (
                   <div key={bu.bu} className="flex items-center gap-3">
-                    <span className="text-[11px] w-20 truncate capitalize">{bu.bu}</span>
+                    <span className="text-[11px] w-20 truncate capitalize" title={bu.bu}>{bu.bu}</span>
                     <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                       <div className="h-full rounded-full transition-all" style={{ width: `${buScore}%`, background: color }} />
                     </div>
                     <span className="text-[11px] font-mono w-10 text-right" style={{ color }}>{buScore}%</span>
+                    {cov && (
+                      <TrendGlyph className="w-3 h-3 flex-shrink-0" style={{ color: trendCol }} aria-label={`coverage ${cov.trend}`} />
+                    )}
                     {bu.rule_count != null && (
-                      <span className="text-[9px]" style={{ color: colors.inkSubtle }}>{bu.rule_count}r</span>
+                      <span className="text-[9px] w-6 text-right" style={{ color: colors.inkSubtle }}>{bu.rule_count}r</span>
                     )}
                   </div>
                 );
@@ -375,6 +385,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               { tier: 'CANDIDATE', range: '0.29-0.59', count: cd.inferred ?? 0, color: '#f59e0b' },
               { tier: 'SPECULATIVE', range: '<0.29', count: cd.speculative ?? 0, color: '#ef4444' },
             ];
+            // API returns fractional shares (0..1), not counts - render as percentages
             const total = tiers.reduce((s, t) => s + t.count, 0) || 1;
             return (
               <div className="space-y-2">
@@ -384,12 +395,127 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                     <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                       <div className="h-full rounded-full" style={{ width: `${(t.count / total) * 100}%`, background: t.color + '80' }} />
                     </div>
-                    <span className="text-[10px] font-mono w-6 text-right">{t.count}</span>
+                    <span className="text-[10px] font-mono w-9 text-right">{((t.count / total) * 100).toFixed(0)}%</span>
                   </div>
                 ))}
                 <div className="text-[10px] text-center pt-1" style={{ color: colors.inkSubtle }}>
-                  {total} total rules
+                  {health?.total_rules ?? 0} total rules
                 </div>
+                {/* Knowledge freshness - from health.freshness */}
+                {health?.freshness && (() => {
+                  const f = health.freshness as any;
+                  const segs = [
+                    { key: 'within_half_life', label: 'Fresh', value: f.within_half_life ?? 0, color: '#22c55e' },
+                    { key: 'decaying', label: 'Decaying', value: f.decaying ?? 0, color: '#f59e0b' },
+                    { key: 'expired', label: 'Expired', value: f.expired ?? 0, color: '#ef4444' },
+                  ];
+                  const sum = segs.reduce((s, x) => s + x.value, 0);
+                  if (sum <= 0) return null;
+                  return (
+                    <div className="pt-2 mt-1 border-t" style={{ borderColor: colors.hairline }}>
+                      <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Knowledge Freshness</div>
+                      <div className="flex h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                        {segs.map(s => s.value > 0 && (
+                          <div key={s.key} style={{ width: `${(s.value / sum) * 100}%`, background: s.color }} />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        {segs.map(s => (
+                          <span key={s.key} className="flex items-center gap-1 text-[9px]" style={{ color: colors.inkSubtle }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />
+                            {s.label} {(s.value * 100).toFixed(0)}%
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* Row 4: Rule Decay Alerts + Elicitation Pulse - both from health API */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Rule Decay Alerts - from health.decay_alerts */}
+        <div style={card}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[13px] font-semibold flex items-center gap-2">
+              <Hourglass className="w-4 h-4" style={{ color: '#ef4444' }} /> Rule Decay Alerts
+            </h3>
+            {(health?.decay_alerts?.length ?? 0) > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: '#ef444415', color: '#ef4444' }}>{health!.decay_alerts.length} at risk</span>
+            )}
+          </div>
+          <div className="space-y-2">
+            {(health?.decay_alerts?.length ?? 0) === 0 ? (
+              <BrainEmpty title="No decaying rules." action="Rules losing confidence over time appear here." icon={Hourglass} />
+            ) : (
+              health!.decay_alerts.slice(0, 5).map((a: any) => {
+                const urgColor = a.urgency === 'CRITICAL' ? '#ef4444' : a.urgency === 'WARNING' ? '#f59e0b' : '#3b82f6';
+                return (
+                  <div key={a.rule_id} className="p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold flex-shrink-0" style={{ background: urgColor + '20', color: urgColor }}>{a.urgency}</span>
+                      <span className="text-[9px] uppercase flex-shrink-0" style={{ color: colors.inkSubtle }}>{a.domain}</span>
+                      <span className="ml-auto text-[10px] font-mono flex-shrink-0" style={{ color: urgColor }}>
+                        {a.current_confidence != null ? `${(a.current_confidence * 100).toFixed(0)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] truncate" title={a.statement}>{a.statement}</div>
+                    <div className="text-[9px] mt-0.5" style={{ color: colors.inkSubtle }}>
+                      {a.days_since_validation}d since validation, half-life {a.half_life_days}d
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Elicitation Pulse - from health.elicitation_metrics */}
+        <div style={card}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[13px] font-semibold flex items-center gap-2">
+              <HelpCircle className="w-4 h-4" style={{ color: '#3b82f6' }} /> Elicitation Pulse (7d)
+            </h3>
+          </div>
+          {!health?.elicitation_metrics ? (
+            <BrainEmpty title="No elicitation activity." action="Questions sent to experts appear here." icon={HelpCircle} />
+          ) : (() => {
+            const em = health.elicitation_metrics as any;
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Questions Sent', value: em.questions_sent_7d ?? 0 },
+                    { label: 'Response Rate', value: em.response_rate != null ? `${(em.response_rate * 100).toFixed(0)}%` : '-' },
+                    { label: 'Entries Created', value: em.entries_created ?? 0 },
+                  ].map(s => (
+                    <div key={s.label} className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
+                      <div className="text-[16px] font-bold">{s.value}</div>
+                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {(em.top_contributors?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Top Contributors</div>
+                    <div className="space-y-1.5">
+                      {em.top_contributors.slice(0, 4).map((c: any) => (
+                        <div key={c.name} className="flex items-center gap-2">
+                          <span className="text-[11px] flex-1 truncate" title={c.name}>{c.name}</span>
+                          <div className="w-24 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: colors.hairline }}>
+                            <div className="h-full rounded-full" style={{ width: `${(c.score ?? 0) * 100}%`, background: '#3b82f6' }} />
+                          </div>
+                          <span className="text-[10px] font-mono w-8 text-right flex-shrink-0" style={{ color: colors.inkSubtle }}>{c.contributions}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}

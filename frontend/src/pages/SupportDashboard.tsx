@@ -83,7 +83,7 @@ export default function SupportDashboard() {
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <DomainIcon hint="support" size={56} />
             <div>
@@ -106,8 +106,8 @@ export default function SupportDashboard() {
             </div>
           </div>
           {dept && (
-            <div className="flex items-center gap-2">
-              <span className="text-[12px]" style={{ color: colors.inkSubtle }}>SLA Compliance:</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-[12px] whitespace-nowrap" style={{ color: colors.inkSubtle }}>SLA Compliance:</span>
               <span className="text-[20px] font-bold" style={{ color: healthColor(dept.health_score || 0) }}>
                 {Math.round((dept.health_score || 0) * 100)}%
               </span>
@@ -141,12 +141,12 @@ export default function SupportDashboard() {
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex items-center gap-3 p-4 rounded-xl text-left transition-all hover:shadow-sm group border"
               style={{ background: colors.surface1, borderColor: colors.hairline }}>
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: link.color + '15' }}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: link.color + '15' }}>
                 <link.icon className="w-5 h-5" style={{ color: link.color }} />
               </div>
-              <div className="flex-1">
-                <div className="text-[13px] font-bold group-hover:text-primary transition-colors">{link.label}</div>
-                <div className="text-[10px]" style={{ color: colors.inkSubtle }}>View operations →</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-bold group-hover:text-primary transition-colors truncate" title={link.label}>{link.label}</div>
+                <div className="text-[10px] whitespace-nowrap" style={{ color: colors.inkSubtle }}>View operations →</div>
               </div>
             </button>
           ))}
@@ -191,14 +191,14 @@ export default function SupportDashboard() {
               )}
               {(dept?.agents || []).map((agent: any) => (
                 <div key={agent.id} className="flex items-center justify-between p-2.5 rounded-lg border" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold" style={{ background: colors.primary + '18', color: colors.primary }}>{(agent.agent_name || '?').charAt(0)}</div>
-                    <div>
-                      <div className="text-[12px] font-bold">{agent.agent_name}</div>
-                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold flex-shrink-0" style={{ background: colors.primary + '18', color: colors.primary }}>{(agent.agent_name || '?').charAt(0)}</div>
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-bold truncate" title={agent.agent_name}>{agent.agent_name}</div>
+                      <div className="text-[10px] truncate" title={agent.role_in_department} style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500 flex-shrink-0 whitespace-nowrap ml-2">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
                 </div>
               ))}
             </div>

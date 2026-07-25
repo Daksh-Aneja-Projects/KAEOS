@@ -57,7 +57,7 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
     return (
       <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         <h2 className="text-[13px] font-bold mb-1 flex items-center gap-1.5">
-          <Activity className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Precog — Safe-Autonomy Forecast
+          <Activity className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Precog: Safe-Autonomy Forecast
         </h2>
         <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
           {sar?.reason ? `Not enough history yet to forecast (${sar.reason}). Run more governed executions across a few days and a trend will appear here.`
@@ -127,7 +127,7 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
       <div className="flex items-start justify-between mb-3">
         <div>
           <h2 className="text-[13px] font-bold flex items-center gap-1.5">
-            <Activity className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Precog — Safe-Autonomy Forecast
+            <Activity className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Precog: Safe-Autonomy Forecast
             <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1"
               style={{ background: '#8b5cf618', color: '#8b5cf6' }}>
               <span className="w-1.5 h-1.5 rounded-full precog-now inline-block" style={{ background: '#8b5cf6' }} /> LIVE
@@ -411,17 +411,18 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               </div>
               <p className="text-[12px] font-semibold truncate">{DOMAIN_LABEL[d.domain] || d.domain}</p>
               <div className="mt-2 space-y-0.5">
-                {(d.kpis || []).slice(0, 2).map(k => (
+                {(d.kpis || []).slice(0, 3).map(k => (
                   <div key={k.key} className="flex justify-between text-[10px]">
                     <span className="truncate" style={{ color: colors.inkSubtle }}>{k.label}</span>
                     <span className="font-mono ml-1">{fmtKpi(k.value, k.format)}</span>
                   </div>
                 ))}
               </div>
-              {(d.critical_count || d.warning_count) ? (
+              {(d.critical_count || d.warning_count || d.sla_breaches) ? (
                 <div className="flex gap-2 mt-2 text-[10px] font-semibold">
                   {d.critical_count ? <span style={{ color: '#ef4444' }}>{d.critical_count} critical</span> : null}
                   {d.warning_count ? <span style={{ color: '#f59e0b' }}>{d.warning_count} warning</span> : null}
+                  {d.sla_breaches ? <span style={{ color: '#f97316' }}>{d.sla_breaches} past SLA</span> : null}
                 </div>
               ) : null}
             </div>

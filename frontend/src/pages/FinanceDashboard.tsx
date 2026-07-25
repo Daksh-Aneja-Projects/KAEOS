@@ -14,11 +14,71 @@ import {
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 
+// Small chart renderers fed only by the /finance/analytics computed payload.
+const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7'];
+const fmtMoney = (v: number) =>
+  v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
+    : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}k`
+      : `$${Math.round(v).toLocaleString()}`;
+
+function MiniBars({ items, colors, money }: { items: { label: string; value: number }[]; colors: any; money?: boolean }) {
+  const max = Math.max(...items.map(i => i.value), 1);
+  return (
+    <div className="space-y-2">
+      {items.map((it, idx) => (
+        <div key={it.label} className="flex items-center gap-2">
+          <span className="text-[10px] w-24 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+          <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
+            <div className="h-3.5 rounded transition-all duration-500" style={{
+              width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
+              background: CHART_PALETTE[idx % CHART_PALETTE.length],
+            }} />
+          </div>
+          <span className="text-[10px] font-mono w-14 shrink-0 text-right" style={{ color: colors.ink }}>
+            {money ? fmtMoney(it.value) : it.value.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MiniDonut({ items, colors }: { items: { label: string; value: number }[]; colors: any }) {
+  const total = items.reduce((s, i) => s + i.value, 0);
+  let acc = 0;
+  const segs = items.map((it, idx) => {
+    const start = (acc / (total || 1)) * 360; acc += it.value;
+    const end = (acc / (total || 1)) * 360;
+    return `${CHART_PALETTE[idx % CHART_PALETTE.length]} ${start}deg ${end}deg`;
+  });
+  return (
+    <div className="flex items-center gap-4">
+      <div className="w-24 h-24 rounded-full shrink-0 relative" style={{ background: total > 0 ? `conic-gradient(${segs.join(', ')})` : colors.canvas }}>
+        <div className="absolute inset-[12px] rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
+          <span className="text-[16px] font-bold leading-none">{total.toLocaleString()}</span>
+          <span className="text-[8px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>total</span>
+        </div>
+      </div>
+      <div className="flex-1 min-w-0 space-y-1.5">
+        {items.map((it, idx) => (
+          <div key={it.label} className="flex items-center gap-1.5 text-[10px]">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CHART_PALETTE[idx % CHART_PALETTE.length] }} />
+            <span className="truncate" style={{ color: colors.inkSubtle }}>{it.label}</span>
+            <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{it.value.toLocaleString()}</span>
+            <span className="w-8 text-right shrink-0" style={{ color: colors.inkSubtle }}>{total ? Math.round((it.value / total) * 100) : 0}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function FinanceDashboard() {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [dept, setDept] = useState<any>(null);
   const [finStats, setFinStats] = useState<any>(null);
+  const [finAnalytics, setFinAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,11 +86,13 @@ export default function FinanceDashboard() {
     Promise.allSettled([
       api.getWorkforceDepartment('finance'),
       api.getFinanceDashboard(),
-    ]).then(([d, f]) => {
+      api.getDomainAnalytics('finance'),
+    ]).then(([d, f, a]) => {
       if (d.status === 'fulfilled') setDept(d.value);
       if (f.status === 'fulfilled') { setFinStats(f.value); setError(null); }
       // Both requests failing is an outage, not an undeployed department.
       else if (d.status === 'rejected') setError((f.reason as any)?.message || 'Failed to load Finance');
+      if (a.status === 'fulfilled') setFinAnalytics(a.value);
       setLoading(false);
     });
   };
@@ -122,20 +184,74 @@ export default function FinanceDashboard() {
         {/* Operational Indicators */}
         <div className="grid grid-cols-6 gap-3">
           {[
-            { label: 'Cash Balance', value: finStats ? `$${(finStats.total_cash_position / 1000).toFixed(0)}k` : '-', icon: Wallet, color: '#22c55e' },
-            { label: 'Accounts Payable', value: finStats ? `$${(finStats.accounts_payable?.total_outstanding / 1000).toFixed(0)}k` : '-', icon: Receipt, color: '#ec4899' },
-            { label: 'Accounts Receivable', value: finStats ? `$${(finStats.accounts_receivable?.total_outstanding / 1000).toFixed(0)}k` : '-', icon: Landmark, color: '#3b82f6' },
-            { label: 'Net Working Capital', value: finStats ? `$${(finStats.net_working_capital / 1000).toFixed(0)}k` : '-', icon: DollarSign, color: '#8b5cf6' },
-            { label: 'Active Budgets', value: finStats?.active_budgets ?? 0, icon: BarChart3, color: '#f59e0b' },
-            { label: 'Open Audit Issues', value: finStats?.open_audit_findings ?? 0, icon: ShieldAlert, color: '#ef4444' },
+            { label: 'Cash Balance', value: finStats ? `$${(finStats.total_cash_position / 1000).toFixed(0)}k` : '-', icon: Wallet, color: '#22c55e', sub: finStats?.total_vendors != null ? `${finStats.total_vendors} vendors on file` : '' },
+            { label: 'Accounts Payable', value: finStats ? `$${(finStats.accounts_payable?.total_outstanding / 1000).toFixed(0)}k` : '-', icon: Receipt, color: '#ec4899', sub: finStats?.accounts_payable?.open_invoices != null ? `${finStats.accounts_payable.open_invoices} open invoice${finStats.accounts_payable.open_invoices === 1 ? '' : 's'}` : '' },
+            { label: 'Accounts Receivable', value: finStats ? `$${(finStats.accounts_receivable?.total_outstanding / 1000).toFixed(0)}k` : '-', icon: Landmark, color: '#3b82f6', sub: finStats?.accounts_receivable?.open_receivables != null ? `${finStats.accounts_receivable.open_receivables} open items` : '' },
+            { label: 'Net Working Capital', value: finStats ? `$${(finStats.net_working_capital / 1000).toFixed(0)}k` : '-', icon: DollarSign, color: '#8b5cf6', sub: '' },
+            { label: 'Active Budgets', value: finStats?.active_budgets ?? 0, icon: BarChart3, color: '#f59e0b', sub: finStats?.budget_variance_pct != null ? `${finStats.budget_variance_pct}% avg variance` : '' },
+            { label: 'Open Audit Issues', value: finStats?.open_audit_findings ?? 0, icon: ShieldAlert, color: '#ef4444', sub: finStats?.pending_expense_reports != null ? `${finStats.pending_expense_reports} pending expense report${finStats.pending_expense_reports === 1 ? '' : 's'}` : '' },
           ].map(kpi => (
             <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}12` }}>
               <kpi.icon className="w-5 h-5 mx-auto mb-1" style={{ color: kpi.color }} />
               <div className="text-[16px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
               <div className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              {kpi.sub && <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
             </div>
           ))}
         </div>
+
+        {/* Ledger composition - AP aging, invoice status mix and vendor spend,
+            computed server-side by /finance/analytics from the real ledgers. */}
+        {(finAnalytics?.charts || []).length > 0 && (() => {
+          const chartByKey = (k: string) => (finAnalytics.charts || []).find((c: any) => c.key === k);
+          const aging = chartByKey('ap_aging');
+          const invMix = chartByKey('invoice_status');
+          const vendors = chartByKey('top_vendors');
+          const overdueKpi = (finAnalytics.kpis || []).find((k: any) => k.key === 'overdue');
+          const complianceKpi = (finAnalytics.kpis || []).find((k: any) => k.key === 'compliance');
+          return (
+            <div className="grid grid-cols-3 gap-4">
+              {aging && (
+                <div style={card}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4" style={{ color: '#ec4899' }} /> {aging.title}
+                    </h3>
+                    {overdueKpi?.value != null && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#ef444418', color: '#ef4444' }}>
+                        {overdueKpi.value.toLocaleString()} overdue
+                      </span>
+                    )}
+                  </div>
+                  <MiniBars items={aging.items} colors={colors} money />
+                </div>
+              )}
+              {invMix && (
+                <div style={card}>
+                  <h3 className="text-[13px] font-semibold mb-3 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4" style={{ color: '#3b82f6' }} /> {invMix.title}
+                  </h3>
+                  <MiniDonut items={invMix.items} colors={colors} />
+                </div>
+              )}
+              {vendors && (
+                <div style={card}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
+                      <Briefcase className="w-4 h-4" style={{ color: '#f59e0b' }} /> {vendors.title}
+                    </h3>
+                    {complianceKpi?.value != null && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#22c55e18', color: '#22c55e' }}>
+                        {complianceKpi.value.toFixed(1)}% expense compliance
+                      </span>
+                    )}
+                  </div>
+                  <MiniBars items={vendors.items} colors={colors} money />
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Sub-modules navigation */}
         <div className="grid grid-cols-3 gap-4">

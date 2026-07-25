@@ -15,18 +15,25 @@ import {
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import LiveBadge from '../components/LiveBadge';
+import Sparkline from '../components/Sparkline';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   const { colors } = useTheme();
   const [data, setData] = useState<any>(null);
+  const [trend, setTrend] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
 
   const loadAnalytics = React.useCallback(() => {
-    return api.getWorkforceAnalytics()
-      .then(d => { setData(d); setSyncedAt(Date.now()); setLoading(false); })
-      .catch(() => setLoading(false));
+    return Promise.all([
+      api.getWorkforceAnalytics().catch(() => null),
+      api.getAutonomyTrend(30).catch(() => null),
+    ]).then(([d, t]) => {
+      if (d) { setData(d); setSyncedAt(Date.now()); }
+      if (t) setTrend(t);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
@@ -41,6 +48,10 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   // Calculate max for bar sizing
   const maxTasks = Math.max(...(data.departments || []).map((d: any) => d.tasks_completed || 0), 1);
   const maxHours = Math.max(...(data.departments || []).map((d: any) => d.hours_saved || 0), 1);
+  const maxCost = Math.max(...(data.departments || []).map((d: any) => d.cost_saved || 0), 1);
+
+  // Daily governed-execution volume, straight from the autonomy-trend series.
+  const dailyExecutions: number[] = (trend?.series || []).map((p: any) => p.total).filter((v: any) => v != null);
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
@@ -62,12 +73,12 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
             // Deltas were hardcoded ("+12%", "+8.2%", "+15%") and presented as real
             // trends. There is no period-over-period series behind them, so they are
             // omitted rather than fabricated.
-            { label: 'Tasks Completed', value: (data.total_tasks_completed || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e', sub: '' },
+            { label: 'Tasks Completed', value: (data.total_tasks_completed || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e', sub: '', spark: true },
             { label: 'Hours Saved', value: `${data.total_hours_saved || 0}h`, icon: Clock, color: '#f59e0b', sub: '0.5h / automated task' },
             { label: 'Cost Saved', value: `$${(data.total_cost_saved || 0).toLocaleString()}`, icon: DollarSign, color: '#22c55e', sub: data.loaded_hourly_rate_usd ? `@ $${data.loaded_hourly_rate_usd}/hr loaded` : '' },
-            { label: 'Automation', value: `${data.automation_coverage_pct || 0}%`, icon: Zap, color: '#8b5cf6', sub: '' },
+            { label: 'Automation', value: `${data.automation_coverage_pct || 0}%`, icon: Zap, color: '#8b5cf6', sub: data.automation_execution_count ? `${data.automation_execution_count.toLocaleString()} governed executions` : '' },
             { label: 'Health Score', value: `${data.avg_health_score || 0}%`, icon: Heart, color: healthColor(data.avg_health_score || 0), sub: '' },
-          ].map(kpi => (
+          ].map((kpi: any) => (
             <div key={kpi.label} style={card} className="relative overflow-hidden">
               <div className="flex items-center justify-between mb-2">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: kpi.color + '15' }}>
@@ -77,6 +88,13 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
               <div className="text-[24px] font-bold mt-2" style={{ color: kpi.color }}>{kpi.value}</div>
               <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
               {kpi.sub && <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
+              {/* Real per-day execution volume from the autonomy-trend series */}
+              {kpi.spark && dailyExecutions.length > 1 && (
+                <div className="mt-1.5">
+                  <Sparkline points={dailyExecutions} color={kpi.color} width={150} height={24} />
+                  <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>daily governed executions, 30d</div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -165,8 +183,8 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                       <span>{dept.automation_coverage}% automated</span>
                     </div>
                   </div>
-                  {/* Task bar */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Task / hours / cost bars - all real per-department fields */}
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Tasks Completed</span>
@@ -188,6 +206,18 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                         <div className="h-full rounded-full transition-all" style={{
                           width: `${((dept.hours_saved || 0) / maxHours) * 100}%`,
                           background: `linear-gradient(90deg, #f59e0b, #ec4899)`,
+                        }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: colors.inkSubtle }}>
+                        <span>Cost Saved</span>
+                        <span className="font-mono">${(dept.cost_saved || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                        <div className="h-full rounded-full transition-all" style={{
+                          width: `${((dept.cost_saved || 0) / maxCost) * 100}%`,
+                          background: `linear-gradient(90deg, #22c55e, #06b6d4)`,
                         }} />
                       </div>
                     </div>

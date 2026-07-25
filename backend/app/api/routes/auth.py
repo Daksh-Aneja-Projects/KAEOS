@@ -144,6 +144,28 @@ async def list_users(
     return await AuthService.list_users(db, tenant_id)
 
 
+@router.get("/users/export.csv")
+async def export_access_review(
+    user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    """Access-review export (SOC2 CC6.x evidence): every account with role,
+    department scope, status and last activity, as auditor-ready CSV."""
+    from app.core.csv_export import csv_response
+    users = await AuthService.list_users(db, user["tenant_id"])
+    rows = [{
+        "email": r["email"], "display_name": r["display_name"], "role": r["role"],
+        "department": r.get("department") or "org-wide",
+        "status": "active" if r["is_active"] else "deactivated",
+        "login_count": r["login_count"],
+        "last_login_at": r["last_login_at"] or "never",
+        "created_at": r["created_at"],
+    } for r in users]
+    return csv_response(rows, "access_review",
+                        ["email", "display_name", "role", "department", "status",
+                         "login_count", "last_login_at", "created_at"])
+
+
 @router.put("/users/{user_id}/role")
 async def update_role(
     user_id: str,
@@ -163,6 +185,38 @@ async def update_role(
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
+
+
+@router.put("/users/{user_id}/department")
+async def update_department(
+    user_id: str,
+    data: dict,
+    user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    """Set or clear a user's department scope - ADMIN, within your own tenant.
+
+    Body: {"department": "hr"} confines the user to the HR surface;
+    {"department": null} restores org-wide access. Takes effect on the user's
+    NEXT login (the scope rides in the JWT).
+    """
+    from app.models.auth import User as UserModel
+    from sqlalchemy import select as _select
+    dept = data.get("department")
+    valid = {"hr", "finance", "legal", "sales", "support", "operations", "engineering"}
+    if dept is not None and dept not in valid:
+        raise HTTPException(status_code=400,
+                            detail=f"department must be one of {sorted(valid)} or null")
+    target = (await db.execute(_select(UserModel).where(
+        UserModel.id == user_id, UserModel.tenant_id == user["tenant_id"]
+    ))).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    target.department = dept
+    db.add(target)
+    await db.commit()
+    return {"id": target.id, "email": target.email, "department": target.department,
+            "note": "Scope applies from the user's next login."}
 
 
 @router.delete("/users/{user_id}")
@@ -205,9 +259,14 @@ async def invite_user(
         raise HTTPException(status_code=400, detail="Authenticated user has no tenant context")
     role_map = {"ADMIN": UserRole.ADMIN, "ANALYST": UserRole.ANALYST, "VIEWER": UserRole.VIEWER}
     role = role_map.get(data.get("role", "VIEWER"), UserRole.VIEWER)
+    dept = data.get("department") or None
+    _valid_depts = {"hr", "finance", "legal", "sales", "support", "operations", "engineering"}
+    if dept is not None and dept not in _valid_depts:
+        raise HTTPException(status_code=400,
+                            detail=f"department must be one of {sorted(_valid_depts)} or null")
     result = await AuthService.invite_user(
         db, email=data.get("email", ""), display_name=data.get("display_name", ""),
-        role=role, created_by=user["id"], tenant_id=tenant_id,
+        role=role, created_by=user["id"], tenant_id=tenant_id, department=dept,
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

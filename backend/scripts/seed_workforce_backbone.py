@@ -17,7 +17,7 @@ import logging
 
 from sqlalchemy import select
 
-from app.core.database import MaintenanceSessionLocal, init_db
+from app.core.database import MaintenanceSessionLocal
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("seed_backbone")

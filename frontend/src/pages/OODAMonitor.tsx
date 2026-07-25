@@ -140,8 +140,31 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
       ) : (
         /* Event Timeline */
         <div className="rounded-xl border" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
-          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: colors.hairline }}>
-            <h3 className="text-[13px] font-semibold">Event Timeline</h3>
+          <div className="px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: colors.hairline }}>
+            <div className="flex items-center gap-3">
+              <h3 className="text-[13px] font-semibold whitespace-nowrap">Event Timeline</h3>
+              {/* Gate outcome breakdown - derived from live event stream */}
+              {(() => {
+                const gates = events.reduce((acc: Record<string, number>, e) => {
+                  if (e.gate) acc[e.gate] = (acc[e.gate] || 0) + 1;
+                  return acc;
+                }, {});
+                const gateMeta: Record<string, { label: string; color: string }> = {
+                  AUTO_APPROVED: { label: 'Auto-approved', color: '#22c55e' },
+                  HITL_REQUIRED: { label: 'Human review', color: '#ef4444' },
+                  DEBATE_REQUIRED: { label: 'Debate', color: '#f59e0b' },
+                };
+                return Object.entries(gates).map(([g, n]) => {
+                  const meta = gateMeta[g] || { label: g.replace(/_/g, ' ').toLowerCase(), color: colors.inkSubtle };
+                  return (
+                    <span key={g} className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap"
+                      style={{ background: meta.color + '15', color: meta.color }}>
+                      {n} {meta.label}
+                    </span>
+                  );
+                });
+              })()}
+            </div>
             <div className="flex items-center gap-2 text-[10px]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} /> Complete</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#f59e0b' }} /> Active</span>
@@ -166,10 +189,10 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-[12px] font-semibold">{e.title}</span>
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor(e.status) }} />
+                        <span className="text-[12px] font-semibold truncate" title={e.title}>{e.title}</span>
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: statusColor(e.status) }} />
                       </div>
-                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{e.detail}</div>
+                      <div className="text-[11px] truncate" title={e.detail} style={{ color: colors.inkSubtle }}>{e.detail}</div>
                       {/* Gates */}
                       {e.gate && (
                         <div className="flex items-center gap-1.5 mt-1.5">
@@ -186,6 +209,11 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                           {e.gate === 'HITL_REQUIRED' && (
                             <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>
                               ⚠ Human Review Required
+                            </span>
+                          )}
+                          {!['DEBATE_REQUIRED', 'AUTO_APPROVED', 'HITL_REQUIRED'].includes(e.gate) && (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold capitalize" style={{ background: colors.inkSubtle + '15', color: colors.inkSubtle }}>
+                              {e.gate.replace(/_/g, ' ').toLowerCase()}
                             </span>
                           )}
                         </div>

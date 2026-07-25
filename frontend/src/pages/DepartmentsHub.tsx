@@ -97,7 +97,7 @@ export default function DepartmentsHub() {
                     <div className="flex items-center gap-3 min-w-0">
                       <DomainIcon hint={d.slug || d.icon} fallbackHint={d.name} size={44} />
                       <div className="min-w-0">
-                        <h3 className="text-[15px] font-bold truncate group-hover:text-primary transition-colors" style={{ color: colors.ink }}>{d.name}</h3>
+                        <h3 className="text-[15px] font-bold truncate group-hover:text-primary transition-colors" title={d.name} style={{ color: colors.ink }}>{d.name}</h3>
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
                           style={{ background: (d.status === 'ACTIVE' ? colors.success : colors.inkSubtle) + '20', color: d.status === 'ACTIVE' ? colors.success : colors.inkSubtle }}>
                           {d.status || 'ACTIVE'}

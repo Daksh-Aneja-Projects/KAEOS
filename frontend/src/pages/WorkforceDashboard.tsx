@@ -219,24 +219,60 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
             {/* Why work fell out of autonomy - the explainable breakdown behind
                 the rate (folded in from the safe-autonomy detail; not a separate
                 page). Shows exactly where a human was needed, edited, or a run
-                failed. */}
+                failed. Right column: the specific skills dragging the rate down,
+                straight from the per-skill breakdown the API already computes. */}
             {sar?.fallout && (sar.total_executions || 0) > 0 && (
               <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                <div className="text-[11px] uppercase tracking-wider font-semibold mb-3" style={{ color: colors.inkSubtle }}>
-                  Where autonomy fell out (last {sar.window_days}d)
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {[
-                    { label: 'Routed to human', value: sar.fallout.routed_to_human, color: '#3b82f6' },
-                    { label: 'Human overridden', value: sar.fallout.human_overridden, color: '#f59e0b' },
-                    { label: 'Human edited', value: sar.fallout.human_edited, color: '#8b5cf6' },
-                    { label: 'Failed', value: sar.fallout.failed, color: '#ef4444' },
-                  ].map(f => (
-                    <div key={f.label} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-                      <div className="text-[20px] font-bold" style={{ color: f.color }}>{f.value ?? 0}</div>
-                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{f.label}</div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider font-semibold mb-3" style={{ color: colors.inkSubtle }}>
+                      Where autonomy fell out (last {sar.window_days}d)
                     </div>
-                  ))}
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: 'Routed to human', value: sar.fallout.routed_to_human, color: '#3b82f6' },
+                        { label: 'Human overridden', value: sar.fallout.human_overridden, color: '#f59e0b' },
+                        { label: 'Human edited', value: sar.fallout.human_edited, color: '#8b5cf6' },
+                        { label: 'Failed', value: sar.fallout.failed, color: '#ef4444' },
+                      ].map(f => (
+                        <div key={f.label} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                          <div className="text-[20px] font-bold" style={{ color: f.color }}>{f.value ?? 0}</div>
+                          <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{f.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {(sar.by_skill || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold mb-3" style={{ color: colors.inkSubtle }}>
+                        Lowest-autonomy skills (5+ runs)
+                      </div>
+                      <div className="space-y-2.5">
+                        {(sar.by_skill || [])
+                          .filter((s: any) => (s.total || 0) >= 5 && s.safe_autonomy_rate !== null)
+                          .sort((a: any, b: any) => a.safe_autonomy_rate - b.safe_autonomy_rate)
+                          .slice(0, 5)
+                          .map((s: any) => {
+                            const pct = Math.round((s.safe_autonomy_rate || 0) * 100);
+                            const barColor = pct >= 70 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
+                            return (
+                              <div key={s.skill}>
+                                <div className="flex items-center justify-between text-[11px] mb-1">
+                                  <span className="truncate font-medium" title={s.skill}>{s.skill.replace(/_/g, ' ')}</span>
+                                  <span className="font-mono font-bold ml-2 shrink-0" style={{ color: barColor }}>
+                                    {pct}%
+                                    <span className="font-normal ml-1.5" style={{ color: colors.inkSubtle }}>{s.total} runs</span>
+                                  </span>
+                                </div>
+                                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: barColor }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

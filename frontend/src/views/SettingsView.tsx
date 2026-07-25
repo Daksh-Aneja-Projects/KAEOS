@@ -74,9 +74,9 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex flex-wrap gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         {([['llm', 'LLM Routing', Cpu], ['integrations', 'Integrations', Plug], ['calendar', 'Calendar', Calendar], ['security', 'Security', Shield], ['governance', 'Data & Privacy', Lock], ['notifications', 'Notifications', Bell], ['platform', 'Platform', Globe2]] as const).map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setTab(id as any)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all"
+          <button key={id} onClick={() => setTab(id as any)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap"
             style={{ background: tab === id ? colors.primary : 'transparent', color: tab === id ? '#fff' : colors.inkSubtle }}>
             <Icon className="w-3.5 h-3.5" />{label}
           </button>
@@ -121,7 +121,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                         <div className="text-[10px] font-mono" style={{ color: colors.inkTertiary }}>{cfg.layer}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-mono truncate block" style={{ color: colors.ink }}>{cfg.model_name}</span>
+                        <span className="text-[13px] font-mono truncate block" title={cfg.model_name} style={{ color: colors.ink }}>{cfg.model_name}</span>
                         <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{meta.desc}</p>
                       </div>
                       <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
@@ -201,16 +201,16 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
           )}
           {connectors.map((c: any, i: number) => (
             <div key={i} className="rounded-xl p-4 flex items-center justify-between" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: c.status === 'ACTIVE' ? 'rgba(39,166,68,0.12)' : colors.surface2 }}>
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: c.status === 'ACTIVE' ? 'rgba(39,166,68,0.12)' : colors.surface2 }}>
                   <Plug className="w-4 h-4" style={{ color: c.status === 'ACTIVE' ? colors.success : colors.inkTertiary }} />
                 </div>
-                <div>
-                  <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{c.name || c.connector_type}</span>
-                  <p className="text-[11px]" style={{ color: colors.inkTertiary }}>{c.connector_type}</p>
+                <div className="min-w-0">
+                  <span className="text-[13px] font-medium truncate block" title={c.name || c.connector_type} style={{ color: colors.ink }}>{c.name || c.connector_type}</span>
+                  <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{c.connector_type}</p>
                 </div>
               </div>
-              <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ml-3"
                 style={{ background: c.status === 'ACTIVE' ? 'rgba(39,166,68,0.12)' : 'rgba(138,143,152,0.12)', color: c.status === 'ACTIVE' ? colors.success : colors.inkSubtle }}>
                 {c.status}
               </span>
@@ -229,11 +229,11 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
           {calEvents.map((ev: any, i: number) => (
             <div key={i} className="px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: colors.hairline }}>
               <Calendar className="w-4 h-4 flex-shrink-0" style={{ color: ev.is_blocking ? colors.error : colors.info }} />
-              <div className="flex-1">
-                <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{ev.event_name}</span>
-                <p className="text-[11px]" style={{ color: colors.inkTertiary }}>{ev.department} · {ev.event_type}</p>
+              <div className="flex-1 min-w-0">
+                <span className="text-[13px] font-medium truncate block" title={ev.event_name} style={{ color: colors.ink }}>{ev.event_name}</span>
+                <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{ev.department} · {ev.event_type}</p>
               </div>
-              {ev.is_blocking && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>Blocking</span>}
+              {ev.is_blocking && <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>Blocking</span>}
             </div>
           ))}
         </div>
@@ -273,7 +273,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
             <div className="space-y-3">
               {autonomy.map(a => (
                 <div key={a.domain} className="flex items-center gap-4">
-                  <div className="w-28 text-[13px] font-medium capitalize" style={{ color: colors.ink }}>{a.domain}</div>
+                  <div className="w-28 text-[13px] font-medium capitalize truncate" title={a.domain} style={{ color: colors.ink }}>{a.domain}</div>
                   <input
                     type="range" min={0.5} max={0.99} step={0.01} value={a.min_confidence}
                     onChange={e => {

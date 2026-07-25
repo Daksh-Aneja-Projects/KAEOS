@@ -197,14 +197,19 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
               style={{ background: colors.surface1, border: `1px solid ${selectedBp?.id === bp.id ? colors.primary : colors.hairline}` }}
               onClick={() => setSelectedBp(bp)}>
               <div className="flex items-start justify-between">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[15px] font-medium" style={{ color: colors.ink }}>{bp.name || bp.id?.slice(0, 8)}</span>
+                    <span className="text-[15px] font-medium truncate" title={bp.name || bp.id} style={{ color: colors.ink }}>{bp.name || bp.id?.slice(0, 8)}</span>
                     {statusBadge(bp.status)}
                   </div>
-                  {(bp.description || bp.original_prompt) && (
-                    <p className="text-[12px]" style={{ color: colors.inkSubtle }}>{(bp.description || bp.original_prompt || '').slice(0, 120)}…</p>
-                  )}
+                  {(bp.description || bp.original_prompt) && (() => {
+                    const desc = bp.description || bp.original_prompt || '';
+                    return (
+                      <p className="text-[12px]" title={desc} style={{ color: colors.inkSubtle }}>
+                        {desc.length > 120 ? `${desc.slice(0, 120)}…` : desc}
+                      </p>
+                    );
+                  })()}
                   {(() => {
                     const nodes = bp.blueprint_graph?.nodes || bp.dag_nodes;
                     return nodes?.length
@@ -212,7 +217,7 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
                       : null;
                   })()}
                 </div>
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-2 ml-4 shrink-0">
                   {['BLUEPRINT_READY', 'DRAFTING', 'DRAFT'].includes(bp.status) && (
                     <button onClick={(e) => { e.stopPropagation(); handleApprove(bp.id); }} disabled={busyId === bp.id}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
@@ -253,21 +258,21 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
           {deployed.map(ag => (
             <div key={ag.id} className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: ag.status === 'RUNNING' ? 'rgba(39,166,68,0.12)' : 'rgba(229,83,75,0.12)' }}>
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: ag.status === 'RUNNING' ? 'rgba(39,166,68,0.12)' : 'rgba(229,83,75,0.12)' }}>
                     <Bot className="w-4 h-4" style={{ color: ag.status === 'RUNNING' ? colors.success : colors.error }} />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-medium" style={{ color: colors.ink }}>{ag.agent_name || ag.id?.slice(0, 12)}</span>
+                      <span className="text-[14px] font-medium truncate" title={ag.agent_name || ag.id} style={{ color: colors.ink }}>{ag.agent_name || ag.id?.slice(0, 12)}</span>
                       {statusBadge(ag.status)}
                     </div>
-                    <p className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>
+                    <p className="text-[11px] mt-0.5 whitespace-nowrap" style={{ color: colors.inkTertiary }}>
                       {ag.total_executions || 0} executions · {ag.success_count || 0} success
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0 ml-3">
                   {ag.status === 'RUNNING' && (
                     <button onClick={() => handleStop(ag.id)} disabled={busyId === ag.id}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"

@@ -397,7 +397,6 @@ def load_sales_crm(account_limit: int | None = None,
 def _load_sales_crm_impl(account_limit: int | None = None,
                          activity_cap: int = 20000) -> Dict[str, list]:
     """The pandas-backed implementation - only ever run inside the child."""
-    import pandas as pd
     base = _path(_SALES_DIR)
     accounts = _read_parquet(f"{base}/accounts.parquet")
     if account_limit:

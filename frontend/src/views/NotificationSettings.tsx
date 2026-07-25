@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { api, NotificationChannel, NotificationDelivery, NotificationKind } from '../api/client';
+import { api } from '../api/client';
+import type { NotificationChannel, NotificationDelivery, NotificationKind } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { Bell, Mail, MessageSquare, Webhook, Plus, Trash2, Loader2, Send, History } from 'lucide-react';
 
