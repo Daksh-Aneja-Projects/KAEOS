@@ -25,13 +25,12 @@ RAW_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__)
 
 
 def _read_parquet(path: str):
-    """Read a parquet file with a crash-safe engine.
+    """Read a parquet file, preferring the pure-Python fastparquet engine.
 
-    pyarrow's reader can HARD-CRASH the interpreter (native segfault) on some
-    bleeding-edge Python builds - e.g. pyarrow 24 + pandas 3 + CPython 3.14 - and
-    a segfault cannot be caught in-process, so it would take the whole test/onboard
-    run down. Prefer the pure-Python ``fastparquet`` engine when it is installed;
-    only fall back to pandas' default (pyarrow) when it is not.
+    Only ever called inside the isolated child process spawned by
+    ``load_sales_crm`` (see below) - a fresh interpreter, where both engines
+    read reliably. fastparquet is preferred because pyarrow's C extension has
+    proven unstable on bleeding-edge builds (CPython 3.14).
     """
     import importlib.util
     import pandas as pd
@@ -347,11 +346,57 @@ def load_sales_crm(account_limit: int | None = None,
                    activity_cap: int = 20000) -> Dict[str, list]:
     """Return a coherent, relationally-linked CRM subset from the sales parquet.
 
-    Picks the first ``account_limit`` accounts, then keeps only the contacts,
-    leads, opportunities and activities that belong to them (resolving each
-    opportunity/activity's account via its lead). Every returned row's
-    ``account_id`` references an account also in the result.
+    Runs the ENTIRE load in an isolated child process and returns plain-Python
+    dicts via JSON. Rationale: pandas 3's default string arrays are pyarrow-
+    backed, and pyarrow's C extension is unstable on bleeding-edge builds
+    (CPython 3.14: importing it mid-suite access-violates, poisoning the
+    process so that even fastparquet/pandas ops later segfault). A native crash
+    cannot be caught in-process; isolating the whole load means a crash
+    surfaces as a clean RuntimeError in the parent, and a fresh interpreter
+    reads reliably (verified standalone). No date-typed fields cross the
+    boundary (consumers use ids/strings/numbers), so JSON is loss-free.
     """
+    import json
+    import subprocess
+    import sys
+    import tempfile
+
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    child = (
+        "import json, os, sys\n"
+        "sys.path.insert(0, os.getcwd())\n"
+        "from benchmark.real_data.loaders import _load_sales_crm_impl\n"
+        "limit = None if sys.argv[1] == 'none' else int(sys.argv[1])\n"
+        "result = _load_sales_crm_impl(limit, int(sys.argv[2]))\n"
+        "with open(sys.argv[3], 'w', encoding='utf-8') as fh:\n"
+        "    json.dump(result, fh, default=str)\n"
+    )
+    fd, out = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", child,
+             "none" if account_limit is None else str(account_limit),
+             str(activity_cap), out],
+            capture_output=True, text=True, timeout=600, cwd=backend_root,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"sales CRM load subprocess failed (exit {proc.returncode}): "
+                f"{(proc.stderr or '').strip()[-600:]}"
+            )
+        with open(out, encoding="utf-8") as fh:
+            return json.load(fh)
+    finally:
+        try:
+            os.unlink(out)
+        except OSError:
+            pass
+
+
+def _load_sales_crm_impl(account_limit: int | None = None,
+                         activity_cap: int = 20000) -> Dict[str, list]:
+    """The pandas-backed implementation - only ever run inside the child."""
     import pandas as pd
     base = _path(_SALES_DIR)
     accounts = _read_parquet(f"{base}/accounts.parquet")

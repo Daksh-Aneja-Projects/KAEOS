@@ -103,6 +103,9 @@ redisdata/
 prometheus-data/
 grafana-data/
 
+# ─── Database backups (local only, never commit) ─────────────────────────────
+backups/
+
 # ─── Alembic cache ───────────────────────────────────────────────────────────
 backend/alembic/__pycache__/
 backend/alembic/versions/__pycache__/
