@@ -11,7 +11,6 @@ import pytest
 from app.models.domain import SkillExecution
 from app.services import time_machine
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed(db, tenant, *, when, status, hitl, sid="s1"):

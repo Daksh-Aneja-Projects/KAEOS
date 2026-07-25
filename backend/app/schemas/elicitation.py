@@ -1,5 +1,5 @@
 """KAEOS — Pydantic Schemas: Elicitation"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -21,8 +21,7 @@ class QuestionResponse(BaseModel):
     created_at: Optional[datetime] = None
     answered_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AnswerSubmit(BaseModel):

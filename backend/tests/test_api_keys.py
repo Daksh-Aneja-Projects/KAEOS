@@ -10,7 +10,6 @@ from app.core import auth as auth_mod
 from app.core.database import engine as app_engine
 from app.models.api_key import ApiKey
 
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)

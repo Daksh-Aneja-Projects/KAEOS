@@ -6,11 +6,9 @@ The HR HITL approve/reject endpoints previously recorded a client-supplied
 not who authenticated. These tests prove the recorded approver is now derived
 from the authenticated principal and a spoofed body value is ignored.
 """
-import pytest
 
 from app.core.tenant import approver_identity
 
-pytestmark = pytest.mark.asyncio
 
 
 def test_approver_identity_prefers_authenticated_fields():

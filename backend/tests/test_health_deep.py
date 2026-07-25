@@ -1,7 +1,5 @@
 """Health probes — fast readiness by default, opt-in deep dependency probe."""
-import pytest
 
-pytestmark = pytest.mark.asyncio
 
 
 async def test_health_fast_is_ok(async_client):

@@ -1,14 +1,12 @@
 """Closed loops L3 (drift -> reconcile/auto-heal) and L5-reverse (autonomy governor)."""
 import uuid
 
-import pytest
 
 from app.services.actuation import Actuator
 from app.services.autonomy_governor import run_autonomy_governor
 from app.models.domain import Skill, SkillExecution
 from app.models.settings import AutonomyPolicy
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_l3l5"
 

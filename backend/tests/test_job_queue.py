@@ -9,7 +9,6 @@ from app.services import job_queue
 from app.core.database import engine as app_engine, MaintenanceSessionLocal
 from app.models.jobs import Job
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_jobs"
 

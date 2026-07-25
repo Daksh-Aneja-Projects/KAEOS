@@ -5,12 +5,10 @@ executions. Verifies EU-AI-Act-style classification and the overview aggregation
 """
 import uuid
 
-import pytest
 
 from app.models.domain import Skill
 from app.services import regulatory
 
-pytestmark = pytest.mark.asyncio
 
 
 def _skill(skill_id, dept, tags, conf=0.9):

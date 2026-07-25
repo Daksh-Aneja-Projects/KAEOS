@@ -5,13 +5,11 @@ uncorrelated signal gets no action; severity drives the governed response kind.
 """
 import uuid
 
-import pytest
 
 from app.models.domain import Skill
 from app.models.event_mesh import ExternalSignal
 from app.services import event_mesh
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed(db, tenant, dept):

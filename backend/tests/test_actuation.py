@@ -10,7 +10,6 @@ from sqlalchemy import select
 from app.models.actuation import SorObject, ActionRecord
 from app.services.actuation import Actuator, ActuationError
 
-pytestmark = pytest.mark.asyncio
 
 
 async def test_create_then_idempotent_retry(db):

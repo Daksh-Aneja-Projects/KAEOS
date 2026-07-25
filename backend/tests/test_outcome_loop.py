@@ -10,7 +10,6 @@ import pytest
 
 from app.models.domain import Skill, SkillExecution
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed_exec(db, tenant, skill_id, *, hitl_required, confidence=0.80):

@@ -1,11 +1,9 @@
 """Request-limit middleware — body-size guard + rate-limit fallback."""
-import pytest
 from starlette.requests import Request
 from starlette.responses import Response
 
 from app.core.middleware import BodySizeLimitMiddleware, RateLimitMiddleware
 
-pytestmark = pytest.mark.asyncio
 
 
 def _req(headers: list[tuple[bytes, bytes]], path="/x") -> Request:

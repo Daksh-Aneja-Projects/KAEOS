@@ -12,7 +12,6 @@ import pytest
 
 from app.services.llm_router import LLMRouter, PIIScrubError
 
-pytestmark = pytest.mark.asyncio
 
 
 def _break_backstop(monkeypatch):

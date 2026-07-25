@@ -8,13 +8,11 @@ that has coverage but no monitoring signal.
 import uuid
 from datetime import datetime, timezone
 
-import pytest
 
 from app.api.routes.dashboard import compliance_dashboard
 from app.models.domain import Rule, Skill, SkillExecution
 from app.hr.models.compliance import ComplianceViolation, ComplianceReport, ComplianceFramework
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_test"
 OTHER = "tenant_other"

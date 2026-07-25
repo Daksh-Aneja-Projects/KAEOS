@@ -5,7 +5,6 @@ from app.services import mfa
 from app.core.database import engine as app_engine
 from app.models.mfa import UserMFA
 
-pytestmark = pytest.mark.asyncio
 
 U = "user_mfa_1"
 T = "tenant_mfa"

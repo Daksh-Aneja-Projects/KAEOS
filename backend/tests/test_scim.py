@@ -10,7 +10,6 @@ from app.api.routes import scim
 from app.models.auth import User
 from sqlalchemy import select
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_scim"
 ADMIN = {"tenant_id": T, "role": "admin", "name": "idp"}

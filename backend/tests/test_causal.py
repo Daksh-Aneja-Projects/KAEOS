@@ -12,7 +12,6 @@ import pytest
 from app.models.domain import Skill, SkillExecution
 from app.services import causal
 
-pytestmark = pytest.mark.asyncio
 
 
 def test_pearson_perfect_positive():

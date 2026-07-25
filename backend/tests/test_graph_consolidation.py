@@ -17,7 +17,6 @@ from app.services.graph.graph_service import GraphService
 from app.services.evolution.fitness_calculator import FitnessCalculator
 from app.services.scorecard_engine import ScorecardEngine
 
-pytestmark = pytest.mark.asyncio
 
 TENANT = "tenant_gc"
 

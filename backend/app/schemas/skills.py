@@ -1,5 +1,5 @@
 """KAEOS — Pydantic Schemas: Skills"""
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -67,8 +67,7 @@ class SkillSummary(BaseModel):
     compliance_tags: List[str] = []
     access_level: str = "department"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SkillDetail(SkillSummary):

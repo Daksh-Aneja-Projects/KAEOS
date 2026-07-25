@@ -5,14 +5,12 @@ Nothing here promotes: promotion stays human-gated (the existing /promote route)
 """
 import uuid
 
-import pytest
 
 from app.services.foundry.finetune import (
     FineTuneProvider, NullFineTuneProvider, submit_finetune, poll_finetune_jobs,
 )
 from app.models.foundry import TrainingExample, ModelEvolutionRun, FineTuneJob
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_ft"
 

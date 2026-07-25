@@ -6,13 +6,11 @@ idempotent (safe to run on a cadence): the second pass creates nothing new.
 """
 import uuid
 
-import pytest
 
 from app.models.domain import SkillExecution
 from app.services.foundry import dataset_builder
 from app.services.scheduler import init_scheduler
 
-pytestmark = pytest.mark.asyncio
 
 
 def test_scheduler_registers_foundry_mining_job():

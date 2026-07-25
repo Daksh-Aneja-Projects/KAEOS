@@ -7,12 +7,10 @@ metric itself.
 """
 import uuid
 
-import pytest
 
 from app.models.domain import SkillExecution
 from app.services.safe_autonomy import compute_safe_autonomy
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _exec(db, tenant, skill, *, hitl_required, status, outcome_type="SUCCESS_CLEAN"):

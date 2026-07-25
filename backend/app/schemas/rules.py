@@ -1,5 +1,5 @@
 """KAEOS — Pydantic Schemas: Rules"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -66,8 +66,7 @@ class RuleResponse(BaseModel):
     expires_at: Optional[datetime] = None
     last_decay_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RuleValidateRequest(BaseModel):

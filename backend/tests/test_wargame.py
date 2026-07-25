@@ -11,7 +11,6 @@ import pytest
 from app.models.domain import Skill, SkillExecution
 from app.services import wargame
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed_dept(db, tenant, dept, *, conf, n_adverse=0, n_ok=0):

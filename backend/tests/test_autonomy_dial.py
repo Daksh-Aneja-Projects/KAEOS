@@ -5,12 +5,10 @@ The per-domain min_confidence set via /config/autonomy is what Gate 3 reads at
 runtime (resolve_min_confidence). A domain without a policy falls back to the
 platform default; a set policy overrides it.
 """
-import pytest
 
 from app.core.config import get_settings
 from app.services.autonomy_policy import invalidate, resolve_min_confidence
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _ensure_app_tables():

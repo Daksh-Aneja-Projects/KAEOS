@@ -1,7 +1,6 @@
 """Closed loops L1 (outcome -> execution learning) and L4 (event-mesh -> outcome)."""
 import uuid
 
-import pytest
 
 from app.models.domain import Skill, SkillExecution
 from app.models.event_mesh import ExternalSignal
@@ -10,7 +9,6 @@ from app.models.missions import Mission
 from app.services.missions.engine import _writeback_signal_on_finish
 from app.api.routes.outcomes import record_outcome, OutcomeIn
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_loops"
 

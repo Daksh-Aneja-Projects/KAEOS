@@ -8,13 +8,11 @@ deployments to FAILED, and leaves fresh or already-terminal ones untouched.
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from app.workforce.deployment.studio import DeploymentStudio
 from app.workforce.models.core import DeploymentStatus, WorkforceDeployment
 from app.services.scheduler import init_scheduler
 
-pytestmark = pytest.mark.asyncio
 
 
 def _dep(db, *, status, started_minutes_ago):

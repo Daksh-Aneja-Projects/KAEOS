@@ -27,6 +27,22 @@ from app.models.actuation import SorObject, ActionRecord
 _VALID_OPS = {"CREATE", "UPDATE", "DELETE"}
 
 
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Coerce a datetime to tz-aware UTC for safe comparison.
+
+    Columns are ``DateTime(timezone=True)`` with tz-aware Python defaults, but
+    SQLite (used in tests/CI) drops tzinfo on round-trip, so a value read back
+    from the DB is naive while a freshly-set one in the same session is aware.
+    Normalize both sides to aware-UTC (naive is assumed to already be UTC) so we
+    never compare offset-naive against offset-aware datetimes.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class ActuationError(Exception):
     """Raised when an actuation request is malformed or cannot be reversed."""
 
@@ -271,15 +287,16 @@ class Actuator:
             # must not read as drift.
             last_touch = None
             for a in actions:
-                for ts in (a.created_at, a.reversed_at):
+                for ts in (_as_utc(a.created_at), _as_utc(a.reversed_at)):
                     if ts and (last_touch is None or ts > last_touch):
                         last_touch = ts
 
             stale = False
-            if governed and last_touch and o.updated_at:
+            updated_at = _as_utc(o.updated_at)
+            if governed and last_touch and updated_at:
                 # Tolerate clock skew; only flag a clear post-action modification.
-                stale = o.updated_at > last_touch and \
-                    (o.updated_at - last_touch).total_seconds() > 1.0
+                stale = updated_at > last_touch and \
+                    (updated_at - last_touch).total_seconds() > 1.0
             if not governed or stale:
                 drifted.append({
                     "system": o.system, "object_type": o.object_type,

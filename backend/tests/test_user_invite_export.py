@@ -1,12 +1,10 @@
 """User invite/reactivation (magic-link) + audit CSV export."""
 import uuid
 
-import pytest
 
 from app.services.auth import AuthService
 from app.models.auth import User, UserRole
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_inv"
 

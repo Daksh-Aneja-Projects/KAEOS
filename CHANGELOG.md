@@ -3,6 +3,33 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **CI backend-test green**: `Actuator.compute_drift` raised
+  `TypeError: can't compare offset-naive and offset-aware datetimes` on the
+  SQLite test lane, failing `test_drift_detects_untracked_write` and
+  `test_reversal_is_not_drift`. `DateTime(timezone=True)` columns are tz-aware in
+  Python but SQLite drops tzinfo on round-trip, so a DB-loaded `updated_at`
+  (naive) was compared against an in-session `reversed_at` (aware). Added an
+  `_as_utc` coercion that normalizes both sides to aware-UTC before comparison.
+- **Fine-tune auto-eval robustness**: `model_evolution.run_evaluation` promised
+  never to raise for a missing/unroutable provider, but `_generate` let a failed
+  `router.complete` propagate — so a candidate model that can't be reached (a
+  not-yet-deployed fine-tune id, or any env with a live provider that rejects the
+  id) crashed the whole poll sweep and marked every job `FAILED`. It now degrades
+  a failed generation to an empty, `simulated=True` result (forcing `win=False`,
+  never promotable), matching the documented contract.
+
+### Changed (hygiene)
+- Removed redundant module-level `pytestmark = pytest.mark.asyncio` from 30 test
+  files (the suite runs in asyncio auto mode, where it only mis-tagged sync tests
+  and emitted `PytestWarning`s) and the now-unused `import pytest` lines.
+- Migrated the last four Pydantic v1 `class Config` blocks
+  (`core/config.py`, `schemas/rules.py`, `schemas/skills.py`,
+  `schemas/elicitation.py`) to `ConfigDict` / `SettingsConfigDict`, clearing the
+  `PydanticDeprecatedSince20` warnings.
+
 ## [2.2.0] - 2026-07-25 - "Enterprise Reach"
 
 The client-deployment sprint: KAEOS now reaches humans and systems OUTSIDE the

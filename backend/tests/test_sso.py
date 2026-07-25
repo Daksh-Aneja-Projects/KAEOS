@@ -14,7 +14,6 @@ from app.services import sso as sso_svc
 from app.models.auth import User
 from app.api.routes import sso as sso_routes
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_sso"
 

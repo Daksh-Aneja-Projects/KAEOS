@@ -174,7 +174,18 @@ async def run_evaluation(
         router = await LLMRouter.for_tenant(tenant_id)
 
     async def _generate(model: str, prompt: str) -> tuple[str, bool]:
-        res = await router.complete(prompt=prompt, model=model, temperature=0.0, max_tokens=256)
+        # Per this function's contract it must never raise for a missing or
+        # unroutable provider — it records a simulated run instead. A candidate
+        # model that cannot be reached (no provider, or an id the router can't
+        # route, e.g. a not-yet-deployed fine-tune) degrades to an empty,
+        # simulated generation: it forces simulated=True (so win=False and the
+        # run can never justify promotion) rather than aborting the whole
+        # evaluation and failing every job in the poll sweep.
+        try:
+            res = await router.complete(prompt=prompt, model=model, temperature=0.0, max_tokens=256)
+        except Exception as e:
+            logger.warning("[Foundry][Evolution] generation failed for %s: %s", model, e)
+            return "", True
         if isinstance(res, str):
             return res, False
         return (res.get("content") or ""), bool(res.get("simulated"))

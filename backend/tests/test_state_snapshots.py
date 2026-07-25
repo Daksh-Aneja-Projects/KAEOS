@@ -9,11 +9,9 @@ Phase 1A regression tests.
 """
 from types import SimpleNamespace
 
-import pytest
 
 from app.services.state.state_service import StateService
 
-pytestmark = pytest.mark.asyncio
 
 
 async def test_state_is_append_only_timeseries(db):

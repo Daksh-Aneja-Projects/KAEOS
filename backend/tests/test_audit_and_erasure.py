@@ -5,11 +5,9 @@ Phase 2D + 2E-erasure regression.
     amount for SOX, a lawful basis for GDPR/HIPAA/CCPA), not just a "logged" flag.
 2E: GDPR erasure purges the subject's embeddings from the vector store.
 """
-import pytest
 
 from app.services.compliance import ComplianceEngine
 
-pytestmark = pytest.mark.asyncio
 
 
 def test_audit_gate_requires_real_amount_for_sox():

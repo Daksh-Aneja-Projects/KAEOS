@@ -7,14 +7,12 @@ is deterministic and isolates the loop-closing decision.
 """
 import uuid
 
-import pytest
 
 import app.agents.runtime as runtime_mod
 from app.services.missions import engine as mission_engine
 from app.models.domain import Skill
 from app.models.missions import Mission, MissionStep
 
-pytestmark = pytest.mark.asyncio
 
 T = "tenant_l7"
 _ACT = {"system": "sandbox", "object_type": "record", "external_id": "emp_42",

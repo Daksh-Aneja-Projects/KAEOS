@@ -19,7 +19,6 @@ from app.models.domain import Skill
 from app.models.missions import MissionStep
 from app.services.missions import planner, engine
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed(db, tenant, dept, conf=0.95, skill_id=None):
