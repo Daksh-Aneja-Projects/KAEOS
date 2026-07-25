@@ -204,6 +204,22 @@ def _cost_of(result: dict) -> float:
 def _finalize(db, mission, steps) -> None:
     """Set the mission's terminal/paused status from its steps."""
     if any(s.status == "AWAITING_HITL" for s in steps):
+        # Notify only on the TRANSITION into the paused state, not on every
+        # advance while already paused - the approver needs one ping, not spam.
+        if mission.status != "AWAITING_HITL":
+            waiting = [s for s in steps if s.status == "AWAITING_HITL"]
+            from app.services.notifier import notify_fire_and_forget
+            notify_fire_and_forget(
+                mission.tenant_id, "mission.checkpoint",
+                subject=f"KAEOS mission checkpoint: {(mission.goal or '')[:60]}",
+                body=(f"Mission paused at an approval checkpoint.\n"
+                      f"Goal: {mission.goal}\n"
+                      f"Steps awaiting approval: "
+                      f"{', '.join(f'{s.seq}:{s.skill_id or s.department}' for s in waiting[:5])}\n"
+                      f"Review it in KAEOS Mission Control."),
+                data={"mission_id": mission.id,
+                      "steps": [s.seq for s in waiting]},
+            )
         mission.status = "AWAITING_HITL"
         return
     if all(s.status in _TERMINAL_STEP for s in steps) and steps:

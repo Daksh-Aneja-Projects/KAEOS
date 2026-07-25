@@ -211,6 +211,28 @@ async def invite_user(
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+
+    # Email the magic link to the invitee when an SMTP channel is configured -
+    # otherwise the admin still gets the link in the response to share manually.
+    from app.core.config import get_settings
+    _base = (get_settings().FRONTEND_BASE_URL or "http://localhost:5174").rstrip("/")
+    invite_link = f"{_base}/accept-invite?token={result['invite_token']}" \
+        if result.get("invite_token") else None
+    if invite_link:
+        result["invite_link"] = invite_link
+    invitee = data.get("email", "")
+    if invite_link and invitee:
+        from app.services.notifier import notify_fire_and_forget
+        notify_fire_and_forget(
+            tenant_id, "user.invited",
+            subject="You have been invited to KAEOS",
+            body=(f"Hello{' ' + data.get('display_name', '') if data.get('display_name') else ''},\n\n"
+                  f"You have been invited to join KAEOS. Open the link below to set "
+                  f"your password and activate your account:\n\n{invite_link}\n\n"
+                  f"If you did not expect this invitation, you can ignore this email."),
+            data={"email": invitee},
+            to_override=[invitee],
+        )
     return result
 
 

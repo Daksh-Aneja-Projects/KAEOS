@@ -83,6 +83,20 @@ class HITLManager:
             requires_action=True,
         )
 
+        # Reach the approver where they live (email/Slack/webhook), not just the
+        # in-app queue - a governance loop that pauses silently stalls autonomy.
+        from app.services.notifier import notify_fire_and_forget
+        notify_fire_and_forget(
+            tenant_id, "hitl.pending",
+            subject=f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}",
+            body=(f"A governed execution paused for human approval.\n"
+                  f"Skill: {skill.get('skill_id', 'unknown')}\n"
+                  f"Department: {skill.get('department', 'general')}\n"
+                  f"Execution: {exec_id}\n"
+                  f"Review it in KAEOS under My Work."),
+            data={"execution_id": exec_id, "skill_id": skill.get("skill_id")},
+        )
+
         # Persist pending approval in Redis (immediately)
         redis = await self._get_redis()
         pending_data = {

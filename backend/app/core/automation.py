@@ -195,3 +195,17 @@ async def _escalate_one(db: AsyncSession, tenant_id: str, spec: WorkflowSpec,
         event_metadata={"domain": spec.domain, "rule_id": rule.id},
     ))
     await db.commit()
+
+    # SLA breaches are exactly the moment a human must hear about it outside
+    # the app - deliver through the tenant's notification channels too.
+    from app.services.notifier import notify_fire_and_forget
+    notify_fire_and_forget(
+        tenant_id, "sla.breach",
+        subject=f"KAEOS SLA escalation: {spec.entity_type.replace('_', ' ')} \"{str(title)[:60]}\"",
+        body=(f"Rule '{rule.name}' escalated a {spec.domain} "
+              f"{spec.entity_type.replace('_', ' ')} that sat in state "
+              f"'{rule.trigger_state}' past {rule.dwell_hours}h.\n"
+              f"Entity: {title} ({obj.id})"),
+        data={"domain": spec.domain, "entity_type": spec.entity_type,
+              "entity_id": obj.id, "rule_id": rule.id},
+    )
