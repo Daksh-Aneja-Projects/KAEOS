@@ -39,7 +39,11 @@ _EMBED_CACHE_STATS = {"hits": 0, "misses": 0}
 
 
 def _embed_key(model: str, text: str) -> str:
-    return hashlib.sha1(f"{model}\x00{text}".encode("utf-8", "replace")).hexdigest()
+    # Non-security cache key (embedding memoization), not a digest of secrets —
+    # usedforsecurity=False documents intent and clears the bandit B324 gate.
+    return hashlib.sha1(  # nosec B324
+        f"{model}\x00{text}".encode("utf-8", "replace"), usedforsecurity=False
+    ).hexdigest()
 
 
 def _embed_cache_get(key: str):

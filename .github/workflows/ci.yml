@@ -134,10 +134,12 @@ jobs:
         npm test
 
   security-scan:
-    # Dependency + static-analysis security scanning. NON-BLOCKING for now:
-    # every step has continue-on-error so findings are reported without failing
-    # the build while the backlog is worked down. Once the backlog is clean,
-    # remove the continue-on-error flags (or gate on them) to make this blocking.
+    # Dependency + static-analysis security scanning.
+    # bandit (our own code) is BLOCKING at medium+ severity — a new medium/high
+    # finding fails the build. Dependency advisories (pip-audit / npm audit) stay
+    # advisory: they surface upstream transitive CVEs that are often unfixable
+    # without a major bump, so they are triaged separately rather than blocking
+    # every unrelated merge.
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -152,8 +154,7 @@ jobs:
       run: |
         cd backend
         pip-audit -r requirements.txt
-    - name: bandit (Python static analysis, medium+ severity)
-      continue-on-error: true
+    - name: bandit (Python static analysis, medium+ severity — BLOCKING)
       run: |
         cd backend
         bandit -r app -ll

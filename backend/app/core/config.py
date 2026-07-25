@@ -98,8 +98,15 @@ class Settings(BaseSettings):
     # Database — SQLite for local dev, PostgreSQL for production
     DATABASE_URL: str = "sqlite+aiosqlite:///./kaeos.db"
     DATABASE_URL_SYNC: str = "sqlite:///./kaeos.db"
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 10
+    # Per-WORKER pool sizes. The prod image runs gunicorn -w4, so total server
+    # connections = workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) PLUS the separate
+    # maintenance pool. At the old 20+10 that was 4x30 = 120 alone — over Postgres'
+    # default max_connections=100 — so bursts hit "remaining connection slots are
+    # reserved". Sized down to 10+5 => 4x15 = 60, leaving headroom for the
+    # maintenance/owner pool and admin sessions. Front with PgBouncer (transaction
+    # pooling) to raise effective concurrency without more server connections.
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
