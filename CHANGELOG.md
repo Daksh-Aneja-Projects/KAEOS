@@ -9,6 +9,26 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Self-improving autonomy — the loop is closed)
+- **L2 External fine-tune bridge — the 6th and final loop.** Model evolution
+  already measured a candidate and gated its promotion; the missing step was
+  PRODUCING the candidate. New `FineTuneProvider` abstraction (real
+  `OpenAIFineTuneProvider` + honest `NullFineTuneProvider` that fails clearly when
+  none is configured — never fabricates a model), a `finetune_jobs` table
+  (migration `0018`, RLS), `submit_finetune` (exports the tenant's curated positive
+  examples and submits), and a 5-min leader-guarded `run_finetune_poll` job that
+  polls to completion and **auto-triggers a real `ModelEvolutionRun`** on the
+  fine-tuned candidate. Promotion stays human-gated. Routes: `POST
+  /foundry/finetune/submit|poll`, `GET /foundry/finetune/jobs`. Tests:
+  `tests/test_finetune_bridge_l2.py`. All six governance loops (L1–L5 + L7) now close.
+
+### Fixed (Production-readiness — resilience UX)
+- **Fetch-error UI across the top pages (P1-13).** OrgPulse, MissionControl,
+  UserManagement, and all six department dashboards (Finance/HR/Legal/Sales/
+  Support/Operations) swallowed load failures to the console, so a backend outage
+  rendered as "No data yet" / "Department not deployed". They now distinguish a
+  genuine outage from an empty state and render a retry-able error instead.
+
 ### Added (Self-improving autonomy — closed loops, round 2)
 - **L3 Drift -> reconcile / auto-heal.** `compute_drift` only DETECTED drift.
   Added `Actuator.reconcile_object` (re-asserts the last governed `after_state` as

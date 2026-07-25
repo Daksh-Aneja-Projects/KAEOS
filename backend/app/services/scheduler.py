@@ -152,6 +152,24 @@ async def run_job_queue_reaper():
         logger.error(f"[Scheduler] Job queue reaper failed: {e}")
 
 
+async def run_finetune_poll():
+    """L2: poll external fine-tune jobs to completion and auto-trigger eval.
+
+    Leader-guarded, cross-tenant (owner session). Promotion of any resulting
+    winner stays human-gated — this only advances the bridge and fills the funnel.
+    """
+    if not _is_leader():
+        return
+    try:
+        from app.services.foundry import finetune
+        async with MaintenanceSessionLocal() as db:
+            result = await finetune.poll_finetune_jobs(db)
+        if result.get("advanced"):
+            logger.info("[Scheduler] Fine-tune bridge advanced %d job(s)", result["advanced"])
+    except Exception as e:
+        logger.error(f"[Scheduler] Fine-tune poll failed: {e}")
+
+
 async def run_autonomy_governor_job():
     """L5-reverse: nudge each tenant's per-domain autonomy dial from the measured
     safe-autonomy-rate (bounded; respects human-set dials). Leader-guarded."""
@@ -235,6 +253,11 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_autonomy_governor_job, 'interval', hours=6,
         id='autonomy_governor_job', replace_existing=True
+    )
+    # L2 fine-tune bridge: poll external jobs to completion + auto-eval (5 min).
+    scheduler.add_job(
+        run_finetune_poll, 'interval', minutes=5,
+        id='finetune_poll_job', replace_existing=True
     )
     # Recover deployments orphaned by a worker crash/restart (fire-and-forget
     # pipeline has no durable queue yet); frequent + cheap.

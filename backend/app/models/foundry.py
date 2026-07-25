@@ -107,6 +107,38 @@ class ModelEvolutionRun(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class FineTuneJob(Base):
+    """Phase 4 — the EXTERNAL fine-tune bridge (closes the L2 loop).
+
+    Model evolution measures + promotes a candidate; this is the missing step
+    that PRODUCES the candidate: submit the tenant's curated positive examples to
+    an external fine-tuning provider, poll to completion, and on success
+    auto-trigger a real evaluation (``ModelEvolutionRun``). Promotion stays
+    HUMAN-gated — the bridge only fills the funnel with a measured candidate.
+
+    Tenant-scoped, NOT in GLOBAL_TABLES, so RLS isolates one tenant's jobs.
+    """
+    __tablename__ = "finetune_jobs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+
+    tier = Column(String(24), nullable=False)                # reasoning | classification | fast
+    provider = Column(String(32), nullable=False, default="")  # openai | ...
+    base_model = Column(String(128), nullable=False, default="")
+    external_job_id = Column(String(128), nullable=True)     # the provider's job handle
+
+    # SUBMITTED → RUNNING → SUCCEEDED → EVALUATING → EVALUATED ; FAILED on error
+    status = Column(String(24), default="SUBMITTED", index=True)
+    example_count = Column(Integer, default=0)
+    result_model = Column(String(128), nullable=True)        # the fine-tuned model id
+    eval_run_id = Column(String, nullable=True)              # -> ModelEvolutionRun.id (auto-eval)
+    error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 # Evaluation labels, most-valuable first. Kept here so the builder, routes, and
 # tests agree on one vocabulary.
 LABEL_CORRECTED = "CORRECTED"   # human edited the answer - the strongest supervised signal

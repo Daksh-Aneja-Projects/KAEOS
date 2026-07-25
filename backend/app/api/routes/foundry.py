@@ -237,3 +237,64 @@ async def reject_evolution_run(
     except ValueError as e:
         raise HTTPException(400, str(e))
     return _run_out(run)
+
+
+# ── L2 external fine-tune bridge ──────────────────────────────────────────────
+
+class FineTuneRequest(BaseModel):
+    tier: str
+    base_model: str | None = None
+
+
+def _job_out(job) -> dict:
+    return {
+        "id": job.id, "tier": job.tier, "provider": job.provider,
+        "base_model": job.base_model, "status": job.status,
+        "example_count": job.example_count, "external_job_id": job.external_job_id,
+        "result_model": job.result_model, "eval_run_id": job.eval_run_id,
+        "error": job.error,
+    }
+
+
+@router.post("/finetune/submit")
+async def submit_finetune(
+    body: FineTuneRequest,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit the tenant's curated examples to an external fine-tuner (operator).
+
+    Produces a candidate model that the poll job auto-evaluates; promotion of any
+    winner stays human-gated. Honest when no provider is configured (job FAILS
+    with a clear reason rather than inventing a model).
+    """
+    from app.services.foundry import finetune
+    if body.tier not in ("reasoning", "classification", "fast"):
+        raise HTTPException(400, "tier must be reasoning, classification, or fast")
+    job = await finetune.submit_finetune(db, tenant["tenant_id"], tier=body.tier,
+                                         base_model=body.base_model)
+    return _job_out(job)
+
+
+@router.get("/finetune/jobs")
+async def list_finetune_jobs(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select
+    from app.models.foundry import FineTuneJob
+    rows = (await db.execute(
+        select(FineTuneJob).where(FineTuneJob.tenant_id == tenant_id)
+        .order_by(FineTuneJob.created_at.desc()).limit(50)
+    )).scalars().all()
+    return {"jobs": [_job_out(j) for j in rows]}
+
+
+@router.post("/finetune/poll")
+async def poll_finetune_now(
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Poll this tenant's active fine-tune jobs immediately (the scheduler also does this)."""
+    from app.services.foundry import finetune
+    return await finetune.poll_finetune_jobs(db, tenant_id=tenant["tenant_id"])
