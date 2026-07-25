@@ -184,19 +184,19 @@ export default function OperationsDashboard() {
               <Bot className="w-4 h-4" style={{ color: colors.primary }} /> Active Ops Agents
             </h3>
             <div className="space-y-3">
-              {(dept?.agent_definitions || []).length === 0 && (
+              {(dept?.agents || []).length === 0 && (
                 <p className="text-[11px]" style={{ color: colors.inkSubtle }}>No agents deployed yet.</p>
               )}
-              {(dept?.agent_definitions || []).map((agent: any) => (
-                <div key={agent.name} className="flex items-center justify-between p-2.5 rounded-lg border" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+              {(dept?.agents || []).map((agent: any) => (
+                <div key={agent.id} className="flex items-center justify-between p-2.5 rounded-lg border" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                   <div className="flex items-center gap-2">
-                    <span className="text-[16px]">{agent.icon}</span>
+                    <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold" style={{ background: colors.primary + '18', color: colors.primary }}>{(agent.agent_name || '?').charAt(0)}</div>
                     <div>
-                      <div className="text-[12px] font-bold">{agent.name}</div>
-                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{agent.role}</div>
+                      <div className="text-[12px] font-bold">{agent.agent_name}</div>
+                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500">Active</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
                 </div>
               ))}
             </div>

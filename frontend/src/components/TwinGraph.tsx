@@ -40,6 +40,13 @@ const TYPE_COLORS: Record<string, string> = {
   Employee: '#f59e0b',
   Vendor: '#ec4899',
   Project: '#ef4444',
+  // Cross-domain headline entities — one hue per record type.
+  Customer: '#22d3ee',       // finance customers (cyan)
+  Account: '#a78bfa',        // sales accounts (violet)
+  Ticket: '#fb923c',         // support tickets (orange)
+  Contract: '#f472b6',       // legal contracts (pink)
+  Incident: '#f87171',       // engineering incidents (red)
+  PurchaseOrder: '#a3e635',  // operations POs (lime)
 };
 /** One hue per department: hub node, territory glow, and legend entry all match. */
 const DEPT_PALETTE = [
@@ -47,6 +54,7 @@ const DEPT_PALETTE = [
 ];
 const TYPE_RADIUS: Record<string, number> = {
   Department: 16, Capability: 7, Agent: 6, Process: 6, Employee: 5, Vendor: 7, Project: 7,
+  Customer: 5, Account: 5.5, Ticket: 5, Contract: 6, Incident: 6, PurchaseOrder: 5,
 };
 
 const W = 960;

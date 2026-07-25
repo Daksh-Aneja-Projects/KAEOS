@@ -9,7 +9,9 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.workforce.models.core import Department, Capability, BusinessProcess, DepartmentAgent, WorkforceDeployment
+from app.workforce.models.core import (
+    Department, Capability, CapabilityStatus, BusinessProcess, DepartmentAgent, WorkforceDeployment,
+)
 from app.workforce.models.domain_pack import DomainPack
 
 logger = logging.getLogger(__name__)
@@ -297,6 +299,78 @@ def build_agent_skill(agent_def: dict, pack_slug: str, capability) -> dict:
 
 class WorkforceGenerator:
     
+    async def _ensure_capabilities_and_processes(
+        self, db: AsyncSession, tenant_id: str, dept: Department, pack, deployment,
+    ):
+        """Idempotently create the pack's capabilities + processes under `dept`.
+
+        Safe for a freshly created department OR an adopted existing one that may
+        already have some (or none) of them - only missing slugs are created. This
+        is what lets a pre-seeded department (created by onboarding, with no
+        capabilities) still get its full workforce backbone on (re)deploy.
+        """
+        existing_caps_q = await db.execute(
+            select(Capability).where(Capability.department_id == dept.id)
+        )
+        existing_slugs = {c.slug for c in existing_caps_q.scalars().all()}
+        capabilities_created: list = []
+        processes_created: list = []
+        for cap_def in pack.capabilities:
+            selected = (not deployment.selected_capabilities) or (
+                cap_def["id"] in deployment.selected_capabilities
+            )
+            if not selected or cap_def["id"] in existing_slugs:
+                continue
+            cap = Capability(
+                tenant_id=tenant_id,
+                department_id=dept.id,
+                name=cap_def["name"],
+                slug=cap_def["id"],
+                description=cap_def.get("description", ""),
+                icon=cap_def.get("icon", "⚡"),
+                # A deployed capability is live, not merely planned.
+                status=CapabilityStatus.ACTIVE,
+                agent_definitions=cap_def.get("agents", []),
+                process_definitions=cap_def.get("processes", []),
+                compliance_tags=cap_def.get("compliance", []),
+            )
+            db.add(cap)
+            await db.commit()
+            await db.refresh(cap)
+            capabilities_created.append(cap.id)
+            for proc_id in cap.process_definitions:
+                proc_def = next((p for p in pack.process_definitions if p["id"] == proc_id), None)
+                if proc_def:
+                    proc = BusinessProcess(
+                        tenant_id=tenant_id,
+                        capability_id=cap.id,
+                        department_id=dept.id,
+                        name=proc_def["name"],
+                        slug=proc_def["id"],
+                        sla_hours=proc_def.get("sla_hours"),
+                        steps=proc_def.get("steps", []),
+                    )
+                    db.add(proc)
+                    processes_created.append(proc.id)
+        await db.commit()
+
+        if capabilities_created:
+            deployment.capabilities_activated = (deployment.capabilities_activated or []) + capabilities_created
+            deployment.processes_created = (deployment.processes_created or []) + processes_created
+            db.add(deployment)
+            # Recount from DB - an adopted department may have pre-existing rows.
+            total_caps = (await db.execute(
+                select(Capability).where(Capability.department_id == dept.id)
+            )).scalars().all()
+            total_procs = (await db.execute(
+                select(BusinessProcess).where(BusinessProcess.department_id == dept.id)
+            )).scalars().all()
+            dept.capability_count = len(total_caps)
+            dept.process_count = len(total_procs)
+            db.add(dept)
+            await db.commit()
+        return capabilities_created, processes_created
+
     async def generate_department_structure(self, db: AsyncSession, tenant_id: str, deployment_id: str) -> Department:
         """Creates the logical structure (Dept -> Capability -> Process)."""
         logger.info(f"Generating department structure for deployment {deployment_id}")
@@ -343,6 +417,12 @@ class WorkforceGenerator:
             db.add(deployment)
             await db.commit()
             await db.refresh(existing_by_slug)
+            # An adopted department (e.g. created by onboarding) may have no
+            # capabilities yet - generate the missing backbone so downstream
+            # agent deployment has capabilities to bind to.
+            await self._ensure_capabilities_and_processes(
+                db, tenant_id, existing_by_slug, pack, deployment,
+            )
             return existing_by_slug
 
         # 1. Create Department
@@ -364,60 +444,11 @@ class WorkforceGenerator:
         
         deployment.department_id = dept.id
         db.add(deployment)
-        
-        capabilities_created = []
-        processes_created = []
-        
-        # 2. Create Capabilities
-        for cap_def in pack.capabilities:
-            if cap_def["id"] in deployment.selected_capabilities or not deployment.selected_capabilities:
-                cap = Capability(
-                    tenant_id=tenant_id,
-                    department_id=dept.id,
-                    name=cap_def["name"],
-                    slug=cap_def["id"],
-                    description=cap_def.get("description", ""),
-                    icon=cap_def.get("icon", "⚡"),
-                    agent_definitions=cap_def.get("agents", []),
-                    process_definitions=cap_def.get("processes", []),
-                    compliance_tags=cap_def.get("compliance", [])
-                )
-                db.add(cap)
-                await db.commit()
-                await db.refresh(cap)
-                capabilities_created.append(cap.id)
-                
-                # 3. Create Processes for this capability
-                for proc_id in cap.process_definitions:
-                    # Find process definition in pack
-                    proc_def = next((p for p in pack.process_definitions if p["id"] == proc_id), None)
-                    if proc_def:
-                        proc = BusinessProcess(
-                            tenant_id=tenant_id,
-                            capability_id=cap.id,
-                            department_id=dept.id,
-                            name=proc_def["name"],
-                            slug=proc_def["id"],
-                            sla_hours=proc_def.get("sla_hours"),
-                            steps=proc_def.get("steps", [])
-                        )
-                        db.add(proc)
-                        processes_created.append(proc.id)
-                        
         await db.commit()
-        
-        # Update deployment record
-        deployment.capabilities_activated = capabilities_created
-        deployment.processes_created = processes_created
-        db.add(deployment)
-        await db.commit()
-        
-        # Update counts
-        dept.capability_count = len(capabilities_created)
-        dept.process_count = len(processes_created)
-        db.add(dept)
-        await db.commit()
-        
+
+        # 2/3. Create Capabilities + Processes (shared idempotent path).
+        await self._ensure_capabilities_and_processes(db, tenant_id, dept, pack, deployment)
+
         return dept
 
     async def deploy_agents(self, db: AsyncSession, tenant_id: str, deployment_id: str, department_id: str):
@@ -484,36 +515,46 @@ class WorkforceGenerator:
                 await db.commit()
 
                 # 2. Create Skill for this agent — bound to a REAL agent action,
-                #    with neutral, un-fabricated initial metrics.
-                skill_uuid = str(uuid.uuid4())
+                #    with neutral, un-fabricated initial metrics. Idempotent on
+                #    skill_id: a prior partial deploy may have committed the skill
+                #    before crashing, so adopt the existing one instead of
+                #    violating the unique skill_id constraint.
                 skill_id_name = f"{pack.slug}_{agent_def['type']}_core"
-                built = build_agent_skill(agent_def, pack.slug, cap)
-                skill_compliance = list({*(cap.compliance_tags or []), *built["compliance"]})
-                skill = Skill(
-                    id=skill_uuid,
-                    skill_id=skill_id_name,
-                    tenant_id=tenant_id,
-                    department=pack.slug,
-                    domain=cap.slug,
-                    version=pack.version,
-                    status="ACTIVE",
-                    # Neutral prior: unproven skill, no executions yet.
-                    confidence=0.5,
-                    confidence_tier="INFERRED",
-                    confidence_vector={
-                        "source_breadth": 0.5, "source_authority": 0.5,
-                        "temporal_freshness": 0.5, "outcome_validation": 0.5,
-                        "explicit_validation": 0.5,
-                    },
-                    execution_count=0,
-                    success_rate=0.0,
-                    half_life_days=90,
-                    triggers=[f"incoming task for {agent_def['name']}"],
-                    steps=built["steps"],
-                    compliance_tags=skill_compliance,
-                )
-                db.add(skill)
-                await db.commit()
+                existing_skill = (await db.execute(
+                    select(Skill).where(Skill.skill_id == skill_id_name)
+                )).scalars().first()
+                if existing_skill is not None:
+                    skill_uuid = existing_skill.id
+                    skill = existing_skill
+                else:
+                    skill_uuid = str(uuid.uuid4())
+                    built = build_agent_skill(agent_def, pack.slug, cap)
+                    skill_compliance = list({*(cap.compliance_tags or []), *built["compliance"]})
+                    skill = Skill(
+                        id=skill_uuid,
+                        skill_id=skill_id_name,
+                        tenant_id=tenant_id,
+                        department=pack.slug,
+                        domain=cap.slug,
+                        version=pack.version,
+                        status="ACTIVE",
+                        # Neutral prior: unproven skill, no executions yet.
+                        confidence=0.5,
+                        confidence_tier="INFERRED",
+                        confidence_vector={
+                            "source_breadth": 0.5, "source_authority": 0.5,
+                            "temporal_freshness": 0.5, "outcome_validation": 0.5,
+                            "explicit_validation": 0.5,
+                        },
+                        execution_count=0,
+                        success_rate=0.0,
+                        half_life_days=90,
+                        triggers=[f"incoming task for {agent_def['name']}"],
+                        steps=built["steps"],
+                        compliance_tags=skill_compliance,
+                    )
+                    db.add(skill)
+                    await db.commit()
 
                 # 3. Create DeployedAgent
                 da_id = str(uuid.uuid4())

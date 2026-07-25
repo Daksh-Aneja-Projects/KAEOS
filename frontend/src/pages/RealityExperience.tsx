@@ -46,6 +46,7 @@ export default function RealityExperience() {
   const [realityFeed, setRealityFeed] = useState<EventTrace[]>([]);
   const [learningStats, setLearningStats] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
+  const [twinMeta, setTwinMeta] = useState<{ shown: number; total: number } | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<TwinNode | null>(null);
   const [decision, setDecision] = useState<DecisionTrace | null>(null);
@@ -81,6 +82,7 @@ export default function RealityExperience() {
       setTwinNodes(data.nodes || []);
       setTwinLinks(data.links || []);
       setStats(data.stats || null);
+      setTwinMeta(data.sampled ? { shown: (data.nodes || []).length, total: data.total_nodes } : null);
       setTwinError(null);
     } catch (e: any) {
       console.error(e);
@@ -188,6 +190,199 @@ export default function RealityExperience() {
     { label: 'Projects', value: stats?.projects, icon: FolderOpen, color: '#ef4444' },
   ];
 
+  // Legend for the twin constellation - one hue per record type, mirrors
+  // TYPE_COLORS in TwinGraph.tsx. Only types actually on the graph are shown.
+  const TWIN_LEGEND = [
+    { label: 'Department', color: '#5e6ad2' },
+    { label: 'Employee', color: '#f59e0b' },
+    { label: 'Customer', color: '#22d3ee' },
+    { label: 'Account', color: '#a78bfa' },
+    { label: 'Ticket', color: '#fb923c' },
+    { label: 'Contract', color: '#f472b6' },
+    { label: 'Incident', color: '#f87171' },
+    { label: 'PurchaseOrder', color: '#a3e635' },
+    { label: 'Vendor', color: '#ec4899' },
+    { label: 'Project', color: '#ef4444' },
+    { label: 'Capability', color: '#06b6d4' },
+    { label: 'Agent', color: '#8b5cf6' },
+    { label: 'Process', color: '#22c55e' },
+  ];
+  const presentLabels = new Set(twinNodes.map(n => n.label));
+  const legend = TWIN_LEGEND.filter(l => presentLabels.has(l.label));
+
+  const modeButtons = [
+    { key: 'shock', label: 'Shock', Icon: Zap },
+    { key: 'whatif', label: 'What-If', Icon: Sparkles },
+    { key: 'replay', label: 'Replay', Icon: History },
+    { key: 'wargame', label: 'Wargame', Icon: Swords },
+  ] as const;
+
+  const simControls = (
+    <div className="rounded-xl border shadow-sm p-4" style={card}>
+      {/* Mode toggle: Shock / What-If / Replay / Wargame - 2x2 so labels never wrap */}
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-lg mb-4" style={{ background: colors.canvas }}>
+        {modeButtons.map(({ key, label, Icon }) => (
+          <button key={key} onClick={() => setMode(key)}
+            className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
+            style={{ background: mode === key ? colors.primary : 'transparent', color: mode === key ? '#fff' : colors.inkSubtle }}>
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'wargame' ? (
+        <WargamePanel colors={colors} />
+      ) : mode === 'replay' ? (
+        <TimeMachinePanel colors={colors} />
+      ) : mode === 'shock' ? (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold mb-1 block">Shock Event</label>
+            <select
+              className="w-full text-sm p-2 border rounded focus:outline-none"
+              style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+              value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
+            >
+              {SHOCK_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block">
+              Target {targetLabel || 'Node'} <span style={{ color: colors.inkTertiary }}>({targetOptions.length} live)</span>
+            </label>
+            <select
+              className="w-full text-sm p-2 border rounded focus:outline-none"
+              style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+              value={effectiveTarget} onChange={e => setShockTarget(e.target.value)}
+            >
+              {targetOptions.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+          </div>
+          <button
+            onClick={triggerShock}
+            disabled={isSimulating || !effectiveTarget}
+            className="w-full py-2 rounded text-white font-semibold text-sm transition-opacity"
+            style={{ background: isSimulating ? colors.inkSubtle : colors.primary, opacity: isSimulating || !effectiveTarget ? 0.7 : 1 }}
+          >
+            {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
+          </button>
+          {shockError && (
+            <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+              {shockError}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold mb-1 block">Proposed change</label>
+            <textarea
+              value={whatIfChange}
+              onChange={e => setWhatIfChange(e.target.value)}
+              rows={3}
+              placeholder="e.g. Cut the Finance budget 15% next quarter"
+              className="w-full text-sm p-2 border rounded focus:outline-none resize-none"
+              style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block">Target domain</label>
+            <select
+              className="w-full text-sm p-2 border rounded focus:outline-none"
+              style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
+              value={whatIfDomain} onChange={e => setWhatIfDomain(e.target.value)}
+            >
+              {WHATIF_DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block">Risk tolerance</label>
+            <div className="flex gap-1 p-1 rounded-lg" style={{ background: colors.canvas }}>
+              {WHATIF_RISK.map(r => (
+                <button key={r} onClick={() => setWhatIfRisk(r)}
+                  className="flex-1 py-1 rounded-md text-[11px] font-medium capitalize transition-all"
+                  style={{ background: whatIfRisk === r ? colors.primary + '22' : 'transparent', color: whatIfRisk === r ? colors.primary : colors.inkSubtle }}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={runWhatIf}
+            disabled={whatIfRunning || !whatIfChange.trim()}
+            className="w-full py-2 rounded text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
+            style={{ background: whatIfRunning ? colors.inkSubtle : colors.primary, opacity: whatIfRunning || !whatIfChange.trim() ? 0.7 : 1 }}
+          >
+            {whatIfRunning ? <><Loader2 className="w-4 h-4 animate-spin" /> SIMULATING…</> : <><Sparkles className="w-4 h-4" /> RUN WHAT-IF</>}
+          </button>
+          {whatIfError && (
+            <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+              {whatIfError}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // Full-width stat strip below the header - 6 tiles across so labels never wrap.
+  const statsStrip = (
+    <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+      {statTiles.map(t => (
+        <div key={t.label} className="rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3" style={card}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: t.color + '18' }}>
+            <t.icon className="w-4 h-4" style={{ color: t.color }} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xl font-bold leading-none">{t.value?.toLocaleString() ?? '-'}</div>
+            <div className="text-[10px] uppercase font-semibold mt-1 tracking-wide whitespace-nowrap" style={{ color: colors.inkTertiary }}>{t.label}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const learningState = (
+    <div className="rounded-xl border shadow-sm p-4 flex-1 flex flex-col min-h-0" style={card}>
+      <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
+        <Brain className="w-4 h-4" /> Learning State
+      </h2>
+      {learningStats ? (
+        <div className="space-y-4 flex-1 flex flex-col min-h-0">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+              <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
+              <div className="text-2xl font-bold">{learningStats.shocks_processed ?? 0}</div>
+            </div>
+            <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+              <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>RISK PENALTY</div>
+              <div className="text-2xl font-bold text-red-500">-{learningStats.modifiers?.MITIGATE_FAILURE?.toFixed(1) || 0}</div>
+            </div>
+          </div>
+          <div className="text-xs flex-1 flex flex-col min-h-0">
+            <div className="font-semibold mb-2">Recent Outcomes</div>
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+              {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
+                <div key={i} className="p-2 border rounded font-mono text-[10px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+                  <div className="flex justify-between">
+                    <span className="font-bold">{o.shock_type}</span>
+                    <span className={o.severity > 60 ? 'text-red-500' : 'text-amber-500'}>sev {o.severity?.toFixed(0)}</span>
+                  </div>
+                  <div style={{ color: colors.inkTertiary }} className="truncate">{o.target} → {o.decision}</div>
+                </div>
+              ))}
+              {!(learningStats.historical_outcomes || []).length && (
+                <div className="italic" style={{ color: colors.inkSubtle }}>No shocks run yet - inject one to build history.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm italic" style={{ color: colors.inkSubtle }}>Loading learning state…</div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full w-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
       {/* Header */}
@@ -223,189 +418,97 @@ export default function RealityExperience() {
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-6 p-6">
-        {/* Left Column: Shock Simulator & Learning */}
-        <div className="col-span-3 flex flex-col gap-6">
-          <div className="rounded-xl border shadow-sm p-4" style={card}>
-            {/* Mode toggle: Shock / What-If / Replay / Wargame — 2x2 so labels never wrap */}
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg mb-4" style={{ background: colors.canvas }}>
-              <button onClick={() => setMode('shock')}
-                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
-                style={{ background: mode === 'shock' ? colors.primary : 'transparent', color: mode === 'shock' ? '#fff' : colors.inkSubtle }}>
-                <Zap className="w-3.5 h-3.5" /> Shock
-              </button>
-              <button onClick={() => setMode('whatif')}
-                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
-                style={{ background: mode === 'whatif' ? colors.primary : 'transparent', color: mode === 'whatif' ? '#fff' : colors.inkSubtle }}>
-                <Sparkles className="w-3.5 h-3.5" /> What-If
-              </button>
-              <button onClick={() => setMode('replay')}
-                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
-                style={{ background: mode === 'replay' ? colors.primary : 'transparent', color: mode === 'replay' ? '#fff' : colors.inkSubtle }}>
-                <History className="w-3.5 h-3.5" /> Replay
-              </button>
-              <button onClick={() => setMode('wargame')}
-                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-all whitespace-nowrap"
-                style={{ background: mode === 'wargame' ? colors.primary : 'transparent', color: mode === 'wargame' ? '#fff' : colors.inkSubtle }}>
-                <Swords className="w-3.5 h-3.5" /> Wargame
-              </button>
-            </div>
+      {/* Enterprise stat strip - full width so no label wraps */}
+      <div className="px-6 pt-6">
+        {statsStrip}
+      </div>
 
-            {mode === 'wargame' ? (
-              <WargamePanel colors={colors} />
-            ) : mode === 'replay' ? (
-              <TimeMachinePanel colors={colors} />
-            ) : mode === 'shock' ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Shock Event</label>
-                  <select
-                    className="w-full text-sm p-2 border rounded focus:outline-none"
-                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                    value={shockType} onChange={e => { setShockType(e.target.value); setShockTarget(''); }}
-                  >
-                    {SHOCK_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">
-                    Target {targetLabel || 'Node'} <span style={{ color: colors.inkTertiary }}>({targetOptions.length} live)</span>
-                  </label>
-                  <select
-                    className="w-full text-sm p-2 border rounded focus:outline-none"
-                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                    value={effectiveTarget} onChange={e => setShockTarget(e.target.value)}
-                  >
-                    {targetOptions.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                  </select>
-                </div>
-                <button
-                  onClick={triggerShock}
-                  disabled={isSimulating || !effectiveTarget}
-                  className="w-full py-2 rounded text-white font-semibold text-sm transition-opacity"
-                  style={{ background: isSimulating ? colors.inkSubtle : colors.primary, opacity: isSimulating || !effectiveTarget ? 0.7 : 1 }}
-                >
-                  {isSimulating ? 'INJECTING…' : 'INJECT REALITY SHOCK'}
-                </button>
-                {shockError && (
-                  <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
-                    {shockError}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Proposed change</label>
-                  <textarea
-                    value={whatIfChange}
-                    onChange={e => setWhatIfChange(e.target.value)}
-                    rows={3}
-                    placeholder="e.g. Cut the Finance budget 15% next quarter"
-                    className="w-full text-sm p-2 border rounded focus:outline-none resize-none"
-                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Target domain</label>
-                  <select
-                    className="w-full text-sm p-2 border rounded focus:outline-none"
-                    style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
-                    value={whatIfDomain} onChange={e => setWhatIfDomain(e.target.value)}
-                  >
-                    {WHATIF_DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Risk tolerance</label>
-                  <div className="flex gap-1 p-1 rounded-lg" style={{ background: colors.canvas }}>
-                    {WHATIF_RISK.map(r => (
-                      <button key={r} onClick={() => setWhatIfRisk(r)}
-                        className="flex-1 py-1 rounded-md text-[11px] font-medium capitalize transition-all"
-                        style={{ background: whatIfRisk === r ? colors.primary + '22' : 'transparent', color: whatIfRisk === r ? colors.primary : colors.inkSubtle }}>
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  onClick={runWhatIf}
-                  disabled={whatIfRunning || !whatIfChange.trim()}
-                  className="w-full py-2 rounded text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
-                  style={{ background: whatIfRunning ? colors.inkSubtle : colors.primary, opacity: whatIfRunning || !whatIfChange.trim() ? 0.7 : 1 }}
-                >
-                  {whatIfRunning ? <><Loader2 className="w-4 h-4 animate-spin" /> SIMULATING…</> : <><Sparkles className="w-4 h-4" /> RUN WHAT-IF</>}
-                </button>
-                {whatIfError && (
-                  <div className="rounded px-3 py-2 text-xs" style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
-                    {whatIfError}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border shadow-sm p-4 flex-1 flex flex-col" style={card}>
-            <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
-              <Brain className="w-4 h-4" /> Learning State
-            </h2>
-            {learningStats ? (
-              <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-                    <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
-                    <div className="text-2xl font-bold">{learningStats.shocks_processed ?? 0}</div>
-                  </div>
-                  <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-                    <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>RISK PENALTY</div>
-                    <div className="text-2xl font-bold text-red-500">-{learningStats.modifiers?.MITIGATE_FAILURE?.toFixed(1) || 0}</div>
-                  </div>
-                </div>
-                <div className="text-xs flex-1 flex flex-col min-h-0">
-                  <div className="font-semibold mb-2">Recent Outcomes</div>
-                  <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
-                    {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
-                      <div key={i} className="p-2 border rounded font-mono text-[10px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-                        <div className="flex justify-between">
-                          <span className="font-bold">{o.shock_type}</span>
-                          <span className={o.severity > 60 ? 'text-red-500' : 'text-amber-500'}>sev {o.severity?.toFixed(0)}</span>
-                        </div>
-                        <div style={{ color: colors.inkTertiary }} className="truncate">{o.target} → {o.decision}</div>
-                      </div>
-                    ))}
-                    {!(learningStats.historical_outcomes || []).length && (
-                      <div className="italic" style={{ color: colors.inkSubtle }}>No shocks run yet - inject one to build history.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm italic" style={{ color: colors.inkSubtle }}>Loading learning state…</div>
-            )}
-          </div>
+      {/* ── HERO: the living enterprise twin. Full-bleed and tall - this is the IP.
+          Simulation controls sit to its left so a shock visibly pulses the graph. */}
+      <div className="grid grid-cols-12 gap-6 px-6 pt-6">
+        <div className="col-span-3 flex flex-col gap-6 min-h-0 overflow-hidden" style={{ height: 640 }}>
+          {simControls}
+          {learningState}
         </div>
 
-        {/* Middle Column: Overview, Twin Graph, Decisions */}
-        <div className="col-span-6 flex flex-col gap-6">
-          <div className="rounded-xl border shadow-sm p-4" style={card}>
-            <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
-              <Activity className="w-4 h-4" /> Enterprise Overview
-            </h2>
-            <div className="grid grid-cols-3 gap-3">
-              {statTiles.map(t => (
-                <div key={t.label} className="p-3 border rounded-lg flex items-center gap-3" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: t.color + '18' }}>
-                    <t.icon className="w-4 h-4" style={{ color: t.color }} />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold leading-none">{t.value?.toLocaleString() ?? '-'}</div>
-                    <div className="text-[10px] uppercase font-semibold mt-1" style={{ color: colors.inkTertiary }}>{t.label}</div>
-                  </div>
-                </div>
-              ))}
+        <div className="col-span-9 rounded-xl border shadow-sm p-4 relative flex flex-col min-h-0" style={{ ...card, height: 640 }}>
+          <div className="flex items-start justify-between mb-2 gap-4">
+            <div>
+              <h2 className="text-sm font-bold uppercase flex items-center gap-2" style={{ color: colors.inkSubtle }}>
+                <Database className="w-4 h-4" /> Enterprise Twin - Live Constellation
+              </h2>
+              <p className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>
+                Every department and its live records - customers, accounts, tickets, contracts, incidents, orders. Click a node to inspect or shock it.
+              </p>
             </div>
+            {twinMeta && (
+              <div className="text-[10px] font-mono px-2 py-1 rounded whitespace-nowrap" style={{ background: colors.primary + '15', color: colors.primary }}>
+                {twinMeta.shown} of {twinMeta.total.toLocaleString()} nodes
+              </div>
+            )}
           </div>
 
+          {/* Node-type legend - makes the rich constellation readable at a glance */}
+          {legend.length > 0 && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
+              {legend.map(l => (
+                <span key={l.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: colors.inkSubtle }}>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: l.color }} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex-1 rounded overflow-hidden relative" style={{ background: colors.canvas }}>
+            <React.Suspense fallback={null}>
+              <TwinGraph data={{ nodes: twinNodes, links: twinLinks }} onNodeClick={(n: any) => setSelectedNode(n)} shock={shockPulse} />
+            </React.Suspense>
+          </div>
+
+          {selectedNode && (
+            <div className="absolute right-6 top-14 bottom-6 w-64 p-4 border rounded-xl shadow-xl overflow-y-auto z-10" style={{ background: colors.surface1, borderColor: colors.hairline }}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-bold text-sm truncate">{selectedNode.name}</h3>
+                <button onClick={() => setSelectedNode(null)} className="p-1 rounded hover:bg-red-500/20" style={{ color: colors.inkSubtle }}>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="text-[10px] font-mono px-2 py-0.5 rounded inline-block mb-3" style={{ background: colors.primary + '20', color: colors.primary }}>
+                {selectedNode.label}
+              </div>
+              <div className="space-y-2 text-xs">
+                {Object.entries(selectedNode)
+                  .filter(([k]) => !['id', 'name', 'label', 'group', 'x', 'y', 'vx', 'vy', 'hx', 'hy', 'r', 'fixed', 'phase'].includes(k))
+                  .map(([k, v]) => (
+                    <div key={k} className="border-b pb-1" style={{ borderColor: colors.hairline }}>
+                      <div className="font-semibold capitalize" style={{ color: colors.inkSubtle }}>{k.replace(/_/g, ' ')}</div>
+                      <div className="font-mono truncate">{String(v)}</div>
+                    </div>
+                  ))}
+                {SHOCK_TYPES.some(s => s.targetLabel === selectedNode.label) && (
+                  <button
+                    onClick={() => {
+                      const st = SHOCK_TYPES.find(s => s.targetLabel === selectedNode.label);
+                      if (st) { setShockType(st.value); setMode('shock'); }
+                      setShockTarget(selectedNode.id);
+                      setSelectedNode(null);
+                    }}
+                    className="w-full mt-2 py-1.5 rounded text-white text-xs font-semibold"
+                    style={{ background: colors.primary }}
+                  >
+                    Set as Shock Target
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-6 p-6">
+        {/* Left: Scenario/What-If results + Decisions */}
+        <div className="col-span-8 flex flex-col gap-6">
           {mode === 'shock' && scenarios.length > 0 && (
             <div className="rounded-xl border shadow-sm p-5" style={card}>
               <div className="flex items-center justify-between mb-4">
@@ -545,53 +648,6 @@ export default function RealityExperience() {
             </div>
           )}
 
-          <div className="rounded-xl border shadow-sm p-4 relative flex flex-col" style={{ ...card, minHeight: 480 }}>
-            <h2 className="text-sm font-bold uppercase mb-2 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
-              <Database className="w-4 h-4" /> Enterprise Twin - Live
-            </h2>
-            <div className="flex-1 rounded overflow-hidden relative" style={{ background: colors.canvas }}>
-              <React.Suspense fallback={null}>
-                <TwinGraph data={{ nodes: twinNodes, links: twinLinks }} onNodeClick={(n: any) => setSelectedNode(n)} shock={shockPulse} />
-              </React.Suspense>
-            </div>
-
-            {selectedNode && (
-              <div className="absolute right-6 top-14 bottom-6 w-64 p-4 border rounded-xl shadow-xl overflow-y-auto z-10" style={{ background: colors.surface1, borderColor: colors.hairline }}>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-sm truncate">{selectedNode.name}</h3>
-                  <button onClick={() => setSelectedNode(null)} className="p-1 rounded hover:bg-red-500/20" style={{ color: colors.inkSubtle }}>
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="text-[10px] font-mono px-2 py-0.5 rounded inline-block mb-3" style={{ background: colors.primary + '20', color: colors.primary }}>
-                  {selectedNode.label}
-                </div>
-                <div className="space-y-2 text-xs">
-                  {Object.entries(selectedNode)
-                    .filter(([k]) => !['id', 'name', 'label', 'group'].includes(k))
-                    .map(([k, v]) => (
-                      <div key={k} className="border-b pb-1" style={{ borderColor: colors.hairline }}>
-                        <div className="font-semibold capitalize" style={{ color: colors.inkSubtle }}>{k.replace(/_/g, ' ')}</div>
-                        <div className="font-mono truncate">{String(v)}</div>
-                      </div>
-                    ))}
-                  <button
-                    onClick={() => {
-                      const st = SHOCK_TYPES.find(s => s.targetLabel === selectedNode.label);
-                      if (st) setShockType(st.value);
-                      setShockTarget(selectedNode.id);
-                      setSelectedNode(null);
-                    }}
-                    className="w-full mt-2 py-1.5 rounded text-white text-xs font-semibold"
-                    style={{ background: colors.primary }}
-                  >
-                    Set as Shock Target
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           <div className="rounded-xl border shadow-sm p-4 overflow-y-auto" style={{ ...card, minHeight: 200 }}>
             <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <Crosshair className="w-4 h-4" /> Decision Center
@@ -640,7 +696,7 @@ export default function RealityExperience() {
         </div>
 
         {/* Right Column: Provenance & Live Feed */}
-        <div className="col-span-3 flex flex-col gap-6">
+        <div className="col-span-4 flex flex-col gap-6">
           <div className="rounded-xl border shadow-sm p-4 overflow-y-auto" style={{ ...card, minHeight: 280 }}>
             <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <GitPullRequest className="w-4 h-4" /> Why Panel
@@ -671,23 +727,31 @@ export default function RealityExperience() {
               <div className="text-sm italic opacity-50" style={{ color: colors.inkSubtle }}>Trace empty - run a shock to see the reasoning chain.</div>
             )}
           </div>
+        </div>
+      </div>
 
-          <div className="rounded-xl border shadow-sm p-4 flex-1 flex flex-col" style={{ ...card, minHeight: 280 }}>
-            <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
+      {/* ── Reality Feed: a full-width event stream so it reads as a live ticker
+          across the whole dashboard, not a cramped side rail. */}
+      <div className="px-6 pb-6">
+        <div className="rounded-xl border shadow-sm p-4" style={card}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <Activity className="w-4 h-4" /> Reality Feed
             </h2>
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-2">
+            <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{realityFeed.length} events</span>
+          </div>
+          {realityFeed.length === 0 ? (
+            <div className="text-sm italic opacity-50 py-6 text-center" style={{ color: colors.inkSubtle }}>Listening to enterprise events…</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
               {realityFeed.slice().reverse().map((f, i) => (
-                <div key={i} className="text-xs p-2 rounded font-mono border" style={{ background: colors.canvas, borderColor: colors.hairline }}>
-                  <span className="mr-2" style={{ color: colors.primary }}>[{String(f.id).padStart(4, '0')}]</span>
-                  {f.event}
+                <div key={i} className="text-xs p-2 rounded font-mono border flex gap-2" style={{ background: colors.canvas, borderColor: colors.hairline }}>
+                  <span className="flex-shrink-0" style={{ color: colors.primary }}>[{String(f.id).padStart(4, '0')}]</span>
+                  <span className="min-w-0">{f.event}</span>
                 </div>
               ))}
-              {realityFeed.length === 0 && (
-                <div className="text-sm italic opacity-50" style={{ color: colors.inkSubtle }}>Listening to enterprise events…</div>
-              )}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

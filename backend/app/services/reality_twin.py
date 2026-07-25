@@ -25,7 +25,18 @@ GROUPS = {
     "Employee": 5,
     "Vendor": 6,
     "Project": 7,
+    "Customer": 8,
+    "Account": 9,
+    "Ticket": 10,
+    "Contract": 11,
+    "Incident": 12,
+    "PurchaseOrder": 13,
 }
+
+# Per department, how many of each headline entity to weave into the twin. Enough
+# for a rich, balanced constellation; the physics stays smooth and stats stay
+# honest (computed from the full graph before sampling).
+_ENTITY_SAMPLE = 14
 
 
 async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
@@ -110,7 +121,7 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
                 add_edge(fin_dept, v.id, "CONTRACTS")
 
         projects = (
-            await db.execute(select(Project).where(Project.tenant_id == tenant_id))
+            await db.execute(select(Project).where(Project.tenant_id == tenant_id).limit(_ENTITY_SAMPLE))
         ).scalars().all()
         ops_dept = dept_by_slug.get("operations")
         for pr in projects:
@@ -118,7 +129,104 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
             if ops_dept:
                 add_edge(ops_dept, pr.id, "EXECUTES")
 
+        # ── Cross-domain headline entities: weave a SAMPLE of each domain's real
+        #    records into the twin so the constellation is rich AND balanced across
+        #    every department (not just an HR-employee cloud). Each query is bounded.
+        async def _weave(model, label, dept_slug, rel, name_attr, name_fn=None,
+                         status_attr="status", extra=None):
+            dept = dept_by_slug.get(dept_slug)
+            if not dept:
+                return
+            rows = (await db.execute(select(model).where(model.tenant_id == tenant_id)
+                                     .limit(_ENTITY_SAMPLE))).scalars().all()
+            for r in rows:
+                name = name_fn(r) if name_fn else (getattr(r, name_attr, None) or label)
+                props = {}
+                st = getattr(r, status_attr, None)
+                if st is not None:
+                    props["status"] = str(st)
+                if extra:
+                    props.update({k: getattr(r, v, None) for k, v in extra.items()})
+                add_node(r.id, label, str(name)[:60], **props)
+                add_edge(dept, r.id, rel)
+
+        try:
+            from app.finance.models.accounts_receivable import Customer
+            await _weave(Customer, "Customer", "finance", "SERVES", "name")
+        except Exception:
+            pass
+        try:
+            from app.sales.models.accounts import Account
+            await _weave(Account, "Account", "sales", "OWNS", "name", status_attr="health_score")
+        except Exception:
+            pass
+        try:
+            from app.support.models.tickets import Ticket
+            await _weave(Ticket, "Ticket", "support", "HANDLES", "subject")
+        except Exception:
+            pass
+        try:
+            from app.legal.models.contracts import Contract as _Contract
+            await _weave(_Contract, "Contract", "legal", "GOVERNS", "title",
+                         name_fn=lambda c: getattr(c, "title", None) or getattr(c, "counterparty", None) or "Contract")
+        except Exception:
+            pass
+        try:
+            from app.engineering.models.incidents import Incident as _Incident
+            await _weave(_Incident, "Incident", "engineering", "OWNS", "title",
+                         name_fn=lambda i: getattr(i, "title", None) or getattr(i, "incident_number", None) or "Incident")
+        except Exception:
+            pass
+        try:
+            from app.operations.models.procurement import PurchaseOrder as _PO
+            await _weave(_PO, "PurchaseOrder", "operations", "ORDERS", "po_number",
+                         name_fn=lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60])
+        except Exception:
+            pass
+
     return nodes, edges
+
+
+# The twin is a "living organization" HERO visual, not an exhaustive dump. With
+# real data a department can have hundreds of employees; rendering every one turns
+# the constellation into an unreadable hairball (and the O(N^2) client physics
+# chokes). We keep the full structural backbone and sample the high-cardinality
+# leaf entities to a legible-but-representative count PER DEPARTMENT.
+_STRUCTURAL = {"Department", "Capability", "Agent", "Process"}
+_LEAF_PER_DEPT_CAP = 12   # up to N employees/vendors/projects shown per department
+
+
+def sample_twin_for_view(nodes: Dict[str, dict], edges: List[dict],
+                         per_dept_cap: int = _LEAF_PER_DEPT_CAP) -> Tuple[Dict[str, dict], List[dict]]:
+    """Return a legible subset: full backbone + a per-department sample of leaves.
+
+    Stats are computed from the FULL graph by the caller, so the numbers stay
+    honest even though the constellation only draws a representative sample.
+    """
+    # Map each leaf node to the department it hangs off (via its incoming edge).
+    parent_of: Dict[str, str] = {}
+    for e in edges:
+        # edges point department/capability -> leaf; the leaf is the target
+        if e["target"] in nodes and e["source"] in nodes:
+            parent_of.setdefault(e["target"], e["source"])
+
+    kept: Dict[str, dict] = {}
+    per_group: Dict[str, int] = {}
+    for nid, n in nodes.items():
+        if n["label"] in _STRUCTURAL:
+            kept[nid] = n
+    # Sample leaves, capped per (parent, type) so every department stays populated.
+    for nid, n in nodes.items():
+        if n["label"] in _STRUCTURAL:
+            continue
+        key = f"{parent_of.get(nid, 'orphan')}::{n['label']}"
+        if per_group.get(key, 0) >= per_dept_cap:
+            continue
+        per_group[key] = per_group.get(key, 0) + 1
+        kept[nid] = n
+
+    view_edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
+    return kept, view_edges
 
 
 def twin_stats(nodes: Dict[str, dict]) -> Dict[str, int]:

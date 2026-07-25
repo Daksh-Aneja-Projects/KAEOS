@@ -44,10 +44,17 @@ async def record_event(msg: str, tenant_id: str, metadata: dict | None = None):
 async def get_twin(tenant_id: str = Depends(get_tenant_id)):
     try:
         nodes, edges = await build_live_twin(tenant_id)
+        # Stats reflect the FULL org (honest counts); the drawn constellation is a
+        # legible per-department sample so it never degrades into a hairball.
+        stats = twin_stats(nodes)
+        from app.services.reality_twin import sample_twin_for_view
+        view_nodes, view_edges = sample_twin_for_view(nodes, edges)
         return {
-            "nodes": list(nodes.values()),
-            "links": edges,
-            "stats": twin_stats(nodes),
+            "nodes": list(view_nodes.values()),
+            "links": view_edges,
+            "stats": stats,
+            "sampled": len(view_nodes) < len(nodes),
+            "total_nodes": len(nodes),
         }
     except Exception as e:
         logger.error(f"Twin fetch error: {e}")

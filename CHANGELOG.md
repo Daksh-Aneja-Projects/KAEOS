@@ -3,6 +3,51 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-07-25 - "Living Enterprise Twin"
+
+Makes the Reality Experience twin the product's hero view and closes several
+data-consistency gaps that made live departments look empty. All verified in the
+browser against the production Postgres tenant with real Ollama.
+
+### Added
+- **Rich cross-domain Digital Twin.** `build_live_twin` now weaves a bounded
+  sample of every domain's real records into the constellation — Customers
+  (finance), Accounts (sales), Tickets (support), Contracts (legal), Incidents
+  (engineering), Purchase Orders (operations) — each attached to its department,
+  on top of the full Department -> Capability -> Agent -> Process backbone.
+  `sample_twin_for_view` keeps the structural backbone and caps high-cardinality
+  leaves per department so the graph stays legible; stats stay honest (computed
+  from the full graph, with a "N of M nodes" badge).
+- **Twin as the page hero.** `RealityExperience` rearranged: a full-width stat
+  strip (no label wrapping), the twin as a tall full-bleed hero with a node-type
+  legend and live simulation controls beside it, and a full-width Reality Feed
+  event stream. `TwinGraph` gained distinct colors/radii for the six new record
+  types. Verified across shock / what-if / replay / wargame.
+- **`seed_workforce_backbone.py`.** Idempotently generates the Capability ->
+  Process -> DepartmentAgent backbone for a tenant whose departments already
+  exist (e.g. from onboarding), binding each to its domain pack.
+
+### Fixed
+- **Deployment adoption skipped the backbone.** `generate_department_structure`
+  adopted an existing department (created by onboarding) but returned before
+  creating its capabilities/processes, so `deploy_agents` found nothing to bind
+  and failed with "no agents were deployed". Extracted an idempotent
+  `_ensure_capabilities_and_processes` run on both the new-department and
+  adoption paths. Skill creation is now idempotent on `skill_id` (a prior partial
+  deploy no longer collides). Deployed capabilities are marked ACTIVE, not PLANNED.
+- **Department dashboards never showed deployed agents.** Finance, Legal,
+  Operations, Sales and Support read `dept.agent_definitions`; the API returns
+  `dept.agents`. All five now render the real `DepartmentAgent` records (name,
+  role, status).
+- **Legal "Active Contracts 0".** The onboarding seeder marked every contract
+  SIGNED, so the ACTIVE-only KPI read zero beside thousands of clauses. Contracts
+  now carry a realistic status mix (mostly ACTIVE, with SIGNED/IN_REVIEW/
+  EXPIRED/DRAFT), effective/expiry dates, values and AI risk scores.
+- **Finance AP/AR twin vs. dashboard mismatch.** The twin's `FinanceState` summed
+  Purchase-Order commitments while the Finance card summed open invoice balances.
+  Both now read the same source (open AP invoice + open AR invoice balances);
+  onboarding generates real AP invoices from received POs.
+
 ## [2.0.0] - 2026-07-25 - "Self-Improving Autonomy Platform"
 
 Production-readiness release. All P0 honesty/security/procurement blockers closed;

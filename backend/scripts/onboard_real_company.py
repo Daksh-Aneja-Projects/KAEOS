@@ -425,13 +425,41 @@ async def onboard_legal(session, limit: int) -> tuple[int, int]:
             except ValueError:
                 eff = None
 
+        # A real portfolio is a status mix, not a wall of one state. Distribute
+        # deterministically (index-based, no RNG) so most contracts are in-force
+        # (ACTIVE) with realistic effective/expiry dates and values - a handful
+        # expiring soon so the "Expiring <=90d" insight has signal.
+        today = date.today()
+        bucket = n_con % 20
+        if bucket < 13:
+            c_status = ContractStatus.ACTIVE
+        elif bucket < 15:
+            c_status = ContractStatus.SIGNED
+        elif bucket < 17:
+            c_status = ContractStatus.IN_REVIEW
+        elif bucket < 19:
+            c_status = ContractStatus.EXPIRED
+        else:
+            c_status = ContractStatus.DRAFT
+        c_value = 50000 + (n_con % 40) * 12500  # $50k .. $537.5k
+        c_eff, c_expiry = eff, None
+        if c_status == ContractStatus.ACTIVE:
+            c_eff = today - timedelta(days=90 + (n_con % 600))
+            c_expiry = (today + timedelta(days=15 + (n_con % 75))) if (n_con % 7 == 0) \
+                else (today + timedelta(days=120 + (n_con % 780)))
+        elif c_status == ContractStatus.EXPIRED:
+            c_eff = today - timedelta(days=800 + (n_con % 400))
+            c_expiry = today - timedelta(days=10 + (n_con % 180))
+
         con = Contract(
             id=_id(), tenant_id=TENANT,
             title=title[:256], counterparty=counterparty,
             contract_type=contract_type,
-            # SEC-filed exhibits are executed agreements.
-            status=ContractStatus.SIGNED,
-            effective_date=eff,
+            status=c_status,
+            contract_value=c_value,
+            effective_date=c_eff,
+            expiry_date=c_expiry,
+            auto_renew=(n_con % 3 == 0),
         )
         session.add(con)
         n_con += 1
@@ -455,6 +483,10 @@ async def onboard_legal(session, limit: int) -> tuple[int, int]:
                     risk_level=risk,
                 ))
                 n_clauses += 1
+
+        # AI risk score derived from the real clause risk profile (share of
+        # HIGH-risk clauses), so the "Avg AI Risk Score" KPI reflects the corpus.
+        con.ai_risk_score = round(min(95.0, 20.0 + (high / n_clauses * 100 if n_clauses else 0) * 0.9), 2)
 
         session.add(_signal(
             "legal", "CLM", f"contract:{counterparty}",
@@ -500,11 +532,21 @@ async def seed_state_twin(session) -> int:
     total_emp = headcount + terminated
     attrition = round(terminated / total_emp, 4) if total_emp else 0.0
 
-    # Finance
-    ar_total = float(await _scalar(select(func.coalesce(func.sum(CustomerInvoice.total_amount), 0))
-                                   .where(CustomerInvoice.tenant_id == TENANT)))
-    ap_total = float(await _scalar(select(func.coalesce(func.sum(PurchaseOrder.total_amount), 0))
-                                   .where(PurchaseOrder.tenant_id == TENANT)))
+    # Finance — AP/AR must match the Finance dashboard exactly: both are the sum
+    # of OPEN invoice balances (not PO commitments, not all-invoice totals), so
+    # the twin's figure and the domain card never disagree.
+    from app.finance.models.accounts_payable import Invoice, InvoiceStatus
+    from app.finance.models.accounts_receivable import CustomerInvoiceStatus
+    ap_total = float(await _scalar(
+        select(func.coalesce(func.sum(Invoice.balance_due), 0)).where(
+            Invoice.tenant_id == TENANT,
+            Invoice.status.in_([InvoiceStatus.PENDING_APPROVAL, InvoiceStatus.APPROVED, InvoiceStatus.OVERDUE]),
+        )))
+    ar_total = float(await _scalar(
+        select(func.coalesce(func.sum(CustomerInvoice.balance_due), 0)).where(
+            CustomerInvoice.tenant_id == TENANT,
+            CustomerInvoice.status.in_([CustomerInvoiceStatus.SENT, CustomerInvoiceStatus.OVERDUE, CustomerInvoiceStatus.PARTIALLY_PAID]),
+        )))
 
     # Ops (vendor incidents = ops risk signals; supply-chain health from PO mix)
     po_total = await _scalar(select(func.count()).select_from(PurchaseOrder).where(PurchaseOrder.tenant_id == TENANT))
