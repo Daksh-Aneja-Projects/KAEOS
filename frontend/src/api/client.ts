@@ -790,11 +790,8 @@ export const api = {
   getHealthReport: () => request<any>('/reports/health'),
   getComplianceReport: () => request<any>('/reports/compliance'),
   getTenantStats: () => request<any>('/tenants/stats'),
-  getWebhooks: () => request<any>('/webhooks'),
-  createWebhook: (name: string, endpoint: string, events: string[]) => request<any>('/webhooks', {
-    method: 'POST', body: JSON.stringify({ name, endpoint, events })
-  }),
-  deleteWebhook: (id: string) => request<any>(`/webhooks/${id}`, { method: 'DELETE' }),
+  // (webhooks live under /enterprise/webhooks — see the Webhooks block above; the
+  //  old stale /webhooks aliases were removed to avoid duplicate keys.)
   getEventLog: (limit: number = 50) => request<any>(`/events/log?limit=${limit}`),
 
   // ─── AEOS Agent Factory APIs ───

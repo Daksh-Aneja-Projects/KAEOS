@@ -6,7 +6,7 @@ a REAL ``last_audit`` timestamp, and NEVER auto-render COMPLIANT for a framework
 that has coverage but no monitoring signal.
 """
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import pytest
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -121,8 +120,6 @@ async def respond(db: AsyncSession, tenant_id: str, signal: ExternalSignal) -> E
         signal.status = "RESPONDED"
         signal.responded_at = datetime.now(timezone.utc)
         return signal
-
-    dept_matches = [m["name"] for m in (signal.matched_entities or []) if m["type"] == "department"]
 
     if signal.response_kind == "MISSION":
         try:

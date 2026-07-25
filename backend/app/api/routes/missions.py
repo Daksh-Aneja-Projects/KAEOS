@@ -16,7 +16,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.missions import Mission, MissionStep, MissionEvent
 from app.services.missions import (
-    plan_mission, advance_mission, abort_mission, resolve_hitl_step, start_mission_run,
+    plan_mission, abort_mission, resolve_hitl_step, start_mission_run,
 )
 
 router = APIRouter(prefix="/missions", tags=["Missions"])

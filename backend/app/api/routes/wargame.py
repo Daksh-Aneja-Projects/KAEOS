@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import require_role
 from app.services.wargame import run_wargame, list_playbooks
 
 router = APIRouter(prefix="/wargame", tags=["Wargaming"])

@@ -9,7 +9,6 @@ import uuid
 import pytest
 
 from app.models.domain import Skill, SkillExecution
-from app.models.intelligence_metrics import OutcomeRecord
 
 pytestmark = pytest.mark.asyncio
 

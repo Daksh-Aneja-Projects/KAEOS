@@ -232,22 +232,22 @@ def _domain_steps(pack_slug: str, role: str, cap: str) -> list | None:
         ],
         "legal": [
             {"id": "load_matter", "action": f"Retrieve the contract/matter, its clauses and the applicable playbook/regulation for the {cap} task", "tool": "none", "condition": "Always"},
-            {"id": "review", "action": f"Review against the legal playbook and regulatory requirements; identify risky clauses, missing protections and compliance gaps", "tool": "none", "condition": "Always"},
+            {"id": "review", "action": "Review against the legal playbook and regulatory requirements; identify risky clauses, missing protections and compliance gaps", "tool": "none", "condition": "Always"},
             {"id": "recommend", "action": f"Produce redlines / a risk rating and a recommended position for '{role}', escalating high-risk items to counsel", "tool": "none", "condition": "Always"},
         ],
         "sales": [
             {"id": "load_opp", "action": f"Retrieve the opportunity/account, pipeline stage and engagement history for the {cap} task", "tool": "none", "condition": "Always"},
-            {"id": "analyze", "action": f"Analyze deal health, risk and the next-best-action from real CRM signals (no fabricated forecasts)", "tool": "none", "condition": "Always"},
+            {"id": "analyze", "action": "Analyze deal health, risk and the next-best-action from real CRM signals (no fabricated forecasts)", "tool": "none", "condition": "Always"},
             {"id": "recommend", "action": f"Produce the recommended next action / forecast adjustment for '{role}' with its supporting evidence", "tool": "none", "condition": "Always"},
         ],
         "support": [
             {"id": "load_ticket", "action": f"Retrieve the ticket, customer context and relevant knowledge-base articles for the {cap} task", "tool": "none", "condition": "Always"},
-            {"id": "diagnose", "action": f"Diagnose the issue and draft a resolution GROUNDED in the KB; do not invent steps not in the documentation", "tool": "none", "condition": "Always"},
+            {"id": "diagnose", "action": "Diagnose the issue and draft a resolution GROUNDED in the KB; do not invent steps not in the documentation", "tool": "none", "condition": "Always"},
             {"id": "respond", "action": f"Produce the customer response or an escalation with priority and rationale for '{role}'", "tool": "none", "condition": "Always"},
         ],
         "operations": [
             {"id": "load_context", "action": f"Retrieve the process/incident, its runbook and the governing SLA for the {cap} task", "tool": "none", "condition": "Always"},
-            {"id": "assess", "action": f"Assess against the runbook and SLA; identify the breach/bottleneck and the safe remediation", "tool": "none", "condition": "Always"},
+            {"id": "assess", "action": "Assess against the runbook and SLA; identify the breach/bottleneck and the safe remediation", "tool": "none", "condition": "Always"},
             {"id": "act", "action": f"Produce the remediation action / routing decision with its expected impact for '{role}'", "tool": "none", "condition": "Always"},
         ],
     }

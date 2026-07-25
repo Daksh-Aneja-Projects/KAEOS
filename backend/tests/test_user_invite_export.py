@@ -5,7 +5,6 @@ import pytest
 
 from app.services.auth import AuthService
 from app.models.auth import User, UserRole
-from app.api.routes import auth as auth_routes
 
 pytestmark = pytest.mark.asyncio
 

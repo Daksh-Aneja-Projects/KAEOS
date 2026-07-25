@@ -13,7 +13,6 @@ Nothing is invented: every number traces to a Skill, an execution, or a ledger r
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession

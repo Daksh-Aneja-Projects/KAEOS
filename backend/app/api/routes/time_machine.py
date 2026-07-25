@@ -1,5 +1,4 @@
 """Enterprise Time Machine API (v4 IP-3)."""
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel

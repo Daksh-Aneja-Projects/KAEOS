@@ -16,7 +16,10 @@ import csv
 import os
 from typing import Any, Dict, Iterator, List
 
-import pandas as pd
+# NOTE: pandas/pyarrow are imported LAZILY inside the functions that need them.
+# Importing this module must NOT require pandas — CI (and the app runtime) don't
+# install it; only the Kaggle-onboarding/benchmark paths (which have the raw data
+# and the deps) call the pandas-backed loaders.
 
 RAW_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "kaggle_raw")
 
@@ -129,6 +132,7 @@ def load_support_priority(limit: int | None = None) -> Iterator[Dict[str, Any]]:
 
 
 def load_incident_priority(limit: int | None = None) -> Iterator[Dict[str, Any]]:
+    import pandas as pd
     # 141k rows; use pandas + sampling for speed and to dedupe event rows.
     df = pd.read_csv(_path(DATASET_MANIFEST["incident_priority"]["file"]),
                      usecols=["number", "impact", "urgency", "priority", "made_sla",
@@ -160,6 +164,7 @@ def load_incident_priority(limit: int | None = None) -> Iterator[Dict[str, Any]]
 
 
 def load_sales_conversion(limit: int | None = None) -> Iterator[Dict[str, Any]]:
+    import pandas as pd
     df = pd.read_csv(_path(DATASET_MANIFEST["sales_conversion"]["file"]), nrows=limit)
     for _, r in df.iterrows():
         yield {
@@ -332,6 +337,7 @@ def load_sales_crm(account_limit: int | None = None,
     opportunity/activity's account via its lead). Every returned row's
     ``account_id`` references an account also in the result.
     """
+    import pandas as pd
     base = _path(_SALES_DIR)
     accounts = pd.read_parquet(f"{base}/accounts.parquet")
     if account_limit:

@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 import jwt

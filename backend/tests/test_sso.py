@@ -6,13 +6,12 @@ client-secret encryption at rest, real RS256 id_token verification via a JWKS
 admin config surface (secret never leaked, ADMIN-gated, validation).
 """
 import time
-import uuid
 
 import jwt
 import pytest
 
 from app.services import sso as sso_svc
-from app.models.auth import User, UserRole
+from app.models.auth import User
 from app.api.routes import sso as sso_routes
 
 pytestmark = pytest.mark.asyncio
