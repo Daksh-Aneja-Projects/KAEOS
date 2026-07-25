@@ -8,7 +8,7 @@
  * API: GET /workforce/overview + GET /workforce/departments
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';

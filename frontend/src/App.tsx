@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router';
 import {
   Bot, Activity, Search, Bell, Sun, Moon,
   ChevronDown, Settings as SettingsIcon, Database, Shield,

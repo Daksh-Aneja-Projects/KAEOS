@@ -8,7 +8,7 @@
  * API: GET /workforce/departments/{id}
  */
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';

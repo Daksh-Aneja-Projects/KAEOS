@@ -10,7 +10,7 @@
  * API: GET /workforce/packs/ → POST /workforce/deployments/start → poll GET /workforce/deployments/{id}
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';

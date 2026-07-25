@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Briefcase, Download, Loader2, RefreshCw, Trash2, Users } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { api } from '../api/client';
 import type { MyWorkItem, SavedSegment } from '../api/client';
 import { useTheme } from '../context/ThemeContext';

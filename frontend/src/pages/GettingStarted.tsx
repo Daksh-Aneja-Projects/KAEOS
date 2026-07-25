@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import {
   Plug, Rocket, Cpu, ShieldCheck, Users, Factory, CheckCircle2,
   ArrowRight, Sparkles, RefreshCw, PartyPopper,
