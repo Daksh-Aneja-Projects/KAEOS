@@ -3,6 +3,64 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-07-25 - "Enterprise Reach"
+
+The client-deployment sprint: KAEOS now reaches humans and systems OUTSIDE the
+app, with the same governance spine.
+
+### Added
+- **Notification delivery layer**: tenant-configured SMTP / Slack / webhook
+  channels (secrets Fernet-encrypted, masked on read), delivery ledger, admin
+  CRUD + real test-send + Settings tab. Wired to HITL-pending, mission
+  checkpoints, SLA escalations, invite emails. (migration 0020)
+- **Approver persona**: HITL notifications carry signed single-purpose
+  approve/reject links (audience-bound JWT, 7-day TTL); opening one resolves
+  the real approval with no session, same audit trail. Replay/tamper/expiry
+  refused.
+- **Weekly executive digest** (Mon 08:00 cron + on-demand): safe-autonomy-rate,
+  lowest-autonomy skills, pending approvals, incidents, model spend, missions -
+  every number from real ledgers, honest wording when a source is empty.
+- **Department-scoped RBAC**: users.department (migration 0021) confines a user
+  to their department's operational surface (data, agents, missions, HITL)
+  while cross-domain aggregates (org pulse, the twin) stay readable - that
+  correlation is the IP. Enforced at the 7 domain-router mounts + per-row;
+  managed from UserManagement; sidebar/cmd-K nav gated.
+- **Realtime bidirectional sync engine** (migration 0022): external systems
+  push changes the moment they happen (HMAC-SHA256 authenticated ingest;
+  canonical envelope + Workday/Salesforce native-shape normalization); governed
+  KAEOS mutations queue durable write-backs dispatched through provider
+  adapters (generic_rest proven over real HTTP; salesforce implements the real
+  sobject calls and activates on credentials; workday honestly reports the
+  missing customer tenant). Every crossing lands in the SyncLedger; inbound
+  deletes are recorded, not applied.
+- **SOAR security response**: integrated apps report breaches to the HMAC
+  ingest; each becomes a real Incident and runs governed containment -
+  quarantine connector, rotate ingest secret, disable account (CRITICAL only);
+  below that, recommended actions for a human. Humans paged via
+  security.incident.
+- **Ops/DR**: pg_dump backup + plan-first restore scripts, OPS_RUNBOOK.md.
+- **Compliance posture**: docs/COMPLIANCE_POSTURE.md - verified SOC2/GDPR/PII
+  control map with file references and an honest organizational-gaps section;
+  access-review CSV export (GET /auth/users/export.csv).
+- **Dashboard enrichment** (real API fields only): lowest-autonomy skills,
+  SLA-breach chips, execution sparkline, cost-saved bars, AP aging + invoice
+  donut + top vendors, recruiting funnel + headcount donut, cockpit freshness/
+  decay/elicitation panels, cost-by-tier fix, OODA gate chips.
+- **Frontend test lane**: 43 vitest tests + Playwright smoke against the live
+  stack; backend fast lane at 345 tests.
+
+### Fixed
+- py3.14 native suite crash (pyarrow/fastparquet) - CRM load fully isolated in
+  a child interpreter.
+- react-router CSRF advisory (GHSA-qwww-vcr4-c8h2): migrated to unified
+  react-router v8; npm audit clean (0 vulnerabilities).
+- Executive Cockpit confidence distribution rendered fractions as counts;
+  Infrastructure cost-by-tier iterated wrong keys ("No data" always).
+- Full-tree ruff clean; frontend build under verbatimModuleSyntax; default-deny
+  allowlist documents the two HMAC-public ingest routes.
+- UI polish sweep: truncation/tooltips/wrapping across dashboards, missions,
+  HITL, settings; aria-labels on header icon buttons.
+
 ## [2.1.0] - 2026-07-25 - "Living Enterprise Twin"
 
 Makes the Reality Experience twin the product's hero view and closes several

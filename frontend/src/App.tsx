@@ -320,7 +320,7 @@ function Shell() {
 
           {/* PLATFORM Section */}
           <div className="px-1 pt-4 pb-1">
-            <button onClick={() => setPlatformCollapsed(!platformCollapsed)}
+            <button aria-label="Toggle platform section" onClick={() => setPlatformCollapsed(!platformCollapsed)}
               className="flex items-center gap-1 w-full text-left">
               <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: colors.inkSubtle }}>Platform</span>
               <ChevronRight className={`w-3 h-3 transition-transform ${platformCollapsed ? '' : 'rotate-90'}`} style={{ color: colors.inkSubtle }} />
@@ -344,7 +344,7 @@ function Shell() {
               <span className="text-[13px] font-medium truncate" style={{ color: colors.ink }}>{user?.display_name || 'User'}</span>
               <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{user?.role || 'VIEWER'}</span>
             </div>
-            <button onClick={logout} title="Sign out" className="p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
+            <button aria-label="Sign out" onClick={logout} title="Sign out" className="p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -399,7 +399,7 @@ function Shell() {
                 }}
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
+                <button aria-label="Clear search" onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
                   <X className="w-3 h-3" />
                 </button>
               )}
@@ -443,7 +443,7 @@ function Shell() {
               )}
             </div>
             <div className="relative">
-              <button onClick={() => setNotifOpen(o => !o)}
+              <button aria-label="Notifications" onClick={() => setNotifOpen(o => !o)}
                 className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
                 style={{ color: notifOpen ? colors.primary : colors.inkSubtle }}>
                 <Bell className="w-4 h-4" />
@@ -520,12 +520,12 @@ function Shell() {
               )}
             </div>
             {/* Chat Copilot Toggle */}
-            <button onClick={() => setChatOpen(!chatOpen)}
+            <button aria-label="Toggle KAEOS Copilot" onClick={() => setChatOpen(!chatOpen)}
               className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
               style={{ color: chatOpen ? colors.primary : colors.inkSubtle }}>
               <MessageSquare className="w-4 h-4" />
             </button>
-            <button onClick={toggle} className="p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
+            <button aria-label="Toggle theme" onClick={toggle} className="p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
