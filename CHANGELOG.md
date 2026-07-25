@@ -26,6 +26,14 @@ browser against the production Postgres tenant with real Ollama.
 - **`seed_workforce_backbone.py`.** Idempotently generates the Capability ->
   Process -> DepartmentAgent backbone for a tenant whose departments already
   exist (e.g. from onboarding), binding each to its domain pack.
+- **The twin reacts live in every mode.** Shock already pulsed the constellation;
+  What-If, Wargame and Replay now drive the same shockwave - the affected
+  departments and their records light up (severity from the mode's own result).
+  The Decision Center and Why Panel are unified: all four modes populate the same
+  impact summary + reasoning chain (What-If verdict/blast/risks, Wargame
+  cascade/weakest-link/grade, Replay counterfactual delta), instead of the
+  panels sitting empty outside shock mode. Reality Feed reflowed to a readable
+  full-width card grid.
 
 ### Fixed
 - **Deployment adoption skipped the backbone.** `generate_department_structure`

@@ -10,7 +10,7 @@ import { Swords, Loader2, ShieldAlert, Play } from 'lucide-react';
  */
 const GRADE_COLOR: Record<string, string> = { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#f97316', F: '#ef4444' };
 
-const WargamePanel: React.FC<{ colors: any }> = ({ colors }) => {
+const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> = ({ colors, onImpact }) => {
   const [playbooks, setPlaybooks] = useState<any[]>([]);
   const [playbook, setPlaybook] = useState('cyber_cascade');
   const [result, setResult] = useState<any>(null);
@@ -22,7 +22,11 @@ const WargamePanel: React.FC<{ colors: any }> = ({ colors }) => {
 
   const run = async () => {
     setRunning(true); setResult(null);
-    try { setResult(await api.runWargame(playbook)); }
+    try {
+      const r = await api.runWargame(playbook);
+      setResult(r);
+      onImpact?.(r);   // let the parent cascade the blast across the live twin
+    }
     catch (e) { console.error(e); }
     finally { setRunning(false); }
   };

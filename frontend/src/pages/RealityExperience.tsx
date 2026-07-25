@@ -20,6 +20,18 @@ interface DecisionTrace {
   recommendation: any;
 }
 interface EventTrace { event: string; id: number; ts?: string }
+// A normalized "what happened" for the Decision Center + Why Panel, shared by the
+// What-If / Wargame / Replay modes so every mode fills the same two panels.
+interface ModeActivity {
+  mode: 'whatif' | 'wargame' | 'replay';
+  label: string;
+  severity: number;                 // 0-100, drives the accent color
+  headline: string;                 // one-line impact summary
+  itemsLabel: string;
+  items: { label: string; sub?: string; right?: string; tone?: 'good' | 'warn' | 'bad' }[];
+  why: [string, string][];          // reasoning chain rows
+  final: string;                    // the executed / recommended outcome
+}
 
 // Must stay in sync with SHOCK_PROFILES in backend/app/api/routes/reality.py.
 // Merger and cyber carry the richest causal models (deepest propagation, highest
@@ -50,6 +62,9 @@ export default function RealityExperience() {
 
   const [selectedNode, setSelectedNode] = useState<TwinNode | null>(null);
   const [decision, setDecision] = useState<DecisionTrace | null>(null);
+  // Unified Decision Center + Why Panel content for the NON-shock modes, so all
+  // four modes drive the same two panels (shock keeps its richer native trace).
+  const [activity, setActivity] = useState<ModeActivity | null>(null);
   const [shockPulse, setShockPulse] = useState<import('../components/TwinGraph').ShockPulse | undefined>(undefined);
 
   const [isSimulating, setIsSimulating] = useState(false);
@@ -111,12 +126,47 @@ export default function RealityExperience() {
     return () => clearInterval(interval);
   }, [fetchTwin, fetchLearning, fetchFeed]);
 
+  // Each mode owns the Decision Center + Why Panel - reset them on a mode switch.
+  useEffect(() => { setDecision(null); setActivity(null); }, [mode]);
+
   // Candidate targets for the chosen shock type (fall back to all nodes)
   const targetLabel = SHOCK_TYPES.find(s => s.value === shockType)?.targetLabel;
   const targetOptions = twinNodes.filter(n => !targetLabel || n.label === targetLabel);
   const effectiveTarget = shockTarget && targetOptions.some(n => n.id === shockTarget)
     ? shockTarget
     : targetOptions[0]?.id || '';
+
+  // ── Live twin reaction for EVERY mode ────────────────────────────────────
+  // Shock already pulses the graph; What-If / Wargame / Replay now drive the
+  // same shockwave so their impact is visible on the constellation too. Map a
+  // department name/slug to its twin node, then light up that department + its
+  // records (the blast region) at a severity the mode computes.
+  const deptNodeId = useCallback((nameOrSlug: string): string | undefined => {
+    const t = String(nameOrSlug || '').toLowerCase().trim();
+    if (!t) return undefined;
+    const d = twinNodes.find(n => n.label === 'Department' && (
+      String(n.slug || '').toLowerCase() === t ||
+      String(n.name || '').toLowerCase() === t ||
+      String(n.name || '').toLowerCase().includes(t) ||
+      t.includes(String(n.slug || '').toLowerCase())
+    ));
+    return d?.id;
+  }, [twinNodes]);
+
+  const pulseDepartments = useCallback((deptRefs: string[], severity: number, epicenter?: string) => {
+    const ids = Array.from(new Set(deptRefs.map(deptNodeId).filter(Boolean))) as string[];
+    if (!ids.length) return;
+    const targetId = (epicenter ? deptNodeId(epicenter) : undefined) || ids[0];
+    // Extend the blast to each hit department's records so a whole region lights up.
+    const impacted = new Set<string>(ids);
+    for (const l of twinLinks) {
+      const s = typeof l.source === 'string' ? l.source : (l.source as any)?.id;
+      const tg = typeof l.target === 'string' ? l.target : (l.target as any)?.id;
+      if (ids.includes(s) && tg) impacted.add(tg);
+      if (ids.includes(tg) && s) impacted.add(s);
+    }
+    setShockPulse({ targetId, impactedIds: Array.from(impacted), severity: Math.max(8, Math.min(100, severity)), ts: Date.now() });
+  }, [deptNodeId, twinLinks]);
 
   const triggerShock = async () => {
     if (!effectiveTarget) return;
@@ -173,6 +223,35 @@ export default function RealityExperience() {
         }),
       });
       setWhatIfResult(data);
+      // Light up the affected departments on the twin (severity from the verdict).
+      const verdict = String(data?.simulation_result || '').toUpperCase();
+      const sev = verdict === 'BLOCKED' ? 92 : verdict === 'SAFE' ? 28 : 62;
+      const depts = data?.blast_radius?.affected_departments || [];
+      pulseDepartments(depts.length ? depts : [whatIfDomain], sev);
+      // Populate the shared Decision Center + Why Panel.
+      const risks = data?.risk_factors || [];
+      setActivity({
+        mode: 'whatif',
+        label: `What-If · ${whatIfChange.trim().slice(0, 54)}`,
+        severity: sev,
+        headline: `Governed verdict: ${verdict}. ${data?.recommendation || (verdict === 'SAFE' ? 'Safe to proceed.' : 'Proceed with caution.')}`,
+        itemsLabel: 'RANKED RISK FACTORS',
+        items: risks.map((r: any) => ({
+          label: r.factor,
+          sub: r.mitigation ? `Mitigation: ${r.mitigation}` : undefined,
+          right: String(r.severity || '').toUpperCase(),
+          tone: String(r.severity).toUpperCase() === 'HIGH' ? 'bad' : String(r.severity).toUpperCase() === 'MEDIUM' ? 'warn' : 'good',
+        })),
+        why: [
+          ['Proposed Change', whatIfChange.trim().slice(0, 80)],
+          ['Twin State Capture', `${twinNodes.length} nodes · live snapshot`],
+          ['Blast Radius', `${(depts || []).length} dept(s) · ${data?.blast_radius?.affected_rules ?? 0} rules · ${data?.blast_radius?.affected_skills ?? 0} skills`],
+          ['Risk Engine', `${risks.length} factor(s) ranked by severity`],
+          ['Governed Verdict', verdict],
+          ['Rollback Plan', data?.estimated_rollback_time_hours != null ? `~${data.estimated_rollback_time_hours}h to reverse` : 'n/a'],
+        ],
+        final: data?.recommendation || verdict,
+      });
     } catch (e: any) {
       setWhatIfError(e?.message || 'Simulation failed. Please retry.');
     } finally {
@@ -181,6 +260,8 @@ export default function RealityExperience() {
   };
 
   const card = { background: colors.surface1, borderColor: colors.hairline };
+  const toneColor = (t?: string) => t === 'good' ? '#22c55e' : t === 'bad' ? '#ef4444' : t === 'warn' ? '#f59e0b' : colors.inkSubtle;
+  const sevAccent = (sev: number) => sev > 66 ? '#ef4444' : sev > 33 ? '#f59e0b' : '#22c55e';
   const statTiles = [
     { label: 'Employees', value: stats?.employees, icon: Users, color: '#f59e0b' },
     { label: 'Departments', value: stats?.departments, icon: Building2, color: '#5e6ad2' },
@@ -231,9 +312,68 @@ export default function RealityExperience() {
       </div>
 
       {mode === 'wargame' ? (
-        <WargamePanel colors={colors} />
+        <WargamePanel colors={colors} onImpact={(r) => {
+          const depts = (r?.steps || []).map((s: any) => s.department).filter(Boolean);
+          const sev = Math.max(20, 100 - (Number(r?.resilience_score) || 50));
+          pulseDepartments(depts, sev, r?.weakest_link?.department);
+          setActivity({
+            mode: 'wargame',
+            label: `Wargame · ${(r?.playbook || 'adversarial cascade').replace(/_/g, ' ')}`,
+            severity: sev,
+            headline: `Integrity retained ${r?.resilience_score ?? 0}% (grade ${r?.grade ?? '-'}). Weakest link: ${r?.weakest_link?.department ?? 'n/a'}.`,
+            itemsLabel: 'CASCADE — SHOCK BY SHOCK',
+            items: (r?.steps || []).map((s: any) => ({
+              label: `${String(s.shock).replace(/_/g, ' ')} → ${s.department}`,
+              sub: `-${s.damage} integrity → ${s.integrity_after}% remaining`,
+              right: s.response === 'autonomous' ? 'AUTONOMOUS' : 'HUMAN',
+              tone: s.response === 'autonomous' ? 'good' : 'warn',
+            })),
+            why: [
+              ['Adversarial Cascade', `${(r?.steps || []).length} compounding shocks`],
+              ['Twin State Capture', `${twinNodes.length} nodes · live snapshot`],
+              ['Fragility Model', 'skill confidence + adverse outcome history'],
+              ['Autonomous Response', `${Math.round((r?.safe_response_rate ?? 0) * 100)}% handled without a human`],
+              ['Weakest Link', `${r?.weakest_link?.department ?? 'n/a'} (−${r?.weakest_link?.damage ?? 0})`],
+              ['Resilience Grade', `${r?.grade ?? '-'} · ${r?.resilience_score ?? 0}%`],
+            ],
+            final: r?.verdict || `Grade ${r?.grade ?? '-'} resilience`,
+          });
+        }} />
       ) : mode === 'replay' ? (
-        <TimeMachinePanel colors={colors} />
+        <TimeMachinePanel colors={colors} onImpact={(evt, cf) => {
+          const klass = String(evt?.klass || '');
+          const sev = (klass === 'overridden' || klass === 'failed') ? 72
+            : klass === 'routed_to_human' ? 46 : 26;
+          if (evt?.department) pulseDepartments([evt.department], sev);
+          const deltaPts = cf?.delta != null ? `${cf.delta > 0 ? '+' : ''}${(cf.delta * 100).toFixed(1)} pts` : null;
+          setActivity({
+            mode: 'replay',
+            label: `Replay · ${String(evt?.skill_id || 'decision').slice(0, 48)}`,
+            severity: sev,
+            headline: cf
+              ? `Counterfactual: had this decision ${cf.flip === 'approve' ? 'run clean' : cf.flip === 'fail' ? 'failed' : 'escalated'}, safe-autonomy would move to ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`} (${deltaPts ?? 'no change'}).`
+              : `Replaying a real ${klass.replace(/_/g, ' ')} decision in ${evt?.department || 'the org'}. Pick an outcome to run the counterfactual.`,
+            itemsLabel: 'DECISION UNDER REPLAY',
+            items: [
+              { label: evt?.skill_id || 'decision', sub: `Actual outcome: ${klass.replace(/_/g, ' ')}`, right: (evt?.department || '').toUpperCase(), tone: klass === 'failed' || klass === 'overridden' ? 'bad' : klass === 'routed_to_human' ? 'warn' : 'good' },
+              ...(cf ? [{
+                label: `Counterfactual: ${cf.flip}`,
+                sub: `actual ${cf.before_rate == null ? '--' : `${(cf.before_rate * 100).toFixed(0)}%`} → counterfactual ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`}`,
+                right: deltaPts ?? undefined,
+                tone: (cf.delta ?? 0) > 0 ? 'good' as const : (cf.delta ?? 0) < 0 ? 'bad' as const : 'warn' as const,
+              }] : []),
+            ],
+            why: [
+              ['Decision Selected', evt?.skill_id || 'n/a'],
+              ['Department', evt?.department || 'n/a'],
+              ['Actual Classification', klass.replace(/_/g, ' ') || 'n/a'],
+              ['Counterfactual', cf ? `flipped to "${cf.flip}"` : 'not run yet'],
+              ['North-Star Recompute', cf ? `${cf.before_rate == null ? '--' : `${(cf.before_rate * 100).toFixed(0)}%`} → ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`}` : 'pending'],
+              ['Delta', deltaPts ?? 'pending'],
+            ],
+            final: cf ? `Safe-autonomy delta ${deltaPts ?? '0'}` : 'Awaiting counterfactual',
+          });
+        }} />
       ) : mode === 'shock' ? (
         <div className="space-y-3">
           <div>
@@ -343,12 +483,12 @@ export default function RealityExperience() {
   );
 
   const learningState = (
-    <div className="rounded-xl border shadow-sm p-4 flex-1 flex flex-col min-h-0" style={card}>
+    <div className="rounded-xl border shadow-sm p-4 flex-shrink-0 flex flex-col" style={card}>
       <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
         <Brain className="w-4 h-4" /> Learning State
       </h2>
       {learningStats ? (
-        <div className="space-y-4 flex-1 flex flex-col min-h-0">
+        <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
               <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
@@ -359,9 +499,9 @@ export default function RealityExperience() {
               <div className="text-2xl font-bold text-red-500">-{learningStats.modifiers?.MITIGATE_FAILURE?.toFixed(1) || 0}</div>
             </div>
           </div>
-          <div className="text-xs flex-1 flex flex-col min-h-0">
+          <div className="text-xs">
             <div className="font-semibold mb-2">Recent Outcomes</div>
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+            <div className="overflow-y-auto space-y-1 pr-1" style={{ maxHeight: 200 }}>
               {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
                 <div key={i} className="p-2 border rounded font-mono text-[10px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                   <div className="flex justify-between">
@@ -426,7 +566,7 @@ export default function RealityExperience() {
       {/* ── HERO: the living enterprise twin. Full-bleed and tall - this is the IP.
           Simulation controls sit to its left so a shock visibly pulses the graph. */}
       <div className="grid grid-cols-12 gap-6 px-6 pt-6">
-        <div className="col-span-3 flex flex-col gap-6 min-h-0 overflow-hidden" style={{ height: 640 }}>
+        <div className="col-span-3 flex flex-col gap-6 overflow-y-auto pr-1" style={{ height: 640 }}>
           {simControls}
           {learningState}
         </div>
@@ -687,9 +827,35 @@ export default function RealityExperience() {
                   </div>
                 </div>
               </div>
+            ) : activity ? (
+              <div className="space-y-4">
+                <div className="p-3 rounded border" style={{ borderColor: sevAccent(activity.severity) + '80', background: sevAccent(activity.severity) + '12' }}>
+                  <div className="text-xs font-bold mb-1" style={{ color: sevAccent(activity.severity) }}>{activity.mode.toUpperCase()} IMPACT ({activity.severity} severity)</div>
+                  <div className="text-sm">{activity.headline}</div>
+                </div>
+                {activity.items.length > 0 && (
+                  <div>
+                    <div className="text-xs font-bold mb-2" style={{ color: colors.inkSubtle }}>{activity.itemsLabel}</div>
+                    <div className="space-y-2">
+                      {activity.items.map((it, i) => (
+                        <div key={i} className="p-3 border rounded text-xs" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+                          <div className="flex justify-between gap-2 mb-1">
+                            <span className="font-bold font-mono">{it.label}</span>
+                            {it.right && <span className="font-bold font-mono flex-shrink-0" style={{ color: toneColor(it.tone) }}>{it.right}</span>}
+                          </div>
+                          {it.sub && <div style={{ color: colors.inkTertiary }}>{it.sub}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
-              <div className="text-sm italic flex h-full items-center justify-center opacity-50 py-8" style={{ color: colors.inkSubtle }}>
-                Awaiting shock injection…
+              <div className="text-sm italic flex h-full items-center justify-center opacity-50 py-8 text-center" style={{ color: colors.inkSubtle }}>
+                {mode === 'shock' ? 'Awaiting shock injection…'
+                  : mode === 'whatif' ? 'Run a what-if to see the governed verdict, blast radius, and ranked risks here.'
+                  : mode === 'wargame' ? 'Run the wargame to see the resilience debrief and shock cascade here.'
+                  : 'Pick a decision to replay, then run a counterfactual to see the impact here.'}
               </div>
             )}
           </div>
@@ -723,8 +889,28 @@ export default function RealityExperience() {
                   <div style={{ color: colors.inkTertiary }} className="truncate">{decision.recommendation?.option?.action}</div>
                 </div>
               </div>
+            ) : activity ? (
+              <div className="relative pl-4 border-l space-y-4 text-xs font-mono" style={{ borderColor: sevAccent(activity.severity) }}>
+                {activity.why.map(([title, sub], i) => (
+                  <div key={i} className="relative">
+                    <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full" style={{ background: sevAccent(activity.severity) }} />
+                    <div className="font-bold" style={{ color: colors.ink }}>{title}</div>
+                    <div style={{ color: colors.inkTertiary }} className="break-words">{sub}</div>
+                  </div>
+                ))}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: '#22c55e' }} />
+                  <div className="font-bold text-green-500">{activity.mode === 'replay' ? 'Counterfactual Resolved' : 'Governed Outcome'}</div>
+                  <div style={{ color: colors.inkTertiary }} className="break-words">{activity.final}</div>
+                </div>
+              </div>
             ) : (
-              <div className="text-sm italic opacity-50" style={{ color: colors.inkSubtle }}>Trace empty - run a shock to see the reasoning chain.</div>
+              <div className="text-sm italic opacity-50" style={{ color: colors.inkSubtle }}>
+                {mode === 'shock' ? 'Trace empty - run a shock to see the reasoning chain.'
+                  : mode === 'whatif' ? 'Trace empty - run a what-if to see the reasoning chain.'
+                  : mode === 'wargame' ? 'Trace empty - run the wargame to see the reasoning chain.'
+                  : 'Trace empty - replay a decision to see the reasoning chain.'}
+              </div>
             )}
           </div>
         </div>
@@ -743,11 +929,14 @@ export default function RealityExperience() {
           {realityFeed.length === 0 ? (
             <div className="text-sm italic opacity-50 py-6 text-center" style={{ color: colors.inkSubtle }}>Listening to enterprise events…</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
               {realityFeed.slice().reverse().map((f, i) => (
-                <div key={i} className="text-xs p-2 rounded font-mono border flex gap-2" style={{ background: colors.canvas, borderColor: colors.hairline }}>
-                  <span className="flex-shrink-0" style={{ color: colors.primary }}>[{String(f.id).padStart(4, '0')}]</span>
-                  <span className="min-w-0">{f.event}</span>
+                <div key={i} className="text-xs p-3 rounded-lg border flex items-start gap-2.5" style={{ background: colors.canvas, borderColor: colors.hairline }}>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: colors.primary }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="leading-snug break-words" style={{ color: colors.ink }}>{f.event}</div>
+                    <div className="text-[10px] font-mono mt-1 truncate" style={{ color: colors.inkTertiary }}>{String(f.id).slice(0, 8)}</div>
+                  </div>
                 </div>
               ))}
             </div>

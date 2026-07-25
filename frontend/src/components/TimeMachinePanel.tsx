@@ -13,7 +13,7 @@ const KLASS_COLOR: Record<string, string> = {
   failed: '#ef4444', edited: '#8b5cf6', other: '#6b7280',
 };
 
-const TimeMachinePanel: React.FC<{ colors: any }> = ({ colors }) => {
+const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any) => void }> = ({ colors, onImpact }) => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [idx, setIdx] = useState(0);              // scrubber position over chronological events
@@ -44,7 +44,11 @@ const TimeMachinePanel: React.FC<{ colors: any }> = ({ colors }) => {
   const runCf = async (flip: 'approve' | 'fail' | 'escalate') => {
     if (!selected) return;
     setBusy(flip);
-    try { setCf(await api.runCounterfactual(selected.execution_id, flip, 60)); }
+    try {
+      const cfResult = await api.runCounterfactual(selected.execution_id, flip, 60);
+      setCf(cfResult);
+      onImpact?.(selected, { ...cfResult, flip });
+    }
     catch (e) { console.error(e); }
     finally { setBusy(null); }
   };
@@ -88,7 +92,7 @@ const TimeMachinePanel: React.FC<{ colors: any }> = ({ colors }) => {
         <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5" style={{ color: colors.inkSubtle }}>Decisions (pick one to rewrite)</div>
         <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
           {(data.events || []).slice(0, 40).map((e: any) => (
-            <button key={e.execution_id} onClick={() => { setSelected(e); setCf(null); }}
+            <button key={e.execution_id} onClick={() => { setSelected(e); setCf(null); onImpact?.(e); }}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left"
               style={{ background: selected?.execution_id === e.execution_id ? colors.surface2 : 'transparent', border: `1px solid ${selected?.execution_id === e.execution_id ? colors.hairline : 'transparent'}` }}>
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KLASS_COLOR[e.klass] || '#6b7280' }} />
