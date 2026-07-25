@@ -59,6 +59,11 @@ async def record_outcome(
         metric_name=body.metric_name, metric_value=body.metric_value, note=body.note,
     ))
 
+    # L1 closed loop: stamp the measured outcome back onto the execution row so the
+    # AI Foundry (which mines SkillExecution, not OutcomeRecord) can curate on real
+    # outcomes — not just on whether the execution completed.
+    ex.outcome_type = outcome
+
     new_conf = None
     delta = _CONF_DELTA[outcome]
     if delta and ex.skill_id_name:

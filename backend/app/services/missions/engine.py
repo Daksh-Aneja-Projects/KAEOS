@@ -139,6 +139,14 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
         "compliance_tags": ["EEOC"] if people_facing else [],
         "confidence": skill.confidence or 0.0,
     }
+    # L7 closed loop: a HUMAN-APPROVED step carrying a concrete actuation intent
+    # graduates from advice to a governed WRITE. The intent rides on skill_dict so
+    # runtime Gate 5b (which only fires when it sees `actuation`) performs the
+    # idempotent, reversible write-back AFTER every gate has passed. Advisory-only
+    # steps (no intent, or not human-approved) behave exactly as before.
+    step_actuation = getattr(step, "actuation", None)
+    if step.hitl_required and isinstance(step_actuation, dict) and step_actuation:
+        skill_dict["actuation"] = step_actuation
     ctx = {
         "tenant_id": mission.tenant_id,
         "execution_id": execution_id,
@@ -215,6 +223,40 @@ def _finalize(db, mission, steps) -> None:
                f"Mission finished ({mission.status}): {done} done, {failed} failed, {skipped} skipped.")
 
 
+_TERMINAL_MISSION = {"COMPLETED", "COMPLETED_WITH_EXCEPTIONS", "FAILED", "ABORTED"}
+
+
+async def _writeback_signal_on_finish(db: AsyncSession, mission) -> None:
+    """L4 closed loop: when an event-mesh-spawned mission finishes, write its
+    terminal status back to the originating signal and record an OutcomeRecord
+    (which feeds the L1 outcome-learning loop). Idempotent + non-fatal."""
+    if mission.created_by != "event-mesh" or mission.status not in _TERMINAL_MISSION:
+        return
+    try:
+        from app.models.event_mesh import ExternalSignal
+        from app.models.intelligence_metrics import OutcomeRecord
+        sig = (await db.execute(
+            select(ExternalSignal).where(
+                ExternalSignal.tenant_id == mission.tenant_id,
+                ExternalSignal.response_ref == mission.id,
+            )
+        )).scalar_one_or_none()
+        if sig is None or sig.status == "RESOLVED":
+            return  # nothing to close, or already closed (idempotent)
+        sig.status = "RESOLVED"
+        good = mission.status in ("COMPLETED", "COMPLETED_WITH_EXCEPTIONS")
+        db.add(OutcomeRecord(
+            tenant_id=mission.tenant_id,
+            execution_id=mission.id,                 # mission id as the surrogate
+            skill_id_name=f"mission:{mission.id}",
+            outcome="GOOD" if good else "BAD",
+            autonomous=True,
+            note=f"event-mesh mission {mission.status}",
+        ))
+    except Exception as e:
+        logger.warning(f"[mission] L4 signal writeback skipped: {e}")
+
+
 async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) -> dict:
     """Advance the mission by ONE executable step, then return.
 
@@ -285,6 +327,7 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
         result = await _execute_step(db, mission, executable, execution_id)
         _apply_step_result(db, mission, executable, result)
         _finalize(db, mission, steps)
+        await _writeback_signal_on_finish(db, mission)
         await db.commit()
         await db.refresh(mission)
         return _summary(mission, steps)
@@ -296,6 +339,7 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
             _event(db, mission, "HITL_PAUSE",
                    f"Step {s.seq} ({s.name}) awaits human approval.", s.seq)
     _finalize(db, mission, steps)
+    await _writeback_signal_on_finish(db, mission)
     await db.commit()
     await db.refresh(mission)
     return _summary(mission, steps)

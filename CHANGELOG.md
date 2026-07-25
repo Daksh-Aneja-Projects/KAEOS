@@ -9,6 +9,22 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Added (Self-improving autonomy — closed loops)
+- **L7 Missions -> governed actuation.** Mission steps ran advisory-only
+  (`tool:"none"`, no `actuation`), so runtime Gate 5b never fired and missions
+  could only recommend. `MissionStep` now has an `actuation` column (migration
+  `0016`); a HUMAN-APPROVED step carrying a concrete actuation intent hands it to
+  the runtime so Gate 5b performs the idempotent, reversible write AFTER every
+  gate passes — turning missions from "recommend" into governed "do". Advisory
+  steps are unchanged. Tests: `tests/test_mission_actuation_l7.py`.
+- **L1 Outcome -> execution learning.** Recording a measured outcome now stamps
+  `SkillExecution.outcome_type`, so the AI Foundry (which mines SkillExecution,
+  not OutcomeRecord) curates on real outcomes, not just on completion.
+- **L4 Event-mesh -> outcome.** When an event-mesh-spawned mission finishes, its
+  terminal status is written back to the originating `ExternalSignal` (-> RESOLVED)
+  and an `OutcomeRecord` is recorded (GOOD/BAD), feeding the L1 loop. Idempotent
+  and scoped to `created_by=="event-mesh"`. Tests: `tests/test_closed_loops_l1_l4.py`.
+
 ### Added (Production-readiness — audit export & user management)
 - **CSV export for audit/compliance evidence (P1).** New `GET
   /actuation/ledger/export`, `GET /provenance/global/ledger/export`, and `GET

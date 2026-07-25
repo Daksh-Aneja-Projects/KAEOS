@@ -62,6 +62,13 @@ class MissionStep(Base):
     hitl_required: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(24), default="PENDING")
 
+    # Optional governed write-back intent {system, object_type, external_id,
+    # operation, payload}. When present on a HUMAN-APPROVED (hitl_required) step,
+    # the runtime's Gate 5b performs the idempotent, reversible actuation AFTER the
+    # compliance/fairness/HITL/debate gates pass — this is what turns a mission
+    # from "recommend" into governed "do" (closes the L7 loop).
+    actuation: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     execution_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
