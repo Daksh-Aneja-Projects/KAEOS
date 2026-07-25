@@ -195,6 +195,28 @@ async def test_channel(
     return {"ok": error is None, "error": error}
 
 
+@router.post("/digest/send")
+async def send_digest_now(
+    days: int = 7,
+    tenant: dict = Depends(require_role("admin")),
+):
+    """Build and deliver the executive digest now (it also runs weekly)."""
+    from app.services.digest import send_weekly_digest
+    return await send_weekly_digest(tenant_id=tenant["tenant_id"],
+                                    days=max(1, min(90, days)))
+
+
+@router.get("/digest/preview")
+async def preview_digest(
+    days: int = 7,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """The digest payload + rendered text, without sending anything."""
+    from app.services.digest import build_digest, render_digest
+    payload = await build_digest(tenant_id, days=max(1, min(90, days)))
+    return {"payload": payload, "text": render_digest(payload)}
+
+
 @router.get("/deliveries")
 async def list_deliveries(
     limit: int = 50,

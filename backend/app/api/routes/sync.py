@@ -32,6 +32,22 @@ async def ingest(connector_id: str, request: Request,
         raise HTTPException(status_code=401, detail="invalid webhook signature")
 
 
+@router.post("/ingest/{connector_id}/security")
+async def ingest_security_event(connector_id: str, request: Request,
+                                x_kaeos_signature: Optional[str] = Header(None)):
+    """SOAR intake: an integrated app reports a security event (breach,
+    credential leak, anomalous access, malware). KAEOS records a real Incident
+    and runs the governed containment playbook. Same HMAC auth as sync ingest."""
+    from app.services.security_response import respond_to_security_event
+    raw = await request.body()
+    try:
+        return await respond_to_security_event(connector_id, x_kaeos_signature, raw)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="connector not found")
+    except PermissionError:
+        raise HTTPException(status_code=401, detail="invalid webhook signature")
+
+
 @router.post("/{connector_id}/webhook-secret")
 async def mint_webhook_secret(
     connector_id: str,

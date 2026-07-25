@@ -109,6 +109,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # without a session (that is the whole point); the SSO *config* endpoints
         # (/auth/sso/connections) are deliberately NOT here — they require ADMIN.
         auth_paths = (
+            # Approval-by-link: the approver has no KAEOS session by design; the
+            # signed single-purpose token IS the authentication (see approvals.py).
+            "/api/v1/approvals/decide",
             "/api/v1/auth/login",
             "/api/v1/auth/accept-invite",   # invitee sets their password pre-session
             "/api/v1/auth/sso/saml",

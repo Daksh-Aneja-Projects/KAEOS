@@ -213,6 +213,18 @@ async def run_deployment_reaper():
         logger.error(f"[Scheduler] Deployment reaper failed: {e}")
 
 
+async def run_weekly_digest():
+    """Leader-guarded: deliver the executive digest to every active tenant."""
+    if not _is_leader():
+        return
+    try:
+        from app.services.digest import send_weekly_digest
+        result = await send_weekly_digest()
+        logger.info("[Scheduler] weekly digest: %s", result)
+    except Exception as e:
+        logger.error(f"[Scheduler] weekly digest failed: {e}")
+
+
 async def run_outbound_sync_dispatch():
     """Leader-guarded: deliver queued outbound write-backs to external systems."""
     if not _is_leader():
@@ -255,6 +267,12 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_outbound_sync_dispatch, 'interval', minutes=1,
         id='outbound_sync_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Executive digest: Monday 08:00 in the server's timezone. Tenants without
+    # a subscribed notification channel simply receive nothing.
+    scheduler.add_job(
+        run_weekly_digest, 'cron', day_of_week='mon', hour=8, minute=0,
+        id='weekly_digest_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Retention enforcement runs daily — windows are day-granular, so an hourly
     # sweep would be pure churn. Only tenants that opted a data class in are touched.

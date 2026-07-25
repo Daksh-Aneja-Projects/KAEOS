@@ -152,6 +152,17 @@ class HITLManager:
         # Scheduled AFTER the pause is durably persisted: never announce an
         # approval that is not yet in the queue.
         from app.services.notifier import notify_fire_and_forget
+        # One-click decide links so an approver living in email/Slack never has
+        # to log in to unblock autonomy (signed, single-purpose, 7-day TTL).
+        try:
+            from app.core.config import get_settings
+            from app.api.routes.approvals import approval_links
+            base = get_settings().PUBLIC_BASE_URL or "http://localhost:8001"
+            links = approval_links(exec_id, tenant_id, base)
+            link_lines = (f"\nApprove: {links['approve']}\n"
+                          f"Reject:  {links['reject']}\n")
+        except Exception:
+            links, link_lines = {}, ""
         notify_fire_and_forget(
             tenant_id, "hitl.pending",
             subject=f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}",
@@ -159,8 +170,10 @@ class HITLManager:
                   f"Skill: {skill.get('skill_id', 'unknown')}\n"
                   f"Department: {skill.get('department', 'general')}\n"
                   f"Execution: {exec_id}\n"
-                  f"Review it in KAEOS under My Work."),
-            data={"execution_id": exec_id, "skill_id": skill.get("skill_id")},
+                  f"{link_lines}"
+                  f"Or review it in KAEOS under My Work."),
+            data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
+                  **({"approval_links": links} if links else {})},
         )
 
         # Return immediately with execution_id so caller can poll or subscribe for updates
