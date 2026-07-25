@@ -9,6 +9,26 @@ Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJ
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
+### Fixed (Production-readiness — honesty & hardening)
+- **Removed over-labeled confidence/coverage (P1).** Template workflows no longer
+  ship a fabricated `coverage_score=0.85` (now `0.0` until real runs measure it);
+  template rules downgrade from `0.88/VERIFIED` to `0.5/INFERRED` (matching sibling
+  Skills); the regulatory engine's LLM-synthesized rule is `INFERRED` not `VERIFIED`
+  (its `outcome_validation`/`explicit_validation` are 0.0), and its result status is
+  `RULES_SYNTHESIZED` instead of the over-claiming `COMPLIANCE_ACHIEVED`.
+- **Service-to-service auth for the agent mesh (P1).** The agent-mesh / cost /
+  model-routing mutations (`/infrastructure/agents/*`, `/cost/check|record`,
+  `/models/route`, `/schema-mappings/propose`) were reachable by ANY authenticated
+  viewer. They now require `require_service_or_role("operator")` — a valid
+  `X-Service-Token` (machine-to-machine) or an operator role — and are removed from
+  the default-deny allowlist (the enforcement test now recognizes the gate).
+- **Distributed rate limiting + body-size guard (P1).** The rate limiter was
+  in-memory per-process (N× the intended limit under `-w4`); it now uses a shared
+  Redis fixed-window counter when Redis is reachable, falling back to in-memory
+  only single-instance. Added a `BodySizeLimitMiddleware` that rejects over-large
+  request bodies (413) before a handler allocates them (OOM guard;
+  `MAX_REQUEST_BODY_BYTES`, default 10 MiB). Tests: `tests/test_middleware_limits.py`.
+
 ### Added (Production-readiness — reliability)
 - **Durable job queue (P0).** The deployment pipeline ran as fire-and-forget
   `asyncio.create_task`, so a worker restart mid-deploy lost the task entirely.

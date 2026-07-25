@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin import is_admin, verify_admin_secret
 from app.core.database import MaintenanceSessionLocal, get_db
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import get_tenant_id, require_role, require_service_or_role
+
+# Internal service / agent-mesh mutations: require a service token or operator role
+# (viewers can no longer reach them). DEV_MODE bypasses for local/e2e.
+_service_gate = Depends(require_service_or_role("operator"))
 from app.services.model_management import ModelManagementService
 from app.services.cost_governor import CostGovernorService
 from app.services.agent_protocol import AgentProtocolService
@@ -46,7 +50,7 @@ async def register_model(data: dict, tenant: dict = Depends(require_role("operat
 
 
 @router.post("/infrastructure/models/route")
-async def route_model(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def route_model(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N1 — Route a request to the best model for the given task type."""
     return await ModelManagementService.route_to_model(
         db, tenant_id,
@@ -109,7 +113,7 @@ async def create_budget(data: dict, tenant: dict = Depends(require_role("operato
 
 
 @router.post("/infrastructure/cost/check")
-async def check_budget(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def check_budget(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N2 — Check if a request is within budget."""
     return await CostGovernorService.check_budget(
         db, tenant_id,
@@ -119,7 +123,7 @@ async def check_budget(data: dict, tenant_id: str = Depends(get_tenant_id), db: 
 
 
 @router.post("/infrastructure/cost/record")
-async def record_usage(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def record_usage(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N2 — Record token consumption event."""
     return await CostGovernorService.record_usage(
         db, tenant_id,
@@ -156,7 +160,7 @@ async def register_agent(data: dict, tenant: dict = Depends(require_role("operat
 
 
 @router.post("/infrastructure/agents/discover")
-async def discover_agent(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def discover_agent(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N3 — Find the best available agent for a given capability."""
     result = await AgentProtocolService.discover_agent(
         db, tenant_id, capability=data.get("capability", "")
@@ -165,7 +169,7 @@ async def discover_agent(data: dict, tenant_id: str = Depends(get_tenant_id), db
 
 
 @router.post("/infrastructure/agents/message")
-async def send_agent_message(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def send_agent_message(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N3 — Send an async message between agents."""
     return await AgentProtocolService.send_message(
         db, tenant_id,
@@ -193,7 +197,7 @@ async def get_messages(
 
 
 @router.post("/infrastructure/agents/{agent_name}/heartbeat")
-async def agent_heartbeat(agent_name: str, data: Optional[dict] = None, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def agent_heartbeat(agent_name: str, data: Optional[dict] = None, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N3 — Update agent heartbeat and load."""
     data = data or {}   # a mutable default is shared across every request
     await AgentProtocolService.heartbeat(
@@ -366,7 +370,7 @@ async def bootstrap_tenant_admin(
 
 
 @router.post("/infrastructure/schema-mappings/propose")
-async def propose_schema_mappings(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def propose_schema_mappings(data: dict, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db), _svc: dict = _service_gate):
     """N4 — AI-propose schema mappings for source fields."""
     return await OnboardingEngineService.propose_mappings(
         db, tenant_id,

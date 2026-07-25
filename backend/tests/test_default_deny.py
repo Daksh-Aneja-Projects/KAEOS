@@ -32,17 +32,11 @@ _ALLOWLIST = {
     # Conversational Q&A copilot — read-only, answers questions, never mutates
     # state; must be reachable by every authenticated user (incl. viewers).
     "/api/v1/chat/stream",
-    # Internal service / agent-mesh + onboarding helpers. Called machine-to-machine
-    # with a tenant principal that may not carry an operator role; gating these with
-    # require_role would break the internal mesh. Tracked for a dedicated
-    # service-auth mechanism.
-    "/api/v1/infrastructure/agents/discover",
-    "/api/v1/infrastructure/agents/message",
-    "/api/v1/infrastructure/agents/{agent_name}/heartbeat",
-    "/api/v1/infrastructure/cost/check",
-    "/api/v1/infrastructure/cost/record",
-    "/api/v1/infrastructure/models/route",
-    "/api/v1/infrastructure/schema-mappings/propose",
+    # NOTE: the agent-mesh / cost / model-routing mutations
+    # (/infrastructure/agents/*, /cost/check|record, /models/route,
+    # /schema-mappings/propose) are NO LONGER exempted — they are now gated by
+    # require_service_or_role("operator") (service token OR operator role), so the
+    # generic detector below recognizes them and they need no allowlist entry.
 }
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -57,7 +51,7 @@ def _is_protected(route: APIRoute) -> bool:
         if seen > 500:
             break
         qn = getattr(getattr(dep, "call", None), "__qualname__", "") or ""
-        if "require_role" in qn:
+        if "require_role" in qn or "require_service_or_role" in qn:
             return True
         stack.extend(dep.dependencies)
     try:

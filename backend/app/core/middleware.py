@@ -60,13 +60,41 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """
-    Simple in-memory rate limiter per tenant.
-    Default: 200 requests/minute per tenant. Override via tenant metadata.
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject over-large request bodies early (OOM guard).
 
-    NOTE: For production multi-instance deployments, replace with Redis-based
-    rate limiting (e.g., fastapi-limiter with Redis backend).
+    A single huge upload can exhaust worker memory before any handler runs. This
+    rejects by declared Content-Length with 413 — cheap and covers the common
+    case. (Chunked/unknown-length bodies bypass this fast check; the ASGI server's
+    own limits and the app's typed request models are the backstop there.)
+    """
+
+    def __init__(self, app, max_bytes: int):
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_bytes:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": f"Request body too large (max {self.max_bytes} bytes)."},
+                    )
+            except ValueError:
+                pass  # malformed header — let the server/handler deal with it
+        return await call_next(request)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Per-tenant rate limiter, backed by Redis when available.
+
+    Under multiple workers/replicas an in-memory window counts each process
+    separately, so the effective limit is N times the configured value. When a
+    shared Redis is reachable this uses a per-minute fixed-window counter in Redis
+    (one shared limit across all workers); it falls back to the in-memory window
+    only when Redis is absent (single-instance dev). Default: 200 rpm per tenant.
     """
 
     def __init__(self, app, requests_per_minute: int = 200):
@@ -77,27 +105,55 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     # Paths exempt from rate limiting
     EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
+    def _caller_id(self, request: Request) -> str:
+        tenant = getattr(request.state, "tenant", None)
+        if tenant and isinstance(tenant, dict):
+            return tenant.get("tenant_id", "anonymous")
+        return request.client.host if request.client else "unknown"
+
+    async def _redis_exceeded(self, caller_id: str, now: float):
+        """Shared fixed-window counter. Returns (exceeded, retry_after) or None if
+        Redis is unavailable / errored (caller then falls back to in-memory)."""
+        try:
+            from app.core.redis import get_redis
+            client = await get_redis()
+            if client is None:
+                return None
+            bucket = int(now // 60)
+            key = f"ratelimit:{caller_id}:{bucket}"
+            count = await client.incr(key)
+            if count == 1:
+                await client.expire(key, 60)
+            if count > self.rpm:
+                return True, 60 - int(now % 60) + 1
+            return False, 0
+        except Exception as e:
+            logger.warning(f"[RateLimit] Redis check failed ({e}); using in-memory fallback")
+            return None
+
+    def _memory_exceeded(self, caller_id: str, now: float):
+        window = self._windows[caller_id]
+        window[:] = [t for t in window if now - t < 60]
+        if len(window) >= self.rpm:
+            return True, int(60 - (now - window[0])) + 1
+        window.append(now)
+        return False, 0
+
     async def dispatch(self, request: Request, call_next) -> Response:
         # Raw scope path, not request.url.path — a poisoned Host header must not
         # let a caller mimic an exempt path to escape rate limiting (GHSA-86qp).
         if request.scope["path"] in self.EXEMPT_PATHS:
             return await call_next(request)
 
-        # Identify caller by tenant or IP
-        tenant = getattr(request.state, "tenant", None)
-        if tenant and isinstance(tenant, dict):
-            caller_id = tenant.get("tenant_id", "anonymous")
-        else:
-            caller_id = request.client.host if request.client else "unknown"
-
+        caller_id = self._caller_id(request)
         now = time.time()
-        window = self._windows[caller_id]
 
-        # Purge entries older than 60 seconds
-        window[:] = [t for t in window if now - t < 60]
+        result = await self._redis_exceeded(caller_id, now)
+        if result is None:
+            result = self._memory_exceeded(caller_id, now)
+        exceeded, retry_after = result
 
-        if len(window) >= self.rpm:
-            retry_after = int(60 - (now - window[0])) + 1
+        if exceeded:
             logger.warning(f"[RateLimit] {caller_id} exceeded {self.rpm} rpm")
             return JSONResponse(
                 status_code=429,
@@ -108,5 +164,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": str(retry_after)},
             )
 
-        window.append(now)
         return await call_next(request)

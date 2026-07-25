@@ -259,6 +259,37 @@ def require_role(required_role: str):
     return _checker
 
 
+def require_service_or_role(required_role: str):
+    """Gate for internal service / agent-mesh mutations.
+
+    Passes when the caller presents a valid ``X-Service-Token`` (machine-to-machine)
+    OR holds at least ``required_role``. Closes the prior hole where the agent-mesh
+    / cost / model-routing endpoints were reachable by ANY authenticated viewer.
+    DEV_MODE bypasses (consistent with the rest of the app), so local/e2e runs are
+    unaffected; production enforces the token-or-role requirement.
+    """
+    import hmac
+
+    def _checker(request: Request, tenant: dict = Depends(get_tenant)) -> dict:
+        from app.core.config import get_settings
+        s = get_settings()
+        if s.DEV_MODE:
+            return tenant
+        token = request.headers.get("X-Service-Token")
+        if s.SERVICE_AUTH_TOKEN and token and hmac.compare_digest(token, s.SERVICE_AUTH_TOKEN):
+            return {**(tenant or {}), "role": "service"}
+        caller_level = ROLE_HIERARCHY.get(tenant.get("role", "viewer"), 0)
+        required_level = ROLE_HIERARCHY.get(required_role, 99)
+        if caller_level < required_level:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires a valid X-Service-Token or role '{required_role}'.",
+            )
+        return tenant
+
+    return _checker
+
+
 def approver_identity(tenant: dict) -> str:
     """Attributable approver derived from the AUTHENTICATED principal.
 

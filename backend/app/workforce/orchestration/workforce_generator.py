@@ -563,7 +563,10 @@ class WorkforceGenerator:
                         name=proc_def["name"],
                         department=pack.slug,
                         sla_hours=proc_def.get("sla_hours", 48),
-                        coverage_score=0.85
+                        # Honesty: a freshly-templated workflow has ZERO executions,
+                        # so its coverage is unmeasured. Do not stamp a fabricated
+                        # 0.85 — start at 0.0 and let real runs raise it.
+                        coverage_score=0.0
                     )
                     db.add(workflow)
                     await db.commit()
@@ -579,8 +582,11 @@ class WorkforceGenerator:
                             action_json=action,
                             domain=pack.slug,
                             workflow_id=wf_id,
-                            confidence_scalar=0.88,
-                            confidence_tier=ConfidenceTier.VERIFIED,
+                            # Honesty: these are TEMPLATE rules with no human review
+                            # and no production outcome — INFERRED, not VERIFIED, and
+                            # a modest scalar matching the sibling Skills (0.5/INFERRED).
+                            confidence_scalar=0.5,
+                            confidence_tier=ConfidenceTier.INFERRED,
                             is_executable=True,
                             compliance_tags=cap.compliance_tags or []
                         )

@@ -284,16 +284,20 @@ elif _HAS_OTEL:
 
 # ── Middleware (order matters — outermost is added LAST) ─────────────────────────
 
-from app.core.middleware import RequestIdMiddleware, RequestLoggingMiddleware, RateLimitMiddleware
+from app.core.middleware import (
+    RequestIdMiddleware, RequestLoggingMiddleware, RateLimitMiddleware, BodySizeLimitMiddleware,
+)
 
-# Innermost → Outermost: Tenant → RequestID → Logging → RateLimit → CORS
+# Innermost → Outermost: Tenant → RequestID → Logging → RateLimit → BodySize → CORS
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
-# 1000/min per tenant: live dashboards poll several endpoints per page, and
-# 200/min throttled legitimate single-tenant use (seen as 429s in e2e). Still
-# a real burst guard; production multi-instance should move this to Redis.
-app.add_middleware(RateLimitMiddleware, requests_per_minute=1000)
+# Per-tenant rate limit. Redis-backed (shared across workers) when reachable, else
+# in-memory. Dashboards poll several endpoints per page, so the default is generous
+# but still a real burst guard. Tunable via RATE_LIMIT_RPM.
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_RPM)
+# Reject over-large bodies before a handler allocates them (OOM guard).
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
 
 # CORS must be outermost, so it is added LAST
 app.add_middleware(

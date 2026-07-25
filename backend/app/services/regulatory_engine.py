@@ -93,7 +93,11 @@ class RegulatoryEngine:
                     workflow_id="wf_compliance_auto",
                     confidence_vector=confidence_vector,
                     confidence_scalar=confidence_scalar,
-                    confidence_tier=ConfidenceTier.VERIFIED,
+                    # Honesty: this is an LLM INTERPRETATION of a directive with
+                    # outcome_validation=0.0 and explicit_validation=0.0 — nothing
+                    # is VERIFIED. INFERRED matches the vector; the high authority
+                    # keeps it executable without overclaiming validation.
+                    confidence_tier=ConfidenceTier.INFERRED,
                     half_life_days=365,
                     is_executable=True,
                     compliance_tags=[update.framework_name],
@@ -107,7 +111,10 @@ class RegulatoryEngine:
             return {"status": "FAILED_SYNTHESIS", "error": str(e)}
         
         return {
-            "status": "COMPLIANCE_ACHIEVED",
+            # Honesty: synthesizing a rule is NOT the same as achieving compliance
+            # (the rule is unvalidated and may never fire). Report what actually
+            # happened — rules were proposed — not an outcome we cannot claim.
+            "status": "RULES_SYNTHESIZED",
             "framework": update.framework_name,
             "new_rules_synthesized": len(new_rules_generated),
             "rule_statements": [r.statement for r in new_rules_generated]

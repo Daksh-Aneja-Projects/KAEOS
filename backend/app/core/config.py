@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 5
 
+    # Service-to-service auth: the agent-mesh / cost / model-routing endpoints are
+    # machine-called and were previously reachable by any authed viewer. In
+    # production they now require this shared token (X-Service-Token) or an
+    # elevated role. Empty in dev; REQUIRED to expose those endpoints in prod.
+    SERVICE_AUTH_TOKEN: str = ""
+
+    # Rate limiting + request limits
+    RATE_LIMIT_RPM: int = 1000          # requests/minute per tenant (or IP pre-auth)
+    MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024   # 10 MiB — reject larger (OOM guard)
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     SKILLS_CACHE_TTL: int = 300
