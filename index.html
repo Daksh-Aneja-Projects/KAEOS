@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAEOS: Autonomy you can audit</title>
+<meta name="description" content="KAEOS runs whole company departments with AI that does the work autonomously and proves every action. Open source, local-first, governed.">
+<meta property="og:title" content="KAEOS: Autonomy you can audit">
+<meta property="og:description" content="AI that runs whole company departments through a seven-gate governance pipeline. One number that matters: the safe autonomy rate.">
+<meta property="og:image" content="https://daksh-aneja-projects.github.io/KAEOS/01-dashboard.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%237c3aed'/%3E%3Ctext x='32' y='44' font-family='Arial' font-size='34' font-weight='700' fill='white' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#06070d; --panel:#0b0e1a; --panel2:#0e1222;
+    --line:rgba(139,148,255,.13); --line2:rgba(139,148,255,.22);
+    --text:#e8ebfa; --dim:#9aa3c7; --faint:#667097;
+    --violet:#7c3aed; --cyan:#2dd4ee;
+    --ok:#4ade80; --human:#f5b04c; --block:#f0637a;
+    --disp:"Space Grotesk","IBM Plex Sans",sans-serif;
+    --body:"IBM Plex Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--text);font-family:var(--body);font-weight:300;line-height:1.65;overflow-x:hidden}
+  ::selection{background:rgba(124,58,237,.4)}
+  a{color:var(--cyan);text-decoration:none}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+  img{max-width:100%}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:50;background:rgba(6,7,13,.78);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:30px;height:62px}
+  .logo{font-family:var(--disp);font-weight:600;letter-spacing:.3em;font-size:17px;color:#fff}
+  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center}
+  nav .links a{color:var(--dim);font-size:14.5px;font-weight:400}
+  nav .links a:hover{color:#fff}
+  .gh{border:1px solid var(--line2);border-radius:8px;padding:7px 16px;color:#fff !important;font-weight:500}
+  .gh:hover{background:rgba(124,58,237,.15);border-color:var(--violet)}
+  @media(max-width:720px){nav .links a:not(.gh){display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:90px 0 70px;overflow:hidden}
+  #net{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
+  .hero::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 30% 20%,rgba(124,58,237,.12),transparent 60%)}
+  .hero .wrap{position:relative;z-index:2;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+  @media(max-width:980px){.hero .wrap{grid-template-columns:1fr}}
+  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;color:var(--cyan);text-transform:uppercase;display:flex;align-items:center;gap:10px}
+  .eyebrow::before{content:"";width:26px;height:1px;background:var(--cyan)}
+  h1{font-family:var(--disp);font-weight:600;font-size:clamp(42px,5.6vw,72px);line-height:1.04;letter-spacing:-.02em;margin:20px 0 22px}
+  h1 .aud{background:linear-gradient(120deg,var(--violet),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:18px;color:var(--dim);max-width:520px}
+  .sub b{color:var(--text);font-weight:500}
+  .ctas{margin-top:34px;display:flex;gap:14px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:13px 26px;border-radius:10px;font-weight:500;font-size:15.5px;font-family:var(--body);transition:.18s}
+  .btn.primary{background:linear-gradient(135deg,var(--violet),#5b6cf0);color:#fff;box-shadow:0 10px 36px rgba(124,58,237,.35)}
+  .btn.primary:hover{transform:translateY(-2px)}
+  .btn.ghost{border:1px solid var(--line2);color:#dfe4ff}
+  .btn.ghost:hover{border-color:var(--violet)}
+
+  /* ---------- the ledger (signature) ---------- */
+  .ledger{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:14px;
+    box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(124,58,237,.08), 0 0 60px rgba(124,58,237,.10);
+    font-family:var(--mono);font-size:12.6px;line-height:1.9;overflow:hidden}
+  @media(max-width:640px){.ledger{font-size:10.8px}.ledger-body{overflow-x:auto}}
+  .ledger-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);background:rgba(139,148,255,.04)}
+  .ledger-bar i{width:10px;height:10px;border-radius:50%;background:#2c3150;display:inline-block}
+  .ledger-bar span{margin-left:8px;color:var(--faint);font-size:12px;letter-spacing:.08em}
+  .ledger-body{padding:18px 20px 20px;min-height:340px}
+  .ln{white-space:pre;display:block;opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;color:var(--dim)}
+  .ln.show{opacity:1;transform:none}
+  .ln .k{color:#8f9ad0}
+  .ln .ok{color:var(--ok);font-weight:500}
+  .ln .hum{color:var(--human);font-weight:500}
+  .ln .sig{color:var(--cyan)}
+  .ln .hash{color:#7d88c4}
+  .ln.head{color:#fff;font-weight:500}
+  .ln.final{color:var(--ok);font-weight:500}
+  .ln.final.hum-final{color:var(--human)}
+  .caret{display:inline-block;width:8px;height:15px;background:var(--cyan);vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media(prefers-reduced-motion:reduce){
+    .ln{opacity:1;transform:none;transition:none}
+    .caret{animation:none}
+    #net{display:none}
+  }
+
+  /* ---------- readout strip ---------- */
+  .readout{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel)}
+  .readout .wrap{display:flex;flex-wrap:wrap;gap:10px 38px;justify-content:center;padding:18px 24px;
+    font-family:var(--mono);font-size:13.5px;color:var(--faint)}
+  .readout b{color:var(--text);font-weight:500}
+  .readout .ok{color:var(--ok)}
+
+  /* ---------- sections ---------- */
+  section{padding:104px 0}
+  .kick{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;color:var(--cyan);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+  .kick::before{content:"";width:26px;height:1px;background:var(--cyan)}
+  h2{font-family:var(--disp);font-weight:600;font-size:clamp(30px,4vw,44px);line-height:1.12;letter-spacing:-.015em}
+  .lede{color:var(--dim);font-size:17.5px;max-width:730px;margin-top:16px}
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s ease}
+  .reveal.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+
+  /* problem */
+  .quote{font-family:var(--disp);font-weight:400;font-size:clamp(24px,3.2vw,34px);line-height:1.4;color:#e4e8ff;max-width:880px}
+  .quote em{font-style:normal;color:var(--cyan)}
+  .figure{margin-top:34px;display:flex;gap:16px;align-items:baseline;font-family:var(--mono)}
+  .figure b{font-size:44px;font-weight:500;color:var(--human)}
+  .figure span{color:var(--faint);font-size:14px;max-width:420px;line-height:1.5}
+
+  /* how */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:0;margin-top:52px;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .step{padding:34px 30px;background:var(--panel);border-right:1px solid var(--line)}
+  .step:last-child{border-right:none}
+  @media(max-width:900px){.step{border-right:none;border-bottom:1px solid var(--line)}.step:last-child{border-bottom:none}}
+  .step .sn{font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:.14em}
+  .step h3{font-family:var(--disp);font-weight:500;font-size:21px;margin:12px 0 10px}
+  .step p{color:var(--dim);font-size:15px}
+
+  /* gates schematic */
+  .schema{margin-top:56px;overflow-x:auto;padding-bottom:8px}
+  .rail{display:flex;align-items:stretch;gap:0;min-width:860px}
+  .g{flex:1;position:relative;padding:20px 14px 16px;border:1px solid var(--line);background:var(--panel);text-align:center;margin-right:26px;border-radius:12px}
+  .g:last-child{margin-right:0}
+  .g::after{content:"→";position:absolute;right:-22px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px}
+  .g:last-child::after{content:""}
+  .g .gn{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.16em}
+  .g b{display:block;font-family:var(--disp);font-weight:500;font-size:15.5px;margin:6px 0 4px;color:#fff}
+  .g span{font-size:12.5px;color:var(--faint);line-height:1.4;display:block}
+  .g.hgate{border-color:rgba(245,176,76,.4);box-shadow:0 0 30px rgba(245,176,76,.07) inset}
+  .g.hgate b{color:var(--human)}
+  .branch{margin-top:14px;font-family:var(--mono);font-size:12.5px;color:var(--human);border-top:1px dashed rgba(245,176,76,.4);padding-top:10px}
+  .schema-note{margin-top:22px;font-size:15px;color:var(--dim);max-width:720px}
+  .schema-note b{color:var(--text);font-weight:500}
+
+  /* product shots */
+  .shot{margin-top:54px;border:1px solid var(--line2);border-radius:16px;overflow:hidden;background:var(--panel);box-shadow:0 34px 90px rgba(0,0,0,.55)}
+  .shot .bar{display:flex;gap:7px;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(139,148,255,.04)}
+  .shot .bar i{width:10px;height:10px;border-radius:50%;background:#2c3150}
+  .shot img{display:block;width:100%}
+  .shot figcaption{padding:15px 22px;font-size:14px;color:var(--dim);border-top:1px solid var(--line);font-family:var(--mono)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:26px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .grid2 .shot{margin-top:0}
+
+  /* departments */
+  .depts{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:14px;margin-top:48px}
+  .dept{border:1px solid var(--line);border-radius:12px;padding:20px 14px;text-align:center;background:var(--panel);transition:.2s}
+  .dept:hover{border-color:var(--violet);transform:translateY(-3px)}
+  .dept b{display:block;font-family:var(--disp);font-weight:500;font-size:15.5px;margin-bottom:5px}
+  .dept span{font-family:var(--mono);font-size:12px;color:var(--faint)}
+
+  /* honesty ledger */
+  .assert{margin-top:44px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .assert li{list-style:none;display:flex;gap:18px;padding:20px 24px;border-bottom:1px solid var(--line);background:var(--panel);align-items:baseline}
+  .assert li:last-child{border-bottom:none}
+  .assert .m{font-family:var(--mono);color:var(--ok);font-size:14px;white-space:nowrap}
+  .assert p{color:var(--dim);font-size:15.5px}
+  .assert p b{color:var(--text);font-weight:500}
+
+  /* cta + footer */
+  .cta-final{text-align:center;padding:110px 0 120px}
+  .cta-final h2{margin-bottom:14px}
+  .cta-final p{color:var(--dim);max-width:560px;margin:0 auto 34px}
+  footer{border-top:1px solid var(--line);padding:46px 0;background:var(--panel)}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;color:var(--faint);font-size:14px}
+  footer .fmark{font-family:var(--disp);font-weight:600;letter-spacing:.28em;color:#cfd6ff}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <span class="logo">KAEOS</span>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#gates">The pipeline</a>
+      <a href="#product">Product</a>
+      <a href="#honesty">Honesty</a>
+      <a class="gh" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <canvas id="net" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Open source · Local-first · Governed</p>
+      <h1>Autonomy you<br>can <span class="aud">audit</span>.</h1>
+      <p class="sub">KAEOS runs whole company departments with AI that <b>does the work</b>:
+        triages the incident, reviews the pull request, scores the deal, flags the late invoice.
+        Every action passes seven gates before it fires, and every decision lands in a
+        tamper-evident ledger.</p>
+      <div class="ctas">
+        <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">Read the code</a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+    </div>
+    <div class="ledger" aria-label="Example of a governed decision passing through the KAEOS pipeline">
+      <div class="ledger-bar"><i></i><i></i><i></i><span>kaeos · decision ledger · live</span></div>
+      <div class="ledger-body" id="ledger"><span class="ln head show">▸ signal   finance/invoice INV-2214 · overdue risk</span><span class="ln show">  <span class="k">GATE 1  COMPLIANCE</span>   SOX controls        <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 2  FAIRNESS</span>     bias scan           <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 3  CONFIDENCE</span>   0.91 ≥ 0.82         <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 4  HUMAN</span>        not required        <span class="ok">SKIP</span></span><span class="ln show">  <span class="k">GATE 5  DEBATE</span>       verdict             <span class="ok">PROCEED</span></span><span class="ln show">  <span class="k">GATE 6  EXECUTE</span>      qwen2.5 · local     <span class="sig">1.2s</span></span><span class="ln show">  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#a3f1…9c42</span>        <span class="ok">CHAINED</span></span><span class="ln final show">✓ EXECUTED AUTONOMOUSLY</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="readout">
+  <div class="wrap">
+    <span>departments=<b>7</b></span>
+    <span>gates=<b>7</b></span>
+    <span>connectors=<b>22</b></span>
+    <span>e2e_tests=<b>426</b></span>
+    <span>tenant_isolation=<b class="ok">RLS ENFORCED</b></span>
+    <span>license=<b>Apache-2.0</b></span>
+  </div>
+</div>
+
+<section id="problem">
+  <div class="wrap reveal">
+    <p class="kick">The problem</p>
+    <p class="quote">Enterprises are not blocked from using AI by capability.
+      They are blocked by <em>accountability</em>. The question that kills every pilot is not
+      "can the model do it". It is "when it acts on its own and we get audited,
+      how do we explain it?"</p>
+    <div class="figure">
+      <b>88%</b>
+      <span>of enterprise agent pilots never reach production. The missing layer is not a smarter
+        agent. It is proof: who approved this, what rule governed it, what an auditor can verify.</span>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="padding-top:0">
+  <div class="wrap reveal">
+    <p class="kick">How it works</p>
+    <h2>Connect. Decide. Govern. Prove.</h2>
+    <div class="steps">
+      <div class="step"><span class="sn">STEP 1</span><h3>Connect your systems</h3>
+        <p>GitHub, Jira, PagerDuty, Workday, SAP, Salesforce, Zendesk and more. 22 live adapters,
+        each with a trust weight: systems of record outrank wikis, and wikis outrank chat.</p></div>
+      <div class="step"><span class="sn">STEP 2</span><h3>Deploy a department</h3>
+        <p>Pick a pack, click deploy. Specialist agents read the real work and act on it through
+        one governed pipeline. Production deploys and customer documents always stop for a human.</p></div>
+      <div class="step"><span class="sn">STEP 3</span><h3>Watch autonomy get earned</h3>
+        <p>The safe autonomy rate: the share of real work completed with no human in the loop, at a
+        fixed error budget, trending over time. Computed from real executions, never invented.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="gates" style="padding-top:0">
+  <div class="wrap reveal">
+    <p class="kick">Every action, one pipeline</p>
+    <h2>Seven gates before anything fires</h2>
+    <p class="lede">Compliance here is not a system prompt. It is code that runs before the model is
+      called, so it cannot be argued with, jailbroken, or forgotten.</p>
+    <div class="schema">
+      <div class="rail">
+        <div class="g"><span class="gn">GATE 1</span><b>Compliance</b><span>SOX · GDPR · HIPAA · EEOC</span></div>
+        <div class="g"><span class="gn">GATE 2</span><b>Fairness</b><span>demographic bias scan</span></div>
+        <div class="g"><span class="gn">GATE 3</span><b>Confidence</b><span>model-aware ceiling</span></div>
+        <div class="g hgate"><span class="gn">GATE 4</span><b>Human</b><span>low confidence or high stakes</span>
+          <div class="branch">⏸ pauses and waits for sign-off</div></div>
+        <div class="g"><span class="gn">GATE 5</span><b>Debate</b><span>adversarial review</span></div>
+        <div class="g"><span class="gn">GATE 6</span><b>Execute</b><span>local or cloud model</span></div>
+        <div class="g"><span class="gn">GATE 7</span><b>Provenance</b><span>hash-chained ledger</span></div>
+      </div>
+    </div>
+    <p class="schema-note"><b>The amber gate is the point.</b> Decisions above the confidence
+      threshold flow through autonomously. Anything below it, and every high-consequence action
+      class like a production deploy or a customer document, stops there until a human signs off.
+      A weaker model earns a lower ceiling, which routes more of its decisions to people, automatically.</p>
+  </div>
+</section>
+
+<section id="product" style="padding-top:0">
+  <div class="wrap reveal">
+    <p class="kick">The product, live</p>
+    <h2>Not a mockup. A running system.</h2>
+    <figure class="shot">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <img loading="lazy" src="01-dashboard.png" alt="KAEOS workforce dashboard showing the safe autonomy rate">
+      <figcaption>workforce dashboard · safe autonomy rate, live departments, earned-autonomy skills · PostgreSQL, seeded tenant</figcaption>
+    </figure>
+    <div class="grid2">
+      <figure class="shot">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <img loading="lazy" src="19-reality-twin-full.png" alt="Enterprise twin with shock propagation">
+        <figcaption>enterprise twin · inject a shock, watch it propagate</figcaption>
+      </figure>
+      <figure class="shot">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <img loading="lazy" src="06-decisions-hitl.png" alt="Executive cockpit with pending human approvals">
+        <figcaption>executive cockpit · agents stopped at the human gate</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="wrap reveal">
+    <p class="kick">Seven departments</p>
+    <h2>An AI workforce, not a chatbot</h2>
+    <div class="depts">
+      <div class="dept"><b>HR</b><span>7 agents</span></div>
+      <div class="dept"><b>Finance</b><span>5 agents</span></div>
+      <div class="dept"><b>Legal</b><span>5 agents</span></div>
+      <div class="dept"><b>Sales</b><span>6 agents</span></div>
+      <div class="dept"><b>Support</b><span>5 agents</span></div>
+      <div class="dept"><b>Operations</b><span>5 agents</span></div>
+      <div class="dept"><b>Engineering</b><span>3 agents</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="honesty" style="padding-top:0">
+  <div class="wrap reveal">
+    <p class="kick">Honest by design</p>
+    <h2>The numbers are real, or they are absent</h2>
+    <ul class="assert">
+      <li><span class="m">assert ✓</span><p><b>No invented ROI.</b> Metrics KAEOS cannot measure
+        return null with a note, instead of a flattering guess.</p></li>
+      <li><span class="m">assert ✓</span><p><b>Validated on real enterprise data.</b> On real
+        accounts receivable histories it predicts late payment at 81 percent against a 64 percent
+        baseline. The results that miss baseline are reported too, not hidden.</p></li>
+      <li><span class="m">assert ✓</span><p><b>Isolation the database enforces.</b> Postgres
+        row-level security refuses to return another tenant's rows even to an unfiltered query,
+        proven by cross-tenant denial tests in the suite.</p></li>
+      <li><span class="m">assert ✓</span><p><b>Bring any model, keep the guarantees.</b> KAEOS
+        probes whatever model you configure and caps the confidence its decisions may claim, so a
+        weaker model automatically routes more work to humans.</p></li>
+      <li><span class="m">assert ✓</span><p><b>Local-first inference.</b> Routine decisions run on
+        a local model. A data residency mode pins everything in-region, and PII is scrubbed before
+        any cloud call.</p></li>
+    </ul>
+  </div>
+</section>
+
+<div class="cta-final reveal">
+  <div class="wrap">
+    <h2>The whole system is public.</h2>
+    <p>Backend, frontend, the seven departments, the gate pipeline, the ledger, and 426
+      end-to-end tests. Read it, run it, audit it.</p>
+    <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">github.com/Daksh-Aneja-Projects/KAEOS</a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span class="fmark">KAEOS</span>
+    <span>Built by Daksh Aneja and Sathya Sankarasubbu</span>
+    <span>Apache 2.0</span>
+  </div>
+</footer>
+
+<script>
+/* ---------- signature: the live decision ledger ---------- */
+(function(){
+  const body=document.getElementById('ledger');
+  const S_AUTO=[
+    ['head','▸ signal   finance/invoice INV-2214 · overdue risk'],
+    ['','  <span class="k">GATE 1  COMPLIANCE</span>   SOX controls        <span class="ok">PASS</span>'],
+    ['','  <span class="k">GATE 2  FAIRNESS</span>     bias scan           <span class="ok">PASS</span>'],
+    ['','  <span class="k">GATE 3  CONFIDENCE</span>   0.91 ≥ 0.82         <span class="ok">PASS</span>'],
+    ['','  <span class="k">GATE 4  HUMAN</span>        not required        <span class="ok">SKIP</span>'],
+    ['','  <span class="k">GATE 5  DEBATE</span>       verdict             <span class="ok">PROCEED</span>'],
+    ['','  <span class="k">GATE 6  EXECUTE</span>      qwen2.5 · local     <span class="sig">1.2s</span>'],
+    ['','  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#a3f1…9c42</span>        <span class="ok">CHAINED</span>'],
+    ['final','✓ EXECUTED AUTONOMOUSLY'],
+  ];
+  const S_HITL=[
+    ['head','▸ signal   engineering/deploy v2.4.1 → production'],
+    ['','  <span class="k">GATE 1  COMPLIANCE</span>   change mgmt         <span class="ok">PASS</span>'],
+    ['','  <span class="k">GATE 2  FAIRNESS</span>     not applicable      <span class="ok">SKIP</span>'],
+    ['','  <span class="k">GATE 3  CONFIDENCE</span>   0.74 &lt; 0.82         <span class="hum">LOW</span>'],
+    ['','  <span class="k">GATE 4  HUMAN</span>        production deploy   <span class="hum">REQUIRED</span>'],
+    ['','  <span class="hum">⏸ PAUSED · waiting for sign-off…</span>'],
+    ['','  <span class="k">approval</span>            release manager     <span class="ok">APPROVED</span>'],
+    ['','  <span class="k">GATE 6  EXECUTE</span>      resumed             <span class="sig">0.8s</span>'],
+    ['','  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#7be2…d141</span>        <span class="ok">CHAINED</span>'],
+    ['final hum-final','⏸→✓ EXECUTED WITH HUMAN SIGN-OFF'],
+  ];
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let scen=0;
+  function render(lines){
+    body.innerHTML='';
+    const els=lines.map(([cls,html])=>{
+      const el=document.createElement('span');
+      el.className='ln '+cls;el.innerHTML=html;body.appendChild(el);return el;
+    });
+    const caret=document.createElement('span');caret.className='caret';body.appendChild(caret);
+    return els;
+  }
+  function play(){
+    const lines=scen%2===0?S_AUTO:S_HITL;scen++;
+    const els=render(lines);
+    if(reduced){els.forEach(e=>e.classList.add('show'));return;}
+    let i=0;
+    (function next(){
+      if(i<els.length){
+        els[i].classList.add('show');
+        const txt=els[i].textContent;
+        const pause=txt.includes('PAUSED')?1600:(els[i].classList.contains('final')?900:430);
+        i++;setTimeout(next,pause);
+      }else setTimeout(play,3400);
+    })();
+  }
+  play();
+})();
+
+/* ---------- faint living graph behind the hero ---------- */
+(function(){
+  const cv=document.getElementById('net');if(!cv)return;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const ctx=cv.getContext('2d');let nodes=[];
+  function rnd(a){let s=a;return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  const R=rnd(20260727);
+  function size(){cv.width=cv.offsetWidth*devicePixelRatio;cv.height=cv.offsetHeight*devicePixelRatio;
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    const n=Math.min(80,Math.floor(cv.offsetWidth/18));nodes=[];
+    for(let i=0;i<n;i++)nodes.push({x:R()*cv.offsetWidth,y:R()*cv.offsetHeight,vx:(R()-.5)*.22,vy:(R()-.5)*.22,r:1+R()*1.9,p:R()*6.28});}
+  size();addEventListener('resize',size);
+  let t=0;
+  (function loop(){
+    t+=1/60;const w=cv.offsetWidth,h=cv.offsetHeight;
+    ctx.clearRect(0,0,w,h);ctx.lineWidth=1;
+    for(const n of nodes){n.x+=n.vx;n.y+=n.vy;
+      if(n.x<-20)n.x=w+20;if(n.x>w+20)n.x=-20;if(n.y<-20)n.y=h+20;if(n.y>h+20)n.y=-20;}
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i],b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
+      if(d2<150*150){ctx.strokeStyle=`rgba(125,135,255,${(1-Math.sqrt(d2)/150)*.10})`;
+        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}}
+    for(const n of nodes){const ap=.3+.5*Math.abs(Math.sin(t*.8+n.p));
+      ctx.fillStyle=`rgba(150,160,255,${.4*ap})`;
+      ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,7);ctx.fill();}
+    requestAnimationFrame(loop);
+  })();
+})();
+
+/* reveal on scroll */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
