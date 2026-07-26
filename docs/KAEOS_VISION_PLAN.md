@@ -1,7 +1,7 @@
 # KAEOS v3 — The Autonomous Enterprise
 ### Vision & Implementation Plan (new layers, services, integrations, touchpoints)
 
-> **Authors**: Daksh Aneja + Claude, as a team of digital-twin, agentic-AI, autonomous-systems, and ERP specialists.
+> **Author**: Daksh Aneja, with Claude (Anthropic's AI coding assistant), drawing on digital-twin, agentic-AI, autonomous-systems, and ERP practice.
 > **Rule**: every capability below is NEW. Nothing here re-implements what KAEOS already has (Phase 0 lists it). Grounded, realistic, and sequenced by dependency and demand.
 
 ---

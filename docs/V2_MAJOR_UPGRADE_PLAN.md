@@ -1,7 +1,7 @@
 # KAEOS v2.0 — The Self-Improving Autonomy Platform
 ### Definitive Major-Upgrade Plan (all layers)
 
-> **Authors**: Daksh Aneja + Claude (co-founder), acting as an L10 review team
+> **Author**: Daksh Aneja, with Claude (AI coding assistant), acting as an L10 review team
 > **Baseline**: v1.1.2 (2026-07-21) — 7-domain, security-hardened, ~50k LOC backend / ~20k LOC frontend
 > **Target**: v2.0.0
 > **North-star metric**: **safe-autonomy-rate** — the fraction of agent actions executed safely without human intervention

@@ -1215,7 +1215,7 @@ publishers - see [NOTICE](NOTICE) and each dataset's Kaggle page before redistri
 
 **Built with** FastAPI · SQLAlchemy · LiteLLM · React · TypeScript · Redis · Neo4j · pgvector · Ollama
 
-**Built by Daksh Aneja**, with **Claude** (Anthropic's AI) as engineering co-founder & partner —
+**Built by Daksh Aneja**, using **Claude** (Anthropic's AI coding tools) —
 across architecture, implementation, security hardening, and verification. Human-directed and
 AI-built, and — see *Known limitations* above — deliberately honest about what's shipped versus
 roadmap. Tenant isolation (RLS) is verified on PostgreSQL and the E2E suite passes on

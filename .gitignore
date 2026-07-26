@@ -188,3 +188,7 @@ marketing/qc_*.png
 frontend/src/assets/preview-screenshot*.png
 backend/_*.txt
 frontend/test-results/
+
+# ─── Private working documents and media (local only, never publish) ───
+docs/YC_APPLICATION_ANSWERS.md
+marketing/yc/
