@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from app.services.skills_file import build_skills_file, render_markdown
 
 settings = get_settings()
@@ -197,7 +197,12 @@ async def _call_tool(request: Request, name: str, args: dict) -> dict:
 @router.post("/mcp")
 async def mcp_endpoint(
     request: Request,
-    tenant_id: str = Depends(get_tenant_id),  # same auth wall as every route
+    # Default-deny: every mutation-capable route carries an explicit role gate.
+    # Viewer is the floor - any authenticated user may SPEAK the protocol - and
+    # the dangerous tools re-verify stronger roles downstream: tools/call
+    # forwards the caller's own auth headers to the governed routes, where
+    # execute_skill still demands the operator role. Two independent walls.
+    tenant: dict = Depends(require_role("viewer")),
 ):
     try:
         payload = await request.json()
