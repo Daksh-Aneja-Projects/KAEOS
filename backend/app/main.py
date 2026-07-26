@@ -350,6 +350,11 @@ app.include_router(sso_routes.router,      prefix=PREFIX)
 from app.api.routes import scim as scim_routes
 app.include_router(scim_routes.router,     prefix=PREFIX)
 app.include_router(brain.router,           prefix=PREFIX)
+# Agent interface — MCP endpoint + Company Skills File export. A thin protocol
+# adapter over the governed routes: agents inherit the same 7 gates, RBAC, and
+# tenant isolation as humans, never a side door around them.
+from app.api.routes import agent_interface as agent_interface_routes
+app.include_router(agent_interface_routes.router, prefix=PREFIX)
 from app.api.routes import billing
 app.include_router(billing.router,         prefix=PREFIX)
 from app.api.routes import notifications as notification_routes

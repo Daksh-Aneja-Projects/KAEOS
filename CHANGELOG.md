@@ -5,7 +5,32 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-26
+
 ### Added
+- **KAEOS speaks agent - MCP endpoint + Company Skills File** (the machine-facing
+  interface; `app/api/routes/agent_interface.py`, `app/services/skills_file.py`):
+  - `POST /mcp` - a Model Context Protocol endpoint (JSON-RPC 2.0 over
+    streamable HTTP): `initialize` / `ping` / `tools/list` / `tools/call`, with
+    six governed tools (`query_company_brain`, `list_skills`, `execute_skill`,
+    `get_safe_autonomy_rate`, `list_pending_approvals`, `export_skills_file`).
+    Any MCP-speaking agent can discover and operate KAEOS.
+  - **No side door, by construction**: the MCP layer is a thin protocol adapter
+    that forwards in-process (httpx ASGI transport, caller's auth headers) to
+    the SAME governed REST routes a human hits - identical 7-gate pipeline,
+    RBAC (`execute` still requires the operator role), and tenant isolation.
+    An agent executing a gated action receives `PENDING_HITL` and waits for a
+    human like everyone else.
+  - `GET /brain/skills-file` - the Company Brain exported as an executable
+    Company Skills File: operating rules and skills with confidence tiers,
+    compliance tags, and governance instructions, grouped by domain/department,
+    as agent-ready markdown or structured JSON.
+  - Verified by `tests/e2e/test_30_agent_interface.py` (15 tests: handshake,
+    tool catalog, every read tool, both export formats, JSON-RPC error paths,
+    and a real skill execution through MCP on live Ollama). Suite grows
+    426 -> 441 tests across 30 files.
+
+### Added (from previous unreleased work)
 - **KAEOS Foresight** (`/platform/foresight`): a fifth reality capability that is
   autonomous and prescriptive, where Shock / What-if / Wargame / Replay are
   reactive. Those four require the executive to already know which question to

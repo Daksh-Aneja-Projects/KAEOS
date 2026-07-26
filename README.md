@@ -13,7 +13,7 @@ and fully explainable decisions.**
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://typescriptlang.org)
-[![Tests](https://img.shields.io/badge/E2E_Tests-426-brightgreen.svg)](backend/tests/e2e/)
+[![Tests](https://img.shields.io/badge/E2E_Tests-441-brightgreen.svg)](backend/tests/e2e/)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 <br />
@@ -302,6 +302,30 @@ rules, skills, deployments, or compliance posture. It streams grounded answers
 from the platform (never fabricated data) and is read-only, so it is available to
 every role. Auth is carried on the user's session token; responses stream over
 Server-Sent Events.
+
+### KAEOS speaks agent - MCP endpoint + Company Skills File
+
+Enterprises do not just need AI that works for humans; they need their existing AI
+agents to act safely. KAEOS exposes a machine-facing interface for exactly that:
+
+- **MCP endpoint** (`POST /mcp`, JSON-RPC 2.0 over streamable HTTP): any
+  MCP-speaking agent - Claude, or anything else that talks the protocol - can
+  `initialize`, discover the tool catalog, and call six governed tools:
+  `query_company_brain`, `list_skills`, `execute_skill`,
+  `get_safe_autonomy_rate`, `list_pending_approvals`, `export_skills_file`.
+- **The gates still apply.** The MCP layer is a thin protocol adapter that
+  forwards in-process to the same governed routes a human hits - identical
+  7-gate pipeline, RBAC, and tenant isolation. An agent executing a
+  high-consequence skill gets `PENDING_HITL` and waits for a human, exactly
+  like everyone else. There is no side door.
+- **Company Skills File** (`GET /brain/skills-file`): the tenant's Company
+  Brain - operating rules and executable skills with confidence tiers and
+  compliance tags - exported as one portable, agent-ready document (markdown
+  for context windows, JSON for programs). Knowledge as an executable artifact,
+  not a chatbot.
+
+Verified end to end by `tests/e2e/test_30_agent_interface.py`, including a real
+skill execution through MCP on a live local model.
 
 ### Agent Factory
 
@@ -698,7 +722,7 @@ kaeos/
 │   │   ├── security_audit.py        # Security posture audit
 │   │   └── load_test.py             # Load/perf harness
 │   ├── tests/
-│   │   ├── e2e/                     # 426-test E2E suite (live backend + real Ollama)
+│   │   ├── e2e/                     # 441-test E2E suite (live backend + real Ollama)
 │   │   │   ├── conftest.py          # Shared fixtures (httpx client, has_ollama)
 │   │   │   ├── test_01_company_brain.py
 │   │   │   ├── test_02_hr_department.py
@@ -728,7 +752,8 @@ kaeos/
 │   │   │   ├── test_26_billing_reality_truth.py  # derived-not-fabricated regressions
 │   │   │   ├── test_27_integration_catalog.py    # 22 adapters, graceful failure
 │   │   │   ├── test_28_cross_tenant_denial.py    # RLS cross-tenant isolation proofs
-│   │   │   └── test_29_foundry_learning.py       # AI Foundry training-dataset layer
+│   │   │   ├── test_29_foundry_learning.py       # AI Foundry training-dataset layer
+│   │   │   └── test_30_agent_interface.py        # MCP endpoint + Company Skills File
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── pytest.ini
@@ -796,6 +821,7 @@ pauses for approval; approving in the HITL queue resumes and executes it).
 | BYOK Config | `/config` | `/llm-routing` (GET/POST/DELETE), `/llm-routing/{tier}/probe`, `/mcp-tools`, `/ontology`, `/federated` |
 | Billing | `/billing` | `/usage` (token metering + per-tier/model attribution), `/roi` (**safe autonomy rate**) |
 | AI Foundry | `/foundry` | `/feedback`, `/datasets/build`, `/datasets`, `/datasets/export` (Phase 2); `/evolution/evaluate`, `/evolution/runs`, `/evolution/runs/{id}/promote` (Phase 3 — gated) |
+| Agent Interface | `/mcp` + `/brain/skills-file` | MCP endpoint (JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call` with 6 governed tools; Company Skills File export (markdown/json) |
 | Privacy | `/privacy` | `/erasure` (GDPR Art.17, admin), `/retention` (GET/PUT), `/retention/apply` (configurable retention windows) |
 | Infrastructure | `/infrastructure` | `/models`, `/prompts`, `/cost/telemetry`, `/agents/registry` |
 | Pipeline | `/pipeline` | `/llm/providers`, `/connectors/available`, `/transforms/available`, `/run` |
@@ -861,7 +887,7 @@ now grounded, and `python scripts/validate_domain_agents.py` runs each one throu
 pipeline against real rows, verifying both the outcome and that the entity's actual content reached
 the model (report: `benchmark/agent_validation_report.json`).
 
-### E2E Test Suite (426 tests across 29 files, live backend + real Ollama)
+### E2E Test Suite (441 tests across 30 files, live backend + real Ollama)
 
 The full E2E suite exercises every functional surface against a running backend with real
 seeded data - all 7 department brains and their AI agents, the 7-gate skill pipeline
@@ -897,7 +923,7 @@ python -m pytest tests/e2e/test_02_hr_department.py -v
 python -m pytest tests/e2e/ -v -m "not ollama"
 ```
 
-**Current status:** the end-to-end suite (426 tests) passes against both SQLite (local dev)
+**Current status:** the end-to-end suite (441 tests) passes against both SQLite (local dev)
 and **PostgreSQL 16 + pgvector** (the production data stack) with row-level security enforced.
 CI runs the non-Ollama suite against Postgres+pgvector, so a bug SQLite silently tolerates is
 caught automatically (this is real: a `NUMERIC`-returns-`Decimal` bug that passed on SQLite was
@@ -1104,7 +1130,7 @@ We'd rather you read this from us than find it. What's shipped and verified vs. 
 
 **Verified today:** the governance spine (gates fail closed), per-tenant PostgreSQL row-level
 security (isolation proven on Postgres — cross-tenant reads scoped, cross-tenant writes blocked),
-BYOK LLM routing with real cost metering, a 426-test E2E suite green on SQLite **and**
+BYOK LLM routing with real cost metering, a 441-test E2E suite green on SQLite **and**
 Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
 
 Here is exactly what is shipped versus in progress. We treat this candor as an asset, not an apology.
