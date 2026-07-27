@@ -19,7 +19,7 @@ bar (or high-consequence, always) to a human.**
 and skills that have *earned* autonomy. Captured from a running instance against PostgreSQL - a live
 app on a seeded demo tenant, not a mockup or a design comp.</sub>
 
-**Demo video:** coming soon - see [docs/DEMO.md](docs/DEMO.md) for what it will show.
+**Demo video:** coming soon.
 
 </div>
 
@@ -112,7 +112,6 @@ admin login, local Ollama): [docs/SETUP.md](docs/SETUP.md).
 | Setup, development, deployment, environment variables | [docs/SETUP.md](docs/SETUP.md) |
 | Known limitations and roadmap (the full, unabridged list) | [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) |
 | Deployment runbook | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| Demo video plan | [docs/DEMO.md](docs/DEMO.md) |
 
 ## Known limitations
 

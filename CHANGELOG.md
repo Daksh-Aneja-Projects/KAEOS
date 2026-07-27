@@ -3,7 +3,79 @@
 All notable changes to KAEOS are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+> **On version numbering.** The git tag series (`v1.0.0` ... `v1.3.0`) is the
+> authoritative release history. The `2.0.0` / `2.1.0` / `2.2.0` blocks further
+> down were internal upgrade-sprint numbering from 2026-07-25 that was never
+> tagged; the `1.x` line supersedes them. `APP_VERSION` and the frontend
+> `package.json` now track the tag series.
+
 ## [Unreleased]
+
+## [1.3.0] - 2026-07-27 - "Gate Integrity"
+
+Pre-submission remediation: three defects in the gate pipeline that could let a
+high-consequence action bypass its human, plus the repository presentation pass.
+
+### Fixed - gate pipeline (security)
+- **`hitl_pre_approved` was derived from the wrong signal.** The mission engine
+  set both `has_human_approver` and `hitl_pre_approved` from `step.hitl_required`
+  - the *requirement*, not evidence an approval occurred - and Gate 3 reads that
+  flag to skip the entire confidence check including the high-consequence forced-
+  HITL branch. `MissionStep` now persists an approval record (`approved_by`,
+  `approved_at`), written only by `resolve_hitl_step`; the engine derives both
+  flags from it, carries the real approver identity into the SOX check, and
+  refuses to execute a `hitl_required` step that has no approval record
+  (re-gates to `PENDING_HITL`). (migration 0023)
+- **Gate 3's confidence ceiling failed OPEN.** A failed tenant-ceiling lookup
+  (Redis/DB outage, cold cache, provider timeout) applied no cap at all, so a
+  weak model silently regained full autonomy exactly when the system was least
+  healthy. It now fails closed via the new `FAILSAFE_CONFIDENCE_CEILING`
+  (below the autonomous-execution threshold), logs at `error`, and emits gate
+  and activity-feed events so the failure is visible in the UI, not just logs.
+- **`hitl_pre_approved` was reachable from a request-controlled context dict.**
+  It is now a keyword-only argument on `AgentExecutor.execute_skill`;
+  context-supplied values are stripped at the executor, and
+  `POST /skills/{id}/execute` strips `hitl_pre_approved` and `has_human_approver`
+  from the request context before it reaches the compliance check. All
+  `execute_skill` call sites audited.
+
+### Changed - safety controls
+- **Explicit `always_hitl` marker replaces substring matching.** The
+  always-route-to-a-human guarantee depended on naming convention (renaming
+  `wire_transfer_approve` to `treasury_settle` silently made it autonomous), and
+  the logic was duplicated with drift between the runtime gate and the `/skills`
+  route. `Skill.always_hitl` is now authoritative and is evaluated by one shared
+  helper, `app/services/consequence.py::is_high_consequence`, called from both
+  sites; tag inference remains as an escalate-only fallback. Seeders and the
+  workforce generator backfill the flag so behaviour on existing data is
+  unchanged. (migration 0024)
+- **Three swallowed exceptions on security paths now fail closed.** PII log
+  redaction suppresses the payload instead of emitting the unredacted message
+  when redaction raises; the Autonomy Dial holds the strictest threshold it has
+  evidence for instead of reverting to the platform default on a lookup failure;
+  the mission planner plans a human checkpoint instead of assuming 0.82 when the
+  threshold cannot be resolved.
+
+### Removed
+- Dead duplicate `RateLimitMiddleware` in `app/core/redis.py` that failed open
+  when Redis errored. Nothing imported it (`main.py` registers the one in
+  `app/core/middleware.py`, which correctly degrades to an in-memory window); it
+  was a fail-open landmine shadowing the live class by name.
+
+### Documentation
+- README restructured from 1,253 lines to ~150, with everything relocated (not
+  deleted) into `docs/`: `ARCHITECTURE`, `FEATURES`, `API`, `CONNECTORS`,
+  `BYOK`, `BENCHMARKS`, `SECURITY_MODEL`, `TESTING`, `SETUP`,
+  `KNOWN_LIMITATIONS`. Every factual claim, number, benchmark result and
+  limitation preserved verbatim.
+- Fixed documented inconsistencies: the minimum-env-vars table omitted
+  `ADMIN_SECRET` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` while Quick Start said the
+  app refuses to boot without them; the 4GB RAM prerequisite contradicted a
+  default model targeting a 6GB GPU; the architecture diagram listed SAML in the
+  auth box while the SSO section calls SAML roadmap; the execute stage was
+  described two different ways; the project-structure tree mislabelled
+  `services/skill_executor.py` as the 7-gate pipeline (the gates are in
+  `app/agents/runtime.py`); `docs/` and `NOTICE` were missing from the tree.
 
 ## [1.2.0] - 2026-07-26
 

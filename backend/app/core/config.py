@@ -6,7 +6,10 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "KAEOS"
-    APP_VERSION: str = "2.2.0"
+    # Tracks the git tag series (v1.0.0 ... v1.3.0), which is the authoritative
+    # release history. See the note at the top of CHANGELOG.md about the
+    # never-tagged 2.x sprint numbering this supersedes.
+    APP_VERSION: str = "1.3.0"
     DEBUG: bool = False
     # Safe default: auth is ENFORCED unless DEV_MODE is explicitly enabled
     # (e.g. DEV_MODE=true in a local .env). Never ship DEV_MODE=true to production.
