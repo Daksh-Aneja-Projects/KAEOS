@@ -375,7 +375,7 @@ loops closed (L1-L5 + L7 — governed advice becomes self-improving autonomy);
 enterprise auth complete (OIDC SSO, MFA/TOTP, SCIM); orphaned capabilities wired
 to UI. See the sections below for the full detail.
 
-Executing the phased v2.0 upgrade in [docs/V2_MAJOR_UPGRADE_PLAN.md](docs/V2_MAJOR_UPGRADE_PLAN.md).
+Executing the phased v2.0 upgrade plan (an internal planning document, not published).
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
@@ -685,7 +685,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   top-level `/integrations` page). Deleted `AnalystWorkspace`, `AgentMonitor`,
   `IntegrationsHub`, and the dead-mock `ExecutiveAdvisor`. Renamed the "Skill
   Marketplace" tab to "Skill Templates" to end the collision with the
-  `/marketplace` domain-pack page. See docs/NAV_AND_MOCKDATA_PLAN.md.
+  `/marketplace` domain-pack page.
 
 ### Added (v4 Signature IP)
 - **Shock simulator upgrade: Scenario Comparison** (IP-2) — each shock run is now
@@ -756,7 +756,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - **Model strategy (researched, hardware-gated).** On the 6GB dev GPU the 7b cannot
   co-reside with a helper model (loading a 1.5b evicts the 7b), so tier-splitting to a
   lighter model would swap-thrash — verified and documented; nothing is routed to the
-  lighter tier here. See docs/PERF_OPTIMIZATION_PLAN.md.
+  lighter tier here. See the performance section of docs/ARCHITECTURE.md.
 - **Async missions.** A gated mission step can take a while on a live model, so
   `POST /missions/{id}/advance` no longer blocks: it starts a background runner
   (own DB session, per-mission guard, stale-step crash recovery) and returns
@@ -948,7 +948,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   Dashboard. No duplicate navigation touchpoint. All real, no mock.
 
 ### Added (planning)
-- **docs/KAEOS_VISION_PLAN.md** — the v3 "Autonomous Enterprise" plan: new,
+- **The v3 "Autonomous Enterprise" plan** (an internal planning document, not published): new,
   non-duplicative layers (system-of-record actuation, outcome-intelligence loop,
   cross-domain autonomous missions, enterprise flight simulator, sense-decide-act
   event mesh, regulatory autopilot, trust/autonomy-dial, omnipresent touchpoints).

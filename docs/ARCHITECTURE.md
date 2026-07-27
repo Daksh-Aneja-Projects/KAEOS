@@ -211,6 +211,12 @@ gate or changing any decision's reasoning:
 - **It is measured, not guessed.** Per-model-tier average latency is surfaced live in
   the Executive Cockpit (from real cost telemetry).
 
-The full plan and the (honest) hardware findings - e.g. why aggressive model
-tier-splitting is net-negative on a 6GB GPU - live in
-[PERF_OPTIMIZATION_PLAN.md](PERF_OPTIMIZATION_PLAN.md).
+- **One optimization was measured and then rejected.** Splitting the gate
+  pipeline across a small "nano" model and the resident 7b looks like an obvious
+  win, and on a 6GB GPU it is net-negative: Ollama keeps one model resident by
+  default, loading the helper evicts the 7b rather than co-residing with it, and
+  the resulting swap on every tier switch costs more than the smaller model
+  saves. The nano tier definition stays for hardware with the VRAM headroom, but
+  nothing routes to it by default. Compliance-verdict caching was also
+  deliberately not done: a verdict depends on context, so caching it could
+  rubber-stamp a changed context.

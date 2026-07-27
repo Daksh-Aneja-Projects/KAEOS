@@ -192,3 +192,16 @@ frontend/test-results/
 # ─── Private working documents and media (local only, never publish) ───
 docs/YC_APPLICATION_ANSWERS.md
 marketing/yc/
+
+# ─── Internal planning artifacts (local only) ────────────────────────────────
+# Living implementation plans and audit worksheets: stale by design, they name
+# internal review process and dev-box hardware, and they read as roadmap rather
+# than documentation. The durable conclusions belong in docs/ARCHITECTURE.md and
+# docs/KNOWN_LIMITATIONS.md instead.
+docs/KAEOS_VISION_PLAN.md
+docs/V2_MAJOR_UPGRADE_PLAN.md
+docs/PLAN_STARLETTE_AND_FORESIGHT.md
+docs/NAV_AND_MOCKDATA_PLAN.md
+docs/PERF_OPTIMIZATION_PLAN.md
+docs/*_PLAN.md
+docs/PLAN_*.md
