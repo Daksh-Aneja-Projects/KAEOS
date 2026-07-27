@@ -5,6 +5,9 @@ Back to the [README](../README.md). Related: [Testing](TESTING.md) |
 
 ## Prerequisites
 
+- Python 3.12 (what CI, the Dockerfile, and the lint target all use; earlier
+  versions are not tested)
+- Node.js 20 for the frontend
 - Docker 24+ and Docker Compose v2
 - An LLM API key (Anthropic Claude **or** OpenAI) - **or** [Ollama](https://ollama.ai) for fully local inference
 - 8GB RAM minimum (16GB recommended). For local inference, the default model

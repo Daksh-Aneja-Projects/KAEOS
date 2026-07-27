@@ -61,6 +61,18 @@ high-consequence action bypass its human, plus the repository presentation pass.
   when Redis errored. Nothing imported it (`main.py` registers the one in
   `app/core/middleware.py`, which correctly degrades to an in-memory window); it
   was a fail-open landmine shadowing the live class by name.
+- Internal planning artifacts untracked from the repository (kept locally):
+  the vision / v2-upgrade / Starlette / navigation-audit / performance plans.
+  They are living working documents, they name internal review process, and one
+  carried dev-box hardware specs. The one durable public finding (why splitting
+  the gate pipeline across a nano model is net-negative on a 6GB GPU, and why
+  compliance verdicts are deliberately not cached) moved into the performance
+  section of `docs/ARCHITECTURE.md`.
+
+### Verified
+- The published Python version now matches what is actually built and tested
+  (3.12: CI, Dockerfile, and the ruff target). The previous "3.11+" badge was an
+  untested claim - the tree parses under 3.11, but no lane exercises it.
 
 ### Documentation
 - README restructured from 1,253 lines to ~150, with everything relocated (not
@@ -160,7 +172,7 @@ high-consequence action bypass its human, plus the repository presentation pass.
   signal correlated to legal, produced a BRIEFING response, and was enacted.
 
 ### Security
-- **Starlette security ceiling lifted — all remaining backend advisories fixed.**
+- **Starlette security ceiling lifted - all remaining backend advisories fixed.**
   KAEOS was pinned to Starlette 0.48.0 because no released FastAPI supported the
   1.x line (0.119.x capped `starlette <0.49.0`), which left every advisory
   patched only in >=1.x *structurally unreachable*. FastAPI 0.140.0 removed that
@@ -199,7 +211,7 @@ high-consequence action bypass its human, plus the repository presentation pass.
   the write-back was not atomic with its action (a caller that rolled back could
   still leave a queued write for a mutation that never happened), and every
   actuation logged a swallowed `sqlite3.OperationalError: no such table:
-  outbound_writes` — the queue simply never persisted. It now accepts the
+  outbound_writes` - the queue simply never persisted. It now accepts the
   caller's session (`db=`) and flushes into that transaction, falling back to its
   own session only for background sweeps with no session in hand.
 - **`benchmark.real_data` availability probes reported unloadable datasets as
@@ -217,7 +229,7 @@ high-consequence action bypass its human, plus the repository presentation pass.
   `_as_utc` coercion that normalizes both sides to aware-UTC before comparison.
 - **Fine-tune auto-eval robustness**: `model_evolution.run_evaluation` promised
   never to raise for a missing/unroutable provider, but `_generate` let a failed
-  `router.complete` propagate — so a candidate model that can't be reached (a
+  `router.complete` propagate - so a candidate model that can't be reached (a
   not-yet-deployed fine-tune id, or any env with a live provider that rejects the
   id) crashed the whole poll sweep and marked every job `FAILED`. It now degrades
   a failed generation to an empty, `simulated=True` result (forcing `win=False`,
@@ -298,9 +310,9 @@ browser against the production Postgres tenant with real Ollama.
 
 ### Added
 - **Rich cross-domain Digital Twin.** `build_live_twin` now weaves a bounded
-  sample of every domain's real records into the constellation — Customers
+  sample of every domain's real records into the constellation - Customers
   (finance), Accounts (sales), Tickets (support), Contracts (legal), Incidents
-  (engineering), Purchase Orders (operations) — each attached to its department,
+  (engineering), Purchase Orders (operations) - each attached to its department,
   on top of the full Department -> Capability -> Agent -> Process backbone.
   `sample_twin_for_view` keeps the structural backbone and caps high-cardinality
   leaves per department so the graph stays legible; stats stay honest (computed
@@ -371,7 +383,7 @@ browser against the production Postgres tenant with real Ollama.
 
 Production-readiness release. All P0 honesty/security/procurement blockers closed;
 P1 hardening (auth, limits, ops, exports, user management); all six governance
-loops closed (L1-L5 + L7 — governed advice becomes self-improving autonomy);
+loops closed (L1-L5 + L7 - governed advice becomes self-improving autonomy);
 enterprise auth complete (OIDC SSO, MFA/TOTP, SCIM); orphaned capabilities wired
 to UI. See the sections below for the full detail.
 
@@ -379,38 +391,38 @@ Executing the phased v2.0 upgrade plan (an internal planning document, not publi
 Thesis: harden the safety and ops substrate first (earn the right), then ship the
 AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 
-### Added (Data — comprehensive Kaggle-backed onboarding)
+### Added (Data - comprehensive Kaggle-backed onboarding)
 - **Real relational sales CRM.** `onboard_real_company` (tenant `tenant_realco`)
-  now builds the FULL pipeline from the sales parquet — Accounts (real
+  now builds the FULL pipeline from the sales parquet - Accounts (real
   firmographics: industry, region, employee band, revenue band) -> Contacts ->
-  Opportunities (real stage + ACV) -> Activities — all relationally linked, instead
+  Opportunities (real stage + ACV) -> Activities - all relationally linked, instead
   of a flat lead list. New `loaders.load_sales_crm` returns a referentially-consistent
   subset. At `--limit 50`: 50 accounts / 152 contacts / 153 opportunities / 746
   activities (scales ~10x at the default 500).
 - **Real procurement.** Operations onboarding now writes a `PurchaseRequest` +
   `PurchaseOrder` per real PO (supplier, category, quantity, negotiated price,
-  status) plus a risk Signal for every non-compliant/defective order — previously
+  status) plus a risk Signal for every non-compliant/defective order - previously
   Signals-only. New `loaders.load_procurement_orders`.
 - **Reality twin seeded from real data.** `seed_state_twin` derives the four
-  Enterprise-State snapshots (Finance/HR/Ops/IT) from the onboarded rows — headcount
+  Enterprise-State snapshots (Finance/HR/Ops/IT) from the onboarded rows - headcount
   & attrition from HR, AR from invoices, AP from POs, vendor incidents & supply-chain
-  health from procurement, P1 incidents from engineering — so Org Pulse / cockpit /
+  health from procurement, P1 incidents from engineering - so Org Pulse / cockpit /
   scorecard render live numbers instead of an empty twin. Tests:
   `tests/test_real_data_loaders.py` (skip when raw data absent).
 
-### Fixed / Added (Production-readiness — P2 polish, round 2)
+### Fixed / Added (Production-readiness - P2 polish, round 2)
 - **At-rest key decoupled from the JWT key.** Stored secrets (connector creds,
   SSO client secrets, MFA secrets) can now be encrypted with a dedicated
   `CONNECTOR_ENCRYPTION_KEY`, independent of the JWT-signing `SECRET_KEY`, so a
   leak of one signing context no longer compromises the other. Falls back to
   `SECRET_KEY` when unset (existing deployments decrypt unchanged).
 - **Honest ProcessEngine docstring.** `workforce/orchestration/process_engine.py`
-  claimed it "handles agent actions, human checkpoints, and fairness gates" — it
+  claimed it "handles agent actions, human checkpoints, and fairness gates" - it
   is a sequential DAG state tracker that makes NO governance decisions. The
   docstring now says so and points to where the real 7-gate orchestration lives
   (the missions engine + agent runtime).
 
-### Fixed / Added (Production-readiness — P2 polish)
+### Fixed / Added (Production-readiness - P2 polish)
 - **WebSocket token no longer in the query string.** The live-feed WS handshake
   carried the JWT as `?token=` (leaks into proxy/access logs and browser history).
   It now rides in the `Sec-WebSocket-Protocol` header (`["kaeos-bearer", <jwt>]`),
@@ -427,7 +439,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   secrets now fail-if-unset (`:?`) like production, so a forgotten override can't
   ship a known password to a network-reachable staging box.
 
-### Changed / Removed (Production-readiness — ops & cleanup)
+### Changed / Removed (Production-readiness - ops & cleanup)
 - **Deep health probe.** `GET /health?deep=true` now additionally reports the
   reachability of non-critical dependencies (Redis, the LLM provider) for
   observability; the default readiness probe stays fast and only the primary
@@ -439,7 +451,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - **Version bump to 2.0.0** across the backend (`APP_VERSION`) and frontend
   (`package.json`), and this CHANGELOG cut for the release.
 
-### Added (Production-readiness — enterprise auth, round 2)
+### Added (Production-readiness - enterprise auth, round 2)
 - **MFA / TOTP second factor (P1-17).** RFC 6238 TOTP implemented with the stdlib
   (no new dependency). Self-service enroll -> confirm -> enable
   (`/auth/mfa/enroll|confirm|disable|status`), the shared secret Fernet-encrypted
@@ -452,12 +464,12 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   authenticates with a KAEOS admin API key), tenant-scoped, and SCIM-provisioned
   accounts are SSO-only (unusable local password). Tests: `tests/test_scim.py`.
 
-### Added (Self-improving autonomy — the loop is closed)
-- **L2 External fine-tune bridge — the 6th and final loop.** Model evolution
+### Added (Self-improving autonomy - the loop is closed)
+- **L2 External fine-tune bridge - the 6th and final loop.** Model evolution
   already measured a candidate and gated its promotion; the missing step was
   PRODUCING the candidate. New `FineTuneProvider` abstraction (real
   `OpenAIFineTuneProvider` + honest `NullFineTuneProvider` that fails clearly when
-  none is configured — never fabricates a model), a `finetune_jobs` table
+  none is configured - never fabricates a model), a `finetune_jobs` table
   (migration `0018`, RLS), `submit_finetune` (exports the tenant's curated positive
   examples and submits), and a 5-min leader-guarded `run_finetune_poll` job that
   polls to completion and **auto-triggers a real `ModelEvolutionRun`** on the
@@ -465,14 +477,14 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   /foundry/finetune/submit|poll`, `GET /foundry/finetune/jobs`. Tests:
   `tests/test_finetune_bridge_l2.py`. All six governance loops (L1–L5 + L7) now close.
 
-### Fixed (Production-readiness — resilience UX)
+### Fixed (Production-readiness - resilience UX)
 - **Fetch-error UI across the top pages (P1-13).** OrgPulse, MissionControl,
   UserManagement, and all six department dashboards (Finance/HR/Legal/Sales/
   Support/Operations) swallowed load failures to the console, so a backend outage
   rendered as "No data yet" / "Department not deployed". They now distinguish a
   genuine outage from an empty state and render a retry-able error instead.
 
-### Added (Self-improving autonomy — closed loops, round 2)
+### Added (Self-improving autonomy - closed loops, round 2)
 - **L3 Drift -> reconcile / auto-heal.** `compute_drift` only DETECTED drift.
   Added `Actuator.reconcile_object` (re-asserts the last governed `after_state` as
   a new governed, reversible action) and `reconcile_all`, exposed via
@@ -481,17 +493,17 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - **L5-reverse Autonomy governor.** The dial->gate path was wired but nothing wrote
   the dial FROM measured reality. New `autonomy_governor` service + 6-hourly
   leader-guarded job nudges each domain's `min_confidence` from the real
-  safe-autonomy-rate and override/failure fallout — bounded band [0.60, 0.95], small
+  safe-autonomy-rate and override/failure fallout - bounded band [0.60, 0.95], small
   steps, minimum evidence threshold. A new `auto_managed` flag (migration `0017`)
   means a human-set dial is NEVER overridden by the governor (human override wins).
 
-### Added (Self-improving autonomy — closed loops)
+### Added (Self-improving autonomy - closed loops)
 - **L7 Missions -> governed actuation.** Mission steps ran advisory-only
   (`tool:"none"`, no `actuation`), so runtime Gate 5b never fired and missions
   could only recommend. `MissionStep` now has an `actuation` column (migration
   `0016`); a HUMAN-APPROVED step carrying a concrete actuation intent hands it to
   the runtime so Gate 5b performs the idempotent, reversible write AFTER every
-  gate passes — turning missions from "recommend" into governed "do". Advisory
+  gate passes - turning missions from "recommend" into governed "do". Advisory
   steps are unchanged. Tests: `tests/test_mission_actuation_l7.py`.
 - **L1 Outcome -> execution learning.** Recording a measured outcome now stamps
   `SkillExecution.outcome_type`, so the AI Foundry (which mines SkillExecution,
@@ -501,7 +513,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   and an `OutcomeRecord` is recorded (GOOD/BAD), feeding the L1 loop. Idempotent
   and scoped to `created_by=="event-mesh"`. Tests: `tests/test_closed_loops_l1_l4.py`.
 
-### Added (Production-readiness — audit export & user management)
+### Added (Production-readiness - audit export & user management)
 - **CSV export for audit/compliance evidence (P1).** New `GET
   /actuation/ledger/export`, `GET /provenance/global/ledger/export`, and `GET
   /dashboard/compliance/export` return downloadable CSVs so operators can hand
@@ -516,21 +528,21 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   `tests/test_user_invite_export.py`.
 - **Fetch-error UI on the Executive Cockpit (P1).** The cockpit dropped
   `anyError`, so a backend outage rendered as "No data yet"; it now renders
-  `BrainError` with a retry. (The same sweep across the other top pages —
-  OrgPulse, FinanceView, MissionControl, the 7 domain views, UserManagement — plus
+  `BrainError` with a retry. (The same sweep across the other top pages -
+  OrgPulse, FinanceView, MissionControl, the 7 domain views, UserManagement - plus
   the orphaned-capability UIs, DSAR/billing/webhooks, remain a tracked follow-up.)
 
-### Changed (Production-readiness — reliability)
+### Changed (Production-readiness - reliability)
 - **API keys moved to a DB-backed store (P1).** The key store was a module-global
   JSON dict loaded once at import, so a key generated or revoked in one gunicorn
-  worker / replica was invisible to the others until a restart — runtime revocation
+  worker / replica was invisible to the others until a restart - runtime revocation
   did not actually take effect fleet-wide. Added an `api_keys` table (migration
   `0015`, RLS on Postgres, only the SHA-256 hash stored) and routed every lookup,
   generation, and revocation through it (`core/auth.py`, the tenant middleware, the
   WebSocket auth, and the admin issue/revoke endpoints). Revocation now propagates
   immediately across all workers/replicas. Tests: `tests/test_api_keys.py`.
 
-### Fixed (Production-readiness — honesty & hardening)
+### Fixed (Production-readiness - honesty & hardening)
 - **Removed over-labeled confidence/coverage (P1).** Template workflows no longer
   ship a fabricated `coverage_score=0.85` (now `0.0` until real runs measure it);
   template rules downgrade from `0.88/VERIFIED` to `0.5/INFERRED` (matching sibling
@@ -540,8 +552,8 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - **Service-to-service auth for the agent mesh (P1).** The agent-mesh / cost /
   model-routing mutations (`/infrastructure/agents/*`, `/cost/check|record`,
   `/models/route`, `/schema-mappings/propose`) were reachable by ANY authenticated
-  viewer. They now require `require_service_or_role("operator")` — a valid
-  `X-Service-Token` (machine-to-machine) or an operator role — and are removed from
+  viewer. They now require `require_service_or_role("operator")` - a valid
+  `X-Service-Token` (machine-to-machine) or an operator role - and are removed from
   the default-deny allowlist (the enforcement test now recognizes the gate).
 - **Distributed rate limiting + body-size guard (P1).** The rate limiter was
   in-memory per-process (N× the intended limit under `-w4`); it now uses a shared
@@ -550,7 +562,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   request bodies (413) before a handler allocates them (OOM guard;
   `MAX_REQUEST_BODY_BYTES`, default 10 MiB). Tests: `tests/test_middleware_limits.py`.
 
-### Added (Production-readiness — reliability)
+### Added (Production-readiness - reliability)
 - **Durable job queue (P0).** The deployment pipeline ran as fire-and-forget
   `asyncio.create_task`, so a worker restart mid-deploy lost the task entirely.
   Added a DB-backed at-least-once job queue (`jobs` table, migration `0014`, RLS
@@ -567,7 +579,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   no-handler, fail-without-retry, retry-with-backoff (no hot-loop), leader-guard
   no-op, and stuck-job recovery/exhaustion.
 
-### Added (Production-readiness — enterprise auth)
+### Added (Production-readiness - enterprise auth)
 - **Real OIDC single sign-on (P0).** Enterprise SSO was a 501 stub plus an
   in-tree mock middleware that accepted a literal `"mock_valid_jwt"` (an auth
   bypass primitive). Shipped a complete, real OpenID Connect Authorization Code
@@ -576,7 +588,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   multi-worker safe), authorization-code exchange over TLS, **RS256 id_token
   signature verification via the IdP's JWKS** plus issuer/audience/expiry/nonce
   checks (PyJWT), and just-in-time user provisioning that mints a normal KAEOS
-  session (provisioned accounts get an unusable password hash — SSO-only, never
+  session (provisioned accounts get an unusable password hash - SSO-only, never
   password-loginable). Covers Azure AD, Okta, Google, and Auth0. Per-tenant IdP
   config lives in a new `sso_connections` table (migration `0013`, RLS on
   Postgres) with the **client secret Fernet-encrypted at rest and never returned
@@ -586,7 +598,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   state, secret encryption, real RS256 verification incl. nonce/audience
   rejection, JIT provisioning/reuse/deactivation, and the config surface.
 
-### Fixed (Production-readiness — security)
+### Fixed (Production-readiness - security)
 - **Cross-tenant graph leak closed (P0).** The polystore graph store
   (`polystore_graph_nodes` / `_edges`) had no `tenant_id` column and no RLS, so
   `_load()` / `snapshot()` / traversals returned EVERY tenant's nodes and edges -
@@ -603,7 +615,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   dedicated tenant-isolation case incl. same-id-across-tenants
   (`tests/test_graph_consolidation.py`).
 
-### Fixed (Production-readiness — honesty)
+### Fixed (Production-readiness - honesty)
 - **Compliance dashboard no longer fabricates compliance (P0).**
   `GET /dashboard/compliance` previously hardcoded `violations: 0` and stamped
   `last_audit` = today for every framework, so GDPR/SOX/HIPAA/PCI/CCPA/SOC2 always
@@ -688,22 +700,22 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   `/marketplace` domain-pack page.
 
 ### Added (v4 Signature IP)
-- **Shock simulator upgrade: Scenario Comparison** (IP-2) — each shock run is now
+- **Shock simulator upgrade: Scenario Comparison** (IP-2) - each shock run is now
   captured and ranked side-by-side by severity, with blast (impacted node count),
   a severity bar, and the executed decision, so single shocks become scenario
   planning. Real data (each run is a `/reality/shock` call), in Reality Experience
   (no new nav). Verified live: Cyber Incident → HR (sev 95) ranked above Employee
   Termination (sev 60).
-- **What-If Scenario Simulator** (IP-1) — a second mode beside the Shock simulator
+- **What-If Scenario Simulator** (IP-1) - a second mode beside the Shock simulator
   in **Reality Experience** (no new nav). Propose a change in plain language and get
   a governed verdict (SAFE/RISKY/BLOCKED), a **real blast radius** computed from the
-  tenant's data (executable rules + skills + departments actually in scope — not
+  tenant's data (executable rules + skills + departments actually in scope - not
   hallucinated), a rollback-time estimate, and (when the LLM is available) ranked
   risk factors with mitigations + a recommendation. Surfaces the previously-orphaned
   real `/simulation/what-if` endpoint, upgraded to compute the blast radius from the
   DB so it is meaningful even without a cloud model. Verified live end-to-end.
 
-### Added (v3 — Regulatory & Risk Autopilot, Phase 6)
+### Added (v3 - Regulatory & Risk Autopilot, Phase 6)
 - **Continuous regulatory intelligence** on top of the compliance gate. New
   `services/regulatory.py` computes, from real skills and executions: a
   regulation→control map (which skills carry which framework tags), an
@@ -724,7 +736,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   graduated/earning skills (e.g. 7) but the list was capped at 3 each (showed 4).
   Removed the cap so the list matches the count.
 
-### Added (v3 — Sense-Decide-Act Event Mesh, Phase 5)
+### Added (v3 - Sense-Decide-Act Event Mesh, Phase 5)
 - **The enterprise OODA loop.** External-world signals (regulatory / vendor /
   security / market / supply-chain / news) are ingested, **correlated against the
   real twin** (the canonical 7 departments + skill ids, alias-normalized), and turned
@@ -741,7 +753,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   live: a critical security signal correlated to engineering+finance and spawned a
   real mission; a regulatory signal briefed legal.
 
-### Improved (performance — no reasoning/quality change)
+### Improved (performance - no reasoning/quality change)
 - **Composite DB indexes** on the hot analytics read paths: `skill_executions
   (tenant_id, started_at)` and `cost_events (tenant_id, timestamp)` (migration 0012,
   idempotent). Every analytics endpoint (safe-autonomy, time-machine, causal,
@@ -751,20 +763,20 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   reads (a page's mount fetch + a live-refresh tick + multiple components) share one
   request. Zero staleness (only collapses *concurrent* identical GETs), fewer calls.
 - **Bounded debate generation**: the debate gate's LLM calls now cap `max_tokens`
-  with ample headroom over the short JSON verdict — prevents a confused model from
+  with ample headroom over the short JSON verdict - prevents a confused model from
   runaway generation without ever truncating a well-formed response.
 - **Model strategy (researched, hardware-gated).** On the 6GB dev GPU the 7b cannot
   co-reside with a helper model (loading a 1.5b evicts the 7b), so tier-splitting to a
-  lighter model would swap-thrash — verified and documented; nothing is routed to the
+  lighter model would swap-thrash - verified and documented; nothing is routed to the
   lighter tier here. See the performance section of docs/ARCHITECTURE.md.
 - **Async missions.** A gated mission step can take a while on a live model, so
   `POST /missions/{id}/advance` no longer blocks: it starts a background runner
   (own DB session, per-mission guard, stale-step crash recovery) and returns
   immediately; the UI polls `GET /missions/{id}` for live progress. Verified: advance
   returns in ~0.3s (was ~2 min), the runner executes steps server-side (sales
-  RUNNING→DONE) and pauses at HITL. Same governance, same output — just non-blocking.
+  RUNNING→DONE) and pauses at HITL. Same governance, same output - just non-blocking.
 - **Per-model-tier latency measurement** surfaced in the Executive Cockpit (calls ·
-  avg latency) from the existing CostEvent data — makes the pipeline's wall-time
+  avg latency) from the existing CostEvent data - makes the pipeline's wall-time
   visible (reasoning tier dominates).
 - **Embedding cache** (byte-identical) eliminates repeat embedding provider calls;
   a `nano` (1.5b) tier serves only non-reasoning decorative text (mission narrative).
@@ -772,7 +784,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 ### Improved (live, interactive graphs across the UI)
 - **Domain analytics charts are now interactive** (the bar / funnel / donut used
   across all 7 department analytics): hover to highlight a series and dim the rest,
-  with a contextual tooltip — % of total on bars, stage-to-stage conversion on the
+  with a contextual tooltip - % of total on bars, stage-to-stage conversion on the
   recruiting funnel, and share-of-total on the donut (with the center value
   switching to the hovered slice). Bars/segments animate in.
 - **Sparklines feel live**: the "present moment" marker pulses, and hovering the
@@ -780,7 +792,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   safe-autonomy trend). This complements the already-interactive Precog forecast,
   Causal Discovery graph, Wargame resilience gauge, and Time Machine scrubber.
 
-### Added (v4 Signature IP — Autonomy Wargaming, IP-4)
+### Added (v4 Signature IP - Autonomy Wargaming, IP-4)
 - **Adversarial resilience simulation.** New `services/wargame.py` stresses the twin
   with a CASCADE of shocks (named playbooks: supply shock, talent crisis, cyber
   cascade, regulatory storm) and scores how it holds up. Each department's fragility
@@ -796,11 +808,11 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   weakest-link verdict. Verified live: the cyber cascade left the org at 19.6%
   integrity (grade F), engineering the weakest link.
 
-### Added (v4 Signature IP — Enterprise Time Machine, IP-3)
+### Added (v4 Signature IP - Enterprise Time Machine, IP-3)
 - **Decision replay + counterfactuals.** New `services/time_machine.py`: scrub the
   org's real decision history (the append-only stream of governed executions),
   reconstruct the north-star (safe-autonomy-rate) AS OF any past moment from the
-  decisions up to that point, and run a **real counterfactual** — recompute the
+  decisions up to that point, and run a **real counterfactual** - recompute the
   same metric with ONE historical decision flipped (approve / fail / escalate). All
   from real execution rows, nothing fabricated. `GET /time-machine/timeline`,
   `/state`, `POST /counterfactual`. Tested (5 cases: classification, state-as-of,
@@ -816,23 +828,23 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   Reality Feed panels now fill their column height instead of capping at a fixed
   height and leaving dead space.
 
-### Added (v4 Signature IP — Causal Discovery, IP-6)
+### Added (v4 Signature IP - Causal Discovery, IP-6)
 - **Auto-inferred causal structure.** New `services/causal.py` discovers likely
-  cause→effect links between departments from real data — no LLM, no hand-drawn
+  cause→effect links between departments from real data - no LLM, no hand-drawn
   graph. It builds each department's daily adverse-event series (failed / blocked /
   overridden executions) and measures **lagged Pearson cross-correlation**: if a rise
   in A's trouble reliably precedes B's by a day, that surfaces as A→B ("attrition in
   Eng → deploy delays → SLA breaches"). `GET /causal/discover`; honest about thin
   data (`insufficient`). Tested (5 cases incl. a planted lead-lag recovered as a link).
-- **Interactive Causal Discovery graph** — a new tab in Knowledge beside the Topology
+- **Interactive Causal Discovery graph** - a new tab in Knowledge beside the Topology
   Map: a directed graph with department nodes (sized by adverse-event volume) and
   animated arrows (a moving dash = "leads by a day"), colored by strength. Hover a
   node to isolate its links, hover an edge for strength/lag, plus a ranked link list.
   Verified live: inferred human_resources→finance (r 0.73), customer_support→marketing
   (r 0.73), and more from real execution history.
 
-### Added (v4 Signature IP — Precog Org-Health Forecast, IP-5)
-- **Forecast the north star.** New `services/forecast.py` — an honest OLS linear-trend
+### Added (v4 Signature IP - Precog Org-Health Forecast, IP-5)
+- **Forecast the north star.** New `services/forecast.py` - an honest OLS linear-trend
   forecaster with a 95% residual-based prediction interval (no LLM, deterministic,
   handles gaps, clamps rates to [0,1]). `GET /metrics/forecast` projects the
   safe-autonomy-rate and daily volume `horizon` days out from the real daily series,
@@ -844,7 +856,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   confidence band, with a headline projection. Verified live: 8 observed days →
   14-day projection (55.9% → 35.5%, declining, R² 0.18).
 
-### Added (v3 — Cross-Domain Autonomous Missions, Phase 3)
+### Added (v3 - Cross-Domain Autonomous Missions, Phase 3)
 - **Autonomy that PURSUES goals.** A plain-language goal ("close the quarter: review
   the vendor contract, approve the budget, brief support") is decomposed into a
   governed DAG of steps, each **grounded in a real ACTIVE skill** across departments
@@ -879,9 +891,9 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   and Cost & ROI cards now fill their row evenly (a capped feed height left dead
   space). The **Cost & ROI Tracker** gained live metrics: 24h token + LLM-call volume,
   a per-model-tier breakdown (reasoning/fast/classification tokens · calls) from real
-  telemetry, and the budget ring — all real, with honest $0 cost for local models.
+  telemetry, and the budget ring - all real, with honest $0 cost for local models.
 
-### Added (v3 — System-of-Record Actuation, Phase 1)
+### Added (v3 - System-of-Record Actuation, Phase 1)
 - **Autonomy that DOES: governed, idempotent, reversible write-back.** New
   `services/actuation/` Actuator applies a mutation to a real backing
   system-of-record row (`sor_objects`), keyed by a deterministic idempotency key
@@ -890,13 +902,13 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   appends to the provenance hash-chain. New `action_records` table + `sor_objects`
   (migration 0009, RLS on both). API: `POST /actuation/execute` (operator-gated),
   `POST /actuation/{id}/reverse`, `GET /actuation/ledger`, `GET /actuation/drift`.
-  Wired into the agent runtime as **Gate 5b** — a skill may declare an `actuation`
+  Wired into the agent runtime as **Gate 5b** - a skill may declare an `actuation`
   intent and the write-back only fires *after* the compliance / fairness /
   confidence-HITL / debate gates pass, inheriting full governance (non-fatal: a
   failed write is recorded, not raised). Tested (create/update/delete, idempotent
   retry, reverse restores prior state, drift detection, reversal-is-not-drift).
 - **Actions Ledger (UI).** A new tab in **Decisions** beside the Provenance
-  ledger — what KAEOS *did* to a system of record (governed and reversible),
+  ledger - what KAEOS *did* to a system of record (governed and reversible),
   distinct from the *decision* ledger. Status summary (applied/reversed/failed), a
   reconciliation banner (records in sync vs drifted outside the governed path), and
   a one-click Reverse on any applied action. Verified live end-to-end: three real
@@ -906,15 +918,15 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 - **Fairness Audit Log score showed "-".** The Trust & Governance fairness log read
   a non-existent `composite_score` field; the API returns `fairness_score`. Now
   shows the real score vs threshold, a PASSED/BLOCKED chip, and the rationale
-  (the data was always live — only the display field was wrong).
+  (the data was always live - only the display field was wrong).
 - **Analytics "Live" badge overlapped the KPI cards.** A negative margin pulled the
   KPI grid up under the badge in every domain analytics view; removed it so the
   live-sync indicator keeps clear separation above the cards.
 
-### Added (v3 — Outcome Intelligence Loop, Phase 2)
+### Added (v3 - Outcome Intelligence Loop, Phase 2)
 - **Decision → outcome learning loop.** Record a measured real-world outcome for a
   past decision (`POST /outcomes/{execution_id}`, GOOD/BAD/NEUTRAL) and it feeds
-  back into the executing skill's confidence (GOOD +0.02, BAD -0.05) — so the
+  back into the executing skill's confidence (GOOD +0.02, BAD -0.05) - so the
   system learns from reality, not only from human labels at decision time.
   `GET /outcomes/impact` aggregates the distribution, autonomous-vs-human decision
   quality, and per-skill outcome quality. New `outcome_records` table
@@ -930,8 +942,8 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   fixed a pre-existing NaN in the evolution timeline when the KB score trend is
   non-numeric ("held steady" instead of "declined NaN%").
 
-### Added (v3 — Autonomy Dial, Phase 7)
-- **The Autonomy Dial** — executives set a per-department risk appetite (the
+### Added (v3 - Autonomy Dial, Phase 7)
+- **The Autonomy Dial** - executives set a per-department risk appetite (the
   confidence a decision must clear to run without a human) in **Settings → Platform**
   (no new nav). It has real teeth: Gate 3 in the agent runtime reads the per-domain
   threshold (`resolve_min_confidence`, cached) and falls back to the platform default
@@ -943,8 +955,8 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
 ### Added (v3 UI)
 - **Autonomy fallout breakdown, folded into the Dashboard** (not a separate page).
   The Dashboard already owns the safe-autonomy rate + trend + earned-autonomy; the
-  one genuinely new insight from `GET /metrics/safe-autonomy` — *why* work fell out
-  of autonomy (routed-to-human / overridden / edited / failed) — is now a row on the
+  one genuinely new insight from `GET /metrics/safe-autonomy` - *why* work fell out
+  of autonomy (routed-to-human / overridden / edited / failed) - is now a row on the
   Dashboard. No duplicate navigation touchpoint. All real, no mock.
 
 ### Added (planning)
@@ -959,7 +971,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   an empty detail table instead of the denormalized `agent_count` sum; automation
   averaged an unpopulated `Department.automation_coverage` column. Both now compute
   from real data (agent_count sum; autonomous/total executions, per-department via
-  a skill-department join with slug normalization) — the headline is ~86%, not 0%.
+  a skill-department join with slug normalization) - the headline is ~86%, not 0%.
 
 ### Fixed (security-critical)
 - `backend/docker-compose.prod.yml` connected the app as the DB **owner**, which
@@ -967,7 +979,7 @@ AI Foundry closed loop; the north-star metric is safe-autonomy-rate.
   non-owner `kaeos_app` role with a separate owner URL for migrations; the prod
   entrypoint runs migrations under the owner URL. Added a guard test.
 
-## [1.1.2] — 2026-07-21
+## [1.1.2] - 2026-07-21
 
 Security hardening release. Closes a Host-header auth-bypass vector surfaced by
 the Starlette advisory review in 1.1.1, and records the disposition of every
@@ -978,25 +990,25 @@ open Starlette advisory. No functional changes to features.
   `<1.0.1` rebuilds `request.url` from the attacker-controlled `Host` header, so
   a malformed `Host: victim/health?x=` made `request.url.path` read `/health`
   (a public path) while the router still dispatched the real **protected** route
-  from `scope["path"]` — skipping the token check and assigning the dev tenant.
-  The upstream fix ships only in Starlette 1.0.1 (unreachable — no FastAPI
+  from `scope["path"]` - skipping the token check and assigning the dev tenant.
+  The upstream fix ships only in Starlette 1.0.1 (unreachable - no FastAPI
   supports 1.x), so KAEOS's security gates now key off the raw ASGI
   `scope["path"]` instead of `request.url.path`:
-  - `app/core/tenant.py` — the tenant/auth public-path gate.
-  - `app/core/middleware.py` — the rate-limit exemption and request-log path.
+  - `app/core/tenant.py` - the tenant/auth public-path gate.
+  - `app/core/middleware.py` - the rate-limit exemption and request-log path.
   - Regression test: `tests/test_tenant_middleware.py::test_poisoned_host_header_cannot_bypass_auth_gate`.
 - **Advisory disposition table** added to [SECURITY.md](SECURITY.md) covering all
   six Starlette advisories: 2 fixed by upgrade (1.1.1), 1 mitigated in code
-  (86qp), 2 not-applicable and dismissed (x746 — no `HTTPEndpoint`; wqp7 — no
-  `StaticFiles`/Linux), 1 accepted/tracked (82w8 — ingress-mitigated DoS).
+  (86qp), 2 not-applicable and dismissed (x746 - no `HTTPEndpoint`; wqp7 - no
+  `StaticFiles`/Linux), 1 accepted/tracked (82w8 - ingress-mitigated DoS).
 
 ### Fixed
-- **Frontend lockfile drift** — `frontend/package-lock.json` referenced
+- **Frontend lockfile drift** - `frontend/package-lock.json` referenced
   `react@19.2.8` while pinning `react@19.2.5`, breaking `npm ci` (`frontend-build`
   CI job). Re-pinned `react` + `react-dom` to `19.2.8` in lockstep so the lock is
   consistent with `package.json`.
 
-## [1.1.1] — 2026-07-21
+## [1.1.1] - 2026-07-21
 
 Maintenance & dependency-security release. Fixes the CI dependency-resolution
 break introduced around 1.1.0 and patches upstream Starlette advisories, with no
@@ -1005,59 +1017,59 @@ functional changes to the platform.
 ### Security
 - **Starlette `0.38.6` → `0.48.0`** (via **FastAPI `0.115.0` → `0.119.1`**),
   clearing two upstream advisories:
-  - **GHSA-f96h-pmfr-66vw** (HIGH) — DoS via `multipart/form-data` (fixed 0.40.0).
-  - **GHSA-2c2j-9gv5-cj73** (MEDIUM) — DoS parsing large multipart files (fixed 0.47.2).
-- **GHSA-wqp7-x3pw-xc5r** (HIGH, StaticFiles SSRF/NTLM on Windows) — **not
+  - **GHSA-f96h-pmfr-66vw** (HIGH) - DoS via `multipart/form-data` (fixed 0.40.0).
+  - **GHSA-2c2j-9gv5-cj73** (MEDIUM) - DoS parsing large multipart files (fixed 0.47.2).
+- **GHSA-wqp7-x3pw-xc5r** (HIGH, StaticFiles SSRF/NTLM on Windows) - **not
   applicable**: KAEOS serves no `StaticFiles` and deploys on Linux
   (`python:3.11-slim`). Alert dismissed with rationale.
-- **GHSA-82w8-qh3p-5jfq** (HIGH, form-urlencoded DoS) — **accepted / tracked**:
+- **GHSA-82w8-qh3p-5jfq** (HIGH, form-urlencoded DoS) - **accepted / tracked**:
   only patched in Starlette 1.3.1, which no released FastAPI supports and which
   breaks `require_role` routing. Mitigated at ingress (reverse-proxy body-size
   limit). See [SECURITY.md](SECURITY.md).
 
 ### Fixed
-- **CI dependency resolution** — the previous `starlette==1.3.1` pin was
+- **CI dependency resolution** - the previous `starlette==1.3.1` pin was
   un-installable against FastAPI (`starlette<0.39.0` required), failing
   `backend-test` and `backend-e2e-mock`. Now resolves on a supported combo.
 
 ### Changed
-- Added **`.github/dependabot.yml`** — grouped, weekly updates for pip / npm /
+- Added **`.github/dependabot.yml`** - grouped, weekly updates for pip / npm /
   github-actions, with Starlette `>=1.0.0` ignored (FastAPI-incompatible; see
   SECURITY.md) so the impossible security bump stops recurring.
 
-## [1.1.0] — 2026-07-21
+## [1.1.0] - 2026-07-21
 
 The **Workflow, Analytics & Collaboration Platform** release. Turns the seven
 department brains from read-only dashboards into an operational system: every
 core entity now has a guarded lifecycle, live cross-domain analytics, ownership,
-comments, automation, and a unified notification surface — all on real tenant data.
+comments, automation, and a unified notification surface - all on real tenant data.
 
 ### Added
-- **Shared workflow engine** (`app/core/workflow.py`) — declarative per-domain
+- **Shared workflow engine** (`app/core/workflow.py`) - declarative per-domain
   state machines with guarded transitions, per-target-state **role floors**,
   business **guard** callables, **SLA thresholds**, a `core_workflow_events`
   audit trail, and a tenant WebSocket broadcast on every transition. Illegal
   moves return 409 with the allowed set; foreign-tenant rows 404 (never confirm ids).
 - **Per-domain analytics + workflow endpoints** across Finance, HR, Sales,
-  Support, Operations, Legal, Engineering — `GET /{domain}/analytics` (live SQL
+  Support, Operations, Legal, Engineering - `GET /{domain}/analytics` (live SQL
   KPIs, charts, insights), `/{domain}/workflows`, `/{domain}/workflow-events`,
   guarded `POST .../{id}/transition`, `POST .../workflows/{type}/bulk-transition`
   (per-id outcomes), and validated entity-**creation** endpoints with auto-numbering.
-- **Org Pulse** (`/pulse`) — cross-domain health (insight-severity + SLA-breach
+- **Org Pulse** (`/pulse`) - cross-domain health (insight-severity + SLA-breach
   weighted), unified needs-attention feed, live workflow activity, an **SLA
   Breaches** table, and one-click **Escalate all** (idempotent alerting).
-- **Assignment & My Work** (`/my-work`) — assign any entity, per-user "my work",
+- **Assignment & My Work** (`/my-work`) - assign any entity, per-user "my work",
   team workload, all cross-domain.
 - **Comments & @mentions** on any workflow entity, with mention notifications.
-- **Automation rules** (`/automation`) — declarative "when an entity dwells in a
+- **Automation rules** (`/automation`) - declarative "when an entity dwells in a
   state past N hours, transition / assign / escalate"; rules validated against the
   live workflow registry, evaluated on demand.
-- **Notifications & digest** — unified notification feed with unread counts,
+- **Notifications & digest** - unified notification feed with unread counts,
   mark-read, and a one-call org digest; SLA/mention/automation alerts surface in
   the header bell alongside the HITL queue.
-- **CSV export & saved segments** — export any workflow entity type; save named
+- **CSV export & saved segments** - export any workflow entity type; save named
   per-domain filters.
-- **Live-feel UI** — a `LiveBadge` (WebSocket heartbeat + "synced Ns ago") on the
+- **Live-feel UI** - a `LiveBadge` (WebSocket heartbeat + "synced Ns ago") on the
   main dashboards; domain views and analytics auto-refresh on tenant events.
 - Alembic `0004_workflow` and `0005_workspace` (RLS-guarded on Postgres).
 
@@ -1068,38 +1080,38 @@ comments, automation, and a unified notification surface — all on real tenant 
   Standalone "Deploy" removed from the top nav.
 - **ROI cost-saved** now derives transparently from live hours-saved × a
   documented loaded hourly rate (`LOADED_HOURLY_RATE_USD`, default $85) instead of
-  reading an unpopulated metrics table — fixes the `$0` cost card while hours were
+  reading an unpopulated metrics table - fixes the `$0` cost card while hours were
   non-zero. Rate is shown as a footnote for honesty.
 
 ### Fixed
 - SLA-escalation dedupe now matches the `action_taken` column's `False` default
   (not just NULL), so re-running escalation never re-alerts open breaches.
 
-## [1.0.0] — 2026-07-20
+## [1.0.0] - 2026-07-20
 
 First public release.
 
 ### Added
-- **Company Brain** — unified rules/skills/signals layer with a cross-domain
+- **Company Brain** - unified rules/skills/signals layer with a cross-domain
   knowledge graph and 5-dimensional confidence scoring.
-- **Seven Department Brains** — HR, Finance, Legal, Sales, Support, Operations,
+- **Seven Department Brains** - HR, Finance, Legal, Sales, Support, Operations,
   and Engineering & IT Ops, each with domain agents running the gated pipeline.
-- **Agent Factory** — create → approve → compile → deploy → orchestrate agents
+- **Agent Factory** - create → approve → compile → deploy → orchestrate agents
   from a plain-English prompt.
-- **Governance spine** — compliance / fairness / confidence-HITL / adversarial-debate
+- **Governance spine** - compliance / fairness / confidence-HITL / adversarial-debate
   gates, a hash-chained (tamper-evident) provenance ledger, and red-team checks. Gates **fail closed**.
-- **AI Foundry (Phase 2)** — curates execution history into a tenant-scoped,
+- **AI Foundry (Phase 2)** - curates execution history into a tenant-scoped,
   RLS-isolated training dataset. (Model fine-tuning is a later phase and is
-  labelled as such in-product — no models are trained today.)
-- **Real-data benchmarks** — decision logic scored against seven public enterprise
+  labelled as such in-product - no models are trained today.)
+- **Real-data benchmarks** - decision logic scored against seven public enterprise
   datasets; wins **and** losses reported transparently (`backend/benchmark`).
-- **BYOK LLM routing** — LiteLLM gateway across Anthropic/OpenAI/Groq/Ollama with
+- **BYOK LLM routing** - LiteLLM gateway across Anthropic/OpenAI/Groq/Ollama with
   retry, circuit-breaker, budget gate, and per-call cost metering.
 
 ### Security
 - Per-tenant **PostgreSQL Row-Level Security** on every tenant table, verified
   effective at startup (`assert_rls_effective`) and provable via `scripts/verify_rls.py`.
-- No default/public login — the root admin is provisioned from `ADMIN_EMAIL` /
+- No default/public login - the root admin is provisioned from `ADMIN_EMAIL` /
   `ADMIN_PASSWORD`; nothing ships with known credentials.
 - **JWT sessions via PyJWT** (migrated off `python-jose` to close the algorithm-
   confusion CVE) with per-token `jti`, a revocation denylist, and a `/auth/logout`
@@ -1114,10 +1126,10 @@ First public release.
   contract execution, external sends, and data deletion force the HITL gate
   regardless of model confidence; the confidence threshold itself is configurable
   (`CONFIDENCE_AUTONOMOUS_EXEC`) rather than hardcoded.
-- **Security audit trail** (`SecurityAuditLog`) wired to real runtime events —
+- **Security audit trail** (`SecurityAuditLog`) wired to real runtime events -
   auth successes/failures, RBAC denials, HITL decisions, config/connector/export
-  actions — as a best-effort writer that never blocks a request.
-- **Data protection** — right-to-erasure (`privacy_erasure`), a `DATA_RESIDENCY`
+  actions - as a best-effort writer that never blocks a request.
+- **Data protection** - right-to-erasure (`privacy_erasure`), a `DATA_RESIDENCY`
   local-LLM-only mode that refuses cloud providers and strips cloud credentials,
   optional PII scrubbing before cloud egress, and PII redaction in logs.
 - `/metrics` is **off by default** (opt-in via `EXPOSE_METRICS`); interactive API
@@ -1141,7 +1153,7 @@ First public release.
 ### Known limitations / roadmap
 - AI Foundry model **fine-tuning** (Phases 3–5) is not implemented yet.
 - Some "frontier" simulation surfaces (enterprise-physics what-if, evolution
-  fitness) are parameterized simulations, labelled as such — not learned models.
+  fitness) are parameterized simulations, labelled as such - not learned models.
 - Rate limiting is per-process (in-memory); use a shared limiter behind a
   multi-instance deployment.
 - Pre-production checklist (load testing, a formal pen-test, and a one-time

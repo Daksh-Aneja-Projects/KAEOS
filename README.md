@@ -9,7 +9,7 @@ it is earned: the platform probes what your model can actually do, caps every
 decision's confidence at that measured ceiling, and routes anything below the
 bar (or high-consequence, always) to a human.**
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org) [![Tests](https://img.shields.io/badge/E2E_Tests-441-brightgreen.svg)](backend/tests/e2e/) [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org) [![Tests](https://img.shields.io/badge/E2E_Tests-441-brightgreen.svg)](backend/tests/e2e/) [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 <br />
 

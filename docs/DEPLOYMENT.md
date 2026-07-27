@@ -12,13 +12,13 @@ existing install. For local development, see the Quick Start in the README.
   ADMIN_TENANT=tenant_acme
   ```
 - There is **no** default/public login. Outside `DEV_MODE`, if `ADMIN_PASSWORD`
-  is empty, no admin is seeded (deliberate — a public deployment never ships
+  is empty, no admin is seeded (deliberate: a public deployment never ships
   with known credentials). You can't lock yourself out: the last active admin
   in a tenant can't be deactivated.
 
 ## Production configuration (the app fails fast on insecure config)
 - Set a strong `SECRET_KEY` (≥16 chars) and a unique `ADMIN_SECRET`.
-- `DATABASE_URL` must be **PostgreSQL** — the app refuses to boot on SQLite in a
+- `DATABASE_URL` must be **PostgreSQL**. The app refuses to boot on SQLite in a
   production environment (SQLite has no row-level security). Use the
   `pgvector/pgvector:pg16` image; plain Postgres lacks the `vector` type.
 - The app must connect as the **non-owner** `kaeos_app` role so RLS applies; set
@@ -49,13 +49,13 @@ existing install. For local development, see the Quick Start in the README.
 The at-rest encryption for BYOK connector credentials uses a PBKDF2-derived key.
 If you are upgrading a deployment that already stored connector credentials under
 an older build, those secrets must be **re-entered** after upgrade (there is no
-automatic re-encryption — the old key material is not recoverable by design).
+automatic re-encryption; the old key material is not recoverable by design).
 Fresh installs are unaffected.
 
 ## CI / integrity tooling (recommended)
-- `python -m scripts.check_migration_drift` — fails if migrations can't build the
+- `python -m scripts.check_migration_drift` fails if migrations can't build the
   full model schema.
-- `python -m scripts.check_tenant_integrity --strict` — fails if any row carries a
+- `python -m scripts.check_tenant_integrity --strict` fails if any row carries a
   `tenant_id` not present in the `tenants` registry (orphan detection).
 - The GitHub Actions CI runs the non-Ollama E2E suite against PostgreSQL + pgvector.
 
