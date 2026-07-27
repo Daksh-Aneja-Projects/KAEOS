@@ -62,6 +62,13 @@ class MissionStep(Base):
     hitl_required: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(24), default="PENDING")
 
+    # The persisted approval record for this step's HITL checkpoint. Set ONLY by
+    # resolve_hitl_step on human approval; the executor derives its pre-approval
+    # flags from these columns, never from hitl_required (a requirement is not
+    # evidence an approval happened).
+    approved_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Optional governed write-back intent {system, object_type, external_id,
     # operation, payload}. When present on a HUMAN-APPROVED (hitl_required) step,
     # the runtime's Gate 5b performs the idempotent, reversible actuation AFTER the

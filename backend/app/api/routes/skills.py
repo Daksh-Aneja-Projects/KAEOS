@@ -112,11 +112,19 @@ async def execute_skill(
     exec_id = str(uuid.uuid4())
     start = datetime.now(timezone.utc)
 
+    # Trust boundary: these context keys are server-set only. A client planting
+    # them in the request body must not be able to claim human approval (SOX
+    # gate) or Gate 3 pre-approval, so they are stripped before the context is
+    # passed anywhere downstream.
+    exec_context = dict(body.context or {})
+    for _trusted_key in ("hitl_pre_approved", "has_human_approver"):
+        exec_context.pop(_trusted_key, None)
+
     # 2. L13 Compliance pre-check
     # check_before_execution is async — an un-awaited coroutine is always truthy
     # and silently blocked every tagged skill (see app/agents/runtime.py:159)
     compliance_violations = await compliance_engine.check_before_execution(
-        skill.compliance_tags or [], body.context or {}
+        skill.compliance_tags or [], exec_context
     )
     if compliance_violations:
         return SkillExecutionResponse(
@@ -174,7 +182,7 @@ async def execute_skill(
             route_type="SKILL_EXEC",
             agent_state="PAUSED",
             task_intent=body.intent,
-            context=body.context,
+            context=exec_context,
             reasoning_chain=[],
             started_at=start,
             duration_ms=0,
@@ -198,7 +206,7 @@ async def execute_skill(
     
     exec_result = await exec_engine.run(
         skill=skill_dict,
-        context=body.context or {},
+        context=exec_context,
         execution_id=exec_id,
         tenant_id=skill.tenant_id,
         skill_obj=skill

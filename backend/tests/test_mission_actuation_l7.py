@@ -6,6 +6,7 @@ reads `actuation` from) rather than running the full DB/gate pipeline, so the te
 is deterministic and isolates the loop-closing decision.
 """
 import uuid
+from datetime import datetime, timezone
 
 
 import app.agents.runtime as runtime_mod
@@ -27,16 +28,23 @@ async def _make_skill(db):
     return s
 
 
-def _step(hitl, actuation):
+def _step(hitl, actuation, approved=None):
+    """approved=None mirrors hitl: a HITL step in these tests is one a human
+    already cleared, so it carries the persisted approval record the engine now
+    requires (approver identity + timestamp, written by resolve_hitl_step)."""
+    if approved is None:
+        approved = hitl
     return MissionStep(id=str(uuid.uuid4()), tenant_id=T, mission_id="m1", seq=1,
                        name="do_it", department="operations", skill_id="ops_action",
-                       confidence=0.9, hitl_required=hitl, actuation=actuation, status="READY")
+                       confidence=0.9, hitl_required=hitl, actuation=actuation, status="READY",
+                       approved_by="ops_lead" if approved else None,
+                       approved_at=datetime.now(timezone.utc) if approved else None)
 
 
 async def _capture_skill_dict(db, monkeypatch, step):
     captured = {}
 
-    async def fake_execute_skill(self, skill_dict, ctx):
+    async def fake_execute_skill(self, skill_dict, ctx, *, hitl_pre_approved=False):
         captured["skill_dict"] = skill_dict
         return {"status": "SUCCESS_CLEAN", "reasoning_chain": [{"decision": "done"}],
                 "steps_completed": 1, "duration_ms": 1}

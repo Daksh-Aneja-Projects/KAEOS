@@ -108,6 +108,22 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
     if skill is None:
         return {"status": "FAILED", "reason": f"skill {step.skill_id} not found"}
 
+    # ── HITL approval guard ──────────────────────────────────────────────
+    # A HITL-gated step may only execute on the strength of its PERSISTED
+    # approval record (approver identity + timestamp, written exclusively by
+    # resolve_hitl_step). step.hitl_required is a requirement, not evidence an
+    # approval occurred; deriving pre-approval from it would silently disable
+    # Gate 3 on exactly the steps that most need it if the status invariant
+    # ever broke. No record -> the step never executes; it re-gates to HITL.
+    step_approved = bool(step.approved_by and step.approved_at)
+    if step.hitl_required and not step_approved:
+        logger.error(
+            f"[mission] step {step.seq} is hitl_required with no approval record; "
+            "refusing to execute and re-gating to HITL."
+        )
+        return {"status": "PENDING_HITL",
+                "reason": "HITL-gated step has no persisted approval record"}
+
     from app.agents.runtime import AgentExecutor
     from app.services.compliance import ComplianceEngine
     from app.services.hitl_manager import hitl_manager
@@ -145,7 +161,7 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
     # idempotent, reversible write-back AFTER every gate has passed. Advisory-only
     # steps (no intent, or not human-approved) behave exactly as before.
     step_actuation = getattr(step, "actuation", None)
-    if step.hitl_required and isinstance(step_actuation, dict) and step_actuation:
+    if step_approved and isinstance(step_actuation, dict) and step_actuation:
         skill_dict["actuation"] = step_actuation
     ctx = {
         "tenant_id": mission.tenant_id,
@@ -155,15 +171,16 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
         "task_intent": f"[mission] {mission.goal} :: {step.name}",
         "_skill_obj": skill,
         "requires_fairness_assessment": people_facing,
-        # A HITL-gated step reached execution only via human approval of its
-        # mission checkpoint, so the executor's Gate 3 must not re-pause it, and it
-        # carries the human-approver flag a governed action legitimately has.
-        "has_human_approver": bool(step.hitl_required),
-        "hitl_pre_approved": bool(step.hitl_required),
+        # Derived from the persisted approval record (guard above), never from
+        # hitl_required: the flag carries the real approver identity so the
+        # downstream SOX check attributes the action to an actual human.
+        "has_human_approver": step.approved_by if step_approved else False,
     }
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     try:
-        return await executor.execute_skill(skill_dict, ctx)
+        # Gate 3 pre-approval rides on an explicit keyword argument (not the
+        # context dict) so request-controlled data can never smuggle it in.
+        return await executor.execute_skill(skill_dict, ctx, hitl_pre_approved=step_approved)
     except Exception as e:
         logger.warning(f"[mission] step {step.seq} execution error: {e}")
         return {"status": "FAILED", "reason": str(e)}
@@ -412,6 +429,10 @@ async def resolve_hitl_step(
 
     if approved:
         step.status = "READY"  # cleared checkpoint; the runner will execute it
+        # The persisted approval record: the ONLY thing that lets a HITL-gated
+        # step execute (see the guard in _execute_step).
+        step.approved_by = approver or "human"
+        step.approved_at = datetime.now(timezone.utc)
         mission.status = "RUNNING"
         _event(db, mission, "STARTED",
                f"Step {seq} approved by {approver or 'human'}; resuming.", seq)

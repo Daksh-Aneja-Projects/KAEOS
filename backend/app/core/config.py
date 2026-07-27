@@ -162,6 +162,11 @@ class Settings(BaseSettings):
     CONFIDENCE_INFERRED_MAX: float = 0.59
     CONFIDENCE_VALIDATED_PEER_MAX: float = 0.74
     CONFIDENCE_VALIDATED_DH_MAX: float = 0.84
+    # Gate 3 fail-closed cap: applied when the tenant's measured confidence
+    # ceiling cannot be read (Redis/DB failure, cold cache). MUST stay below
+    # CONFIDENCE_AUTONOMOUS_EXEC so a lookup failure routes the decision to a
+    # human instead of letting the skill's raw declared confidence stand.
+    FAILSAFE_CONFIDENCE_CEILING: float = 0.30
 
     # Elicitation
     MAX_QUESTIONS_PER_WEEK: int = 3

@@ -213,9 +213,21 @@ class AgentExecutor:
             logger.debug(f"[Gate] ws ping skipped: {e}")
 
     async def execute_skill(
-        self, skill: Dict[str, Any], context: Dict[str, Any]
+        self, skill: Dict[str, Any], context: Dict[str, Any],
+        *, hitl_pre_approved: bool = False,
     ) -> Dict[str, Any]:
-        """Executes a skill contract with full AEOS gate pipeline."""
+        """Executes a skill contract with full AEOS gate pipeline.
+
+        ``hitl_pre_approved`` is trust-bearing: it makes Gate 3 skip the
+        confidence/HITL pause. It is a keyword-only argument (never read from
+        ``context``) so request-controlled context dicts cannot smuggle it in;
+        the only legitimate caller is the mission engine, which derives it from
+        a persisted human-approval record.
+        """
+        # Defense in depth: strip trust-bearing keys a caller (or a request
+        # body flowing into context) may have planted. They are server-set only.
+        context.pop("hitl_pre_approved", None)
+
         # Publish identity BEFORE gate 1. The gates themselves make model calls
         # (fairness scoring, debate), so setting this only in the executor
         # (gate 5) left every pre-execution call unattributed - and a decision
@@ -286,6 +298,8 @@ class AgentExecutor:
         # BYOK: the tenant's probed model ceiling caps every skill's
         # confidence. A weak model mechanically routes more decisions to
         # humans - in the domain-agent path too, not just /skills routes.
+        from app.core.config import get_settings
+        _settings = get_settings()
         effective_confidence = skill.get("confidence", 0)
         try:
             from app.services.llm_router import LLMRouter
@@ -294,7 +308,41 @@ class AgentExecutor:
                 effective_confidence, _router.confidence_ceiling("reasoning")
             )
         except Exception as e:
-            logger.warning(f"[Gate3] Tenant ceiling lookup failed (no cap applied): {e}")
+            # FAIL CLOSED: if the tenant's measured ceiling cannot be read
+            # (Redis/DB down, cold cache, provider timeout), the skill's raw
+            # declared confidence must NOT stand in for it. Apply the failsafe
+            # ceiling, which sits below the autonomous-execution threshold, so
+            # the decision routes to a human until the lookup recovers.
+            effective_confidence = min(
+                effective_confidence, _settings.FAILSAFE_CONFIDENCE_CEILING
+            )
+            logger.error(
+                f"[Gate3] Tenant ceiling lookup failed; failsafe ceiling "
+                f"{_settings.FAILSAFE_CONFIDENCE_CEILING} applied (fail-closed): {e}"
+            )
+            await self._emit_gate(
+                context, "confidence", "failsafe",
+                f"ceiling lookup failed; failsafe cap {_settings.FAILSAFE_CONFIDENCE_CEILING} applied",
+            )
+            try:
+                from app.models.agent_factory import ActivityEventType, ActivitySeverity
+                await self.activity_feed.emit(
+                    event_type=ActivityEventType.PROACTIVE_ALERT,
+                    title=f"Gate 3 failsafe engaged: {skill.get('skill_id', 'unknown')}",
+                    description=(
+                        "Tenant confidence-ceiling lookup failed; the failsafe ceiling "
+                        f"({_settings.FAILSAFE_CONFIDENCE_CEILING}) was applied and the "
+                        "decision routes to a human."
+                    ),
+                    tenant_id=context.get("tenant_id", "default"),
+                    severity=ActivitySeverity.WARNING,
+                    source_type="execution",
+                    source_id=context.get("execution_id"),
+                )
+            except Exception as feed_err:
+                # Best-effort visibility only; the fail-closed cap above already
+                # holds regardless of whether this event lands.
+                logger.debug(f"[Gate3] failsafe activity event skipped: {feed_err}")
 
         # Two independent reasons to route to a human:
         #  (a) confidence below the CONFIGURED autonomous-exec threshold (this
@@ -303,8 +351,6 @@ class AgentExecutor:
         #      execution, external sends, irreversible/data-deletion) ALWAYS go
         #      to a human, regardless of confidence — you don't let a model wire
         #      money on its own no matter how sure it is.
-        from app.core.config import get_settings
-        _settings = get_settings()
         # The Autonomy Dial: per-domain risk appetite set by an executive overrides
         # the platform default threshold (falls back to it when unset). Gives the
         # dial real teeth at the confidence gate.
@@ -322,9 +368,11 @@ class AgentExecutor:
 
         # A mission step that already cleared its mission-level HITL checkpoint
         # carries an explicit human approval, so Gate 3 must not re-pause it — the
-        # human gate has already been satisfied upstream. This applies ONLY to
-        # pre-approved mission steps; every other path still gates normally.
-        _pre_approved = bool(context.get("hitl_pre_approved"))
+        # human gate has already been satisfied upstream. The flag arrives ONLY
+        # via the keyword-only argument (backed by a persisted approval record at
+        # the mission engine); context-supplied values are stripped at entry, so
+        # request-controlled data can never claim pre-approval.
+        _pre_approved = bool(hitl_pre_approved)
 
         if not _pre_approved and (_high_consequence or effective_confidence < _threshold):
             if _high_consequence:
