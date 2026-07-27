@@ -7,8 +7,11 @@ the cache so a change takes effect promptly.
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _TTL_SECONDS = 30.0
 _cache: dict[tuple[str, str], tuple[float, float]] = {}  # (tenant, domain) -> (value, expires_at)
@@ -24,8 +27,15 @@ def invalidate(tenant_id: str, domain: Optional[str] = None) -> None:
 
 async def resolve_min_confidence(tenant_id: str, domain: Optional[str]) -> float:
     """Return the confidence threshold a domain's actions must clear to run
-    autonomously. Falls back to the platform default when no policy exists or on
-    any error (fail-safe toward the configured default, never toward 0)."""
+    autonomously. No policy row means the platform default.
+
+    FAILS CLOSED on a lookup error: an executive may have dialled this domain
+    STRICTER than the platform default, so silently reverting to the default
+    would loosen the gate exactly when the datastore is unhealthy. On error we
+    keep the strictest threshold we have evidence for - the last value read for
+    this key, even if its TTL has lapsed - and only fall back to the default
+    when nothing has ever been read.
+    """
     from app.core.config import get_settings
     default = get_settings().CONFIDENCE_AUTONOMOUS_EXEC
     if not domain:
@@ -48,7 +58,15 @@ async def resolve_min_confidence(tenant_id: str, domain: Optional[str]) -> float
             )).scalar_one_or_none()
         if row is not None and row.min_confidence is not None:
             val = float(row.min_confidence)
-    except Exception:
-        val = default
+    except Exception as e:
+        stale = cached[0] if cached else default
+        val = max(default, stale)
+        logger.error(
+            "[autonomy-dial] threshold lookup failed for %s/%s; holding the "
+            "strictest known threshold %.3f (fail-closed): %s",
+            tenant_id, d, val, e,
+        )
+        # Do NOT refresh the cache from a failed read - retry on the next call.
+        return val
     _cache[key] = (val, now + _TTL_SECONDS)
     return val

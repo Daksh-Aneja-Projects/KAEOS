@@ -85,6 +85,9 @@ class LeaderLock:
                 self._backend = "redis"
                 return self._backend
         except Exception:
+            # Backend PROBE, not the lock itself: Redis being unreachable just
+            # means we try Postgres next. Failing closed here would leave the
+            # singleton loops with no leader at all.
             pass
         try:
             from app.core.database import engine
@@ -92,6 +95,8 @@ class LeaderLock:
                 self._backend = "postgres"
                 return self._backend
         except Exception:
+            # Backend PROBE (see above): fall through to the single-instance
+            # "local" backend rather than leaving the loops leaderless.
             pass
         self._backend = "local"
         return self._backend

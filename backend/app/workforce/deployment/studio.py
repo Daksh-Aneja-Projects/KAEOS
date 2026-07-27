@@ -191,5 +191,8 @@ class DeploymentStudio:
                 try:
                     await db.rollback()
                 except Exception:
+                    # Best-effort: if even the rollback fails, still attempt the
+                    # FAILED transition below rather than leaving the deployment
+                    # stuck at its last progress state.
                     pass
                 await DeploymentStateMachine.fail_deployment(db, deployment_id, e)

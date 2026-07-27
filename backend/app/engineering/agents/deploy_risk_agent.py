@@ -127,6 +127,8 @@ class DeployRiskAgent:
             try:
                 return RiskLevel(model_answer.strip().upper())
             except ValueError:
+                # An invalid model label is DISCARDED, not trusted: control falls
+                # through to the deterministic score thresholds below.
                 pass
         if score >= 75:
             return RiskLevel.CRITICAL

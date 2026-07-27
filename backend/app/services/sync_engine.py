@@ -167,6 +167,9 @@ async def _apply_upsert(db, tenant_id: str, envelope: Dict[str, Any]) -> Tuple[s
             try:
                 row.health_score = max(0.0, min(1.0, float(data["health_score"])))
             except (TypeError, ValueError):
+                # A non-numeric health score from an external system is dropped
+                # rather than written: leaving the prior value is more honest
+                # than coercing junk into a scored field.
                 pass
         await db.flush()
         return row.id, None

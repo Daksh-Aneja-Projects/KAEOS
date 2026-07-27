@@ -34,6 +34,8 @@ def extract_json(content: str) -> Union[Dict[str, Any], List[Any]]:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        # Expected for prose-wrapped model output; the span-extraction fallback
+        # below is the real parse. A genuine failure raises ValueError there.
         pass
 
     # Fall back to the outermost object/array span present in the text.

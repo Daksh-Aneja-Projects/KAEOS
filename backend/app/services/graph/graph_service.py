@@ -37,6 +37,9 @@ class GraphService:
             try:
                 await driver.close()
             except Exception:
+                # Shutdown-only: an already-broken driver cannot be closed and
+                # the process is exiting anyway. Raising here would mask the
+                # real shutdown reason.
                 pass
 
     async def register_entity(self, tenant_id: str, entity_id: str, label: str, properties: Dict[str, Any]):

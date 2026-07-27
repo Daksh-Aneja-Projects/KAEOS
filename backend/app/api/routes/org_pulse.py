@@ -204,6 +204,8 @@ async def escalate_stale(
                 "type": "sla_escalation", "escalated": escalated,
             })
         except Exception:  # pragma: no cover - broadcast is best-effort
+            # The escalations are already committed; a dropped WebSocket ping
+            # only delays the UI refresh and must never fail the request.
             pass
 
     return {"escalated": escalated,

@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.models.settings import TenantLLMConfig, MCPToolConfig, OntologyConfig, FederatedConfig
@@ -434,8 +438,11 @@ async def set_autonomy(
     try:
         from app.services.autonomy_policy import invalidate as _inv
         _inv(tenant_id, d)
-    except Exception:
-        pass
+    except Exception as e:
+        # Cache invalidation is an optimization, not the control: the dial is
+        # already committed and the cache entry expires within its short TTL,
+        # so a failure here delays the new threshold by seconds, never loses it.
+        logger.warning(f"[autonomy-dial] cache invalidation failed for {d}: {e}")
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
         actor=tenant.get("name"), actor_role=tenant.get("role"),

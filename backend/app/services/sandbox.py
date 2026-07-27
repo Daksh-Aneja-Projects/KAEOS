@@ -196,6 +196,9 @@ class SandboxExecutor:
                 try:
                     os.remove(p) if p == temp_path else os.rmdir(p)
                 except OSError:
+                    # Best-effort temp cleanup in a finally block: a file the OS
+                    # still holds must not mask the execution result returned
+                    # above.
                     pass
 
     @staticmethod
@@ -210,4 +213,6 @@ class SandboxExecutor:
             try:
                 proc.kill()
             except Exception:
+                # Last-resort kill of a process that is already gone (it exited
+                # between the timeout and this call). Nothing further to do.
                 pass

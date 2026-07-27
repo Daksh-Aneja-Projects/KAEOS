@@ -146,6 +146,9 @@ def decode_token(token: str) -> Optional[dict]:
             return None
         return claims
     except jwt.PyJWTError:
+        # Not a valid current-format JWT. This is NOT a bypass: control falls
+        # through to the legacy verifier below, which still checks an HMAC with
+        # compare_digest and the expiry, and returns None on any failure.
         pass
     # Legacy fallback: verify the old base64(json)+HMAC format so live sessions
     # are not force-logged-out by the upgrade. Tokens live TOKEN_EXPIRY_HOURS (24h),

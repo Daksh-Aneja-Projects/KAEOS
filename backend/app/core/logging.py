@@ -27,17 +27,18 @@ _REDACTED = "[REDACTED]"
 
 
 def _redact_pii(text: str) -> str:
-    """Redact emails, SSNs, and sensitive key/value pairs from a log string."""
+    """Redact emails, SSNs, and sensitive key/value pairs from a log string.
+
+    Raises on failure so the caller can fail closed. Returning the unredacted
+    text on error would silently defeat the control at exactly the moment it
+    matters, so partial redaction is never emitted.
+    """
     if not text or ("@" not in text and ":" not in text and "=" not in text
                     and "-" not in text):
         return text
-    try:
-        text = _SENSITIVE_KEY_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", text)
-        text = _EMAIL_RE.sub(_REDACTED, text)
-        text = _SSN_RE.sub(_REDACTED, text)
-    except Exception:
-        # Redaction must never break logging.
-        return text
+    text = _SENSITIVE_KEY_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", text)
+    text = _EMAIL_RE.sub(_REDACTED, text)
+    text = _SSN_RE.sub(_REDACTED, text)
     return text
 
 
@@ -45,8 +46,9 @@ class PIIRedactionFilter(logging.Filter):
     """Logging filter that scrubs PII from a record's message and args.
 
     Runs on the fully-interpolated message so it catches PII arriving via both
-    f-strings and %-args. On the rare failure it lets the record through
-    unmodified rather than dropping the log line.
+    f-strings and %-args. FAILS CLOSED: if redaction itself raises, the original
+    message is suppressed rather than emitted, because the only reason to run
+    this filter is that the unredacted text may carry PII.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -59,7 +61,11 @@ class PIIRedactionFilter(logging.Filter):
                 record.msg = redacted
                 record.args = None
         except Exception:
-            pass
+            # Fail closed: letting the raw record through would defeat the whole
+            # control. Keep the log line (so the event is not lost) but drop its
+            # potentially-PII-bearing payload.
+            record.msg = "[PII redaction failed; message suppressed]"
+            record.args = None
         return True
 
 try:
@@ -97,6 +103,9 @@ def setup_logging():
         try:
             reconfigure(encoding="utf-8", errors="replace")
         except (ValueError, OSError):
+            # Some streams (pytest capture, detached consoles) refuse
+            # reconfigure. The default encoding still works; this is a
+            # best-effort widening, so failing to widen is not an error.
             pass
     logHandler = logging.StreamHandler(stream)
 

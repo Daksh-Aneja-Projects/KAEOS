@@ -258,6 +258,8 @@ async def apply_transition(
             "actor": ctx.actor,
         })
     except Exception:  # pragma: no cover - broadcast is best-effort
+        # The transition is already persisted; a dropped WebSocket ping only
+        # delays the UI refresh and must never fail the transition.
         pass
 
     return {

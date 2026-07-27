@@ -87,6 +87,9 @@ class CodeReviewAgent:
             try:
                 return RiskLevel(model_answer.strip().upper())
             except ValueError:
+                # An invalid model label is DISCARDED, not trusted: control falls
+                # through to the deterministic rules below. This is the
+                # fail-closed path the docstring describes.
                 pass
         if surface["touches_auth"] or surface["touches_migrations"] or not surface["ci_passing"]:
             return RiskLevel.HIGH

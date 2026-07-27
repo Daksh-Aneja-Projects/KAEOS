@@ -82,6 +82,9 @@ async def mint_webhook_secret(
         try:
             stored = decrypt_secrets(cred.secrets_encrypted)
         except Exception:
+            # Undecryptable prior secrets (e.g. a rotated SECRET_KEY) must not
+            # block setting a new webhook secret; we start from an empty dict
+            # and re-encrypt, which replaces the unreadable blob.
             pass
         stored["webhook_secret"] = secret
         cred.secrets_encrypted = encrypt_secrets(stored)

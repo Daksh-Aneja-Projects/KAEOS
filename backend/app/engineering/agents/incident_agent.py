@@ -153,6 +153,9 @@ class IncidentAgent:
                 if cls._SEV_RANK[model_sev] < cls._SEV_RANK[assessed]:
                     assessed = model_sev
             except ValueError:
+                # An invalid model label is discarded and the deterministic
+                # assessment stands. Since the model may only ESCALATE, ignoring
+                # it can never lower severity.
                 pass
 
         # Floor: never return less severe than what was already recorded.
@@ -163,6 +166,8 @@ class IncidentAgent:
                 if cls._SEV_RANK[rec_sev] < cls._SEV_RANK[assessed]:
                     assessed = rec_sev
             except ValueError:
+                # An unrecognized stored severity cannot raise the floor; the
+                # computed assessment stands. Ignoring it never de-escalates.
                 pass
 
         return assessed

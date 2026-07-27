@@ -207,6 +207,8 @@ class EventBus:
                         event_data, subs = await asyncio.wait_for(self.webhook_queue.get(), timeout=5)
                         await self._dispatch_webhooks(event_data, subs)
                     except asyncio.TimeoutError:
+                        # Expected: an idle queue times out every 5s so the loop
+                        # can re-check for Redis instead of blocking forever.
                         pass
                     continue
 

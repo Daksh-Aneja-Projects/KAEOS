@@ -37,6 +37,9 @@ async def ensure_tenant(db: AsyncSession, tenant_id: str, name: str = "",
         try:
             await db.rollback()
         except Exception:
+            # Best-effort cleanup of an already-failed session (it may be closed
+            # or its connection dropped). The outer failure is already logged;
+            # a rollback failure adds no actionable information.
             pass
 
 

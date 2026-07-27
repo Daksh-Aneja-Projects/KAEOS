@@ -127,6 +127,9 @@ class MemoryCacheBus(CacheBus):
             try:
                 q.put_nowait(message)
             except asyncio.QueueFull:
+                # A slow subscriber must not block the publisher or other
+                # subscribers; dropping is the documented pub/sub semantic here
+                # (this is the in-memory dev fallback, not the Redis path).
                 pass
 
     async def subscribe(self, channel) -> AsyncIterator[str]:

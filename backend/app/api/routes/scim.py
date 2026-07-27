@@ -115,6 +115,10 @@ async def scim_list_users(request: Request,
             value = flt.split("eq", 1)[1].strip().strip('"').lower()
             q = q.where(func.lower(User.email) == value)
         except Exception:
+            # An unparseable SCIM filter degrades to "no filter", which returns
+            # this tenant's users (the query is already tenant-scoped above).
+            # SCIM clients treat an over-broad list as valid; erroring would
+            # break Okta/Azure provisioning on a malformed filter string.
             pass
 
     users = (await db.execute(q.limit(200))).scalars().all()

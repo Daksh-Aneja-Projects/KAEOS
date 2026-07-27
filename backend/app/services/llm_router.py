@@ -108,6 +108,9 @@ async def _ollama_reachable(base_url: str) -> bool:
         else:
             host = hostport
     except Exception:
+        # A malformed OLLAMA_BASE_URL falls back to the localhost:11434
+        # defaults initialized above; the reachability probe below then
+        # reports honestly whether anything is actually there.
         pass
 
     try:
@@ -303,6 +306,9 @@ class LLMRouter:
             if settings.GROQ_API_KEY:
                 keys.setdefault("groq", settings.GROQ_API_KEY)
         except Exception:
+            # Platform-wide fallback keys are optional. Without them the tenant
+            # keys below still apply, and a call with no usable key fails at the
+            # provider with a clear error rather than being silently skipped.
             pass
         if tenant_api_keys:
             keys.update(tenant_api_keys)
@@ -340,6 +346,8 @@ class LLMRouter:
             )):
                 return True
         except ImportError:
+            # litellm not installed: fall through to the string matching below,
+            # which classifies retryable errors without the typed exceptions.
             pass
         err_str = str(exception).lower()
         return "429" in err_str or "rate" in err_str or "503" in err_str or "500" in err_str or "timeout" in err_str

@@ -204,6 +204,9 @@ def _recommendation_of(result: dict) -> Optional[str]:
                     if isinstance(parsed, dict) and parsed.get("decision"):
                         return str(parsed["decision"])[:240]
                 except Exception:
+                    # Display-only summary extraction. Unparseable model output
+                    # falls through to the raw truncated text below; it never
+                    # affects the step's governed outcome.
                     pass
             return txt[:240]
     return None
@@ -512,8 +515,15 @@ async def _reverse_mission_actions(db: AsyncSession, mission: Mission, steps) ->
             await Actuator.reverse_action(db, tenant_id=mission.tenant_id,
                                           action_id=a.id, actor="mission-abort")
             count += 1
-        except Exception:
-            pass
+        except Exception as e:
+            # One compensator failing must not abandon the remaining reversals,
+            # but an un-reversed write to a system of record is an operator-
+            # visible event, not a detail: log it loudly and leave the action
+            # APPLIED so the drift monitor still reports it.
+            logger.error(
+                f"[mission] abort could not reverse action {a.id} "
+                f"({a.system}:{a.external_id}); it remains APPLIED: {e}"
+            )
     return count
 
 

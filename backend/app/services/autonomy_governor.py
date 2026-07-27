@@ -112,6 +112,9 @@ async def run_autonomy_governor(db: AsyncSession, tenant_id: str) -> dict:
             from app.services.autonomy_policy import invalidate
             for c in changes:
                 invalidate(tenant_id, c["domain"])
-        except Exception:
-            pass
+        except Exception as e:
+            # Cache invalidation is an optimization: the policies are committed
+            # and the cache entries expire within their short TTL, so this
+            # delays the new thresholds by seconds, never loses them.
+            logger.warning(f"[autonomy-governor] cache invalidation failed: {e}")
     return {"tenant_id": tenant_id, "adjusted": len(changes), "changes": changes}

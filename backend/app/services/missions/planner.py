@@ -151,12 +151,22 @@ async def plan_mission(
     for dept in depts:
         skill = available[dept][0]  # highest-confidence ACTIVE skill in this dept
         threshold = 0.82
+        # FAIL CLOSED: if the tenant's Autonomy Dial cannot be read, we do not
+        # know whether their threshold is stricter than the platform default, so
+        # the step gets a human checkpoint instead of silently planning autonomy
+        # against a looser number than the executive configured.
+        threshold_known = resolve_min_confidence is not None
         if resolve_min_confidence:
             try:
                 threshold = await resolve_min_confidence(tenant_id, dept)
-            except Exception:
-                pass
-        hitl = (skill.confidence or 0.0) < threshold or dept in _HIGH_CONSEQUENCE
+            except Exception as e:
+                threshold_known = False
+                logger.error(
+                    f"[mission-plan] autonomy threshold lookup failed for {dept}; "
+                    f"planning a HITL checkpoint (fail-closed): {e}"
+                )
+        hitl = (not threshold_known) or (skill.confidence or 0.0) < threshold \
+            or dept in _HIGH_CONSEQUENCE
         seq += 1
         # Steps are INDEPENDENT: each department's action stands on its own, so an
         # autonomous step still runs while another awaits a human, and one failure

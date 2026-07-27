@@ -225,6 +225,8 @@ async def lifespan(app: FastAPI):
         try:
             await election_task
         except asyncio.CancelledError:
+            # Expected: we just cancelled it. Awaiting drains the task so the
+            # loop does not log "Task was destroyed but it is pending".
             pass
     _stop_background_loops()
     await close_redis()
@@ -234,6 +236,7 @@ async def lifespan(app: FastAPI):
             try:
                 await _t
             except asyncio.CancelledError:
+                # Expected on shutdown: _stop_background_loops() cancelled these.
                 pass
 
 
