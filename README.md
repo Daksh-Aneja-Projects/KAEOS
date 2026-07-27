@@ -2,12 +2,13 @@
 
 # KAEOS
 
-### AI agents that earn autonomy through measured competence
+### The AI Operating System for Companies
 
-**Every AI action passes a 7-gate governance pipeline. Autonomy is not granted,
-it is earned: the platform probes what your model can actually do, caps every
-decision's confidence at that measured ceiling, and routes anything below the
-bar (or high-consequence, always) to a human.**
+**A living Company Brain that models the whole organization, then runs real
+departments on top of it. Every AI action passes a 7-gate governance pipeline,
+so autonomy is not granted, it is earned: the platform probes what your model
+can actually do, caps every decision's confidence at that measured ceiling, and
+routes anything below the bar (or high-consequence, always) to a human.**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org) [![Tests](https://img.shields.io/badge/E2E_Tests-441-brightgreen.svg)](backend/tests/e2e/) [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
@@ -33,11 +34,18 @@ everything (and the agents save no one any time) or gate nothing (and one bad
 autonomous action ends the pilot). Industry surveys put the fallout plainly:
 most agent pilots never reach production.
 
-KAEOS makes autonomy a measured, governed quantity. Seven pre-built AI
-departments (HR, Finance, Legal, Sales, Support, Operations, Engineering & IT
-Ops) run every action through the same 7-gate pipeline: compliance, fairness,
+KAEOS starts with the **org graph**: a live model of departments, capabilities,
+agents, processes, employees, vendors, projects, customers, accounts, tickets,
+contracts, incidents and purchase orders, built from the tenant's own records.
+That is the Company Brain. On top of it run seven pre-built AI departments (HR,
+Finance, Legal, Sales, Support, Operations, Engineering & IT Ops) whose agents
+read the real work and act on it.
+
+Everything they do passes the same 7-gate pipeline: compliance, fairness,
 confidence, human-in-the-loop, adversarial debate, execution, and a hash-chained
-provenance ledger. Skills accumulate confidence from validated outcomes and lose
+provenance ledger. Teams watch live agent work in a shared queue and can approve,
+redirect or reject any of it, with per-tenant and per-department permissions and
+a full audit trail. Skills accumulate confidence from validated outcomes and lose
 it by decay; the platform's headline metric is the **safe autonomy rate**, the
 share of work completed without human intervention, computed live from real
 executions.
