@@ -358,13 +358,11 @@ class AgentExecutor:
         _threshold = await resolve_min_confidence(
             context.get("tenant_id", "default"), skill.get("department"),
         )
-        _skill_tags = set(
-            (skill.get("compliance_tags") or [])
-            + (skill.get("tags") or [])
-            + ([skill.get("department")] if skill.get("department") else [])
-        )
-        _skill_blob = " ".join(str(x).lower() for x in _skill_tags) + " " + str(skill.get("skill_id", "")).lower()
-        _high_consequence = any(t in _skill_blob for t in _settings.HIGH_CONSEQUENCE_TAGS)
+        # Shared helper (explicit always_hitl flag first, tag inference as an
+        # escalate-only fallback). The persisted Skill row is checked too: the
+        # executor's skill dict may not carry the explicit flag.
+        from app.services.consequence import is_high_consequence
+        _high_consequence = is_high_consequence(skill) or is_high_consequence(skill_obj)
 
         # A mission step that already cleared its mission-level HITL checkpoint
         # carries an explicit human approval, so Gate 3 must not re-pause it — the

@@ -553,6 +553,11 @@ class WorkforceGenerator:
                         steps=built["steps"],
                         compliance_tags=skill_compliance,
                     )
+                    # Stamp the explicit high-consequence flag at creation from
+                    # the same inference the gates use, so the guarantee stops
+                    # depending on this skill's naming staying convention-shaped.
+                    from app.services.consequence import is_high_consequence
+                    skill.always_hitl = is_high_consequence(skill)
                     db.add(skill)
                     await db.commit()
 

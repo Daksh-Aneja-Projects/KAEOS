@@ -164,13 +164,11 @@ async def execute_skill(
     # deletion) ALWAYS route to a human here too — the same rule the agent runtime
     # gate enforces, so this direct-execution path can't be used to bypass it.
     from app.core.config import get_settings
+    from app.services.consequence import is_high_consequence
     _settings = get_settings()
-    _skill_blob = " ".join(
-        str(x).lower() for x in (
-            (skill.compliance_tags or []) + [skill.department or "", skill.skill_id or ""]
-        )
-    )
-    _high_consequence = any(t in _skill_blob for t in _settings.HIGH_CONSEQUENCE_TAGS)
+    # Shared helper - same rule the agent runtime gate enforces (explicit
+    # always_hitl flag first, tag inference as an escalate-only fallback).
+    _high_consequence = is_high_consequence(skill)
     hitl_required = _high_consequence or effective_confidence < _settings.CONFIDENCE_AUTONOMOUS_EXEC
     if hitl_required:
         execution = SkillExecution(

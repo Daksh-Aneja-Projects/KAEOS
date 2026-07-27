@@ -215,6 +215,11 @@ class Skill(Base):
     version = Column(String(16))
     status = Column(String(32), default="ACTIVE")  # ACTIVE, EXPIRING_SOON, ARCHIVED, DRAFT
 
+    # High-consequence marker: True forces HITL at Gate 3 regardless of
+    # confidence or naming (see app/services/consequence.py). Explicit so the
+    # always-a-human guarantee no longer depends on skill naming conventions.
+    always_hitl = Column(Boolean, default=False, nullable=False)
+
     # Confidence metadata
     confidence = Column(Float, default=0.0)
     confidence_tier = Column(String(64))
