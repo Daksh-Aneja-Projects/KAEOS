@@ -346,12 +346,35 @@ async def autonomy_graduations(
     threshold means it now executes on its own: it EARNED autonomy. That
     moment was recorded and never shown.
     """
+    from app.core.config import get_settings
     from app.models.domain import Skill
+    from app.services.consequence import is_high_consequence
 
-    THRESHOLD = 0.82
+    # Same threshold the confidence gate uses, read from config rather than
+    # re-typed here, so the dashboard cannot drift from the runtime rule.
+    THRESHOLD = get_settings().CONFIDENCE_AUTONOMOUS_EXEC
     skills = (await db.execute(
         select(Skill).where(Skill.tenant_id == tenant_id)
     )).scalars().all()
+    ran = [s for s in skills if (s.execution_count or 0) > 0]
+
+    # A high-consequence skill can NEVER graduate, whatever its confidence.
+    # Gate 3 forces it to a human every time, so listing it as autonomous would
+    # have the dashboard contradict what the pipeline actually does.
+    always_human = [
+        {
+            "skill_id": s.skill_id,
+            "department": s.department,
+            "confidence": round(float(s.confidence or 0), 3),
+            "executions": s.execution_count or 0,
+            "success_rate": round(float(s.success_rate or 0), 3),
+            "status": "ALWAYS_HUMAN",
+            "reason": "high-consequence action: always routed to a human",
+        }
+        for s in ran if is_high_consequence(s)
+    ]
+    always_human.sort(key=lambda x: -x["executions"])
+    _always_ids = {a["skill_id"] for a in always_human}
 
     graduated = [
         {
@@ -362,8 +385,8 @@ async def autonomy_graduations(
             "success_rate": round(float(s.success_rate or 0), 3),
             "status": "AUTONOMOUS",
         }
-        for s in skills
-        if (s.confidence or 0) >= THRESHOLD and (s.execution_count or 0) > 0
+        for s in ran
+        if (s.confidence or 0) >= THRESHOLD and s.skill_id not in _always_ids
     ]
     graduated.sort(key=lambda x: (-x["executions"], -x["confidence"]))
 
@@ -377,8 +400,8 @@ async def autonomy_graduations(
             "to_threshold": round(THRESHOLD - float(s.confidence or 0), 3),
             "status": "EARNING_TRUST",
         }
-        for s in skills
-        if (s.confidence or 0) < THRESHOLD and (s.execution_count or 0) > 0
+        for s in ran
+        if (s.confidence or 0) < THRESHOLD and s.skill_id not in _always_ids
     ]
     earning.sort(key=lambda x: x["to_threshold"])
 
@@ -386,8 +409,10 @@ async def autonomy_graduations(
         "threshold": THRESHOLD,
         "graduated": graduated[:limit],
         "earning_trust": earning[:limit],
+        "always_human": always_human[:limit],
         "graduated_count": len(graduated),
         "earning_count": len(earning),
+        "always_human_count": len(always_human),
     }
 
 

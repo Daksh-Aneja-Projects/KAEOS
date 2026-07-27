@@ -15,7 +15,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { BrainLoading, BrainEmpty } from '../components/BrainStates';
 import {
   Building2, Users, Clock, Zap, BarChart3, ArrowRight, Rocket,
-  Activity, CheckCircle, AlertTriangle, Heart, TrendingUp
+  Activity, CheckCircle, AlertTriangle, Heart, TrendingUp, ShieldAlert
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import LiveValue from '../components/LiveValue';
@@ -289,14 +289,32 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     <h2 className="text-[16px] font-semibold">Earned Autonomy</h2>
                     <p className="text-[11px]" style={{ color: colors.inkSubtle }}>
                       Skills run themselves once confidence clears {graduations?.threshold ?? 0.82} - and not before.
+                      High-consequence actions never graduate, at any confidence.
                     </p>
                   </div>
                   <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                     <span style={{ color: '#22c55e', fontWeight: 700 }}>{graduations?.graduated_count ?? 0}</span> autonomous ·{' '}
                     <span style={{ color: '#f59e0b', fontWeight: 700 }}>{graduations?.earning_count ?? 0}</span> earning trust
+                    {(graduations?.always_human_count ?? 0) > 0 && (
+                      <> · <span style={{ color: '#ef4444', fontWeight: 700 }}>{graduations.always_human_count}</span> always human</>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
+                  {(graduations?.always_human || []).map((g: any) => (
+                    <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#ef44440d' }}>
+                      <ShieldAlert className="w-4 h-4 shrink-0" style={{ color: '#ef4444' }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-semibold truncate">{g.skill_id}</div>
+                        <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                          {g.executions.toLocaleString()} runs · confidence {g.confidence} · high-consequence
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#ef4444' }}>
+                        Always human
+                      </span>
+                    </div>
+                  ))}
                   {(graduations?.graduated || []).map((g: any) => (
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#22c55e0d' }}>
                       <CheckCircle className="w-4 h-4 shrink-0" style={{ color: '#22c55e' }} />
