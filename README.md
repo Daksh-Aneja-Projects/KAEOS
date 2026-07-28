@@ -124,12 +124,14 @@ admin login, local Ollama): [docs/SETUP.md](docs/SETUP.md).
 ## Known limitations
 
 We'd rather you read this from us than find it. KAEOS is not independently
-certified (SOC 2, ISO 27001, HIPAA) and is not yet cleared for regulated
-employee data. The Foundry does not train model weights (external/pluggable by
-design). Prompt-injection mitigations are defense in depth, not a solution.
-Rate limiting is per-process; simulation surfaces are parameterized archetypes,
-labelled as such, not models learned from your data. The full list, kept
-current: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+certified (SOC 2, ISO 27001, HIPAA) - certification is a third-party audit
+software cannot self-grant, so what we ship is audit-readiness evidence
+(`GET /compliance/controls`), not a certificate. The Foundry orchestrates
+fine-tuning but does not run the weight-training step itself (external/pluggable
+by design). Prompt-injection has a real detection-and-neutralization layer wired
+into ingestion, but it is defense in depth, not a solution. Simulation surfaces
+are parameterized archetypes, labelled as such, not models learned from your
+data. The full list, kept current: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
 ## Contributing
 

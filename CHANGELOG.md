@@ -11,6 +11,46 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - closed the remaining known-limitation gaps with real logic
+- **Prompt-injection detection + neutralization layer** (`app/services/prompt_guard.py`).
+  A curated pattern battery scores untrusted content (instruction-override,
+  role-manipulation, prompt/secret exfiltration, guardrail-bypass, tool/command
+  smuggling, data-exfiltration, fake-role-turn, encoded-payload); matched command
+  spans are redacted and untrusted text is fenced as data before it reaches an LLM.
+  Wired into the ingestion pipeline (high-risk signals are quarantined). Layers with
+  the existing source-authority weighting and HITL gates. 18 tests.
+- **Erasure now reaches the blob layer and survives backup restores.**
+  `app/core/polystore/blob_store.py` deletes the actual stored files (local FS +
+  best-effort S3/GCS) during `erase_subject`/`purge_tenant`. A new `deletion_journal`
+  table (migration `0026`, RLS-scoped) records every erasure (employee id + SHA-256
+  of email, never raw PII); `POST /privacy/erasure/replay` re-applies them after a
+  restore, matching email-only entries by hashing live rows. 7 tests.
+- **Real semantic search on the SQLite dev path.** When no cloud embedding key is
+  set, the router routes embeddings to a reachable local Ollama `nomic-embed-text`
+  instead of non-semantic pseudo-vectors (scoped to SQLite so pgvector's fixed
+  dimension is never disturbed). 5 tests.
+- **Audit-readiness controls evidence.** `GET /compliance/controls`
+  (`app/services/compliance_controls.py`) inventories the implemented technical
+  controls, maps each to SOC 2 / ISO 27001 / GDPR / SOX criteria with code+test
+  evidence, and explicitly lists the external items (attestation, pen-test) it does
+  NOT claim as satisfied. 5 tests.
+
+### Changed - documentation accuracy (limitations review)
+- **Known-limitations docs re-verified against the live code and corrected**, then
+  updated again to describe the capabilities added above. Touched
+  `docs/KNOWN_LIMITATIONS.md`, `README.md`, `docs/SECURITY_MODEL.md`,
+  `docs/DEPLOYMENT.md`:
+  - RBAC restated as **default-deny** with **199 of 212** write endpoints gated
+    (was "106 of 132"); the remaining 13 are a reviewed allowlist. Locked by
+    `test_default_deny.py`.
+  - Retention sweep documented as **leader-guarded**; the **L2 fine-tune bridge**
+    and **Redis-backed shared rate limiter** documented as live (were stale).
+  - Security audit logging coverage updated to ~30 modules (was ~20).
+
+Verified: full non-e2e unit lane **404 passed** before these last two additions,
+and the affected + new suites (75 tests) green with them; migration chain applies
+to a single head `0026`.
+
 ## [1.3.0] - 2026-07-27 - "Gate Integrity"
 
 Pre-submission remediation: three defects in the gate pipeline that could let a

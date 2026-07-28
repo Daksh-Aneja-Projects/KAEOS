@@ -807,6 +807,37 @@ class LLMRouter:
         norm = math.sqrt(sum(v * v for v in vals)) or 1.0
         return [v / norm for v in vals]
 
+    async def _resolve_embedding_model(
+        self, model: str, tenant_api_keys: Optional[dict] = None
+    ) -> tuple[str, Optional[str]]:
+        """Pick the embedding model actually used, returning ``(model, api_base)``.
+
+        The documented dev-path limitation was that a zero-key SQLite stack fell
+        back to non-semantic pseudo-vectors even with a local Ollama running. Here,
+        when the requested cloud model has no usable key AND we are on the SQLite
+        dev path AND a local Ollama is reachable, we route to the local
+        ``nomic-embed-text`` model so dev semantic search uses REAL embeddings.
+
+        Scoped to SQLite on purpose: the pgvector table is a fixed dimension, so we
+        never silently change embedding dimensionality on a Postgres deployment.
+        """
+        from app.core.config import get_settings
+        settings = get_settings()
+        effective = self._effective_keys(tenant_api_keys)
+        default_base = getattr(settings, "OLLAMA_BASE_URL", None) or "http://localhost:11434"
+
+        if model.startswith("ollama/"):
+            return model, effective.get("ollama_base_url", default_base)
+        if effective.get(self._get_provider(model)) or effective.get("custom_base_url"):
+            return model, None  # a real cloud key is configured — use it
+        if getattr(settings, "is_sqlite", False):
+            base = effective.get("ollama_base_url", default_base)
+            if await _ollama_reachable(base):
+                local = self.MODEL_TIERS.get("embedding", "ollama/nomic-embed-text:latest")
+                logger.info("[LLM] No key for %s; routing embeddings to local %s", model, local)
+                return local, base
+        return model, None
+
     async def embed(
         self,
         texts: list[str],
@@ -815,9 +846,13 @@ class LLMRouter:
     ) -> list[list[float]]:
         """Generate embeddings using the configured embedding model.
 
-        Falls back to deterministic seeded pseudo-vectors (unit-normalized, correct
-        dimension) when no provider is available. Sets ``self.embeddings_simulated``.
+        On the zero-key SQLite dev stack, prefers a reachable local Ollama
+        embedding model over non-semantic pseudo-vectors (see
+        ``_resolve_embedding_model``). Falls back to deterministic seeded
+        pseudo-vectors (unit-normalized, correct dimension) only when no provider
+        is available at all. Sets ``self.embeddings_simulated``.
         """
+        model, api_base = await self._resolve_embedding_model(model, tenant_api_keys)
         dim = self._embedding_dim(model)
 
         if not await self.provider_available(tenant_api_keys):
@@ -850,6 +885,7 @@ class LLMRouter:
                 model=model,
                 input=[texts[i] for i in miss_idx],
                 api_key=effective_keys.get(self._get_provider(model)),
+                api_base=api_base,
                 timeout=30,
             )
             self.embeddings_simulated = False

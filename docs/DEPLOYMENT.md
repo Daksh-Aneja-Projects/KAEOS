@@ -61,7 +61,8 @@ Fresh installs are unaffected.
 
 ## Pre-launch checklist for a production/client deployment
 - [ ] Run the full E2E suite against your Postgres+pgvector stack.
-- [ ] Load test at your expected concurrency (the built-in rate limiter is
-      per-process; put a shared limiter in front for multi-instance deploys).
+- [ ] Load test at your expected concurrency (the built-in rate limiter is a
+      Redis-backed shared limiter across replicas; make sure every replica points
+      at the same Redis, or it falls back to a per-process in-memory window).
 - [ ] Independent security / penetration test.
 - [ ] Decide the connector-credential re-encryption step above if upgrading.

@@ -7,45 +7,62 @@ We'd rather you read this from us than find it. What's shipped and verified vs. 
 
 **Verified today:** the governance spine (gates fail closed), per-tenant PostgreSQL row-level
 security (isolation proven on Postgres - cross-tenant reads scoped, cross-tenant writes blocked),
-BYOK LLM routing with real cost metering, a 441-test E2E suite green on SQLite **and**
-Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
+default-deny authorization on every mutating endpoint (199/212 explicitly gated, the rest a reviewed
+allowlist, both regression-locked), BYOK LLM routing with real cost metering, a 441-test E2E suite
+green on SQLite **and** Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
 
 Here is exactly what is shipped versus in progress. We treat this candor as an asset, not an apology.
+Each item below states the capability, its honest boundary, and anything still ahead.
 
-**Not done yet / roadmap:**
+**Capabilities, honest boundaries, and roadmap:**
 
-- **RBAC coverage.** The `viewer`/`operator`/`admin` roles are defined and enforced today on
-  consequential and mutating endpoints: creation, update, deletion, skill execution, HITL approval,
-  connector credentials, deployments, pack install/uninstall, elicitation answers, external-signal
-  ingest, schema-mapping confirmation, ETL pipeline runs, training-feedback capture, circuit-breaker
-  resets, autonomous tool synthesis (admin-only), and model-evolution promotion (admin-only). In the
-  current code **106 of 132** write
-  endpoints carry an explicit role or admin-secret gate. The remaining 26 are 3 intentionally public
-  auth routes (`login`/`logout`/SSO) plus 23 tenant-scoped **read/compute/simulation/telemetry-ingest**
-  endpoints (analysis, what-if, physics/shock simulation, agent-to-agent protocol messages, cost
-  telemetry ingest) - these run no persistent business-state mutation and are protected by tenant
-  isolation. Coverage is regression-locked by `tests/test_rbac_coverage.py`, which introspects the live
-  route table and fails if any gate is dropped.
+- **RBAC coverage.** The `viewer`/`operator`/`admin` roles are defined and enforced under a
+  **default-deny** policy: every state-changing endpoint must carry an authorization gate
+  (`require_role`, `require_service_or_role`, or the out-of-band `verify_admin_secret`) or be on a
+  short, reviewed allowlist, and `tests/test_default_deny.py` fails the build the moment a new ungated
+  mutation appears. In the current code **199 of 212** write endpoints carry an explicit gate. The
+  remaining **13** are the reviewed allowlist: 4 intentionally public auth routes (`login`/`logout`/
+  `accept-invite`/SSO), 2 HMAC-authenticated external ingest endpoints (Workday/Salesforce/SIEM relays
+  that cannot hold a KAEOS JWT, signed over the raw body), 3 MFA self-service endpoints (a user manages
+  their own second factor), 2 viewer-level self-actions (marking one's own items read), and 2 read-like
+  routes that produce no state change (skill `explain`, chat `stream`). None of the 13 mutate persistent
+  business state. Coverage is regression-locked by both `tests/test_default_deny.py` (the default-deny
+  lint) and `tests/test_rbac_coverage.py` (which introspects the live route table and fails if any gate
+  is dropped).
 - **Security audit logging.** The access/security audit log (`SecurityAuditLog`: auth successes and
   failures with lockout, RBAC denials, HITL decisions, config changes, connector and export actions)
-  is wired to real runtime events across the auth service and ~20 route modules in this release. It is
-  a best-effort writer (a logging failure never blocks the request) and is distinct from the
-  hash-chained AI-decision provenance ledger, which is a separate system and was always real; do not
+  is wired to real runtime events across the auth service and ~30 route and service modules in this
+  release. It is a best-effort writer (a logging failure never blocks the request) and is distinct from
+  the hash-chained AI-decision provenance ledger, which is a separate system and was always real; do not
   conflate the two.
-- **Prompt-injection defense.** Mitigations are in place (source-authority weighting so untrusted
-  content ranks below systems of record, tool allow-lists, gated execution), but this is defense in
-  depth, not a complete solution. Treat connected content as untrusted input.
+- **Prompt-injection defense.** Untrusted/connected content is now screened by a dedicated
+  detection-and-neutralization layer (`app/services/prompt_guard.py`): a curated pattern battery
+  scores instruction-override, role-manipulation, prompt/secret exfiltration, guardrail-bypass,
+  tool/command smuggling, data-exfiltration, fake-role-turn and encoded-payload attacks; matched
+  command spans are redacted; and untrusted text is fenced as data before it enters an LLM context.
+  It is wired into the ingestion pipeline (high-risk signals are quarantined) and composes with
+  source-authority weighting, tool allow-lists and the HITL gates. This is still defense in depth,
+  not a complete solution - an adaptive attacker can evade any single heuristic, which is exactly why
+  the downstream gates exist. Treat connected content as untrusted input.
 - **Data-protection features.** Right-to-erasure and configurable retention windows are now
   exposed through the API and enforced, alongside the data-residency (local-LLM-only) mode.
   Subject erasure (`POST /privacy/erasure`, admin-gated, audit-logged) tombstones direct
-  identifiers on the HR PII tables; retention windows (`GET/PUT /privacy/retention`,
-  `POST /privacy/retention/apply`) hard-delete rows past a configurable age for a curated
-  allow-list of **transient telemetry** classes only - the allow-list structurally cannot target
-  the hash-chained provenance ledger or the Foundry training lineage, and every class is **opt-in**
-  (nothing is purged until an admin enables it). Honest boundaries remain: erasure does not reach
-  object-storage blobs, vector embeddings, or backups (delete those via their own layers), and the
-  scheduled cross-tenant sweep needs the background-job leader lock before it is safe on multiple
-  replicas. Validate all of this against your own obligations before relying on it.
+  identifiers on the HR PII tables **and purges the subject's vector embeddings from the semantic
+  store** (best-effort: a vector-store outage never aborts the DB erasure that already committed).
+  Retention windows (`GET/PUT /privacy/retention`, `POST /privacy/retention/apply`) hard-delete rows
+  past a configurable age for a curated allow-list of **transient telemetry** classes only - the
+  allow-list structurally cannot target the hash-chained provenance ledger or the Foundry training
+  lineage, and every class is **opt-in** (nothing is purged until an admin enables it). The scheduled
+  cross-tenant retention sweep is now **leader-guarded** (see the background-job leader lock below), so
+  it is safe on multiple replicas - only the elected leader runs it. Erasure now reaches the blob
+  layer too: `erase_subject`/`purge_tenant` delete the actual stored files (resume/document blobs) via
+  `app/core/polystore/blob_store.py` (local filesystem, plus best-effort S3/GCS when those SDKs are
+  configured), not just the DB pointer. Backups are handled with the standard deletion-journal pattern:
+  every erasure is journaled (employee id + a SHA-256 of the email, never raw PII) and
+  `POST /privacy/erasure/replay` re-applies them after a backup restore, so a restore cannot silently
+  resurrect a deleted subject. Honest boundaries remain: replay re-erases after a restore rather than
+  reaching into backup files in place, external log sinks are out of scope, and free-text prose
+  elsewhere that may mention a subject's name is out of scope. Validate against your obligations.
 - **Background jobs are leader-elected.** The singleton loops (PreCog ambient loop, event-bus worker,
   decay scheduler, retention sweep) now elect a single leader automatically, so every replica boots
   identically and only one runs them. The lock picks the best available backend - **Redis**
@@ -56,20 +73,38 @@ Here is exactly what is shipped versus in progress. We treat this candor as an a
   the periodic scheduler jobs additionally self-guard on `is_leader` every tick.)
 - **Not certified for regulated employee data.** KAEOS has not been independently certified (SOC 2,
   ISO 27001, HIPAA, etc.) and is not yet cleared for processing regulated employee or other sensitive
-  personal data in production. Compliance tags in-product describe the frameworks a pack is *built
+  personal data in production. Certification is a third-party AUDIT that software cannot self-grant.
+  What KAEOS ships is **audit-readiness**: `GET /compliance/controls` returns a controls-evidence
+  report (`app/services/compliance_controls.py`) that inventories the implemented technical controls -
+  RLS, default-deny RBAC, encryption at rest, audit logging, hash-chained provenance, erasure,
+  retention, PII scrub, prompt-injection screening, HITL gates, leader election, backup+replay - and
+  maps each to the relevant SOC 2 / ISO 27001 / GDPR / SOX criteria with code and test evidence. The
+  report explicitly lists the external items (the attestation itself, an independent penetration test)
+  and never marks them satisfied. Compliance tags in-product describe the frameworks a pack is *built
   against*, not an external attestation.
-- **AI Foundry fine-tuning.** Phase 2 (dataset curation) is live, and Phase 3's
-  **evaluation-and-gated-promotion** loop is now live: a candidate model is measured against the
-  tenant's baseline on held-out governed examples and, if it genuinely wins, promoted through a human
-  gate. What is **still not implemented** is the weight-training step itself - KAEOS does not fine-tune
-  models; the actual training is external/pluggable, and a simulated evaluation can never promote.
-  Phases 4-5 (specialized models, autonomous foundry) remain roadmap.
+- **AI Foundry fine-tuning.** Phase 2 (dataset curation) is live; Phase 3's
+  **evaluation-and-gated-promotion** loop is live (a candidate model is measured against the tenant's
+  baseline on held-out governed examples and, if it genuinely wins, promoted through a human gate); and
+  the **L2 external fine-tune bridge** is now live too - `POST /foundry/finetune/submit` exports the
+  tenant's curated positive examples to a pluggable provider (real `OpenAIFineTuneProvider`, or an
+  honest `NullFineTuneProvider` that fails loudly rather than fabricate a model), a leader-guarded
+  scheduler polls each job to completion, and on success it **auto-triggers a real evaluation**;
+  promotion stays human-gated. What KAEOS deliberately does **not** do is run the weight-training step
+  itself - that computation is external/pluggable by design (KAEOS orchestrates and governs it), and a
+  simulated evaluation can never promote. Phases 4-5 (specialized models, autonomous foundry) remain
+  roadmap.
 - **Simulation surfaces.** The enterprise "what-if"/physics and evolution-fitness surfaces are
   parameterized simulations over configurable archetypes, labelled as such, not models learned
   from your data.
-- **Rate limiting** is per-process (in-memory); front it with a shared limiter for multi-instance deploys.
-- **Semantic search** uses pgvector on Postgres; the zero-dependency SQLite dev path uses keyword
-  (TF-IDF) matching, not embeddings.
+- **Rate limiting** is a shared per-tenant limiter backed by Redis (a per-minute fixed-window counter
+  in Redis, one limit across all workers/replicas) when Redis is reachable; it falls back to a
+  per-process in-memory window only for single-instance dev where no Redis is configured. For a
+  multi-instance deploy, point every replica at the same Redis so the limit is enforced globally.
+- **Semantic search** uses pgvector on Postgres. The SQLite dev path now generates **real embeddings**
+  too: when a cloud embedding key is absent, the router routes embeddings to a reachable local Ollama
+  model (`nomic-embed-text`) instead of non-semantic pseudo-vectors, so dev semantic search is genuine.
+  It falls back to deterministic pseudo-vectors only when no embedding provider (cloud key or local
+  Ollama) is available at all.
 
 **Before a production client:** load testing, an independent security/penetration test, and - if
 upgrading an existing install - a one-time connector-credential re-encryption. See

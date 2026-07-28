@@ -40,7 +40,7 @@ from app.api.routes import (
     predictive, polymorphic, federated, kaeos10x,
     platform_config, enterprise, agent_factory, pioneer,
     infrastructure, auth, brain, departments, hitl, ws, executive, chat,
-    privacy,
+    privacy, compliance,
 )
 from app.hr.api.v1.router import router as hr_router
 from app.finance.api.v1.router import router as finance_router
@@ -337,6 +337,7 @@ app.include_router(federated.router,       prefix=PREFIX)
 app.include_router(kaeos10x.router,    prefix=PREFIX)
 app.include_router(platform_config.router, prefix=PREFIX)
 app.include_router(privacy.router,         prefix=PREFIX)
+app.include_router(compliance.router,      prefix=PREFIX)
 app.include_router(enterprise.router,      prefix=PREFIX)
 app.include_router(agent_factory.router,   prefix=PREFIX)
 from app.api.routes import reality

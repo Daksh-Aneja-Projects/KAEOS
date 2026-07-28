@@ -102,6 +102,28 @@ class RetentionPolicy(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class DeletionJournal(Base):
+    """Append-only record that an erasure happened, for backup-restore replay.
+
+    A restored backup predates the erasure and would resurrect the subject's PII.
+    This journal is the standard mitigation: after a restore, replay every entry
+    to re-apply the erasures the backup does not know about. Erasure is
+    idempotent, so replay is safe to run repeatedly.
+
+    It deliberately stores NO raw PII - only the employee id (an internal, already
+    non-secret handle) and a SHA-256 of the email. The journal therefore cannot
+    itself become a PII store that survives the very erasure it records.
+    """
+    __tablename__ = 'deletion_journal'
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+    operation = Column(String(32), nullable=False)          # ERASE_SUBJECT | PURGE_TENANT
+    subject_employee_id = Column(String(128), nullable=True)
+    subject_email_hash = Column(String(64), nullable=True)  # sha256 hex, never raw email
+    replayed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class AutonomyPolicy(Base):
     """Per-tenant, per-domain autonomy risk appetite — the 'Autonomy Dial'.
 

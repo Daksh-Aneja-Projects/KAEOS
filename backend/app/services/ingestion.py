@@ -30,21 +30,39 @@ class IngestionPipeline:
     async def process_raw_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Transforms raw source event into clean structured signal."""
         import asyncio
+        from app.services import prompt_guard
+
         payload_text = event.get('payload', '')
-        
+
         # 1. PII Scrubbing
         loop = asyncio.get_running_loop()
         scrub_result = await loop.run_in_executor(None, self.scrubber.scrub, payload_text)
-        
+
         # 2. Source Authority Scoring
         authority_score = self._compute_authority(event.get('actor_role'), event.get('domain'))
-        
+
+        # 3. Prompt-injection screening (defense in depth). Ingested content is
+        #    untrusted; scan the ORIGINAL payload (pre-scrub, so injection markers
+        #    survive PII anonymization) and neutralize matched command spans. A
+        #    high-risk signal is flagged as quarantined so downstream consumers do
+        #    not feed it to an agent unattended.
+        cleaned_payload, injection = prompt_guard.neutralize(payload_text)
+        # Re-apply scrubbing over the neutralized text so the stored payload is
+        # both PII-safe and injection-defanged.
+        if injection.detected:
+            scrub2 = await loop.run_in_executor(None, self.scrubber.scrub, cleaned_payload)
+            stored_payload = scrub2['scrubbed_text']
+        else:
+            stored_payload = scrub_result['scrubbed_text']
+
         return {
             "signal_id": f"sig_{event.get('event_id')}",
             "domain": event.get('domain', 'general'),
-            "clean_payload": scrub_result['scrubbed_text'],
+            "clean_payload": stored_payload,
             "pii_present": scrub_result['pii_present'],
-            "authority_score": authority_score
+            "authority_score": authority_score,
+            "injection": injection.to_dict(),
+            "quarantined": injection.should_block,
         }
 
     def _compute_authority(self, role: str, domain: str) -> float:
