@@ -11,6 +11,22 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-07-28 - "Green Lane"
+
+Patch release. CI/tooling only; no application code or API changes.
+
+### Fixed - CI (frontend-build lane)
+- **Vitest workers crashed on startup under Node 20.** `jsdom` pulls in
+  `undici@7.29.0`, whose `CacheStorage` constructor calls
+  `worker_threads.markAsUncloneable` - an API that only exists on Node
+  `>=20.19.0` / `>=22.12.0`. The workflow pinned `node-version: "20"`, which the
+  runner resolved to a 20.x build below that floor, so every test worker died
+  with `webidl.util.markAsUncloneable is not a function` (7 errors / no tests)
+  before a single test ran. Bumped both `setup-node` steps (`frontend-build`
+  and `security-scan`) to Node 22 (LTS) and added `engines.node ">=20.19.0"` to
+  `frontend/package.json` to document the floor. Suite is green: 7 files /
+  43 tests.
+
 ## [1.4.0] - 2026-07-28 - "Provable Trust"
 
 Closed the remaining known-limitations with real, tested code and made the
