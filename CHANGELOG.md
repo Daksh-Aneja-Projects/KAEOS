@@ -41,6 +41,19 @@ All notable changes to KAEOS are documented here. This project adheres to
   `POST /privacy/erasure/replay` with a confirm guard. De-orphans the DSAR/erasure
   capability that previously had no UI. Verified live in the browser.
 
+### Performance - test/dev loop
+- **Unit lane parallelized with `pytest-xdist`.** CI now runs
+  `pytest tests/ --ignore=tests/e2e -n auto`; the lane is per-process in-memory
+  SQLite, so every xdist worker is fully isolated. Measured ~2.4x on this suite
+  (219s -> 90s, 406 passed). The e2e lane stays serial by design (it shares one
+  live backend). Also tagged the real-Ollama embedding test `@pytest.mark.ollama`
+  so the fake-LLM lane deselects it.
+- **Note on the gate LLM path:** the Gate 4 debate (an inherently sequential
+  5-call adversarial chain) runs only on actions already cleared past the HITL
+  gate, so there is no provably-safe "skip when the outcome can't change" case,
+  and heuristic turn-skipping would weaken the gate. Left untouched on purpose
+  (never weaken a gate for speed). Bigger LLM-latency wins remain hardware-bound.
+
 ### Changed - documentation accuracy (limitations review)
 - **Known-limitations docs re-verified against the live code and corrected**, then
   updated again to describe the capabilities added above. Touched

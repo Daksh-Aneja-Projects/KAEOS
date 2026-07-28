@@ -52,6 +52,7 @@ async def test_ollama_model_requested_gets_base_url(monkeypatch):
     assert api_base
 
 
+@pytest.mark.ollama
 @pytest.mark.asyncio
 async def test_real_local_embeddings_are_semantic():
     """When a live Ollama with an embedding model is present, embeddings are REAL

@@ -46,7 +46,11 @@ jobs:
         # cannot run here — it skips itself via the `client` fixture rather than
         # failing, which would make CI green while testing nothing. Run it
         # against a real stack: see README "E2E Test Suite".
-        pytest tests/ --ignore=tests/e2e
+        #
+        # -n auto parallelizes across cores (~2.4x). Safe here: this lane is
+        # per-process in-memory SQLite, so every xdist worker is fully isolated.
+        # NEVER add -n auto to the e2e lane below — it shares one live backend.
+        pytest tests/ --ignore=tests/e2e -n auto
 
   backend-e2e-mock:
     # Gate/pipeline logic against a LIVE backend with a deterministic fake

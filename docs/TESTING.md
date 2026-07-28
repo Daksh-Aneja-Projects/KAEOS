@@ -93,3 +93,14 @@ live LLM whose availability and output vary. On a fresh Postgres deploy the app 
 cd backend
 pytest tests/ -v --tb=short --ignore=tests/e2e
 ```
+
+The unit lane is per-process in-memory SQLite, so it parallelizes safely across
+cores with `pytest-xdist` (~2.4x on this suite). CI already passes `-n auto` here:
+
+```bash
+cd backend
+pytest tests/ --ignore=tests/e2e -n auto
+```
+
+Do NOT add `-n auto` to the e2e lane: those tests share one live backend on :8001
+and would collide under parallel workers.
