@@ -34,6 +34,12 @@ All notable changes to KAEOS are documented here. This project adheres to
   controls, maps each to SOC 2 / ISO 27001 / GDPR / SOX criteria with code+test
   evidence, and explicitly lists the external items (attestation, pen-test) it does
   NOT claim as satisfied. 5 tests.
+- **Compliance dashboard UI** now surfaces the above: the Compliance tab renders an
+  Audit-Readiness Controls panel (implemented/operational/external counts, framework
+  coverage, per-control evidence, external items honestly marked) and a Data Subject
+  Erasure (GDPR Art. 17) panel that drives `POST /privacy/erasure` and
+  `POST /privacy/erasure/replay` with a confirm guard. De-orphans the DSAR/erasure
+  capability that previously had no UI. Verified live in the browser.
 
 ### Changed - documentation accuracy (limitations review)
 - **Known-limitations docs re-verified against the live code and corrected**, then

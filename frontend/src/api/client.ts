@@ -1139,6 +1139,12 @@ export const api = {
   getRegulatoryEvidence: (framework: string, days = 90) =>
     request<any>(`/regulatory/evidence/${framework}?days=${days}`),
 
+  // Audit-readiness controls evidence + DSAR erasure (admin)
+  getControlsReport: () => request<any>('/compliance/controls'),
+  eraseSubject: (body: { employee_id?: string; email?: string }) =>
+    request<any>('/privacy/erasure', { method: 'POST', body: JSON.stringify(body) }),
+  replayErasures: () => request<any>('/privacy/erasure/replay', { method: 'POST' }),
+
   // Event Mesh — external signals correlated to the twin, with governed responses
   getMeshSignals: (limit = 50) => request<any>(`/signals?limit=${limit}`),
   ingestMeshSignal: (payload: { kind: string; title: string; severity?: string; source?: string; body?: string }) =>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { ComplianceDashboard as CDType } from '../api/client';
 import { api } from '../api/client';
-import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2 } from 'lucide-react';
+import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2, ScrollText, Trash2, RotateCcw, Lock } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 
@@ -15,12 +15,50 @@ const ComplianceDashboard = () => {
  const [error, setError] = useState<string | null>(null);
  const [evidence, setEvidence] = useState<any>(null);
  const [evLoading, setEvLoading] = useState<string | null>(null);
+ // Audit-readiness controls evidence (GET /compliance/controls)
+ const [controls, setControls] = useState<any>(null);
+ // DSAR erasure (admin, destructive)
+ const [eraseId, setEraseId] = useState('');
+ const [eraseEmail, setEraseEmail] = useState('');
+ const [eraseBusy, setEraseBusy] = useState(false);
+ const [eraseResult, setEraseResult] = useState<any>(null);
+ const [eraseError, setEraseError] = useState<string | null>(null);
 
  const load = () => {
   setError(null);
   Promise.all([api.getCompliance(), api.getRegulatoryOverview(30)])
    .then(([c, r]) => { setData(c); setReg(r); setLoading(false); })
    .catch((e: any) => { setError(e?.message || 'Failed to load compliance data'); setLoading(false); });
+  // Non-fatal: the controls report is a bonus panel, never blocks the dashboard.
+  api.getControlsReport().then(setControls).catch(() => setControls(null));
+ };
+
+ const runErasure = async () => {
+  if (!eraseId.trim() && !eraseEmail.trim()) { setEraseError('Provide an employee id or an email.'); return; }
+  const who = eraseId.trim() || eraseEmail.trim();
+  if (!window.confirm(`Irreversibly erase all PII for "${who}"? This tombstones records, deletes stored files, purges embeddings, and is journaled. This cannot be undone.`)) return;
+  setEraseBusy(true); setEraseError(null); setEraseResult(null);
+  try {
+   const res = await api.eraseSubject({
+    employee_id: eraseId.trim() || undefined,
+    email: eraseEmail.trim() || undefined,
+   });
+   setEraseResult(res);
+   setEraseId(''); setEraseEmail('');
+  } catch (e: any) {
+   setEraseError(e?.message || 'Erasure failed (admin role required).');
+  } finally { setEraseBusy(false); }
+ };
+
+ const runReplay = async () => {
+  if (!window.confirm('Re-apply every journaled erasure for this tenant? Run this after restoring a backup. Idempotent.')) return;
+  setEraseBusy(true); setEraseError(null); setEraseResult(null);
+  try {
+   const res = await api.replayErasures();
+   setEraseResult({ ...res, _replay: true });
+  } catch (e: any) {
+   setEraseError(e?.message || 'Replay failed (admin role required).');
+  } finally { setEraseBusy(false); }
  };
 
  const genEvidence = async (framework: string) => {
@@ -209,6 +247,93 @@ const ComplianceDashboard = () => {
       </div>
      </>
     )}
+
+    {/* ── Audit-readiness controls evidence (GET /compliance/controls) ── */}
+    {controls && (
+     <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="px-5 py-3 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: colors.hairline }}>
+       <ScrollText className="w-4 h-4" style={{ color: colors.primary }} />
+       <span className="text-[14px] font-medium">Audit-Readiness Controls</span>
+       <span className="text-[11px]" style={{ color: colors.inkSubtle }}>implemented technical controls mapped to SOC 2 / ISO 27001 / GDPR / SOX. Evidence for a third-party audit, not a certificate.</span>
+      </div>
+      <div className="p-5 space-y-4">
+       <div className="grid grid-cols-3 gap-3">
+        {([['implemented', 'Implemented', colors.success], ['operational', 'Operational', colors.warning], ['external', 'External', colors.inkSubtle]] as const).map(([k, label, c]) => (
+         <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+          <div className="text-[22px] font-bold tabular-nums" style={{ color: c }}>{controls.summary?.[k] ?? 0}</div>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
+         </div>
+        ))}
+       </div>
+       <div className="flex flex-wrap gap-2">
+        {Object.entries(controls.framework_coverage || {}).map(([fw, ids]: any) => (
+         <span key={fw} className="px-2.5 py-1 rounded-lg text-[11px] font-medium" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+          {fw} <span style={{ color: colors.inkSubtle }}>({(ids as string[]).length})</span>
+         </span>
+        ))}
+       </div>
+       <div className="space-y-2">
+        {(controls.controls || []).map((c: any) => (
+         <div key={c.id} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+          {c.status === 'implemented'
+            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: colors.success }} />
+            : c.status === 'external'
+              ? <Lock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: colors.inkSubtle }} />
+              : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: colors.warning }} />}
+          <div className="min-w-0 flex-1">
+           <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13px] font-semibold" style={{ color: colors.ink }}>{c.name}</span>
+            <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: colors.surface2, color: colors.inkSubtle }}>{c.status}</span>
+           </div>
+           <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{c.description}</div>
+           <div className="text-[10px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+            {Object.entries(c.frameworks || {}).map(([fw, crit]: any) => (
+             <span key={fw} style={{ color: colors.inkTertiary }}>{fw}: {(crit as string[]).join(', ')}</span>
+            ))}
+           </div>
+          </div>
+         </div>
+        ))}
+       </div>
+       <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{controls.honest_note}</div>
+      </div>
+     </div>
+    )}
+
+    {/* ── DSAR: right-to-erasure (admin, destructive) ── */}
+    <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.error}33` }}>
+     <div className="px-5 py-3 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: colors.hairline }}>
+      <Trash2 className="w-4 h-4" style={{ color: colors.error }} />
+      <span className="text-[14px] font-medium">Data Subject Erasure (GDPR Art. 17)</span>
+      <span className="text-[11px]" style={{ color: colors.inkSubtle }}>admin only. Irreversibly tombstones PII, deletes stored files, purges embeddings, journals for backup replay.</span>
+     </div>
+     <div className="p-5 space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+       <input value={eraseId} onChange={e => setEraseId(e.target.value)} placeholder="Employee / candidate id"
+         className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+       <input value={eraseEmail} onChange={e => setEraseEmail(e.target.value)} placeholder="or email address"
+         className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+      </div>
+      <div className="flex gap-2 flex-wrap">
+       <button onClick={runErasure} disabled={eraseBusy}
+         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium" style={{ background: colors.error, color: '#fff', opacity: eraseBusy ? 0.6 : 1 }}>
+        {eraseBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Erase subject
+       </button>
+       <button onClick={runReplay} disabled={eraseBusy}
+         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+        <RotateCcw className="w-3.5 h-3.5" style={{ color: colors.primary }} /> Replay after restore
+       </button>
+      </div>
+      {eraseError && <div className="text-[12px]" style={{ color: colors.error }}>{eraseError}</div>}
+      {eraseResult && (
+       <div className="p-3 rounded-lg text-[12px]" style={{ background: colors.canvas, border: `1px solid ${colors.success}44`, color: colors.ink }}>
+        {eraseResult._replay
+          ? <span>Replayed {eraseResult.replayed} of {eraseResult.entries} journaled erasure(s).</span>
+          : <span>Erased: {eraseResult.total_rows_anonymised} row(s) anonymised, {eraseResult.blobs_deleted}/{eraseResult.blobs_attempted} file(s) deleted, {eraseResult.embeddings_deleted} embedding(s) purged.</span>}
+       </div>
+      )}
+     </div>
+    </div>
    </div>
   </div>
  );
