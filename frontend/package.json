@@ -10,6 +10,9 @@
     "url": "https://github.com/Daksh-Aneja-Projects/KAEOS.git"
   },
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
