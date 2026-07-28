@@ -11,6 +11,14 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - CI (e2e-mock lane)
+- **`test_26_billing_reality_truth` referenced a renamed ROI key.** The `/billing/roi`
+  response key was renamed `autonomous_executions` -> `safe_autonomous_executions` in
+  the "one definition for safe autonomy" change (v1.3.0), but this e2e test was not
+  updated, so it failed with `KeyError` against the live endpoint. Test-only fix,
+  aligned to the endpoint's real contract; verified green against a live fake-LLM
+  backend (10 passed).
+
 ### Added - closed the remaining known-limitation gaps with real logic
 - **Prompt-injection detection + neutralization layer** (`app/services/prompt_guard.py`).
   A curated pattern battery scores untrusted content (instruction-override,

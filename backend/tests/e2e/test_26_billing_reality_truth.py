@@ -61,13 +61,13 @@ class TestBillingIsMetered:
         assert "safe_autonomy_rate_pct" in data
         if data["total_executions"]:
             assert 0 <= data["safe_autonomy_rate_pct"] <= 100
-            assert data["autonomous_executions"] <= data["total_executions"]
+            assert data["safe_autonomous_executions"] <= data["total_executions"]
 
     async def test_roi_autonomy_rate_reconciles_with_executions(self, client):
         data = (await client.get("/billing/roi")).json()
         if not data["total_executions"]:
             pytest.skip("No executions recorded")
-        expected = round(data["autonomous_executions"] / data["total_executions"] * 100, 1)
+        expected = round(data["safe_autonomous_executions"] / data["total_executions"] * 100, 1)
         assert data["safe_autonomy_rate_pct"] == expected
 
 
