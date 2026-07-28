@@ -11,6 +11,16 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-28 - "Provable Trust"
+
+Closed the remaining known-limitations with real, tested code and made the
+governance/privacy surface visible: a prompt-injection detection-and-neutralization
+layer, erasure that reaches stored blobs and survives backup restores, real semantic
+search on the zero-key dev path, and an audit-readiness controls report (mapped to
+SOC 2 / ISO 27001 / GDPR / SOX with code+test evidence) surfaced in the Compliance UI
+alongside a Data Subject Erasure panel. Also a ~2.4x faster unit test lane. Migrations
+advance to `0026`.
+
 ### Fixed - CI (e2e-mock lane)
 - **`test_26_billing_reality_truth` referenced a renamed ROI key.** The `/billing/roi`
   response key was renamed `autonomous_executions` -> `safe_autonomous_executions` in
