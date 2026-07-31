@@ -2,8 +2,9 @@
 Maps the human system — influence networks, change resistance, skills topology.
 Not just technology; understands who to influence and how.
 """
-import json
 import logging
+
+from app.services.json_utils import extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class OrgIntelligenceEngine:
         try:
             res = await llm.complete(prompt=prompt, model_tier="reasoning")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            analysis = json.loads(content)
+            analysis = extract_json_object(content)
             return {"status": "SCORED", "department": department, **analysis}
         except Exception as e:
             logger.error(f"P2 readiness scoring failed: {e}")
@@ -71,7 +72,7 @@ class OrgIntelligenceEngine:
         try:
             res = await llm.complete(prompt=prompt, model_tier="reasoning")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            return {"status": "MAPPED", **json.loads(content)}
+            return {"status": "MAPPED", **extract_json_object(content)}
         except Exception as e:
             logger.error(f"P2 influence mapping failed: {e}")
             return {"status": "FAILED", "error": str(e)}

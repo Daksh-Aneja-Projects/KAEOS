@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 from datetime import datetime, timezone
+import logging
 import uuid
 
 from app.core.database import get_db
@@ -23,6 +24,7 @@ from app.services.activity_feed import ActivityFeedService
 from app.models.agent_factory import ActivityEventType, ActivitySeverity
 from fastapi import BackgroundTasks
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/skills", tags=["Skills — L8 Registry"])
 confidence_engine = ConfidenceEngine()
 feedback_engine = FeedbackEngine()
@@ -30,7 +32,7 @@ activity_feed = ActivityFeedService()
 compliance_engine = ComplianceEngine()
 
 
-@router.get("/", response_model=SkillRegistryResponse)
+@router.get("", response_model=SkillRegistryResponse)
 async def list_skills(
     department: str | None = None,
     status: str | None = None,
@@ -305,9 +307,16 @@ def _approver_identity(tenant: dict) -> str:
     )
 
 
+class ApproveHitlIn(BaseModel):
+    """Optional approval payload. `corrected_answer` turns a plain approval into
+    an APPROVE-WITH-EDIT: the human accepted the action but rewrote the answer."""
+    corrected_answer: str | None = None
+
+
 @router.post("/hitl/{exec_id}/approve")
 async def approve_hitl(
     exec_id: str,
+    body: ApproveHitlIn | None = None,
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -316,6 +325,12 @@ async def approve_hitl(
     Operator+ only: approving RESUMES and runs the paused skill, so a viewer
     must not be able to. Tenant-isolated by the query below; approver recorded
     is the authenticated principal, not free text.
+
+    Supplying `corrected_answer` records an approval WITH AN EDIT: the execution
+    is stamped SUCCESS_WITH_EDIT (so it counts as human-edited fallout in the
+    safe-autonomy breakdown instead of clean autonomy) and the corrected text is
+    captured as a Foundry training example, which is the strongest supervised
+    signal the platform can collect.
     """
     tenant_id = tenant["tenant_id"]
     approver = _approver_identity(tenant)
@@ -328,8 +343,9 @@ async def approve_hitl(
     if not execution:
         raise HTTPException(404, "Execution not found")
     
+    edit = (body.corrected_answer or "").strip() if body else ""
     execution.status = "SUCCESS_CLEAN"
-    execution.outcome_type = "SUCCESS_CLEAN"
+    execution.outcome_type = "SUCCESS_WITH_EDIT" if edit else "SUCCESS_CLEAN"
     execution.hitl_approved = True
     execution.completed_at = datetime.now(timezone.utc)
 
@@ -337,13 +353,26 @@ async def approve_hitl(
     await activity_feed.emit(
         event_type=ActivityEventType.HITL_APPROVED,
         title=f"HITL approved: {execution.skill_id_name}",
-        description=f"Human approved execution of '{execution.task_intent or 'unknown'}'.",
+        description=(
+            f"Human approved execution of '{execution.task_intent or 'unknown'}'"
+            + (" after editing the answer." if edit else ".")
+        ),
         tenant_id=execution.tenant_id,
         severity=ActivitySeverity.INFO,
         source_type="execution", source_id=exec_id,
     )
 
     await db.commit()
+
+    # An edit is ground truth authored by the enterprise's own expert: capture it
+    # as a CORRECTED training example. Never fatal to the approval itself.
+    if edit:
+        try:
+            from app.services.foundry import dataset_builder
+            await dataset_builder.record_human_feedback(
+                db, tenant_id, execution_id=exec_id, corrected_answer=edit)
+        except Exception as e:
+            logger.error(f"[HITL] could not record the correction for {exec_id}: {e}")
 
     # Gate-3 pipeline pauses carry a resume payload in the hitl_manager cache:
     # approving one actually RUNS the paused skill (not just marks it).

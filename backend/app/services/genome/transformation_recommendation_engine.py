@@ -31,7 +31,9 @@ class TransformationRecommendationEngine:
         
         # 2. Extract historical data (For a real system this would be heavily optimized/indexed, 
         # but for this acceptance test we pull all distinct historical genomes and their fitness).
-        hist_genomes = await db.execute(select(EnterpriseGenome).where(EnterpriseGenome.id != target_genome.id))
+        hist_genomes = await db.execute(select(EnterpriseGenome).where(
+            EnterpriseGenome.id != target_genome.id, EnterpriseGenome.tenant_id == target_genome.tenant_id
+        ))
         all_hist = hist_genomes.scalars().all()
         
         historical_data = []
@@ -64,7 +66,7 @@ class TransformationRecommendationEngine:
         
         # We need the memory transitions where the source_genome_id was one of our matches
         # Since we use sqlite mostly, we can just fetch all and filter in python for ease in testing
-        mem_res = await db.execute(select(EvolutionMemory))
+        mem_res = await db.execute(select(EvolutionMemory).where(EvolutionMemory.tenant_id == target_genome.tenant_id))
         all_mems = mem_res.scalars().all()
         
         relevant_memories = [m for m in all_mems if m.source_genome_id in match_ids and m.status == "IMPLEMENTED"]

@@ -13,6 +13,7 @@ from app.models.domain import Rule, Skill, Connector
 from app.models.settings import MCPToolConfig
 from app.services.llm_router import LLMRouter
 from app.services.temporal_calendar import TemporalReasoningEngine
+from app.services.json_utils import extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -268,17 +269,11 @@ Respond in JSON: {{"nodes":[{{"id":"node_1","type":"DATA_SOURCE","label":"...","
         return min(confidences)
 
     def _parse_json(self, response: str) -> dict:
-        cleaned = response.strip()
-        for p in ["```json", "```"]:
-            if cleaned.startswith(p): cleaned = cleaned[len(p):]
-        if cleaned.endswith("```"): cleaned = cleaned[:-3]
         try:
-            return json.loads(cleaned.strip())
-        except json.JSONDecodeError:
-            try:
-                return json.loads(response[response.index("{"):response.rindex("}") + 1])
-            except (ValueError, json.JSONDecodeError):
-                return {}
+            return extract_json_object(response)
+        except ValueError:
+            logger.warning(f"BlueprintGenerator: could not parse JSON from LLM response: {response[:120]}")
+            return {}
 
     def _serialize(self, bp: AgentBlueprint) -> dict:
         return {

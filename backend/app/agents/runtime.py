@@ -192,6 +192,78 @@ class AgentExecutor:
             logger.debug(f"[Gate] cost summary unavailable: {e}")
             return None
 
+    async def _recall_memory(self, context: dict, skill: Dict[str, Any]) -> None:
+        """Inject similar past decisions into the agent's context (pre-deliberation).
+
+        Organizational memory is only worth keeping if it is READ. The recalled
+        summaries ride on the context dict, which the executor renders into the
+        step prompt (as untrusted content) and persists on the execution row, so
+        the reasoning is auditable. Never fatal: a memory miss must not stop a
+        governed decision, but it IS logged - silent memory is dead memory.
+        """
+        try:
+            from app.services.memory.enterprise_memory import EnterpriseMemoryService
+            recalled = await EnterpriseMemoryService.recall_similar_situations(
+                None, context.get("tenant_id", "default"),
+                self._memory_key(context, skill), limit=3,
+            )
+            if recalled:
+                context["prior_decisions"] = [
+                    {"summary": (r.get("content") or "")[:400],
+                     "similarity": round(float(r.get("similarity") or 0.0), 3)}
+                    for r in recalled
+                ]
+        except Exception as e:
+            logger.error(f"[Memory] recall failed for {context.get('execution_id')}: {e}")
+
+    async def _store_memory(self, context: dict, skill: Dict[str, Any], result: dict) -> None:
+        """Persist this governed decision so future executions can recall it."""
+        try:
+            from app.services.memory.enterprise_memory import EnterpriseMemoryService
+            await EnterpriseMemoryService.store_decision_memory(
+                None, context.get("tenant_id", "default"),
+                self._memory_key(context, skill),
+                {
+                    "skill_id": skill.get("skill_id", "unknown"),
+                    "execution_id": context.get("execution_id"),
+                    "steps_completed": result.get("steps_completed", 0),
+                },
+                outcome=result.get("status", "SUCCESS_CLEAN"),
+            )
+        except Exception as e:
+            logger.error(f"[Memory] store failed for {context.get('execution_id')}: {e}")
+
+    @staticmethod
+    async def _mark_execution_failed(execution_id: str, status: str) -> None:
+        """Rewrite the persisted execution row to a failure status.
+
+        The executor already committed SUCCESS_CLEAN before Gate 5b ran, and that
+        row is what the safe-autonomy north-star, the Time Machine and the Foundry
+        dataset all read. Leaving it green would score a failed governed write as
+        safe autonomy.
+        """
+        try:
+            from sqlalchemy import select
+            from app.core.database import AsyncSessionLocal
+            from app.models.domain import SkillExecution
+            async with AsyncSessionLocal() as session:
+                row = (await session.execute(
+                    select(SkillExecution).where(SkillExecution.id == execution_id)
+                )).scalar_one_or_none()
+                if row is not None:
+                    row.status = status
+                    row.outcome_type = status
+                    row.agent_state = "FAILED"
+                    await session.commit()
+        except Exception as e:
+            logger.error(f"[Gate 5b] could not mark execution {execution_id} {status}: {e}")
+
+    @staticmethod
+    def _memory_key(context: dict, skill: Dict[str, Any]) -> str:
+        """The text a decision is remembered and recalled by."""
+        intent = context.get("task_intent") or context.get("intent") or ""
+        return f"{skill.get('skill_id', 'unknown')}: {intent}".strip()
+
     async def _emit_gate(self, context: dict, gate: str, state: str, detail: str = "") -> None:
         """Tell the UI a gate just resolved. Transient: WebSocket only.
 
@@ -392,6 +464,11 @@ class AgentExecutor:
         await self._emit_gate(context, "confidence", "passed")
         await self._emit_gate(context, "hitl", "passed")
 
+        # ── Enterprise memory: what happened last time we faced this? ───
+        # Recalled BEFORE deliberation so the debate and the execution both
+        # reason over the organization's own history, not a blank slate.
+        await self._recall_memory(context, skill)
+
         # ── Gate 4: Debate Engine (AEOS P6) ─────────────────────────────
         if skill_obj:
             should_debate, debate_reason = self.debate_engine.should_debate(skill_obj, context)
@@ -486,8 +563,16 @@ class AgentExecutor:
         # A skill may declare an `actuation` intent {system, object_type,
         # external_id, operation, payload}. Because we only reach here AFTER the
         # compliance / fairness / confidence-HITL / debate gates have passed, the
-        # write-back inherits full governance. Idempotent + reversible; never
-        # fatal to the decision (a failed write is recorded, not raised).
+        # write-back inherits full governance. Idempotent + reversible.
+        #
+        # FAILS CLOSED. A human approved an ACTION, not a paragraph: if the write
+        # to the system of record does not land, the execution is a FAILURE even
+        # though the skill produced output. Swallowing the error here reported
+        # SUCCESS_CLEAN and let the mission engine mark the step DONE for a write
+        # that never happened - the worst possible lie in a governed-autonomy
+        # product. Partial-failure semantics are preserved in the payload:
+        # `skill_output_produced` says the reasoning succeeded, the status says
+        # the world was not changed.
         _actuation = skill.get("actuation") if isinstance(skill, dict) else None
         if _actuation and isinstance(_actuation, dict):
             try:
@@ -506,7 +591,41 @@ class AgentExecutor:
                     )
                     logger.info(f"[Gate 5b] actuated {_rec.system}:{_rec.external_id} -> {_rec.status}")
             except Exception as e:
-                logger.warning(f"[Gate 5b] actuation skipped (non-fatal): {e}")
+                _target = (f"{_actuation.get('system', 'sandbox')}:"
+                           f"{_actuation.get('external_id', exec_id)}")
+                logger.error(
+                    f"[Gate 5b] actuation FAILED for {exec_id} ({_target}); the "
+                    f"execution is reported as FAILED_ACTUATION (fail-closed): {e}"
+                )
+                await self._mark_execution_failed(exec_id, "FAILED_ACTUATION")
+                await self._emit_gate(context, "execute", "failed",
+                                      f"governed write to {_target} failed")
+                from app.models.agent_factory import ActivityEventType, ActivitySeverity
+                await self.activity_feed.emit(
+                    event_type=ActivityEventType.AGENT_FAILED,
+                    title=f"Governed write failed: {skill.get('skill_id', 'unknown')}",
+                    description=(
+                        f"The skill produced its output but the approved write to "
+                        f"{_target} did not land, so nothing changed in that system: {e}"
+                    ),
+                    tenant_id=context["tenant_id"],
+                    severity=ActivitySeverity.ACTION_REQUIRED,
+                    source_type="execution",
+                    source_id=exec_id,
+                    requires_action=True,
+                )
+                return {
+                    "status": "FAILED_ACTUATION",
+                    "execution_id": exec_id,
+                    "reason": f"Approved write to {_target} failed: {e}",
+                    "skill_output_produced": True,
+                    "actuation_target": _target,
+                    "reasoning_chain": exec_result.get("reasoning_chain", []),
+                    "steps_completed": exec_result.get("steps_completed", 0),
+                    "duration_ms": exec_result.get("duration_ms", 0),
+                    "cost": exec_result.get("cost"),
+                    "warnings": warnings,
+                }
 
         # ── Gate 6: Post-Execution Audit ─────────────────────────────────
         audit_passed = self.compliance.enforce_audit_requirements(
@@ -528,4 +647,8 @@ class AgentExecutor:
         }
         if warnings:
             result["warnings"] = warnings
+
+        # The decision cleared every gate: remember it, so the next similar
+        # situation starts from what this organization already did.
+        await self._store_memory(context, skill, result)
         return result

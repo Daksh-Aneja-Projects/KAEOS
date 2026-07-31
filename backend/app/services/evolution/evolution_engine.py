@@ -142,13 +142,18 @@ class EvolutionEngine:
         async with AsyncSessionLocal() as db:
             expert_q = await db.execute(
                 select(Employee)
-                .where(Employee.department == department)
+                .where(Employee.department == department, Employee.tenant_id == tenant_id)
                 .order_by(Employee.authority_score.desc())
                 .limit(1)
             )
             expert = expert_q.scalar_one_or_none()
             if not expert:
-                expert = (await db.execute(select(Employee).limit(1))).scalar_one_or_none()
+                expert = (await db.execute(
+                    select(Employee)
+                    .where(Employee.tenant_id == tenant_id)
+                    .order_by(Employee.authority_score.desc())
+                    .limit(1)
+                )).scalar_one_or_none()
             if not expert:
                 logger.warning(f"No employees found to handle failure for {skill_id}")
                 return

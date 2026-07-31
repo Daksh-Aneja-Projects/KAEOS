@@ -71,6 +71,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(() => {
+    // Revoke server-side FIRST - request() reads the bearer token out of
+    // localStorage, so clearing it first would send an unauthenticated call.
+    // Non-fatal: a failed revoke must never trap the user in a signed-in shell.
+    api.authLogout().catch(() => { /* local sign-out proceeds regardless */ });
     setUser(null);
     setToken(null);
     localStorage.removeItem('kaeos-token');

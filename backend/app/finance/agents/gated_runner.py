@@ -13,7 +13,6 @@ and below-confidence-threshold skills are routed to HITL by the executor.
 """
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional
@@ -98,14 +97,14 @@ def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
     Looks at the last step in ``reasoning_chain`` and parses embedded JSON. Returns
     ``{}`` if nothing parseable is present.
     """
+    from app.services.json_utils import extract_json_object
+
     chain = result.get("reasoning_chain") or []
     if not chain:
         return {}
     decision_text = chain[-1].get("decision", "") or ""
-    if "{" in decision_text and "}" in decision_text:
-        snippet = decision_text[decision_text.find("{"): decision_text.rfind("}") + 1]
-        try:
-            return json.loads(snippet)
-        except (ValueError, TypeError):
-            return {}
-    return {}
+    try:
+        return extract_json_object(decision_text)
+    except ValueError as e:
+        logger.warning(f"extract_decision: could not parse JSON decision: {e}")
+        return {}

@@ -86,7 +86,7 @@ class PreCogEngine:
         commercial_rules = rule_q.scalars().all()
         
         from app.services.llm_router import LLMRouter
-        import json
+        from app.services.json_utils import extract_json_object
         router = LLMRouter()
         
         adjusted_count = 0
@@ -100,7 +100,7 @@ class PreCogEngine:
             try:
                 res = await router.complete(prompt=prompt, model_tier="fast")
                 content = res if isinstance(res, str) else res.get("content", "{}")
-                analysis = json.loads(content) if isinstance(content, str) else content
+                analysis = extract_json_object(content) if isinstance(content, str) else content
                 if analysis.get("impacted"):
                     decay = analysis.get("decay_factor", 0.85)
                     old_conf = rule.confidence_scalar

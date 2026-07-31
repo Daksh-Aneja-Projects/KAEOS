@@ -11,7 +11,7 @@ import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   Package, Search, Star, Download, Shield, Zap, Bot,
-  CheckCircle, ArrowRight, Filter, TrendingUp
+  CheckCircle, ArrowRight, Filter, TrendingUp, Loader2, Trash2, XCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 
@@ -25,6 +25,9 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
   const [searchQ, setSearchQ] = useState('');
   const [filterCat, setFilterCat] = useState('all');
   const [selectedPack, setSelectedPack] = useState<any>(null);
+  // Install / uninstall state. `busyPack` is the pack id currently mutating.
+  const [busyPack, setBusyPack] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -46,6 +49,46 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Only the installations list changes on install/uninstall, so refresh that
+  // alone - reloading the whole catalog would blank the grid mid-interaction.
+  const refreshInstallations = async () => {
+    try {
+      const r = await api.getDomainPackInstallations();
+      setInstallations(r?.installations || []);
+    } catch { /* the optimistic banner already told the user what happened */ }
+  };
+
+  const handleInstall = async (pack: any) => {
+    setBusyPack(pack.id);
+    setActionMsg(null);
+    try {
+      const r = await api.installDomainPack(pack.id);
+      await refreshInstallations();
+      setActionMsg({ ok: true, text: r?.message || `${pack.name} installed.` });
+    } catch (e: any) {
+      setActionMsg({ ok: false, text: `Could not install ${pack.name}: ${e?.message || 'unknown error'}` });
+    } finally {
+      setBusyPack(null);
+    }
+  };
+
+  const handleUninstall = async (pack: any) => {
+    if (!window.confirm(
+      `Remove "${pack.name}" from this workspace? Its capabilities and agent definitions stop being available. You can install it again later.`
+    )) return;
+    setBusyPack(pack.id);
+    setActionMsg(null);
+    try {
+      const r = await api.uninstallDomainPack(pack.id);
+      await refreshInstallations();
+      setActionMsg({ ok: true, text: r?.message || `${pack.name} removed.` });
+    } catch (e: any) {
+      setActionMsg({ ok: false, text: `Could not remove ${pack.name}: ${e?.message || 'unknown error'}` });
+    } finally {
+      setBusyPack(null);
+    }
+  };
 
   if (loading) return <BrainLoading message="Loading marketplace..." />;
   if (error) return <BrainError message={error} onRetry={load} />;
@@ -102,6 +145,19 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
           </div>
         </div>
 
+        {/* Install / uninstall feedback */}
+        {actionMsg && (
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (actionMsg.ok ? colors.success : colors.error) + '15',
+              color: actionMsg.ok ? colors.success : colors.error,
+            }}>
+            {actionMsg.ok ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+            <span>{actionMsg.text}</span>
+            <button onClick={() => setActionMsg(null)} className="ml-auto text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
+
         {/* Grid */}
         {filteredPacks.length === 0 ? (
           <BrainEmpty title="No packs match your search" action="Try a different search term or category" />
@@ -130,15 +186,38 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                         </div>
                       </div>
                     </div>
-                    {installed ? (
-                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
-                        <CheckCircle className="w-3 h-3" /> Installed
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>
-                        <Download className="w-3 h-3" /> Available
-                      </span>
-                    )}
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      {installed ? (
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
+                          <CheckCircle className="w-3 h-3" /> Installed
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>
+                          <Download className="w-3 h-3" /> Available
+                        </span>
+                      )}
+                      {installed ? (
+                        <button onClick={(e) => { e.stopPropagation(); handleUninstall(pack); }}
+                          disabled={busyPack === pack.id}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-50"
+                          style={{ background: colors.error + '15', color: colors.error, border: `1px solid ${colors.error}30` }}>
+                          {busyPack === pack.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Trash2 className="w-3 h-3" />}
+                          {busyPack === pack.id ? 'Removing' : 'Uninstall'}
+                        </button>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); handleInstall(pack); }}
+                          disabled={busyPack === pack.id}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white transition-all disabled:opacity-50"
+                          style={{ background: colors.primary }}>
+                          {busyPack === pack.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Download className="w-3 h-3" />}
+                          {busyPack === pack.id ? 'Installing' : 'Install'}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-[12px] mb-4 line-clamp-2" style={{ color: colors.inkSubtle }}>

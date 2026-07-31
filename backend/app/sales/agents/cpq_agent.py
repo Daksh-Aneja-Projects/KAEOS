@@ -2,12 +2,12 @@
 KAEOS Sales Domain — CPQ Agent
 """
 import logging
-import json
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.services.llm_router import LLMRouter
+from app.services.json_utils import extract_json_object
 from app.sales.models.pipeline import Opportunity
 
 logger = logging.getLogger(__name__)
@@ -50,12 +50,7 @@ class CPQAgent:
         try:
             res = await self.router.complete(prompt=prompt, model_tier="reasoning")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-
-            analysis = json.loads(content)
+            analysis = extract_json_object(content)
             return analysis
 
         except Exception as e:

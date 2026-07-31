@@ -13,11 +13,15 @@ from app.api.routes.outcomes import record_outcome, OutcomeIn
 T = "tenant_loops"
 
 
-# ── L1: recording an outcome stamps the execution row (foundry can mine it) ──
+# ── L1: recording an outcome nudges confidence and leaves the lifecycle alone ──
 
-async def test_record_outcome_stamps_execution_outcome_type(db):
+async def test_record_outcome_learns_without_clobbering_lifecycle(db):
+    """A measured outcome moves the skill's confidence, and does NOT overwrite the
+    execution's lifecycle outcome_type - that field belongs to the SUCCESS_CLEAN /
+    SUCCESS_WITH_EDIT / HUMAN_OVERRIDDEN vocabulary the metrics read."""
     ex = SkillExecution(id=str(uuid.uuid4()), tenant_id=T, skill_id_name="ops_x",
-                        status="SUCCESS_CLEAN", hitl_required=False)
+                        status="HUMAN_OVERRIDDEN", outcome_type="HUMAN_OVERRIDDEN",
+                        hitl_required=False)
     db.add(ex)
     db.add(Skill(id=str(uuid.uuid4()), skill_id="ops_x", tenant_id=T,
                  department="operations", status="ACTIVE", confidence=0.5))
@@ -26,10 +30,14 @@ async def test_record_outcome_stamps_execution_outcome_type(db):
     tenant = {"tenant_id": T, "role": "operator", "name": "op"}
     out = await record_outcome(ex.id, OutcomeIn(outcome="GOOD"), tenant=tenant, db=db)
     assert out["outcome"] == "GOOD"
+    assert out["new_confidence"] == 0.52          # L1: reality moved the confidence
 
     from sqlalchemy import select
     refreshed = (await db.execute(select(SkillExecution).where(SkillExecution.id == ex.id))).scalar_one()
-    assert refreshed.outcome_type == "GOOD"      # L1: execution now carries the outcome
+    assert refreshed.outcome_type == "HUMAN_OVERRIDDEN"   # not erased by "GOOD"
+    rec = (await db.execute(
+        select(OutcomeRecord).where(OutcomeRecord.execution_id == ex.id))).scalar_one()
+    assert rec.outcome == "GOOD"                  # the measured verdict has its own home
 
 
 # ── L4: an event-mesh mission finishing closes the signal + writes an outcome ──

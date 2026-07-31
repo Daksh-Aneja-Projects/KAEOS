@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { Zap, Undo2, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { api, downloadFile } from '../api/client';
+import { Zap, Undo2, ShieldCheck, AlertTriangle, RefreshCw, Download, Wrench, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 
@@ -16,6 +16,9 @@ const ActionsLedger = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reversing, setReversing] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = () => {
     setError(null);
@@ -35,6 +38,40 @@ const ActionsLedger = () => {
       console.error('Reverse failed', e);
     } finally {
       setReversing(null);
+    }
+  };
+
+  const exportCsv = async () => {
+    setExporting(true);
+    setBanner(null);
+    try {
+      await downloadFile(api.actionsLedgerCsvPath(), 'actions_ledger.csv');
+    } catch (e: any) {
+      setBanner({ ok: false, text: e?.message || 'Export failed.' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const reconcile = async () => {
+    const n = drift?.drift_count ?? 0;
+    if (!window.confirm(
+      `Push KAEOS's recorded state back onto ${n} record${n === 1 ? '' : 's'} that changed outside the governed path? This writes to your systems of record.`
+    )) return;
+    setReconciling(true);
+    setBanner(null);
+    try {
+      const r = await api.reconcileActuation();
+      setBanner({
+        ok: true,
+        text: `${r.reconciled} record${r.reconciled === 1 ? '' : 's'} brought back in sync`
+          + (r.skipped ? `, ${r.skipped} left alone because they need a human decision.` : '.'),
+      });
+      load();
+    } catch (e: any) {
+      setBanner({ ok: false, text: e?.message || 'Reconciliation failed.' });
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -73,12 +110,32 @@ const ActionsLedger = () => {
               What KAEOS did to your systems of record, governed and reversible. Distinct from the decision ledger.
             </p>
           </div>
-          <button onClick={() => { setLoading(true); load(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium self-center"
-            style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </button>
+          <div className="flex items-center gap-2 self-center">
+            <button onClick={exportCsv} disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-50"
+              style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
+              {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              {exporting ? 'Preparing…' : 'Export CSV'}
+            </button>
+            <button onClick={() => { setLoading(true); load(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium"
+              style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+          </div>
         </div>
+
+        {banner && (
+          <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (banner.ok ? colors.success : colors.error) + '15',
+              color: banner.ok ? colors.success : colors.error,
+            }}>
+            {banner.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
+            <span className="flex-1">{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
 
         {/* Summary + drift */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -102,12 +159,19 @@ const ActionsLedger = () => {
             {drift.drift_count > 0
               ? <AlertTriangle className="w-5 h-5 shrink-0" style={{ color: colors.warning }} />
               : <ShieldCheck className="w-5 h-5 shrink-0" style={{ color: colors.success }} />}
-            <div className="text-[13px]">
+            <div className="text-[13px] flex-1">
               <span className="font-semibold">{drift.in_sync}/{drift.objects_tracked}</span> records in sync with the system of record.
               {drift.drift_count > 0
                 ? <span style={{ color: colors.warning }}> {drift.drift_count} drifted (changed outside the governed path) and need reconciliation.</span>
                 : <span style={{ color: colors.inkSubtle }}> No drift detected.</span>}
             </div>
+            <button onClick={reconcile} disabled={reconciling || drift.drift_count === 0}
+              title={drift.drift_count === 0 ? 'Nothing has drifted, so there is nothing to reconcile' : undefined}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold shrink-0 disabled:opacity-40"
+              style={{ background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}40` }}>
+              {reconciling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+              {reconciling ? 'Reconciling…' : 'Reconcile'}
+            </button>
           </div>
         )}
 

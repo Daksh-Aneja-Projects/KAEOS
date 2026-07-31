@@ -203,6 +203,13 @@ async def get_trust(
     )).scalar() or 0
 
     explainability = round(min(1.0, fairness + 0.05), 3)
+
+    # Enterprise Trust Score: the real weighted formula (0.35 prediction / 0.35
+    # causal / 0.20 recommendation / 0.10 simulation) over this tenant's stored
+    # TrustMetrics, instead of reusing avg_conf as a stand-in.
+    from app.services.trust.enterprise_trust import EnterpriseTrustModel
+    trust_scores = await EnterpriseTrustModel.get_trust_scores(db, tenant_id)
+
     return {
         "trust_score": round(avg_conf * 100, 1),
         "fairness": fairness,
@@ -211,7 +218,7 @@ async def get_trust(
         "total_rules": total,
         "speculative_rules": spec_count,
         # Fields consumed by the Executive Trust Center panel
-        "enterprise_trust_score": round(avg_conf, 3),
+        "enterprise_trust_score": trust_scores["enterprise_trust_score"],
         "prediction_trust": fairness,
         "causal_trust": explainability,
         "simulation_trust": round(min(1.0, 0.5 + execs_count / 250), 3),

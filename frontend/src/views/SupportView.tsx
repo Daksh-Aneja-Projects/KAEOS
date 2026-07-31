@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Ticket, BookOpen, Clock, MessageSquare, BarChart3,
-  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, AlertTriangle
+  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, AlertTriangle,
+  Wand2, FilePlus2
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
@@ -43,6 +44,9 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
   const [kbArticles, setKbArticles] = useState<KBArticle[]>([]);
   const [slaMetrics, setSlaMetrics] = useState<SLAMetric[]>([]);
   const [surveys, setSurveys] = useState<CSATSurvey[]>([]);
+  // "Document" writes an unpublished KB draft rather than running the gates,
+  // so its result gets its own card instead of a gate trace.
+  const [draft, setDraft] = useState<{ ticket: string; result: any } | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -80,6 +84,21 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
       setActionMsg(`${label} failed: ${e?.message || e}`);
       setTrace(null);
     } finally { setRunningAgent(null); }
+  };
+
+  const documentTicket = async (t: SupportTicket) => {
+    setRunningAgent(`${t.id}-document`);
+    setActionMsg('');
+    setDraft(null);
+    try {
+      const res = await api.runSupportDocumentAgent(t.id);
+      setDraft({ ticket: t.subject, result: res });
+      await loadData();
+    } catch (e: any) {
+      setActionMsg(`Documenting failed: ${e?.message || e}`);
+    } finally {
+      setRunningAgent(null);
+    }
   };
 
   const statusColor = (s: string) => {
@@ -174,6 +193,40 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
           />
         )}
 
+        {/* Knowledge base draft written from a ticket */}
+        {draft && (
+          <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <FilePlus2 className="w-4 h-4" style={{ color: '#8b5cf6' }} />
+              <span className="text-[13px] font-semibold">
+                {draft.result?.article_title || 'Knowledge base draft'}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: '#f59e0b20', color: '#f59e0b' }}>Unpublished draft</span>
+              <button onClick={() => setDraft(null)} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            </div>
+            <p className="text-[11px] mb-2" style={{ color: colors.inkTertiary }}>
+              Written from "{draft.ticket}". It is saved as a draft in the Knowledge Base tab and is not visible to customers until someone publishes it.
+            </p>
+            {(draft.result?.categories || []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(draft.result.categories as string[]).map(c => (
+                  <span key={c} className="text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ background: colors.canvas, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{c}</span>
+                ))}
+              </div>
+            )}
+            {draft.result?.content_markdown ? (
+              <div className="text-[12px] leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap"
+                style={{ color: colors.inkSubtle }}>
+                {draft.result.content_markdown}
+              </div>
+            ) : (
+              <p className="text-[12px]" style={{ color: colors.inkSubtle }}>The draft came back empty. Try again once the ticket has a resolution recorded.</p>
+            )}
+          </div>
+        )}
+
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
           <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
@@ -235,6 +288,20 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                               className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
                               style={{ background: '#6366f115', color: '#6366f1' }}>
                               {runningAgent === `${t.id}-triage` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />} Triage
+                            </button>
+                            <button onClick={() => runAgent('Auto-resolve', `${t.id}-resolve`, () => api.runSupportAutoResolveAgent(t.id))}
+                              disabled={!!runningAgent}
+                              title="Draft and apply a full resolution. Customer-facing replies always stop for a human first."
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#22c55e15', color: '#22c55e' }}>
+                              {runningAgent === `${t.id}-resolve` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />} Resolve
+                            </button>
+                            <button onClick={() => documentTicket(t)}
+                              disabled={!!runningAgent}
+                              title="Turn this ticket into a knowledge base draft so the next person does not have to ask"
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                              {runningAgent === `${t.id}-document` ? <Loader2 className="w-3 h-3 animate-spin" /> : <FilePlus2 className="w-3 h-3" />} Document
                             </button>
                             <button onClick={() => runAgent('Escalate', `${t.id}-escalate`, () => api.runSupportEscalationAgent(t.id))}
                               disabled={!!runningAgent}

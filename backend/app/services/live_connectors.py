@@ -432,18 +432,34 @@ class LiveConnectorService:
                            source_name: str) -> list:
         """Normalize fetched records into Signal rows (deduped by external id per sync)."""
         from app.models.domain import Signal
+        from app.services import prompt_guard
+
         now = datetime.now(timezone.utc)
         signals = []
         for rec in records:
+            # Poll results are UNTRUSTED: a Slack message or Jira ticket body is
+            # attacker-writable. Redact live instruction spans before the text is
+            # persisted, because everything downstream reads clean_payload.
+            payload, injection = prompt_guard.neutralize(rec["summary"][:2000])
+            # A high-risk signal is quarantined rather than dropped: it stays
+            # visible to a human, but authority 0.0 keeps it under every
+            # consumer's authority floor (e.g. PreCog's > 0.8), so it can never
+            # drive an unattended action.
+            if injection.should_block:
+                logger.warning(
+                    "[LiveConnector] quarantining signal from %s: injection risk=%s categories=%s",
+                    source_name, injection.risk.value, injection.categories,
+                )
+                payload = f"[QUARANTINED: prompt-injection detected] {payload}"
             signals.append(Signal(
                 id=f"sig_{uuid.uuid4().hex[:12]}",
                 tenant_id=tenant_id,
-                signal_type="LIVE_SYNC",
+                signal_type="QUARANTINED" if injection.should_block else "LIVE_SYNC",
                 source_type=source_name.lower().replace(" ", "_"),
                 source_entity=f"{rec['entity']}:{rec['external_id']}",
-                clean_payload=rec["summary"][:2000],
+                clean_payload=payload,
                 pii_present=bool(rec.get("pii")),
-                authority_score=float(rec.get("authority", 0.7)),
+                authority_score=0.0 if injection.should_block else float(rec.get("authority", 0.7)),
                 domain=rec.get("domain", "general"),
                 created_at=now,
             ))

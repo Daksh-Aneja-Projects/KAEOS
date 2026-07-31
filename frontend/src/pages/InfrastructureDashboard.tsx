@@ -4,10 +4,33 @@ import { api } from '../api/client';
 import { BrainError } from '../components/BrainStates';
 import {
   Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
-  Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart
+  Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart,
+  Route, XCircle, RotateCcw
 } from 'lucide-react';
 
 type Tab = 'models' | 'cost' | 'agents';
+
+/**
+ * Only these four task types are understood by BOTH the router (which maps a
+ * task to a model tier) and the estimator (which prices it), so the picker is
+ * limited to their intersection - anything else silently falls back to a
+ * generic estimate and would make the readout lie.
+ */
+const SAMPLE_TASKS: { key: string; label: string; hint: string }[] = [
+  { key: 'pii_classification', label: 'Spot personal data', hint: 'Short, high-volume screening' },
+  { key: 'compliance_check', label: 'Check a rule for compliance', hint: 'Everyday governed reasoning' },
+  { key: 'simulation', label: 'Simulate a change', hint: 'Long-context what-if reasoning' },
+  { key: 'blueprint_generation', label: 'Draft an agent blueprint', hint: 'The heaviest reasoning we do' },
+];
+
+/** The budget governor speaks in enforcement verbs; people do not. */
+const BUDGET_COPY: Record<string, { text: string; tone: 'ok' | 'warn' | 'bad' }> = {
+  ALLOW: { text: 'Comfortably inside budget - this would run right away.', tone: 'ok' },
+  WARN: { text: 'Inside budget but past the soft limit - worth watching.', tone: 'warn' },
+  DEGRADE: { text: 'Over the hard limit - this would be downgraded to a cheaper model.', tone: 'bad' },
+  QUEUE: { text: 'Over the hard limit - this would be queued until the window resets.', tone: 'bad' },
+  BLOCK: { text: 'Over the hard limit - this would be refused.', tone: 'bad' },
+};
 
 export default function InfrastructureDashboard({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -17,6 +40,17 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Circuit-breaker reset (operator action) + shared action feedback.
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Model router probe
+  const [task, setTask] = useState(SAMPLE_TASKS[1].key);
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [route, setRoute] = useState<any>(null);
+  const [estimate, setEstimate] = useState<any>(null);
+  const [budget, setBudget] = useState<any>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -41,6 +75,38 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const resetCircuit = async (agentName: string) => {
+    setResetting(agentName);
+    setBanner(null);
+    try {
+      await api.resetAgentCircuit(agentName);
+      setBanner({ ok: true, text: `${agentName} is accepting work again. Its failure count was cleared.` });
+      load();
+    } catch (e: any) {
+      setBanner({ ok: false, text: `Could not reset ${agentName}: ${e?.message || 'unknown error'}` });
+    } finally {
+      setResetting(null);
+    }
+  };
+
+  /** Pick the model for a sample task, price it, and check it against the budget. */
+  const probeRouter = async () => {
+    setRouteBusy(true);
+    setBanner(null);
+    setRoute(null); setEstimate(null); setBudget(null);
+    try {
+      const [r, est] = await Promise.all([api.routeModel(task), api.estimateTokens(task)]);
+      setRoute(r);
+      setEstimate(est);
+      const tokens = (est?.estimated_input_tokens || 0) + (est?.estimated_output_tokens || 0);
+      setBudget(await api.checkBudget(tokens));
+    } catch (e: any) {
+      setBanner({ ok: false, text: e?.message || 'The router did not answer.' });
+    } finally {
+      setRouteBusy(false);
+    }
+  };
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'models', label: 'Model Registry', icon: Cpu },
@@ -85,6 +151,18 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
 
         {!loading && error && <BrainError message={error} onRetry={load} />}
 
+        {banner && (
+          <div className="flex items-start gap-2 px-4 py-2.5 mb-4 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (banner.ok ? '#22c55e' : '#ef4444') + '15',
+              color: banner.ok ? '#22c55e' : '#ef4444',
+            }}>
+            {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
+            <span className="flex-1">{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
+
         {/* N1: Model Registry */}
         {!loading && !error && tab === 'models' && (
           <div className="space-y-4">
@@ -108,6 +186,88 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   </div>
                 );
               })}
+            </div>
+
+            {/* Model Router — which model would run a given task, and what it costs */}
+            <div style={card}>
+              <div className="flex items-center gap-2 mb-1">
+                <Route className="w-4 h-4" style={{ color: colors.primary }} />
+                <h3 className="text-[13px] font-semibold">Model Router</h3>
+              </div>
+              <p className="text-[11px] mb-3" style={{ color: colors.inkSubtle }}>
+                Pick a kind of work and see which model would handle it, what it would cost, and whether the budget allows it.
+              </p>
+              <div className="flex items-end gap-2 flex-wrap">
+                <div className="min-w-[240px]">
+                  <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Kind of work</label>
+                  <select value={task} onChange={e => setTask(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
+                    style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                    {SAMPLE_TASKS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                </div>
+                <button onClick={probeRouter} disabled={routeBusy}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                  style={{ background: colors.primary }}>
+                  {routeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Route className="w-3.5 h-3.5" />}
+                  Pick a model
+                </button>
+                <span className="text-[11px] pb-2.5" style={{ color: colors.inkTertiary }}>
+                  {SAMPLE_TASKS.find(t => t.key === task)?.hint}
+                </span>
+              </div>
+
+              {route && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model chosen</div>
+                    <div className="text-[13px] font-semibold font-mono truncate" title={route.model_name}>{route.model_name}</div>
+                    <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
+                      {route.provider} · <span style={{ color: tierColor(route.tier) }}>{route.tier} tier</span>
+                      {route.is_canary && <span style={{ color: '#f59e0b' }}> · canary</span>}
+                    </div>
+                    <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                      {route.source === 'default_fallback'
+                        ? 'No model is registered for this tier yet, so the platform default would be used.'
+                        : 'Selected from your registry by success rate.'}
+                    </div>
+                  </div>
+                  {estimate && (
+                    <div className="p-3 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Expected size</div>
+                      <div className="text-[20px] font-bold">
+                        ${Number(estimate.estimated_cost_usd ?? 0).toFixed(4)}
+                      </div>
+                      <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
+                        about {((estimate.estimated_input_tokens || 0) + (estimate.estimated_output_tokens || 0)).toLocaleString()} tokens per run
+                      </div>
+                      <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                        {(estimate.estimated_input_tokens || 0).toLocaleString()} in · {(estimate.estimated_output_tokens || 0).toLocaleString()} out
+                      </div>
+                    </div>
+                  )}
+                  {budget && (() => {
+                    const copy = BUDGET_COPY[budget.action] || { text: `Budget check returned ${budget.action}.`, tone: 'warn' as const };
+                    const tone = copy.tone === 'ok' ? '#22c55e' : copy.tone === 'warn' ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div className="p-3 rounded-xl" style={{ background: tone + '10', border: `1px solid ${tone}30` }}>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Budget verdict</div>
+                        <div className="text-[13px] font-semibold" style={{ color: tone }}>{copy.text}</div>
+                        {budget.reason === 'no_budget_configured' ? (
+                          <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                            No spending limit is set for this workspace, so nothing is being enforced.
+                          </div>
+                        ) : (
+                          <div className="text-[11px] mt-1.5" style={{ color: colors.inkSubtle }}>
+                            {budget.usage_pct}% of the window used ·{' '}
+                            {(budget.tokens_remaining ?? 0).toLocaleString()} tokens and ${Number(budget.cost_remaining_usd ?? 0).toFixed(2)} left
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Model Table */}
@@ -296,6 +456,15 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                       <div className="font-bold" style={{ color: circuitColor(a.circuit_state) }}>{a.circuit_state}</div>
                       <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Circuit</div>
                     </div>
+                    {a.circuit_state !== 'CLOSED' && (
+                      <button onClick={() => resetCircuit(a.agent_name)} disabled={resetting === a.agent_name}
+                        title="Let this agent take work again and clear its failure count"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold disabled:opacity-50"
+                        style={{ background: '#f59e0b18', color: '#f59e0b', border: '1px solid #f59e0b40' }}>
+                        {resetting === a.agent_name ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                        {resetting === a.agent_name ? 'Resetting…' : 'Reset'}
+                      </button>
+                    )}
                     <div className="text-center">
                       <div className="font-bold" style={{ color: healthColor(a.health_status) }}>{a.health_status}</div>
                       <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Health</div>

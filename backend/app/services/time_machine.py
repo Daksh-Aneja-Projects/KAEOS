@@ -34,14 +34,18 @@ def _is_safe(hitl_required: bool, status: Optional[str]) -> bool:
 def _classify(hitl_required: bool, status: Optional[str], outcome_type: Optional[str]) -> str:
     if _is_safe(hitl_required, status):
         return "safe_autonomous"
+    # An edited decision is checked BEFORE the generic routed-to-human bucket: it
+    # is always hitl_required (a human saw it), so testing hitl first swallowed it
+    # and "edited" could never appear. The literal is the lifecycle vocabulary the
+    # HITL route writes; the old "EDIT" matched nothing any writer produced.
+    if outcome_type == "SUCCESS_WITH_EDIT":
+        return "edited"
     if hitl_required:
         return "routed_to_human"
     if (status or "").startswith("FAILED"):
         return "failed"
     if status == "HUMAN_OVERRIDDEN":
         return "overridden"
-    if outcome_type == "EDIT":
-        return "edited"
     return "other"
 
 

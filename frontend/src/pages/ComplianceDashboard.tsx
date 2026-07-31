@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { ComplianceDashboard as CDType } from '../api/client';
-import { api } from '../api/client';
-import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2, ScrollText, Trash2, RotateCcw, Lock } from 'lucide-react';
+import { api, downloadFile } from '../api/client';
+import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2, ScrollText, Trash2, RotateCcw, Lock, Download } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 
@@ -23,6 +23,21 @@ const ComplianceDashboard = () => {
  const [eraseBusy, setEraseBusy] = useState(false);
  const [eraseResult, setEraseResult] = useState<any>(null);
  const [eraseError, setEraseError] = useState<string | null>(null);
+ // Framework-coverage export (GET /dashboard/compliance/export)
+ const [exporting, setExporting] = useState(false);
+ const [exportError, setExportError] = useState<string | null>(null);
+
+ const exportCompliance = async () => {
+  setExporting(true);
+  setExportError(null);
+  try {
+   await downloadFile(api.complianceCsvPath(), 'compliance_status.csv');
+  } catch (e: any) {
+   setExportError(e?.message || 'Export failed.');
+  } finally {
+   setExporting(false);
+  }
+ };
 
  const load = () => {
   setError(null);
@@ -109,7 +124,7 @@ const ComplianceDashboard = () => {
        <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Framework coverage, per-agent risk register, live monitor, and one-click evidence</p>
       </div>
      </div>
-     <div className="flex gap-3">
+     <div className="flex gap-3 items-center">
       <div className="px-4 py-2 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
        <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Tagged Rules</div>
        <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.ink }}>{data.total_tagged_rules}</div>
@@ -118,8 +133,24 @@ const ComplianceDashboard = () => {
        <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.warning }}>Untagged</div>
        <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.warning }}>{data.untagged_rules}</div>
       </div>
+      <button onClick={exportCompliance} disabled={exporting}
+        title="Download framework coverage, violations, and last-audit dates as a CSV"
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium self-stretch disabled:opacity-50"
+        style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+       {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+       {exporting ? 'Preparing…' : 'Export CSV'}
+      </button>
      </div>
     </div>
+
+    {exportError && (
+     <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+       style={{ background: colors.error + '15', color: colors.error }}>
+      <XCircle className="w-4 h-4 shrink-0" />
+      <span className="flex-1">{exportError}</span>
+      <button onClick={() => setExportError(null)} className="text-[10px] opacity-70">dismiss</button>
+     </div>
+    )}
 
     {data.frameworks.length === 0 ? (
      <BrainEmpty title="No compliance frameworks tracked yet" action="Tag rules with a framework to see coverage here." icon={Shield} />

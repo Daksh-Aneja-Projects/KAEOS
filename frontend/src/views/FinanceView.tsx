@@ -18,12 +18,15 @@ import BulkActionBar from '../components/BulkActionBar';
 import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 
-type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'analytics';
+type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'accounts' | 'analytics';
+
+/** Accounting types in the order a ledger is normally read. */
+const ACCOUNT_TYPE_ORDER = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
 
 const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domain, defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<FinanceTab>(() => {
-    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit', 'analytics'];
+    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit', 'accounts', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as FinanceTab)) return defaultTab as FinanceTab;
     return 'ap';
   });
@@ -45,6 +48,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [taxRules, setTaxRules] = useState<any[]>([]);
   const [auditFindings, setAuditFindings] = useState<any[]>([]);
   const [soxControls, setSoxControls] = useState<any[]>([]);
+  const [chartOfAccounts, setChartOfAccounts] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const bulk = useBulkSelect(invoices, workflows['invoice'], (i: any) => i.status);
@@ -73,6 +77,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
       api.getFinanceAuditFindings(),
       api.getFinanceSOXControls(),
       api.getDomainWorkflows('finance'),
+      api.getChartOfAccounts(),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setVendors(val(0)); setInvoices(val(1)); setPayments(val(2));
@@ -80,6 +85,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     setForecasts(val(6)); setExpenseReports(val(7)); setTaxFilings(val(8));
     setTaxRules(val(9)); setAuditFindings(val(10)); setSoxControls(val(11));
     if (results[12].status === 'fulfilled') setWorkflows((results[12] as any).value || {});
+    setChartOfAccounts(val(13));
     setLoading(false);
   };
 
@@ -134,6 +140,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     { key: 'expenses', label: 'Expenses', icon: Wallet, color: '#22c55e' },
     { key: 'tax', label: 'Tax', icon: Scale, color: '#f59e0b' },
     { key: 'audit', label: 'Audit & SOX', icon: ShieldAlert, color: '#ef4444' },
+    { key: 'accounts', label: 'Chart of Accounts', icon: FileText, color: '#0ea5e9' },
     { key: 'analytics', label: 'Analytics', icon: TrendingUp, color: '#a855f7' },
   ];
 
@@ -614,6 +621,64 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             )}
 
             {/* ═══ ANALYTICS ═══ */}
+            {/* ═══ CHART OF ACCOUNTS ═══ */}
+            {tab === 'accounts' && (() => {
+              const filtered = chartOfAccounts.filter(a => !searchQ
+                || a.name?.toLowerCase().includes(searchQ.toLowerCase())
+                || a.code?.toLowerCase().includes(searchQ.toLowerCase()));
+              // Group by accounting type so the ledger reads the way finance expects.
+              const grouped = ACCOUNT_TYPE_ORDER
+                .map(t => ({ type: t, rows: filtered.filter(a => a.type === t) }))
+                .concat([{ type: 'OTHER', rows: filtered.filter(a => !ACCOUNT_TYPE_ORDER.includes(a.type)) }])
+                .filter(g => g.rows.length > 0);
+              return (
+                <div className="space-y-4">
+                  {chartOfAccounts.length === 0 ? (
+                    <EmptyState icon={FileText} title="No accounts defined" sub="Your chart of accounts appears here once finance data is connected" />
+                  ) : grouped.length === 0 ? (
+                    <EmptyState icon={FileText} title="No accounts match your search" sub="Try a different account name or code" />
+                  ) : grouped.map(g => {
+                    const total = g.rows.reduce((s, a) => s + (a.balance || 0), 0);
+                    return (
+                      <div key={g.type} className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                        <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                          <span className="text-[12px] font-semibold capitalize" style={{ color: colors.ink }}>
+                            {g.type.toLowerCase()} accounts
+                          </span>
+                          <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{g.rows.length}</span>
+                          <span className="ml-auto text-[12px] font-mono font-semibold" style={{ color: colors.ink }}>
+                            ${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <table className="w-full text-[12px]">
+                          <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                            {['Code', 'Account', 'Balance', 'Department', 'Cost Centre', 'Status'].map(h => (
+                              <th key={h} className="text-left px-4 py-2 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {g.rows.map(a => (
+                              <tr key={a.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                <td className="px-4 py-2.5 font-mono">{a.code}</td>
+                                <td className="px-4 py-2.5 font-medium">{a.name}</td>
+                                <td className="px-4 py-2.5 font-mono font-semibold">
+                                  ${(a.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                  <span className="ml-1 text-[10px]" style={{ color: colors.inkTertiary }}>{a.currency || 'USD'}</span>
+                                </td>
+                                <td className="px-4 py-2.5" style={{ color: colors.inkSubtle }}>{a.department || 'Company-wide'}</td>
+                                <td className="px-4 py-2.5" style={{ color: colors.inkSubtle }}>{a.cost_center || '-'}</td>
+                                <td className="px-4 py-2.5"><Badge status={a.is_active ? 'ACTIVE' : 'CLOSED'} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {tab === 'analytics' && <DomainAnalytics domain="finance" />}
           </>
         )}

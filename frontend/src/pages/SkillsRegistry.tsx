@@ -4,7 +4,11 @@ import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import SkillContractViewer from '../components/SkillContractViewer';
-import { BrainCircuit, Search, Play, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Zap, FileCode2 } from 'lucide-react';
+import {
+  BrainCircuit, Search, Play, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight,
+  Zap, FileCode2, Hammer, MessageCircleQuestion, Share2, Loader2, AlertTriangle,
+} from 'lucide-react';
+import { toPct } from '../lib/format';
 
 export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
@@ -17,6 +21,14 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Compile-a-skill form + per-skill action state.
+  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showCompile, setShowCompile] = useState(false);
+  const [compileForm, setCompileForm] = useState({ workflow_id: '', workflow_name: '', domain: '', required_tools: '' });
+  const [compileBusy, setCompileBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [explanations, setExplanations] = useState<Record<string, any>>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -39,6 +51,61 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
       api.getExecutions(selected).then(setExecs);
     }
   }, [selected]);
+
+  const compileSkill = async () => {
+    setCompileBusy(true);
+    setBanner(null);
+    try {
+      const r = await api.compileSkill({
+        workflow_id: compileForm.workflow_id.trim(),
+        workflow_name: compileForm.workflow_name.trim(),
+        domain: compileForm.domain.trim(),
+        required_tools: compileForm.required_tools.split(',').map(t => t.trim()).filter(Boolean),
+      });
+      setBanner({ ok: true, text: `Compiled "${r.skill_id}" from the rules attached to that workflow.` });
+      setShowCompile(false);
+      setCompileForm({ workflow_id: '', workflow_name: '', domain: '', required_tools: '' });
+      load();
+    } catch (e: any) {
+      setBanner({ ok: false, text: e?.message || 'Compilation failed.' });
+    } finally {
+      setCompileBusy(false);
+    }
+  };
+
+  // Both of these key off the skill NAME (skill_id), not the database id.
+  const explainSkill = async (skillName: string) => {
+    setRowBusy(`${skillName}-explain`);
+    setBanner(null);
+    try {
+      const r = await api.explainSkill(skillName);
+      setExplanations(prev => ({ ...prev, [skillName]: r }));
+      setSelected(skillName);
+    } catch (e: any) {
+      setBanner({ ok: false, text: `Cannot explain ${skillName.replace(/_/g, ' ')}: ${e?.message || 'unknown error'}` });
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
+  const shareSkill = async (skillName: string, successRate: number) => {
+    if (!window.confirm(
+      `Share "${skillName.replace(/_/g, ' ')}" with the federation? Its anonymised procedure leaves this workspace and is recorded in the provenance ledger. This cannot be withdrawn.`
+    )) return;
+    setRowBusy(`${skillName}-share`);
+    setBanner(null);
+    try {
+      const r = await api.federatedExportSkill(skillName);
+      setBanner({ ok: true, text: `Shared to the federation. Ledger receipt ${String(r.ledger_receipt).slice(0, 16)}…` });
+    } catch (e: any) {
+      const detail = successRate < 0.9
+        ? `Only skills with a 90% success rate or better can be shared; this one is at ${(toPct(successRate) ?? 0).toFixed(1)}%.`
+        : (e?.message || 'unknown error');
+      setBanner({ ok: false, text: `Not shared: ${detail}` });
+    } finally {
+      setRowBusy(null);
+    }
+  };
 
   const filteredSkills = skills.filter(s =>
     s.skill_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -76,18 +143,89 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
               </p>
             </div>
           </div>
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
-            <input
-              type="text"
-              placeholder="Search skills..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 rounded-lg text-[13px] w-64 outline-none transition-all focus:ring-2"
-              style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}
-            />
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setShowCompile(v => !v); setBanner(null); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold text-white transition-all hover:brightness-110"
+              style={{ background: colors.primary }}>
+              <Hammer className="w-3.5 h-3.5" /> {showCompile ? 'Close' : 'Compile Skill'}
+            </button>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
+              <input
+                type="text"
+                placeholder="Search skills..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 rounded-lg text-[13px] w-64 outline-none transition-all focus:ring-2"
+                style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}
+              />
+            </div>
           </div>
         </div>
+
+        {/* Action feedback */}
+        {banner && (
+          <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (banner.ok ? colors.success : colors.error) + '15',
+              color: banner.ok ? colors.success : colors.error,
+            }}>
+            {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
+            <span className="flex-1">{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
+
+        {/* Compile a new skill from a workflow's validated rules */}
+        {showCompile && (
+          <div className="p-5 space-y-3" style={card}>
+            <h3 className="text-[14px] font-semibold" style={{ color: colors.ink }}>Compile a Skill</h3>
+            <p className="text-[11px]" style={{ color: colors.inkTertiary }}>
+              Turns every rule attached to a workflow into one executable, governed skill. The workflow must already have rules.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow ID</label>
+                <input value={compileForm.workflow_id} onChange={e => setCompileForm({ ...compileForm, workflow_id: e.target.value })}
+                  placeholder="wf_invoice_approval"
+                  className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                  style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow name</label>
+                <input value={compileForm.workflow_name} onChange={e => setCompileForm({ ...compileForm, workflow_name: e.target.value })}
+                  placeholder="Invoice Approval"
+                  className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                  style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Domain</label>
+                <input value={compileForm.domain} onChange={e => setCompileForm({ ...compileForm, domain: e.target.value })}
+                  placeholder="finance"
+                  className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                  style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Tools it may call</label>
+                <input value={compileForm.required_tools} onChange={e => setCompileForm({ ...compileForm, required_tools: e.target.value })}
+                  placeholder="netsuite, slack"
+                  className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                  style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowCompile(false)}
+                className="px-4 py-2 rounded-lg text-[13px]"
+                style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>Cancel</button>
+              <button onClick={compileSkill}
+                disabled={compileBusy || !compileForm.workflow_id.trim() || !compileForm.workflow_name.trim() || !compileForm.domain.trim()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
+                style={{ background: colors.primary }}>
+                {compileBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />} Compile
+              </button>
+            </div>
+          </div>
+        )}
 
         {filteredSkills.length === 0 ? (
           <div style={card}>
@@ -197,6 +335,55 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                         {isSelected ? 'Collapse' : 'Executions'}
                       </button>
                     </div>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => explainSkill(s.skill_id)}
+                        disabled={rowBusy === `${s.skill_id}-explain`}
+                        className="flex-1 text-[12px] font-medium flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                        style={{ background: colors.info + '15', color: colors.info, border: `1px solid ${colors.info}30` }}
+                      >
+                        {rowBusy === `${s.skill_id}-explain`
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <MessageCircleQuestion className="w-3 h-3" />} Explain
+                      </button>
+                      <button
+                        onClick={() => shareSkill(s.skill_id, s.success_rate)}
+                        disabled={rowBusy === `${s.skill_id}-share`}
+                        title={s.success_rate < 0.9 ? 'Only skills at 90% success or better can be shared' : 'Share this proven skill with the federation'}
+                        className="flex-1 text-[12px] font-medium flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                        style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}
+                      >
+                        {rowBusy === `${s.skill_id}-share`
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Share2 className="w-3 h-3" />} Share
+                      </button>
+                    </div>
+
+                    {/* Plain-English account of what this skill actually did */}
+                    {explanations[s.skill_id] && (
+                      <div className="mt-3 p-3 rounded-xl space-y-2" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                        <div className="flex items-center gap-1.5">
+                          <MessageCircleQuestion className="w-3.5 h-3.5" style={{ color: colors.info }} />
+                          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: colors.inkSubtle }}>What this skill did</span>
+                          {explanations[s.skill_id].degraded && (
+                            <span className="ml-auto flex items-center gap-1 text-[10px]" style={{ color: colors.warning }}>
+                              <AlertTriangle className="w-3 h-3" /> partial
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12px] leading-relaxed" style={{ color: colors.ink }}>{explanations[s.skill_id].summary}</p>
+                        {explanations[s.skill_id].confidence_narrative && (
+                          <p className="text-[12px] leading-relaxed" style={{ color: colors.inkSubtle }}>
+                            {explanations[s.skill_id].confidence_narrative}
+                          </p>
+                        )}
+                        {(explanations[s.skill_id].human_validators || []).length > 0 && (
+                          <p className="text-[11px]" style={{ color: colors.inkTertiary }}>
+                            Validated by {explanations[s.skill_id].human_validators.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Expanded Detail */}

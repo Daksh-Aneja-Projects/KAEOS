@@ -10,8 +10,8 @@ class BenchmarkEngine:
     async def generate_intelligence_report(self, department: str, current_coverage: float) -> Dict[str, Any]:
         """Generates the industry intelligence report with generative analysis."""
         from app.services.llm_router import LLMRouter
-        import json
-        
+        from app.services.json_utils import extract_json_object
+
         router = LLMRouter()
         prompt = (
             f"You are the KAEOS Benchmarking Engine. A tenant in the '{self.industry}' sector has a knowledge coverage of {current_coverage*100:.1f}% for the '{department}' department.\n"
@@ -21,7 +21,7 @@ class BenchmarkEngine:
         try:
             res = await router.complete(prompt=prompt, model_tier="fast")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            data = json.loads(content) if isinstance(content, str) else content
+            data = extract_json_object(content) if isinstance(content, str) else content
             
             return {
                 "department": department,

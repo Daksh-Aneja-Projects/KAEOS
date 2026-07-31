@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
+import { api, downloadFile } from '../api/client';
 import {
   UserPlus, Shield, Eye, Pencil, Trash2, CheckCircle, XCircle,
-  Loader2, Users, Crown, BarChart3, ChevronDown, Info
+  Loader2, Users, Crown, BarChart3, ChevronDown, Info, Download
 } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from '../lib/departments';
 
@@ -42,6 +42,21 @@ export default function UserManagement() {
   const [newDepartment, setNewDepartment] = useState<string>(''); // '' = Org-wide
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
+  // Access-review export (GET /auth/users/export.csv)
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportAccessReview = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadFile(api.usersCsvPath(), 'access_review.csv');
+    } catch (e: any) {
+      setExportError(e?.message || 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -142,12 +157,30 @@ export default function UserManagement() {
             {users.length} users • RBAC: Admin / Analyst / Viewer • Department scopes
           </p>
         </div>
-        <button onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white transition-all hover:brightness-110"
-          style={{ background: colors.primary }}>
-          <UserPlus className="w-4 h-4" /> New User
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={exportAccessReview} disabled={exporting}
+            title="Download every account, role, department scope, and last sign-in as a CSV for your access review"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium disabled:opacity-50"
+            style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {exporting ? 'Preparing…' : 'Access Review CSV'}
+          </button>
+          <button onClick={() => setShowCreate(!showCreate)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white transition-all hover:brightness-110"
+            style={{ background: colors.primary }}>
+            <UserPlus className="w-4 h-4" /> New User
+          </button>
+        </div>
       </div>
+
+      {exportError && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+          style={{ background: '#ef444415', color: '#ef4444' }}>
+          <XCircle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{exportError}</span>
+          <button onClick={() => setExportError(null)} className="text-[10px] opacity-70">dismiss</button>
+        </div>
+      )}
 
       {/* Create User Form */}
       {showCreate && (

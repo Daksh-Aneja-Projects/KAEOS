@@ -59,10 +59,13 @@ async def record_outcome(
         metric_name=body.metric_name, metric_value=body.metric_value, note=body.note,
     ))
 
-    # L1 closed loop: stamp the measured outcome back onto the execution row so the
-    # AI Foundry (which mines SkillExecution, not OutcomeRecord) can curate on real
-    # outcomes — not just on whether the execution completed.
-    ex.outcome_type = outcome
+    # NOTE: outcome_type is NOT overwritten here. It carries the execution's
+    # LIFECYCLE vocabulary (SUCCESS_CLEAN / SUCCESS_WITH_EDIT / HUMAN_OVERRIDDEN /
+    # PENDING_HITL) that the safe-autonomy metric, the override dashboard and the
+    # Time Machine all read. Stamping GOOD/BAD/NEUTRAL over it erased an override
+    # from the metrics. The measured outcome lives in OutcomeRecord, and the
+    # Foundry joins it by execution_id (see foundry/dataset_builder._classify),
+    # so the L1 loop still closes - without colliding vocabularies.
 
     new_conf = None
     delta = _CONF_DELTA[outcome]
@@ -110,9 +113,13 @@ async def outcome_impact(
         select(func.count(), good).where(scope & (OutcomeRecord.autonomous.is_(False)))
     )).one()
 
+    # Per-skill rollup counts SKILL outcomes only. Mission-level records (written
+    # when an event-mesh mission finishes without having executed any skill) carry
+    # a NULL skill name on purpose so they never pollute per-skill quality.
     per_skill = (await db.execute(
         select(OutcomeRecord.skill_id_name, func.count(), good)
-        .where(scope).group_by(OutcomeRecord.skill_id_name).order_by(func.count().desc()).limit(20)
+        .where(scope & OutcomeRecord.skill_id_name.isnot(None))
+        .group_by(OutcomeRecord.skill_id_name).order_by(func.count().desc()).limit(20)
     )).all()
 
     def _rate(g, t):

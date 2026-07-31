@@ -58,6 +58,33 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/**
+ * Authenticated file download. The CSV/export endpoints are auth-gated, so a
+ * plain `<a href>` (which cannot carry an Authorization header) gets a 401 and
+ * saves an error page instead of the file. Fetch with the token, then save the
+ * blob through a throwaway anchor.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = localStorage.getItem('kaeos-token');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const devTenant = localStorage.getItem('kaeos-dev-tenant');
+  if (devTenant) headers['X-Tenant-ID'] = devTenant;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || `Download failed (${res.status})`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // In-flight GET deduplication: many screens fire the same read on mount AND on a
 // live-refresh tick, and several components can request the same endpoint at once.
 // If an identical GET is already in flight, share its promise instead of issuing a
@@ -266,6 +293,8 @@ export interface ComplianceDashboard {
 
 export interface ProvenanceEntry {
   id: string;
+  /** Present on the global ledger (the row is the full model dict). */
+  rule_id?: string | null;
   event_type: string;
   timestamp: string;
   actor_role: string;
@@ -640,6 +669,12 @@ export const api = {
   authReactivateUser: (id: string) => request<any>(`/auth/users/${id}/reactivate`, { method: 'POST' }),
   authInviteUser: (data: { email: string; display_name?: string; role?: string; department?: string | null }) =>
     request<any>('/auth/users/invite', { method: 'POST', body: JSON.stringify(data) }),
+  /** Public: redeem an invite token and set the first password. */
+  acceptInvite: (body: { token: string; password: string }) =>
+    request<{ id: string; email: string; is_active: boolean }>('/auth/accept-invite', {
+      method: 'POST', body: JSON.stringify(body) }),
+  /** Server-side token revocation. Best-effort - the client drops its token regardless. */
+  authLogout: () => request<{ revoked: boolean }>('/auth/logout', { method: 'POST' }),
 
   // MFA (self-service)
   mfaStatus: () => request<{ enrolled: boolean; enabled: boolean }>('/auth/mfa/status'),
@@ -1402,6 +1437,142 @@ export const api = {
     request<BulkTransitionResult>(`/${domain}/workflows/${entityType}/bulk-transition`, {
       method: 'POST', body: JSON.stringify({ ids, to_state, note: note || null }),
     }),
+
+  // ─── Domain pack install / uninstall (workforce/api/domain_packs.py) ───
+  // Both take no body; install is idempotent (re-install refreshes the version).
+  installDomainPack: (packId: string) =>
+    request<{ status: string; installation_id: string; message: string }>(
+      `/workforce/packs/${packId}/install`, { method: 'POST' }),
+  uninstallDomainPack: (packId: string) =>
+    request<{ status: string; message: string }>(
+      `/workforce/packs/${packId}/uninstall`, { method: 'POST' }),
+
+  // ─── Rules authoring (rules.py) ───
+  createRule: (body: {
+    statement: string; trigger_json: Record<string, any>; action_json: Record<string, any>;
+    domain?: string | null; workflow_id?: string | null; exceptions_json?: any[];
+    compliance_tags?: string[]; half_life_days?: number; access_level?: string;
+  }) => request<RuleItem>('/rules', { method: 'POST', body: JSON.stringify(body) }),
+  /** Human validation event. Every field has a server default, so `{}` is valid. */
+  validateRule: (ruleId: string, body?: { validator_role?: string; validator_hash?: string; new_tier?: string }) =>
+    request<RuleItem>(`/rules/${ruleId}/validate`, { method: 'PUT', body: JSON.stringify(body || {}) }),
+
+  // ─── Skills authoring (skills.py + federated.py) ───
+  compileSkill: (body: { workflow_id: string; domain: string; workflow_name: string; required_tools?: string[] }) =>
+    request<{ status: string; skill_id: string; yaml: string }>('/skills/compile', {
+      method: 'POST', body: JSON.stringify(body) }),
+  /** Plain-English account of what a skill actually did. No body; {skill_id} is the NAME. */
+  explainSkill: (skillId: string) =>
+    request<{ summary: string; steps_taken: any[]; confidence_narrative: string; human_validators: any[]; degraded?: boolean }>(
+      `/skills/${skillId}/explain`, { method: 'POST' }),
+  /** Share a proven skill (>=90% success) to the federation. {skill_id} is the NAME. */
+  federatedExportSkill: (skillId: string) =>
+    request<{ status: string; skill_id: string; ledger_receipt: string }>(
+      `/federated/export-skill/${skillId}`, { method: 'POST' }),
+
+  // ─── Provenance integrity ───
+  verifyProvenance: (ruleId: string) =>
+    request<{ rule_id: string; chain_valid: boolean; status: 'VERIFIED' | 'TAMPERED' }>(
+      `/provenance/${ruleId}/verify`),
+
+  // ─── Actuation reconciliation (operator) ───
+  reconcileActuation: () =>
+    request<{ drift_count: number; reconciled: number; skipped: number; details: any[] }>(
+      '/actuation/reconcile', { method: 'POST' }),
+
+  // ─── Circuit breaker reset (operator) ───
+  resetAgentCircuit: (agentName: string) =>
+    request<{ status: string; agent_name: string }>(
+      `/infrastructure/agents/${encodeURIComponent(agentName)}/circuit/reset`, { method: 'POST' }),
+
+  // ─── Integration sync plane (sync.py) ───
+  /** Rotates and returns the HMAC signing secret. Shown once, never readable again. */
+  rotateWebhookSecret: (connectorId: string) =>
+    request<{ connector_id: string; webhook_secret: string; ingest_url: string; note: string }>(
+      `/integrations/${connectorId}/webhook-secret`, { method: 'POST' }),
+  getSyncLedger: (limit = 50) => request<{ ledger: any[] }>(`/integrations/sync/ledger?limit=${limit}`),
+  getOutboundQueue: (limit = 50) => request<{ outbound: any[] }>(`/integrations/sync/outbound?limit=${limit}`),
+  dispatchOutbound: () =>
+    request<{ sent: number; failed: number; skipped: number }>(
+      '/integrations/sync/outbound/dispatch', { method: 'POST' }),
+
+  // ─── Elicitation question generation (operator) ───
+  generateElicitationQuestion: (body: { employee_id: string; domain?: string | null }) =>
+    request<{ status: string; question_id?: string; question?: string; message?: string }>(
+      '/elicitation/generate', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ─── Operational digest (notifications.py) — days ride in the query string ───
+  previewDigest: (days = 7) =>
+    request<{ payload: Record<string, any>; text: string }>(`/notifications/digest/preview?days=${days}`),
+  sendDigest: (days = 7) =>
+    request<{ tenants: number; sent: number; failed: number }>(
+      `/notifications/digest/send?days=${days}`, { method: 'POST' }),
+
+  // ─── Sales: revenue-intelligence agents + commission ───
+  runSalesChurnRiskAgent: (accountId: string) =>
+    request<any>(`/sales/accounts/${accountId}/churn-risk`, { method: 'POST' }),
+  runSalesProposalAgent: (opportunityId: string) =>
+    request<any>(`/sales/opportunities/${opportunityId}/proposal`, { method: 'POST' }),
+  /** CPQ takes its discount as a QUERY param (FastAPI Query(...)), not a body. */
+  runSalesCpqAgent: (opportunityId: string, discountPct: number) =>
+    request<any>(`/sales/opportunities/${opportunityId}/cpq?discount=${discountPct}`, { method: 'POST' }),
+  getSalesCommissions: () => request<any[]>('/sales/commission'),
+  paySalesCommission: (calculationId: string) =>
+    request<{ calculation_id: string; deal_value: number; rate_applied: number; calculated_payout: number;
+              is_approved: boolean; status: string; reason: string | null }>(
+      `/sales/commission/${calculationId}/payout`, { method: 'POST' }),
+
+  // ─── Support: autonomous resolution + KB authoring ───
+  runSupportAutoResolveAgent: (ticketId: string) =>
+    request<any>(`/support/tickets/${ticketId}/auto-resolve`, { method: 'POST' }),
+  runSupportDocumentAgent: (ticketId: string) =>
+    request<any>(`/support/tickets/${ticketId}/document`, { method: 'POST' }),
+
+  // ─── Finance: chart of accounts ───
+  getChartOfAccounts: (accountType?: string) =>
+    request<any[]>(`/finance/chart-of-accounts${accountType ? `?account_type=${accountType}` : ''}`),
+
+  // ─── Benchmark: LLM maturity report (pairs with getBenchmark) ───
+  getIntelligenceReport: () =>
+    request<{ report: Record<string, any>; org_snapshot: { total_rules: number; total_skills: number; avg_confidence: number } }>(
+      '/benchmark/intelligence-report'),
+
+  // ─── 10X engines (kaeos10x.py) ───
+  ingestRegulation: (body: { framework_name: string; directive_text: string; urgency: string }) =>
+    request<{ status: string; framework?: string; new_rules_synthesized?: number; rule_statements?: string[]; error?: string }>(
+      '/10x/ingest-regulation', { method: 'POST', body: JSON.stringify(body) }),
+  getQuantumEvents: () => request<any[]>('/10x/quantum-events'),
+  getRegulatoryRules: () => request<any[]>('/10x/regulatory-rules'),
+  getFederatedExports: () => request<any[]>('/10x/federated-exports'),
+  getPolymorphicEvents: () => request<any[]>('/10x/polymorphic-events'),
+  forcePrecogCycle: () =>
+    request<{ status: 'IDLE' | 'PROCESSED'; message?: string; signal?: string }>(
+      '/10x/precog/force-cycle', { method: 'POST' }),
+  simulatePhysicsShock: (shockType: string) =>
+    request<{ status: string; shock_type: string; nodes_affected: number; ripple_effect: any[] }>(
+      '/10x/physics/simulate', { method: 'POST', body: JSON.stringify({ shock_type: shockType }) }),
+
+  // ─── Data pipeline (pipeline.py) ───
+  getPipelineConnectors: () => request<{ connectors: { slug: string; name: string; category: string; auth_type: string; status: string }[] }>(
+    '/pipeline/connectors/available'),
+  getPipelineTransforms: () => request<{ nodes: { type: string; name: string; description: string }[] }>(
+    '/pipeline/transforms/available'),
+  runPipeline: (body: {
+    connector_slug: string; connector_config: Record<string, any>;
+    connector_credentials?: Record<string, any>; dag_config?: Record<string, any> | null;
+    destination_type?: string; destination_config?: Record<string, any> | null;
+  }) => request<{
+    run_id: string; status: 'SUCCESS' | 'FAILED'; records_read?: number; records_written?: number;
+    records_failed?: number; chunks_produced?: number; pii_detections?: number;
+    error?: string; log: { timestamp: string; level: string; message: string }[];
+  }>('/pipeline/run', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ─── Authenticated CSV export URLs (fetched via downloadFile, not <a href>) ───
+  usersCsvPath: () => '/auth/users/export.csv',
+  complianceCsvPath: () => '/dashboard/compliance/export',
+  actionsLedgerCsvPath: (limit = 5000) => `/actuation/ledger/export?limit=${limit}`,
+  provenanceLedgerCsvPath: () => '/provenance/global/ledger/export',
+  orgEntityCsvPath: (entityType: string) => `/org/export/${entityType}.csv`,
 
   // ─── WebSocket helper (returns URL, not a fetch) ───
   // The ws router is mounted at the server root (/ws/...), NOT under /api/v1.

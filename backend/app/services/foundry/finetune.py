@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _MIN_EXAMPLES = 10          # too-small a set makes fine-tuning meaningless
 _ACTIVE = ("SUBMITTED", "RUNNING")
+_MAX_POLL_ERRORS = 12       # ~1 hour at the 5-minute sweep, then dead-letter
 
 
 class FineTuneError(Exception):
@@ -188,8 +189,25 @@ async def poll_finetune_jobs(db: AsyncSession, tenant_id: Optional[str] = None,
         try:
             res = await prov.poll(job.external_job_id)
         except Exception as e:  # never let a poll error kill the sweep
-            logger.warning("[finetune] poll error for %s: %s", job.id, e)
+            # Dead-letter: a job whose provider handle is permanently broken
+            # (deleted job, revoked key, dead endpoint) used to be re-polled on
+            # every 5-minute sweep forever, invisibly. Count consecutive errors
+            # and give up after a bounded number.
+            job.poll_errors = (job.poll_errors or 0) + 1
+            if job.poll_errors >= _MAX_POLL_ERRORS:
+                job.status = "FAILED"
+                job.error = (f"dead-lettered after {job.poll_errors} consecutive "
+                             f"poll errors; last: {e}")[:1000]
+                advanced += 1
+                logger.error("[finetune] dead-lettered job %s after %d consecutive poll errors: %s",
+                             job.id, job.poll_errors, e)
+            else:
+                logger.warning("[finetune] poll error %d/%d for %s: %s",
+                               job.poll_errors, _MAX_POLL_ERRORS, job.id, e)
             continue
+        # A successful poll clears the streak.
+        if job.poll_errors:
+            job.poll_errors = 0
 
         status = res.get("status")
         if status == "RUNNING" or status == "SUBMITTED":
@@ -218,6 +236,7 @@ async def poll_finetune_jobs(db: AsyncSession, tenant_id: Optional[str] = None,
                 job.error = f"auto-eval failed: {e}"[:1000]
             advanced += 1
 
-    if advanced:
-        await db.commit()
+    # Always commit: a sweep that only incremented poll_errors advanced no job but
+    # MUST persist the streak, or a permanently broken job never dead-letters.
+    await db.commit()
     return {"polled": len(jobs), "advanced": advanced}

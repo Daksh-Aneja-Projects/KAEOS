@@ -5,7 +5,19 @@ Retrieval-Augmented Generation (RAG) backend for HR policies.
 """
 import logging
 
+from app.services import prompt_guard
+
 logger = logging.getLogger(__name__)
+
+
+def _fence(text: str) -> str:
+    """Fence retrieved policy text as untrusted data before it enters a prompt.
+
+    Indexed documents are tenant-uploaded content, so a poisoned handbook could
+    otherwise smuggle instructions into every agent that retrieves it.
+    """
+    return prompt_guard.wrap_untrusted(text) if text else ""
+
 
 class HRKnowledgeBase:
     """Manages the vector embeddings for HR policies (handbook, benefits).
@@ -68,7 +80,8 @@ class HRKnowledgeBase:
                 namespace="hr_kb",
             )
             if results:
-                return "\n\n".join(r.get("content", "") for r in results if r.get("content"))
+                return _fence("\n\n".join(
+                    r.get("content", "") for r in results if r.get("content")))
         except Exception as e:
             logger.warning(f"[KB] Vector search failed ({e}), falling back to keyword search")
 
@@ -85,11 +98,12 @@ class HRKnowledgeBase:
 
         best.sort(key=lambda x: x[0], reverse=True)
         if best:
-            return "\n\n".join(c for _, c in best[:top_k])
+            return _fence("\n\n".join(c for _, c in best[:top_k]))
 
-        # Last resort default
-        return (
-            "According to the employee handbook: standard PTO is 20 days per year. "
-            "Remote work policy allows up to 3 days WFH per week. "
-            "Benefits include health, dental, vision, and 401(k) matching up to 4%."
-        )
+        # Total miss (nothing indexed, or nothing matched). Return NOTHING. This
+        # used to return an invented employee handbook (PTO days, 401k match)
+        # that no tenant had ever uploaded, so every agent downstream quoted
+        # fabricated policy as fact. An empty context lets the agent say it has
+        # no policy data, which is the truth.
+        logger.info(f"[KB] No policy context found for query={query!r} tenant={tenant_id}")
+        return ""

@@ -102,7 +102,7 @@ async def run_simulation(
     from app.services.llm_router import LLMRouter
     from sqlalchemy import select, func, distinct
     from app.models.domain import Rule, Skill
-    import json
+    from app.services.json_utils import extract_json_object
 
     domain = (req.target_domain or "all").strip().lower()
     all_domains = domain in ("", "all", "all domains")
@@ -153,7 +153,7 @@ async def run_simulation(
     try:
         res = await LLMRouter().complete(prompt=prompt, model_tier="reasoning")
         content = res if isinstance(res, str) else res.get("content", "{}")
-        parsed = json.loads(content) if content else {}
+        parsed = extract_json_object(content) if content else {}
         if isinstance(parsed, dict):
             narrative = parsed
     except Exception:

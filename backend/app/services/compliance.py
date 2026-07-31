@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 import logging
 from app.services.llm_router import LLMRouter
+from app.services.json_utils import extract_json_list
 
 logger = logging.getLogger(__name__)
 
@@ -65,18 +66,9 @@ class ComplianceEngine:
             
             try:
                 res = await router.complete(prompt=prompt, model_tier="reasoning", temperature=0.1)
-                import json
-                
                 content = res if isinstance(res, str) else res.get("content", "[]")
-                # Clean JSON fences
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-                    
-                evaluated_violations = json.loads(content)
-                if isinstance(evaluated_violations, list):
-                    violations.extend(evaluated_violations)
+                evaluated_violations = extract_json_list(content)
+                violations.extend(evaluated_violations)
             except Exception as e:
                 logger.error(f"Compliance LLM evaluation failed: {e}")
                 # FAIL CLOSED in a production posture: if we cannot verify

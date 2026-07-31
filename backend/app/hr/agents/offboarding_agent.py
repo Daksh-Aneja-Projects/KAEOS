@@ -39,14 +39,9 @@ class OffboardingAgent:
         
         try:
             res = await self.router.complete(prompt=prompt, model_tier="reasoning")
-            import json
+            from app.services.json_utils import extract_json_object
             content = res if isinstance(res, str) else res.get("content", "{}")
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-                
-            return json.loads(content)
+            return extract_json_object(content)
         except Exception as e:
             logger.error(f"OffboardingAgent analysis failed: {e}")
             raise

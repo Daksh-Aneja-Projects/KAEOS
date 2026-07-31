@@ -34,8 +34,8 @@ class RegulatoryEngine:
         logger.info(f"Ingesting new regulation: {update.framework_name} [{update.urgency}]")
         
         from app.services.llm_router import LLMRouter
-        import json
-        
+        from app.services.json_utils import extract_json_object
+
         # 1. Autonomously Synthesize New Rules using LLM
         router = LLMRouter()
         prompt = (
@@ -51,8 +51,8 @@ class RegulatoryEngine:
         try:
             res = await router.complete(prompt=prompt, model_tier="fast")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            analysis = json.loads(content) if isinstance(content, str) else content
-            
+            analysis = extract_json_object(content) if isinstance(content, str) else content
+
             if "statement" in analysis and "domain" in analysis:
                 # Derive confidence from real signals instead of hardcoding 1.0.
                 # A legal directive IS a high-authority, freshly-ingested source, so

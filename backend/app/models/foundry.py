@@ -134,6 +134,9 @@ class FineTuneJob(Base):
     result_model = Column(String(128), nullable=True)        # the fine-tuned model id
     eval_run_id = Column(String, nullable=True)              # -> ModelEvolutionRun.id (auto-eval)
     error = Column(Text, nullable=True)
+    # Consecutive provider-poll failures. Persisted (not in-process) so a job with
+    # a permanently broken handle still dead-letters across worker restarts.
+    poll_errors = Column(Integer, default=0, nullable=False, server_default="0")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

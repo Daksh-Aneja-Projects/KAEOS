@@ -87,5 +87,6 @@ def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
         return {}
     try:
         return extract_json_object(chain[-1].get("decision", "") or "")
-    except ValueError:
+    except ValueError as e:
+        logger.warning(f"extract_decision: could not parse JSON decision: {e}")
         return {}

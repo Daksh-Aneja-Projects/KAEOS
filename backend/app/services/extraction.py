@@ -1,27 +1,15 @@
 from typing import Dict, Any, List, Optional
-import json
+
+from app.services.json_utils import extract_json_object
 
 
 def _parse_llm_json(content: str) -> Optional[Dict[str, Any]]:
     """Best-effort JSON extraction from an LLM reply (fences, leading prose)."""
     if not isinstance(content, str):
         return content if isinstance(content, dict) else None
-    text = content.strip()
-    if "```" in text:
-        parts = text.split("```")
-        for part in parts[1:]:
-            part = part.strip()
-            if part.startswith("json"):
-                part = part[4:].strip()
-            if part.startswith("{"):
-                text = part
-                break
-    if "{" in text and "}" in text:
-        text = text[text.find("{"): text.rfind("}") + 1]
     try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
-    except (ValueError, TypeError):
+        return extract_json_object(content)
+    except ValueError:
         return None
 
 
@@ -111,7 +99,7 @@ class RuleMiner:
         try:
             res = await router.complete(prompt=prompt, model_tier="classification")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            rule_data = json.loads(content) if isinstance(content, str) else content
+            rule_data = extract_json_object(content) if isinstance(content, str) else content
             rule_data["confidence_basis"] = f"{len(signal_cluster)} consistent instances"
             return rule_data
         except Exception as e:

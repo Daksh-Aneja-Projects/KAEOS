@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.event_mesh import ExternalSignal, SIGNAL_KINDS
+from app.services import prompt_guard
 from app.services.event_mesh import correlate, respond
 
 router = APIRouter(prefix="/signals", tags=["Event Mesh"])
@@ -57,21 +58,43 @@ async def ingest_signal(
         raise HTTPException(status_code=400, detail="severity must be info|warning|critical")
     tenant_id = tenant["tenant_id"]
 
+    # An external signal is UNTRUSTED content by definition, and it can trigger a
+    # governed response (mission / HITL) with no human in the loop. Scan the whole
+    # signal, redact live instruction spans, and quarantine a high-risk one so it
+    # cannot drive an automated action. It is still persisted and still visible.
+    title, body_text = body.title.strip(), body.body
+    scanned = prompt_guard.scan(f"{title}\n{body_text or ''}")
+    if scanned.detected:
+        title, _ = prompt_guard.neutralize(title)
+        if body_text:
+            body_text, _ = prompt_guard.neutralize(body_text)
+
     signal = ExternalSignal(
-        tenant_id=tenant_id, kind=kind, title=body.title.strip(), body=body.body,
+        tenant_id=tenant_id, kind=kind, title=title[:300], body=body_text,
         source=body.source, severity=body.severity,
-        authority_score=body.authority_score, novelty_score=body.novelty_score, status="NEW")
+        # A signal that tries to inject has no authority over the twin.
+        authority_score=0.0 if scanned.should_block else body.authority_score,
+        novelty_score=body.novelty_score,
+        status="QUARANTINED" if scanned.should_block else "NEW")
     db.add(signal)
-    await correlate(db, tenant_id, signal)
-    if body.auto_respond:
-        await respond(db, tenant_id, signal)
+    if scanned.should_block:
+        signal.correlation_note = (
+            "Quarantined on ingest: this signal contains prompt-injection patterns "
+            f"({', '.join(scanned.categories)}). It was not correlated to the twin "
+            "and triggered no automated response. A human must review it."
+        )
+    else:
+        await correlate(db, tenant_id, signal)
+        if body.auto_respond:
+            await respond(db, tenant_id, signal)
     await db.commit()
     await db.refresh(signal)
     await record_security_event(
         tenant_id=tenant_id, event_type="SIGNAL", action="INGEST",
         actor=tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="external_signal", resource_id=signal.id,
-        details={"kind": kind, "response": signal.response_kind})
+        details={"kind": kind, "response": signal.response_kind,
+                 "injection": scanned.to_dict()})
     return _to_dict(signal)
 
 

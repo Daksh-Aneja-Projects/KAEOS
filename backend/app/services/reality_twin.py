@@ -152,37 +152,61 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
 
         try:
             from app.finance.models.accounts_receivable import Customer
-            await _weave(Customer, "Customer", "finance", "SERVES", "name")
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(Customer, "Customer", "finance", "SERVES", "name")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Customer domain", exc_info=True)
         try:
             from app.sales.models.accounts import Account
-            await _weave(Account, "Account", "sales", "OWNS", "name", status_attr="health_score")
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(Account, "Account", "sales", "OWNS", "name", status_attr="health_score")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Account domain", exc_info=True)
         try:
             from app.support.models.tickets import Ticket
-            await _weave(Ticket, "Ticket", "support", "HANDLES", "subject")
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(Ticket, "Ticket", "support", "HANDLES", "subject")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Ticket domain", exc_info=True)
         try:
             from app.legal.models.contracts import Contract as _Contract
-            await _weave(_Contract, "Contract", "legal", "GOVERNS", "title",
-                         name_fn=lambda c: getattr(c, "title", None) or getattr(c, "counterparty", None) or "Contract")
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(_Contract, "Contract", "legal", "GOVERNS", "title",
+                             name_fn=lambda c: getattr(c, "title", None) or getattr(c, "counterparty", None) or "Contract")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Contract domain", exc_info=True)
         try:
             from app.engineering.models.incidents import Incident as _Incident
-            await _weave(_Incident, "Incident", "engineering", "OWNS", "title",
-                         name_fn=lambda i: getattr(i, "title", None) or getattr(i, "incident_number", None) or "Incident")
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(_Incident, "Incident", "engineering", "OWNS", "title",
+                             name_fn=lambda i: getattr(i, "title", None) or getattr(i, "incident_number", None) or "Incident")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Incident domain", exc_info=True)
         try:
             from app.operations.models.procurement import PurchaseOrder as _PO
-            await _weave(_PO, "PurchaseOrder", "operations", "ORDERS", "po_number",
-                         name_fn=lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60])
-        except Exception:
+        except ImportError:
             pass
+        else:
+            try:
+                await _weave(_PO, "PurchaseOrder", "operations", "ORDERS", "po_number",
+                             name_fn=lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60])
+            except Exception:
+                logger.warning("Reality twin: failed to weave PurchaseOrder domain", exc_info=True)
 
     return nodes, edges
 

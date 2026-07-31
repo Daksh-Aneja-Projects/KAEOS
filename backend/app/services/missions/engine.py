@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import Skill
 from app.models.missions import Mission, MissionStep, MissionEvent
+from app.services import prompt_guard
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,9 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
         "id": "recommend",
         "name": f"recommend_{dept}_action",
         "prompt": (
-            f"Mission goal: {mission.goal}\n"
+            # mission.goal is operator/signal-authored text. Fence it as data so a
+            # goal carrying "ignore your instructions..." cannot re-steer the agent.
+            f"Mission goal:\n{prompt_guard.wrap_untrusted(mission.goal)}\n"
             f"You are the {dept} function using the '{skill.skill_id}' capability. "
             f"Recommend the single best {dept} action toward this goal. "
             "Respond ONLY as JSON: "
@@ -188,7 +191,7 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
 
 def _recommendation_of(result: dict) -> Optional[str]:
     """Pull the model's recommendation text out of the executor result chain."""
-    import json as _json
+    from app.services.json_utils import extract_json_object
     chain = result.get("reasoning_chain") or []
     if not chain:
         return None
@@ -200,10 +203,10 @@ def _recommendation_of(result: dict) -> Optional[str]:
             txt = val.strip()
             if txt.startswith("{"):
                 try:
-                    parsed = _json.loads(txt)
-                    if isinstance(parsed, dict) and parsed.get("decision"):
+                    parsed = extract_json_object(txt)
+                    if parsed.get("decision"):
                         return str(parsed["decision"])[:240]
-                except Exception:
+                except ValueError:
                     # Display-only summary extraction. Unparseable model output
                     # falls through to the raw truncated text below; it never
                     # affects the step's governed outcome.
@@ -264,8 +267,15 @@ _TERMINAL_MISSION = {"COMPLETED", "COMPLETED_WITH_EXCEPTIONS", "FAILED", "ABORTE
 
 async def _writeback_signal_on_finish(db: AsyncSession, mission) -> None:
     """L4 closed loop: when an event-mesh-spawned mission finishes, write its
-    terminal status back to the originating signal and record an OutcomeRecord
-    (which feeds the L1 outcome-learning loop). Idempotent + non-fatal."""
+    terminal status back to the originating signal and record OutcomeRecords
+    (which feed the L1 outcome-learning loop). Idempotent + non-fatal.
+
+    Outcomes are attributed to the mission's REAL step executions - the same
+    execution ids the skill_executions table carries - so each record joins back
+    to the decision it judges and rolls up under the skill that made it. The old
+    surrogate (execution_id=mission.id, skill_id_name="mission:<uuid>") joined to
+    nothing and invented a one-row "skill" per mission in the per-skill stats.
+    """
     if mission.created_by != "event-mesh" or mission.status not in _TERMINAL_MISSION:
         return
     try:
@@ -281,16 +291,45 @@ async def _writeback_signal_on_finish(db: AsyncSession, mission) -> None:
             return  # nothing to close, or already closed (idempotent)
         sig.status = "RESOLVED"
         good = mission.status in ("COMPLETED", "COMPLETED_WITH_EXCEPTIONS")
-        db.add(OutcomeRecord(
-            tenant_id=mission.tenant_id,
-            execution_id=mission.id,                 # mission id as the surrogate
-            skill_id_name=f"mission:{mission.id}",
-            outcome="GOOD" if good else "BAD",
-            autonomous=True,
-            note=f"event-mesh mission {mission.status}",
-        ))
+
+        steps = (await db.execute(
+            select(MissionStep).where(
+                MissionStep.mission_id == mission.id,
+                MissionStep.tenant_id == mission.tenant_id,
+            )
+        )).scalars().all()
+        executed = [s for s in steps if s.execution_id and s.status in ("DONE", "FAILED")]
+
+        if executed:
+            for s in executed:
+                db.add(OutcomeRecord(
+                    tenant_id=mission.tenant_id,
+                    execution_id=s.execution_id,      # the real SkillExecution id
+                    skill_id_name=s.skill_id,
+                    outcome="GOOD" if s.status == "DONE" else "BAD",
+                    autonomous=not bool(s.hitl_required),
+                    note=f"event-mesh mission {mission.id} {mission.status}",
+                ))
+        else:
+            # The mission finished without executing a single skill (aborted,
+            # all-skipped, budget-blocked at step 1). The signal outcome is still
+            # worth recording, but there is no skill to credit or blame: the NULL
+            # skill name keeps it out of the per-skill rollup in /outcomes/impact.
+            db.add(OutcomeRecord(
+                tenant_id=mission.tenant_id,
+                execution_id=mission.id,
+                skill_id_name=None,
+                outcome="GOOD" if good else "BAD",
+                autonomous=True,
+                note=f"event-mesh mission {mission.status} (no step executed)",
+            ))
     except Exception as e:
-        logger.warning(f"[mission] L4 signal writeback skipped: {e}")
+        # Non-fatal (a mission must still finish), but this is a broken learning
+        # loop, not a detail: name the signal so it can be reconciled by hand.
+        logger.error(
+            f"[mission] L4 signal writeback FAILED for mission {mission.id} "
+            f"(signal response_ref={mission.id}): {e}"
+        )
 
 
 async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) -> dict:

@@ -5,6 +5,8 @@ Turns AEOS from reactive to anticipatory. Ingests external signals
 import json
 import logging
 
+from app.services.json_utils import extract_json_object
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +73,7 @@ class ExternalIntelligenceEngine:
         try:
             res = await llm.complete(prompt=prompt, model_tier="reasoning")
             content = res if isinstance(res, str) else res.get("content", "{}")
-            return {"correlation": json.loads(content), "status": "CORRELATED"}
+            return {"correlation": extract_json_object(content), "status": "CORRELATED"}
         except Exception as e:
             logger.error(f"P1 correlation failed: {e}")
             return {"correlation": None, "status": "FAILED", "error": str(e)}

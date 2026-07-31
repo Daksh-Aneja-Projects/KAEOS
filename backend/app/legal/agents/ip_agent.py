@@ -49,14 +49,9 @@ class IPAgent:
 
         try:
             res = await self.router.complete(prompt=prompt, model_tier="reasoning")
-            import json
+            from app.services.json_utils import extract_json_object
             content = res if isinstance(res, str) else res.get("content", "{}")
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-
-            result = json.loads(content)
+            result = extract_json_object(content)
 
             # Abandoning a patent is irreversible, so it must require an explicit
             # negative — never the mere ABSENCE of a positive signal. A response

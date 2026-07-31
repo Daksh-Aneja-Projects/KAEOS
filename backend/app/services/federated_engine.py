@@ -14,6 +14,11 @@ from app.models.domain import Skill
 
 logger = logging.getLogger(__name__)
 
+# Locally measured successes required before a swarm hash match may promote a
+# skill to the VALIDATED_PEER trust tier.
+_PEER_EVIDENCE_MIN = 3
+
+
 class FederatedSkillWeight:
     def __init__(self, global_id: str, abstract_domain: str, procedural_hash: str, success_weight: float):
         self.global_id = global_id
@@ -26,6 +31,33 @@ class FederatedEngine:
     """
     Manages the zero-knowledge export and import of Epistemic Weights across the global swarm.
     """
+
+    @staticmethod
+    async def _local_success_evidence(db: AsyncSession, tenant_id: str, skill_id_name: str) -> int:
+        """How much this tenant's OWN history vouches for the skill.
+
+        Counts measured GOOD outcomes plus clean executions. Both are local facts;
+        a peer's procedural hash is not.
+        """
+        from sqlalchemy import func
+        from app.models.domain import SkillExecution
+        from app.models.intelligence_metrics import OutcomeRecord
+
+        good = (await db.execute(
+            select(func.count()).select_from(OutcomeRecord).where(
+                OutcomeRecord.tenant_id == tenant_id,
+                OutcomeRecord.skill_id_name == skill_id_name,
+                OutcomeRecord.outcome == "GOOD",
+            )
+        )).scalar() or 0
+        clean = (await db.execute(
+            select(func.count()).select_from(SkillExecution).where(
+                SkillExecution.tenant_id == tenant_id,
+                SkillExecution.skill_id_name == skill_id_name,
+                SkillExecution.status == "SUCCESS_CLEAN",
+            )
+        )).scalar() or 0
+        return int(good) + int(clean)
 
     @staticmethod
     def _extract_zero_knowledge_procedural_weight(skill: Skill) -> str:
@@ -150,15 +182,27 @@ class FederatedEngine:
             if local_hash == swarm_hash:
                 # The local skill matches the global successful pattern!
                 skill.confidence = min(1.0, skill.confidence + 0.15)
-                skill.confidence_tier = "VALIDATED_PEER"  # Upgraded by the swarm
-                
+
+                # But a hash match is a HINT, not evidence. VALIDATED_PEER is a
+                # trust tier that relaxes governance downstream, so it is only
+                # granted once this tenant's OWN measured history backs it up:
+                # another org's success proves nothing about our data, our
+                # integrations, or our regulators. Without local evidence the
+                # tier is left exactly as it was.
+                evidence = await FederatedEngine._local_success_evidence(
+                    db, tenant_id, skill.skill_id)
+                if evidence >= _PEER_EVIDENCE_MIN:
+                    skill.confidence_tier = "VALIDATED_PEER"
+
                 if "federated_events" not in skill.guardrails:
                     skill.guardrails["federated_events"] = []
-                    
+
                 skill.guardrails["federated_events"].append({
                     "event": "IMPORTED_SWARM_BOOST",
                     "global_id": swarm_global_id,
                     "confidence_delta": 0.15,
+                    "local_evidence": evidence,
+                    "tier_granted": evidence >= _PEER_EVIDENCE_MIN,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 })
                 db.add(skill)

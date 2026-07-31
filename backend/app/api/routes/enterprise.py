@@ -491,7 +491,7 @@ async def simulate_scenario(
                                 "evidence": "DEPT_HEAD_VALIDATION"}
     elif body.scenario == "remove_rule":
         # Find dependent skills
-        skills_q = await db.execute(select(Skill).where(Skill.domain == rule.domain))
+        skills_q = await db.execute(select(Skill).where(Skill.domain == rule.domain, Skill.tenant_id == tenant_id))
         skills = skills_q.scalars().all()
         result["impact"] = {"affected_skills": len(skills),
                             "skill_ids": [s.skill_id for s in skills[:10]],
@@ -506,32 +506,35 @@ async def simulate_scenario(
 # SCHEDULED REPORTS
 # ═══════════════════════════════════════════
 @router.get("/reports/health")
-async def generate_health_report(db: AsyncSession = Depends(get_db)):
-    """Generate a comprehensive KB health report."""
+async def generate_health_report(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a comprehensive KB health report for THIS tenant."""
     # Rule stats
-    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.is_archived == False))
+    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.is_archived == False, Rule.tenant_id == tenant_id))
     total_rules = r.scalar() or 0
-    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.is_executable == True))
+    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.is_executable == True, Rule.tenant_id == tenant_id))
     exec_rules = r.scalar() or 0
-    r = await db.execute(select(sqlfunc.avg(Rule.confidence_scalar)).where(Rule.is_archived == False))
+    r = await db.execute(select(sqlfunc.avg(Rule.confidence_scalar)).where(Rule.is_archived == False, Rule.tenant_id == tenant_id))
     avg_conf = round(r.scalar() or 0, 4)
 
     # Skill stats
-    r = await db.execute(select(sqlfunc.count(Skill.id)))
+    r = await db.execute(select(sqlfunc.count(Skill.id)).where(Skill.tenant_id == tenant_id))
     total_skills = r.scalar() or 0
-    r = await db.execute(select(sqlfunc.avg(Skill.success_rate)))
+    r = await db.execute(select(sqlfunc.avg(Skill.success_rate)).where(Skill.tenant_id == tenant_id))
     avg_success = round(r.scalar() or 0, 4)
-    r = await db.execute(select(sqlfunc.sum(Skill.execution_count)))
+    r = await db.execute(select(sqlfunc.sum(Skill.execution_count)).where(Skill.tenant_id == tenant_id))
     total_execs = r.scalar() or 0
 
     # Decay alerts
-    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.confidence_scalar < 0.30, Rule.is_archived == False))
+    r = await db.execute(select(sqlfunc.count(Rule.id)).where(Rule.confidence_scalar < 0.30, Rule.is_archived == False, Rule.tenant_id == tenant_id))
     speculative_count = r.scalar() or 0
 
     # Coverage by domain
     r = await db.execute(
         select(Rule.domain, sqlfunc.count(Rule.id), sqlfunc.avg(Rule.confidence_scalar))
-        .where(Rule.is_archived == False).group_by(Rule.domain)
+        .where(Rule.is_archived == False, Rule.tenant_id == tenant_id).group_by(Rule.domain)
     )
     domain_coverage = [{"domain": d, "rule_count": c, "avg_confidence": round(a or 0, 4)} for d, c, a in r.all()]
 

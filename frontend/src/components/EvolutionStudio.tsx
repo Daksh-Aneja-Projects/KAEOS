@@ -49,9 +49,17 @@ export default function EvolutionStudio() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[14px] font-bold bg-green-500/10 text-green-500 px-4 py-2 rounded-lg border border-green-500/20">
-            <ArrowUpRight className="w-4 h-4" /> Expected Delta: +{((evolutionState.future_fitness - evolutionState.current_fitness) * 100).toFixed(1)}%
-          </div>
+          {/* Either score can be null when a tenant has no history yet - showing
+              "+NaN%" was worse than saying there is nothing to compare. */}
+          {evolutionState.future_fitness != null && evolutionState.current_fitness != null ? (
+            <div className="flex items-center gap-2 text-[14px] font-bold bg-green-500/10 text-green-500 px-4 py-2 rounded-lg border border-green-500/20">
+              <ArrowUpRight className="w-4 h-4" /> Expected Delta: +{((evolutionState.future_fitness - evolutionState.current_fitness) * 100).toFixed(1)}%
+            </div>
+          ) : (
+            <div className="text-[13px] px-4 py-2 rounded-lg" style={{ color: colors.inkSubtle, background: colors.surface2 }}>
+              Not enough history yet to project a gain
+            </div>
+          )}
         </div>
       </div>
 
@@ -123,10 +131,12 @@ export default function EvolutionStudio() {
                   <span className="text-[10px] uppercase font-bold" style={{ color: colors.inkSubtle }}>Expected Risk</span>
                   <span className="font-mono text-[13px]" style={{ color: scoreColor(1 - opt.risk) }}>{(opt.risk * 100).toFixed(0)}%</span>
                 </div>
-                <div className="ml-auto">
-                   <button className="px-4 py-2 rounded-lg text-[13px] font-bold bg-white text-black shadow hover:bg-gray-100 transition-colors">
-                     Apply Genome Evolution
-                   </button>
+                {/* No "apply" affordance: the backend exposes read-only
+                    /evolution/state, so a button here would do nothing. These
+                    are recommendations a human acts on in the relevant
+                    department, not one-click changes. */}
+                <div className="ml-auto text-[11px]" style={{ color: colors.inkSubtle }}>
+                  Recommendation only - act on it in the owning department
                 </div>
               </div>
             </div>

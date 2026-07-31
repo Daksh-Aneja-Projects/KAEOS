@@ -20,6 +20,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 // Pages
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+// Public (rendered OUTSIDE the auth gate — an invitee has no session yet).
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
 
 // ─── WORKFORCE (Primary) ───────────────────────────────────────────
 const WorkforceDashboard = lazy(() => import('./pages/WorkforceDashboard'));
@@ -685,7 +687,17 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AuthGuard />
+        {/* /accept-invite is the one PUBLIC route: an invited user has no
+            session yet, so it must render before the auth gate. Everything
+            else falls through to AuthGuard, which owns the app's own Routes. */}
+        <Routes>
+          <Route path="/accept-invite" element={
+            <Suspense fallback={null}>
+              <AcceptInvite />
+            </Suspense>
+          } />
+          <Route path="*" element={<AuthGuard />} />
+        </Routes>
       </AuthProvider>
     </ThemeProvider>
   );

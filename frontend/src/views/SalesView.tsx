@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   TrendingUp, Users, BarChart2, Briefcase, BarChart3,
-  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, Star
+  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, Star,
+  ShieldAlert, FileText, Calculator, Wallet, BadgeDollarSign
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
@@ -16,7 +17,13 @@ import { useBulkSelect } from '../hooks/useBulkSelect';
 import CreateEntityModal from '../components/CreateEntityModal';
 import { Plus as PlusIcon } from 'lucide-react';
 
-type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts' | 'analytics';
+type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts' | 'commission' | 'analytics';
+
+interface CommissionRow {
+  id: string; plan_id: string | null; opportunity_id: string | null;
+  deal_value: number; calculated_payout: number;
+  is_approved: boolean | null; paid_date: string | null;
+}
 
 interface Opportunity { id: string; name: string; account: string | null; stage: string; value: number; close_date: string | null; win_probability: number; next_step: string | null; }
 interface Lead { id: string; name: string; company: string; email: string; source: string; status: string; score: number; }
@@ -26,7 +33,7 @@ interface SalesAccount { id: string; name: string; industry: string; arr: number
 const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<SalesTab>(() => {
-    const valid: SalesTab[] = ['opportunities', 'leads', 'forecasts', 'accounts', 'analytics'];
+    const valid: SalesTab[] = ['opportunities', 'leads', 'forecasts', 'accounts', 'commission', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as SalesTab)) return defaultTab as SalesTab;
     return 'opportunities';
   });
@@ -40,6 +47,9 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [leads, setLeads] = useState<Lead[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [accounts, setAccounts] = useState<SalesAccount[]>([]);
+  const [commissions, setCommissions] = useState<CommissionRow[]>([]);
+  // Quote results bypass the gate pipeline, so they get their own card.
+  const [quote, setQuote] = useState<{ opportunity: string; discount: number; result: any } | null>(null);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const bulk = useBulkSelect(opportunities, workflows['opportunity'], o => o.stage);
   const [createOpen, setCreateOpen] = useState(false);
@@ -57,12 +67,54 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     const results = await Promise.allSettled([
       api.getSalesOpportunities(), api.getSalesLeads(),
       api.getSalesForecasts(), api.getSalesAccounts(),
-      api.getDomainWorkflows('sales'),
+      api.getDomainWorkflows('sales'), api.getSalesCommissions(),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setOpportunities(val(0)); setLeads(val(1)); setForecasts(val(2)); setAccounts(val(3));
     if (results[4].status === 'fulfilled') setWorkflows((results[4] as any).value || {});
+    setCommissions(val(5));
     setLoading(false);
+  };
+
+  /** CPQ answers with a quote, not a gate trace, so it is handled on its own. */
+  const runCpq = async (opp: Opportunity) => {
+    const raw = window.prompt(`What discount is being asked for on "${opp.name}"? Enter a percentage.`, '10');
+    if (raw === null) return;
+    const discount = Number(raw);
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+      setActionMsg('Quote check failed: enter a discount between 0 and 100.');
+      return;
+    }
+    setRunningAgent(`${opp.id}-cpq`);
+    setActionMsg('');
+    setQuote(null);
+    try {
+      const res = await api.runSalesCpqAgent(opp.id, discount);
+      setQuote({ opportunity: opp.name, discount, result: res });
+    } catch (e: any) {
+      setActionMsg(`Quote check failed: ${e?.message || e}`);
+    } finally {
+      setRunningAgent(null);
+    }
+  };
+
+  const payCommission = async (row: CommissionRow) => {
+    if (!window.confirm(
+      `Approve a payout of $${(row.calculated_payout || 0).toLocaleString()} on a $${(row.deal_value || 0).toLocaleString()} deal? Payouts of $10,000 or more still need a second human approval.`
+    )) return;
+    setRunningAgent(row.id);
+    setActionMsg('');
+    try {
+      const res = await api.paySalesCommission(row.id);
+      setActionMsg(res.status === 'APPROVED'
+        ? `Payout of $${res.calculated_payout.toLocaleString()} approved at a ${(res.rate_applied * 100).toFixed(1)}% rate.`
+        : `Held for a second approver: ${res.reason || 'the amount is above the automatic limit.'}`);
+      await loadData();
+    } catch (e: any) {
+      setActionMsg(`Payout failed: ${e?.message || e}`);
+    } finally {
+      setRunningAgent(null);
+    }
   };
 
   const runAgent = async (label: string, id: string, fn: (id: string) => Promise<any>) => {
@@ -110,6 +162,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     { key: 'leads', label: 'Leads', icon: Users, color: '#f59e0b' },
     { key: 'forecasts', label: 'Forecasts', icon: BarChart2, color: '#22c55e' },
     { key: 'accounts', label: 'Accounts', icon: Briefcase, color: '#3b82f6' },
+    { key: 'commission', label: 'Commission', icon: Wallet, color: '#14b8a6' },
     { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
@@ -169,6 +222,39 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
           <GateTrace running={runningAgent === trace.id} result={trace.result} skillLabel={trace.label} />
         )}
 
+        {/* Quote verdict (CPQ does not run through the gate pipeline) */}
+        {quote && (
+          <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Calculator className="w-4 h-4" style={{ color: '#14b8a6' }} />
+              <span className="text-[13px] font-semibold">
+                {quote.discount}% discount on {quote.opportunity}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                style={{
+                  background: (quote.result?.approved ? '#22c55e' : '#f59e0b') + '20',
+                  color: quote.result?.approved ? '#22c55e' : '#f59e0b',
+                }}>
+                {quote.result?.approved ? 'Within policy' : 'Needs approval'}
+              </span>
+              <button onClick={() => setQuote(null)} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            </div>
+            <div className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>
+              {quote.result?.maximum_allowable_discount != null && (
+                <p>The most this deal can give away without escalation is{' '}
+                  <strong style={{ color: colors.ink }}>{quote.result.maximum_allowable_discount}%</strong>.</p>
+              )}
+              {quote.result?.margin_impact_summary && <p>{quote.result.margin_impact_summary}</p>}
+              {quote.result?.negotiation_counter && (
+                <p><strong style={{ color: colors.ink }}>Suggested counter:</strong> {quote.result.negotiation_counter}</p>
+              )}
+              {!quote.result?.margin_impact_summary && !quote.result?.negotiation_counter && quote.result?.maximum_allowable_discount == null && (
+                <p>The quote engine returned no detail for this deal.</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
           <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
@@ -219,13 +305,31 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <button onClick={() => runAgent('Pipeline coach', o.id, api.runSalesPipelineAgent)}
-                            disabled={runningAgent === o.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
-                            style={{ background: '#6366f115', color: '#6366f1' }}>
-                            {runningAgent === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-                            Coach
-                          </button>
+                          <div className="flex flex-wrap gap-1">
+                            <button onClick={() => runAgent('Pipeline coach', o.id, api.runSalesPipelineAgent)}
+                              disabled={runningAgent === o.id}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#6366f115', color: '#6366f1' }}>
+                              {runningAgent === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+                              Coach
+                            </button>
+                            <button onClick={() => runAgent('Proposal draft', `${o.id}-proposal`, () => api.runSalesProposalAgent(o.id))}
+                              disabled={!!runningAgent}
+                              title="Draft a proposal for this deal. It always goes to a human for review before it leaves."
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                              {runningAgent === `${o.id}-proposal` ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                              Proposal
+                            </button>
+                            <button onClick={() => runCpq(o)}
+                              disabled={!!runningAgent}
+                              title="Check whether a requested discount is allowed, and what it does to margin"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#14b8a615', color: '#14b8a6' }}>
+                              {runningAgent === `${o.id}-cpq` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Calculator className="w-3 h-3" />}
+                              Quote
+                            </button>
+                          </div>
                           <div className="mt-1">
                             <WorkflowActions domain="sales" entityPath="opportunities" entityId={o.id}
                               currentState={o.stage} transitions={workflows['opportunity']?.transitions}
@@ -348,19 +452,72 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">{a.owner || '-'}</td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{a.last_activity || '-'}</td>
                         <td className="px-4 py-3">
-                          <button onClick={() => runAgent('Account health', a.id, api.runSalesAccountAgent)}
-                            disabled={runningAgent === a.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
-                            style={{ background: '#3b82f615', color: '#3b82f6' }}>
-                            {runningAgent === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-                            Health
-                          </button>
+                          <div className="flex flex-wrap gap-1">
+                            <button onClick={() => runAgent('Account health', a.id, api.runSalesAccountAgent)}
+                              disabled={!!runningAgent}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#3b82f615', color: '#3b82f6' }}>
+                              {runningAgent === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+                              Health
+                            </button>
+                            <button onClick={() => runAgent('Churn risk', `${a.id}-churn`, () => api.runSalesChurnRiskAgent(a.id))}
+                              disabled={!!runningAgent}
+                              title="Estimate how likely this account is to leave, and what would keep it"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#ef444415', color: '#ef4444' }}>
+                              {runningAgent === `${a.id}-churn` ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldAlert className="w-3 h-3" />}
+                              Churn Risk
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 {accounts.length === 0 && <EmptyState icon={Briefcase} title="No accounts" sub="Sales accounts appear here" />}
+              </div>
+            )}
+
+            {/* COMMISSION */}
+            {tab === 'commission' && (
+              <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <table className="w-full text-[12px]">
+                  <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    {['Deal Value', 'Payout', 'Approved', 'Paid', 'Plan', 'Action'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {commissions.map(c => (
+                      <tr key={c.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <td className="px-4 py-3 font-mono font-semibold">${(c.deal_value || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 font-mono" style={{ color: '#14b8a6' }}>${(c.calculated_payout || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <Badge status={c.is_approved ? 'APPROVED' : 'PENDING'} />
+                        </td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>
+                          {c.paid_date ? new Date(c.paid_date.replace(' ', 'T')).toLocaleDateString() : 'Not yet paid'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[10px]" style={{ color: colors.inkSubtle }}>
+                          {c.plan_id ? `#${c.plan_id.slice(-6)}` : 'No plan'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {c.paid_date ? (
+                            <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Settled</span>
+                          ) : (
+                            <button onClick={() => payCommission(c)} disabled={!!runningAgent}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              style={{ background: '#14b8a615', color: '#14b8a6' }}>
+                              {runningAgent === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <BadgeDollarSign className="w-3 h-3" />}
+                              Approve payout
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {commissions.length === 0 && <EmptyState icon={Wallet} title="No commission calculations" sub="Payouts appear here once deals close" />}
               </div>
             )}
 

@@ -19,8 +19,8 @@ async def get_cross_org_benchmark(tenant_id: str = Depends(get_tenant_id), db: A
     local_conf = avg_conf.scalar() or 0.0
     
     from app.services.llm_router import LLMRouter
-    import json
-    
+    from app.services.json_utils import extract_json_object
+
     llm = LLMRouter()
     prompt = (
         f"You are the KAEOS Cross-Org Benchmark Engine.\n"
@@ -35,9 +35,9 @@ async def get_cross_org_benchmark(tenant_id: str = Depends(get_tenant_id), db: A
         res = await llm.complete(prompt=prompt, model_tier="classification")
         if isinstance(res, dict):
             content = res.get("content", "{}")
-            benchmarks = json.loads(content) if isinstance(content, str) else content
+            benchmarks = extract_json_object(content) if isinstance(content, str) else content
         elif isinstance(res, str):
-            benchmarks = json.loads(res)
+            benchmarks = extract_json_object(res)
         else:
             benchmarks = {}
     except Exception as e:
@@ -67,7 +67,7 @@ async def get_cross_org_benchmark(tenant_id: str = Depends(get_tenant_id), db: A
 async def generate_intelligence_report(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """L14 — LLM-powered intelligence report comparing org against industry benchmarks."""
     from app.services.llm_router import LLMRouter
-    import json
+    from app.services.json_utils import extract_json_object
 
     # Snapshot scoped to the caller's tenant before it is fed to the LLM.
     rules_count = await db.execute(select(func.count(Rule.id)).where(Rule.tenant_id == tenant_id))
@@ -92,9 +92,9 @@ async def generate_intelligence_report(tenant_id: str = Depends(get_tenant_id), 
         res = await llm.complete(prompt=prompt, model_tier="reasoning")
         if isinstance(res, dict):
             content = res.get("content", "{}")
-            report = json.loads(content) if isinstance(content, str) else content
+            report = extract_json_object(content) if isinstance(content, str) else content
         elif isinstance(res, str):
-            report = json.loads(res)
+            report = extract_json_object(res)
         else:
             report = {}
     except Exception as e:

@@ -3,7 +3,7 @@ import type { ElicitationDashboard } from '../api/client';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
-import { MessagesSquare, Send, Award, CheckCircle, Clock, User, TrendingUp } from 'lucide-react';
+import { MessagesSquare, Send, Award, CheckCircle, Clock, User, TrendingUp, Sparkles, Loader2, XCircle, AlertTriangle } from 'lucide-react';
 
 export default function ElicitationHub() {
   const { colors } = useTheme();
@@ -11,6 +11,12 @@ export default function ElicitationHub() {
   const [loading, setLoading] = useState(true);
   const [answering, setAnswering] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState('');
+  // Ask-an-expert generator (POST /elicitation/generate)
+  const [showGen, setShowGen] = useState(false);
+  const [genEmployee, setGenEmployee] = useState('');
+  const [genDomain, setGenDomain] = useState('');
+  const [genBusy, setGenBusy] = useState(false);
+  const [banner, setBanner] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null);
 
   const loadData = () => {
     setLoading(true);
@@ -33,6 +39,31 @@ export default function ElicitationHub() {
       loadData();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const generateQuestion = async () => {
+    setGenBusy(true);
+    setBanner(null);
+    try {
+      const r = await api.generateElicitationQuestion({
+        employee_id: genEmployee.trim(),
+        domain: genDomain.trim() || null,
+      });
+      if (r.status === 'GENERATED') {
+        setBanner({ tone: 'ok', text: `Question sent: "${r.question}"` });
+        setShowGen(false);
+        setGenEmployee(''); setGenDomain('');
+        loadData();
+      } else if (r.status === 'SKIPPED_RATE_LIMIT') {
+        setBanner({ tone: 'warn', text: 'That person has already had three questions this week. Pick someone else or wait until next week.' });
+      } else {
+        setBanner({ tone: 'warn', text: r.message || 'No question could be generated for that person right now.' });
+      }
+    } catch (e: any) {
+      setBanner({ tone: 'bad', text: e?.message || 'Could not generate a question.' });
+    } finally {
+      setGenBusy(false);
     }
   };
 
@@ -69,13 +100,80 @@ export default function ElicitationHub() {
             style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}99)` }}>
             <MessagesSquare className="w-6 h-6 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-[24px] font-bold tracking-tight">Knowledge Capture Hub</h1>
             <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
               Active Elicitation - Targeted micro-surveys for domain expert knowledge harvesting
             </p>
           </div>
+          <button onClick={() => { setShowGen(v => !v); setBanner(null); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold text-white self-center transition-all hover:brightness-110"
+            style={{ background: colors.primary }}>
+            <Sparkles className="w-4 h-4" /> {showGen ? 'Close' : 'Ask an Expert'}
+          </button>
         </div>
+
+        {banner && (
+          <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (banner.tone === 'ok' ? colors.success : banner.tone === 'warn' ? colors.warning : colors.error) + '15',
+              color: banner.tone === 'ok' ? colors.success : banner.tone === 'warn' ? colors.warning : colors.error,
+            }}>
+            {banner.tone === 'ok'
+              ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" />
+              : banner.tone === 'warn'
+                ? <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+                : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
+            <span className="flex-1">{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
+
+        {showGen && (
+          <div className="p-5 space-y-3" style={card}>
+            <h3 className="text-[14px] font-semibold" style={{ color: colors.ink }}>Ask an Expert</h3>
+            <p className="text-[11px]" style={{ color: colors.inkTertiary }}>
+              KAEOS writes one targeted question aimed at a gap it has found in what it knows. Each person gets at most three questions a week.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Who to ask</label>
+                {d.contributors.length > 0 ? (
+                  <select value={genEmployee} onChange={e => setGenEmployee(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                    style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                    <option value="">Choose a person…</option>
+                    {d.contributors.map(c => (
+                      <option key={c.employee_id} value={c.employee_id}>{c.display_name} · {c.department}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={genEmployee} onChange={e => setGenEmployee(e.target.value)}
+                    placeholder="Employee id"
+                    className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                    style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+                )}
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Subject area (optional)</label>
+                <input value={genDomain} onChange={e => setGenDomain(e.target.value)}
+                  placeholder="finance, support, engineering…"
+                  className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                  style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowGen(false)}
+                className="px-4 py-2 rounded-lg text-[13px]"
+                style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>Cancel</button>
+              <button onClick={generateQuestion} disabled={genBusy || !genEmployee.trim()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
+                style={{ background: colors.primary }}>
+                {genBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Generate Question
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

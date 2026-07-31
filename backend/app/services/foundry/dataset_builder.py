@@ -34,6 +34,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SkillExecution
+from app.models.intelligence_metrics import OutcomeRecord
 from app.models.foundry import (
     TrainingExample,
     LABEL_CORRECTED,
@@ -84,8 +85,14 @@ def _to_text(value: Any) -> str:
         return str(value)
 
 
-def _classify(execution: SkillExecution) -> Optional[tuple[str, float]]:
+def _classify(
+    execution: SkillExecution, measured_outcome: Optional[str] = None,
+) -> Optional[tuple[str, float]]:
     """Map an execution to (evaluation_label, quality_score), or None to skip.
+
+    ``measured_outcome`` is the GOOD/BAD/NEUTRAL judgment a human later recorded
+    against this execution (OutcomeRecord). It is the only signal here that comes
+    from REALITY rather than from decision time, so it outranks everything else.
 
     Quality is a training-signal weight in 0..1, not a business score:
       CORRECTED (human edited)  0.95 - what a human actually wanted
@@ -96,6 +103,12 @@ def _classify(execution: SkillExecution) -> Optional[tuple[str, float]]:
     status = (execution.status or "").upper()
     outcome = (execution.outcome_type or "").upper()
 
+    if (measured_outcome or "").upper() == "BAD":
+        # Reality overrules the decision-time label. A decision that measured
+        # badly is never mined as a positive example, even if it ran cleanly or
+        # a human approved it at the gate - training on it would teach the model
+        # to repeat a mistake the business already paid for.
+        return LABEL_NEGATIVE, 0.40
     if execution.hitl_approved is True:
         return LABEL_APPROVED, 0.90
     if outcome in _EDITED_OUTCOMES or status in _EDITED_OUTCOMES:
@@ -139,13 +152,25 @@ async def mine_executions(
     )
     executions = rows.scalars().all()
 
+    # The measured real-world verdicts for those executions. Worst verdict wins
+    # per execution (an execution judged BAD once is not gold because a second
+    # reviewer shrugged), which BAD sorting first gives us for free.
+    outcome_rows = await db.execute(
+        select(OutcomeRecord.execution_id, OutcomeRecord.outcome)
+        .where(OutcomeRecord.tenant_id == tenant_id)
+        .order_by(OutcomeRecord.outcome)
+    )
+    measured: Dict[str, str] = {}
+    for exec_id, verdict in outcome_rows:
+        measured.setdefault(exec_id, verdict)
+
     created: Dict[str, int] = {}
     skipped = 0
     for ex in executions:
         if ex.id in seen:
             skipped += 1
             continue
-        classified = _classify(ex)
+        classified = _classify(ex, measured.get(ex.id))
         if classified is None:
             skipped += 1
             continue

@@ -194,6 +194,66 @@ async def run_autonomy_governor_job():
         logger.error(f"[Scheduler] Autonomy governor failed: {e}")
 
 
+async def run_drift_detection_job():
+    """DETECTION ONLY: find systems-of-record rows that changed outside the
+    actuation path and raise an ExternalSignal so a human sees them.
+
+    Deliberately does NOT reconcile. Writing back to a system of record is a
+    governed action that belongs behind the 7 gates with a human in the loop;
+    a background sweep silently re-applying state would be exactly the kind of
+    ungoverned autonomy this platform exists to prevent. Leader-guarded.
+    """
+    if not _is_leader():
+        return
+    try:
+        from app.models.actuation import SorObject
+        from app.models.event_mesh import ExternalSignal
+        from app.services.actuation import Actuator
+        async with MaintenanceSessionLocal() as db:
+            tenant_ids = (await db.execute(
+                select(SorObject.tenant_id).distinct()
+            )).scalars().all()
+            flagged = 0
+            for tid in tenant_ids:
+                if not tid:
+                    continue
+                report = await Actuator.compute_drift(db, tenant_id=tid)
+                drifted = report.get("drift") or []
+                if not drifted:
+                    continue
+                # One open signal per tenant at a time: re-raising every sweep
+                # would bury the operator in duplicates of the same condition.
+                open_sig = (await db.execute(
+                    select(ExternalSignal).where(
+                        ExternalSignal.tenant_id == tid,
+                        ExternalSignal.kind == "DRIFT",
+                        ExternalSignal.status != "RESOLVED",
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if open_sig is not None:
+                    continue
+                names = ", ".join(
+                    f"{d.get('system')}:{d.get('external_id')}" for d in drifted[:5])
+                db.add(ExternalSignal(
+                    tenant_id=tid, kind="DRIFT",
+                    title=f"{len(drifted)} record(s) changed outside KAEOS",
+                    body=(f"These systems-of-record rows no longer match the last "
+                          f"governed action KAEOS took on them: {names}"
+                          f"{' and others' if len(drifted) > 5 else ''}. "
+                          f"Nothing was changed automatically; review and reconcile."),
+                    source="drift-monitor",
+                    severity="warning" if len(drifted) < 10 else "critical",
+                    matched_entities=drifted[:20],
+                    status="NEW",
+                ))
+                flagged += 1
+            if flagged:
+                await db.commit()
+                logger.info("[Scheduler] Drift detection raised signals for %d tenant(s)", flagged)
+    except Exception as e:
+        logger.error(f"[Scheduler] Drift detection failed: {e}")
+
+
 async def run_deployment_reaper():
     """Recover deployments orphaned by a crashed/restarted worker.
 
@@ -291,6 +351,12 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_autonomy_governor_job, 'interval', hours=6,
         id='autonomy_governor_job', replace_existing=True
+    )
+    # Drift detection: flag systems-of-record rows changed outside the actuation
+    # path. Detection only - reconciliation stays a human-gated governed action.
+    scheduler.add_job(
+        run_drift_detection_job, 'interval', hours=1,
+        id='drift_detection_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # L2 fine-tune bridge: poll external jobs to completion + auto-eval (5 min).
     scheduler.add_job(

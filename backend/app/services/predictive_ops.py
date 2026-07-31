@@ -65,10 +65,10 @@ class PredictiveOpsEngine:
         try:
             router = LLMRouter()
             res = await router.complete(prompt=prompt, model_tier="fast")
-            import json
+            from app.services.json_utils import extract_json_object
             content = res if isinstance(res, str) else res.get("content", "{}")
-            analysis = json.loads(content) if isinstance(content, str) else content
-            
+            analysis = extract_json_object(content) if isinstance(content, str) else content
+
             if analysis.get("requires_action") and analysis.get("recommended_skill_id") in available_skills:
                 return LatentIntent(
                     intent_type="AUTOMATED_PREDICTION",

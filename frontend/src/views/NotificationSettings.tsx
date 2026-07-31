@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { NotificationChannel, NotificationDelivery, NotificationKind } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { Bell, Mail, MessageSquare, Webhook, Plus, Trash2, Loader2, Send, History } from 'lucide-react';
+import { toPct } from '../lib/format';
+import { Bell, Mail, MessageSquare, Webhook, Plus, Trash2, Loader2, Send, History, Newspaper, Eye, CheckCircle2, XCircle } from 'lucide-react';
 
 /**
  * Notification settings: SMTP / Slack / webhook channels with per-event
@@ -52,6 +53,46 @@ const NotificationSettings: React.FC = () => {
   const [formEnabled, setFormEnabled] = useState(true);
   const [formBusy, setFormBusy] = useState(false);
   const [formMsg, setFormMsg] = useState('');
+
+  // Operational digest
+  const [digestDays, setDigestDays] = useState(7);
+  const [digest, setDigest] = useState<{ payload: Record<string, any>; text: string } | null>(null);
+  const [digestBusy, setDigestBusy] = useState<'preview' | 'send' | null>(null);
+  const [digestMsg, setDigestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const previewDigest = async () => {
+    setDigestBusy('preview');
+    setDigestMsg(null);
+    try {
+      setDigest(await api.previewDigest(digestDays));
+    } catch (e: any) {
+      setDigestMsg({ ok: false, text: e?.message || 'Could not build the digest.' });
+    } finally {
+      setDigestBusy(null);
+    }
+  };
+
+  const sendDigestNow = async () => {
+    const targets = channels.filter(c => c.enabled).length;
+    if (!window.confirm(
+      `Send the last ${digestDays} days of activity to ${targets} enabled channel${targets === 1 ? '' : 's'} now? Recipients will get it immediately.`
+    )) return;
+    setDigestBusy('send');
+    setDigestMsg(null);
+    try {
+      const r = await api.sendDigest(digestDays);
+      setDigestMsg({
+        ok: r.failed === 0,
+        text: `Digest delivered to ${r.sent} destination${r.sent === 1 ? '' : 's'}`
+          + (r.failed ? `, ${r.failed} failed.` : '.'),
+      });
+      loadDeliveries();
+    } catch (e: any) {
+      setDigestMsg({ ok: false, text: e?.message || 'Send failed.' });
+    } finally {
+      setDigestBusy(null);
+    }
+  };
 
   const loadChannels = () => api.getNotificationChannels().then(r => setChannels(r.channels || [])).catch(() => setChannels([]));
   const loadDeliveries = () => api.getNotificationDeliveries(50).then(r => setDeliveries(r.deliveries || [])).catch(() => setDeliveries([]));
@@ -299,6 +340,117 @@ const NotificationSettings: React.FC = () => {
             );
           })}
         </div>
+      </div>
+
+      {/* Operational digest */}
+      <div className="p-5" style={card}>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Newspaper className="w-5 h-5" style={{ color: colors.primary }} />
+            <span className="text-[16px] font-medium" style={{ color: colors.ink }}>Operational Digest</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={digestDays} onChange={e => { setDigestDays(Number(e.target.value)); setDigest(null); }}
+              aria-label="Digest window"
+              className="px-2.5 py-1.5 rounded-lg text-[12px] outline-none"
+              style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+              <option value={1}>Last 24 hours</option>
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={90}>Last 90 days</option>
+            </select>
+            <button onClick={previewDigest} disabled={digestBusy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium disabled:opacity-50"
+              style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
+              {digestBusy === 'preview' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />} Preview
+            </button>
+            <button onClick={sendDigestNow} disabled={digestBusy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-white disabled:opacity-50"
+              style={{ background: colors.primary }}>
+              {digestBusy === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send now
+            </button>
+          </div>
+        </div>
+        <p className="text-[12px] mb-3" style={{ color: colors.inkSubtle }}>
+          A periodic summary of how much work ran itself, what is waiting on a human, and what it cost. Sent to every enabled channel above.
+        </p>
+
+        {digestMsg && (
+          <div className="flex items-start gap-2 px-3 py-2 mb-3 rounded-lg text-[12px] font-medium"
+            style={{
+              background: (digestMsg.ok ? colors.success : colors.error) + '15',
+              color: digestMsg.ok ? colors.success : colors.error,
+            }}>
+            {digestMsg.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
+            <span className="flex-1">{digestMsg.text}</span>
+            <button onClick={() => setDigestMsg(null)} className="text-[10px] opacity-70">dismiss</button>
+          </div>
+        )}
+
+        {digest && (() => {
+          const p = digest.payload || {};
+          const rate = toPct(p.safe_autonomy_rate);
+          const missions = Object.entries((p.missions || {}) as Record<string, number>);
+          return (
+            <div className="p-4 rounded-lg space-y-4" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+              <p className="text-[13px]" style={{ color: colors.ink }}>
+                Over the last <strong>{p.window_days} day{p.window_days === 1 ? '' : 's'}</strong>, KAEOS ran{' '}
+                <strong>{(p.executions ?? 0).toLocaleString()}</strong> task{p.executions === 1 ? '' : 's'}
+                {rate != null && <> and finished <strong>{rate.toFixed(1)}%</strong> of them safely without a human</>}.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Waiting on a person', value: (p.pending_approvals ?? 0).toLocaleString(), tone: (p.pending_approvals ?? 0) > 0 ? colors.warning : colors.ink },
+                  { label: 'Incidents', value: (p.incidents ?? 0).toLocaleString(), tone: (p.incidents ?? 0) > 0 ? colors.error : colors.ink },
+                  { label: 'Spend', value: p.spend_usd != null ? `$${Number(p.spend_usd).toFixed(2)}` : 'not measured', tone: colors.ink },
+                  { label: 'Tasks run', value: (p.executions ?? 0).toLocaleString(), tone: colors.ink },
+                ].map(s => (
+                  <div key={s.label} className="p-3 rounded-lg" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                    <div className="text-[20px] font-bold" style={{ color: s.tone }}>{s.value}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {(p.lowest_autonomy_skills || []).length > 0 && (
+                <div>
+                  <div className="text-[12px] font-medium mb-1.5" style={{ color: colors.ink }}>Needing the most human help</div>
+                  <div className="space-y-1">
+                    {(p.lowest_autonomy_skills as any[]).map((s, i) => {
+                      const r = toPct(s.safe_autonomy_rate);
+                      return (
+                        <div key={`${s.skill}-${i}`} className="flex items-center gap-2 text-[12px]">
+                          <span className="truncate flex-1" style={{ color: colors.inkSubtle }}>
+                            {String(s.skill || 'unnamed skill').replace(/_/g, ' ')}
+                          </span>
+                          <span className="font-mono tabular-nums shrink-0"
+                            style={{ color: (r ?? 100) < 60 ? colors.warning : colors.ink }}>
+                            {r != null ? `${r.toFixed(0)}% on its own` : 'no rate yet'}
+                          </span>
+                          <span className="shrink-0" style={{ color: colors.inkTertiary }}>
+                            of {(s.total ?? 0).toLocaleString()} run{s.total === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {missions.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[12px] font-medium" style={{ color: colors.ink }}>Missions:</span>
+                  {missions.map(([state, n]) => (
+                    <span key={state} className="text-[11px] px-2 py-0.5 rounded-full"
+                      style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
+                      {n} {state.replace(/_/g, ' ').toLowerCase()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Recent deliveries */}

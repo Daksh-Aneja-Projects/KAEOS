@@ -6,7 +6,6 @@ Note: Proposal generation always routes to HITL (confidence hardcoded low) for h
 """
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional
@@ -78,14 +77,14 @@ async def run_gated_sales_skill(
 
 def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
     """Best-effort parse of the primary step's JSON decision from a gated result."""
+    from app.services.json_utils import extract_json_object
+
     chain = result.get("reasoning_chain") or []
     if not chain:
         return {}
     decision_text = chain[-1].get("decision", "") or ""
-    if "{" in decision_text and "}" in decision_text:
-        snippet = decision_text[decision_text.find("{"): decision_text.rfind("}") + 1]
-        try:
-            return json.loads(snippet)
-        except (ValueError, TypeError):
-            return {}
-    return {}
+    try:
+        return extract_json_object(decision_text)
+    except ValueError as e:
+        logger.warning(f"extract_decision: could not parse JSON decision: {e}")
+        return {}
