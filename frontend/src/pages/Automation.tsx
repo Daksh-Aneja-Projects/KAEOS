@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { AutomationRule, WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import LiveBadge from '../components/LiveBadge';
+import { BrainError } from '../components/BrainStates';
 
 /**
  * Automation rules (Sprint 8): declarative "when an entity sits in a state
@@ -19,6 +20,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [specs, setSpecs] = useState<Record<string, WorkflowSpec>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState('');
   const [lastSync, setLastSync] = useState<number | null>(null);
@@ -34,7 +36,9 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
   const [saving, setSaving] = useState(false);
 
   const loadRules = useCallback(async () => {
-    try { setRules(await api.getAutomationRules()); setLastSync(Date.now()); } catch { /* noop */ }
+    setError(null);
+    try { setRules(await api.getAutomationRules()); setLastSync(Date.now()); }
+    catch (e: any) { setError(e?.message || 'Failed to load automation rules'); }
     setLoading(false);
   }, []);
 
@@ -168,6 +172,8 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
       <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         {loading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: colors.primary }} /></div>
+        ) : error ? (
+          <BrainError message={error} onRetry={() => { setLoading(true); loadRules(); }} />
         ) : rules.length === 0 ? (
           <p className="text-[12px] py-10 text-center" style={{ color: colors.inkTertiary }}>No automation rules yet.</p>
         ) : (

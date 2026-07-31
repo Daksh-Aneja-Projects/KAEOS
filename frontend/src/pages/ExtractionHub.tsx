@@ -3,20 +3,25 @@ import type { Signal, CandidateRule } from '../api/client';
 import { api } from '../api/client';
 import { FileSearch, Beaker, ShieldCheck, Inbox } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { BrainLoading } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 
 const ExtractionHub = () => {
  const { colors } = useTheme();
  const [signals, setSignals] = useState<Signal[]>([]);
  const [candidates, setCandidates] = useState<CandidateRule[]>([]);
  const [loading, setLoading] = useState(true);
+ const [error, setError] = useState<string | null>(null);
  const [tab, setTab] = useState<'signals' | 'candidates'>('signals');
 
- useEffect(() => {
+ const load = React.useCallback(() => {
+  setLoading(true);
+  setError(null);
   Promise.all([api.getSignals(), api.getCandidates()])
    .then(([s, c]) => { setSignals(s.signals); setCandidates(c.candidates); setLoading(false); })
-   .catch(() => setLoading(false));
+   .catch((e: any) => { setError(e?.message || 'Failed to load extraction data'); setLoading(false); });
  }, []);
+
+ useEffect(() => { load(); }, [load]);
 
  const card: React.CSSProperties = {
   background: colors.surface1,
@@ -27,6 +32,12 @@ const ExtractionHub = () => {
  if (loading) return (
   <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
    <BrainLoading message="Loading extraction data…" />
+  </div>
+ );
+
+ if (error) return (
+  <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
+   <BrainError message={error} onRetry={load} />
   </div>
  );
 

@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   BarChart3, Clock, DollarSign, TrendingUp, Building2,
   Users, Zap, Heart, AlertTriangle, CheckCircle
@@ -23,13 +23,18 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   const [data, setData] = useState<any>(null);
   const [trend, setTrend] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
 
   const loadAnalytics = React.useCallback(() => {
+    let anchorFailed: any = null;
     return Promise.all([
-      api.getWorkforceAnalytics().catch(() => null),
+      api.getWorkforceAnalytics().catch((e) => { anchorFailed = e; return null; }),
       api.getAutonomyTrend(30).catch(() => null),
     ]).then(([d, t]) => {
+      // Distinguish a real outage (anchor rejected) from a genuinely empty
+      // tenant (call succeeded, no data) so the two render differently.
+      setError(anchorFailed ? (anchorFailed?.message || 'Analytics services are unreachable') : null);
       if (d) { setData(d); setSyncedAt(Date.now()); }
       if (t) setTrend(t);
       setLoading(false);
@@ -40,6 +45,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   useLiveRefresh(loadAnalytics);
 
   if (loading) return <BrainLoading message="Computing ROI analytics..." />;
+  if (error && !data) return <BrainError message={error} onRetry={() => { setLoading(true); loadAnalytics(); }} />;
   if (!data) return <BrainEmpty title="No analytics data yet" action="Deploy a department and complete tasks to generate analytics" />;
 
   const card = { background: colors.surface1, borderRadius: '12px', border: `1px solid ${colors.hairline}`, padding: '20px' };

@@ -6,6 +6,7 @@ import type { MyWorkItem, SavedSegment } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import LiveBadge from '../components/LiveBadge';
+import { BrainError } from '../components/BrainStates';
 import { timeAgo } from '../lib/time';
 
 /**
@@ -39,13 +40,21 @@ const MyWork: React.FC<{ domain?: string }> = () => {
   const [workload, setWorkload] = useState<{ assignee: string; count: number }[]>([]);
   const [segments, setSegments] = useState<SavedSegment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const [w, wl, seg] = await Promise.allSettled([
       api.getMyWork(), api.getWorkload(), api.getSegments(),
     ]);
-    if (w.status === 'fulfilled') { setItems(w.value.items || []); setMe(w.value.assignee); }
+    // getMyWork is the anchor - if it fails the page has nothing to show.
+    if (w.status === 'rejected') {
+      setError((w.reason as any)?.message || 'Failed to load your work');
+      setLoading(false);
+      return;
+    }
+    setError(null);
+    setItems(w.value.items || []); setMe(w.value.assignee);
     if (wl.status === 'fulfilled') setWorkload(wl.value.workload || []);
     if (seg.status === 'fulfilled') setSegments(seg.value || []);
     setLastSync(Date.now());
@@ -63,6 +72,9 @@ const MyWork: React.FC<{ domain?: string }> = () => {
 
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>;
+  }
+  if (error) {
+    return <div className="p-6"><BrainError message={error} onRetry={() => { setLoading(true); load(); }} /></div>;
   }
 
   return (

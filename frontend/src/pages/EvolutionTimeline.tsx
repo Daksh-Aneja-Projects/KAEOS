@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { BrainError } from '../components/BrainStates';
 import {
   RefreshCw, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
   MessageSquare, Brain, Zap, ChevronRight, ArrowUpRight, ArrowDownRight,
@@ -22,6 +23,8 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
   const [health, setHealth] = useState<any>(null);
   const [executions, setExecCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [events, setEvents] = useState<EvolutionEvent[]>([]);
   const [outcomeImpact, setOutcomeImpact] = useState<any>(null);
   const [decisions, setDecisions] = useState<any[]>([]);
@@ -44,12 +47,20 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      setError(null);
       const [h, feed, impact, dfeed] = await Promise.allSettled([
         api.getHealth(),
         api.getActivityFeed(50, false),
         api.getOutcomeImpact(30),
         api.getDecisionFeed(),
       ]);
+      // getHealth is the anchor that drives the whole timeline; if it fails
+      // (and nothing else came back) surface an error instead of an empty axis.
+      if (h.status === 'rejected' && feed.status === 'rejected') {
+        setError((h.reason as any)?.message || 'Evolution services are unreachable');
+        setLoading(false);
+        return;
+      }
       if (impact.status === 'fulfilled') setOutcomeImpact(impact.value);
       if (dfeed.status === 'fulfilled') setDecisions(dfeed.value?.decisions || []);
 
@@ -170,7 +181,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
       setLoading(false);
     };
     load();
-  }, []);
+  }, [reloadKey]);
 
   const eventIcon = (type: string) => {
     switch (type) {
@@ -203,6 +214,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
   };
 
   if (loading) return <div className="p-8 animate-pulse" style={{ color: colors.inkTertiary }}>Loading Evolution Timeline…</div>;
+  if (error) return <BrainError message={error} onRetry={() => setReloadKey(k => k + 1)} />;
 
   const successRate = health?.agent_metrics?.success_rate || 0;
   const totalRules = health?.total_rules || 0;

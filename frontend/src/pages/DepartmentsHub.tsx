@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
 import { toPct } from '../lib/format';
 import { canSeeDepartment } from '../lib/departments';
+import { BrainError } from '../components/BrainStates';
 
 /**
  * Departments directory - the single place to jump into any of the governed AI
@@ -19,23 +20,25 @@ export default function DepartmentsHub() {
   const navigate = useNavigate();
   const [allDepts, setAllDepts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Department-scoped users only see their own department here; org-wide
   // users (department = null) see the full directory.
   const depts = allDepts.filter(d => canSeeDepartment(user?.department, d.slug || d.id));
 
-  useEffect(() => {
-    let cancelled = false;
-    api.getWorkforceDepartments()
+  const load = React.useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return api.getWorkforceDepartments()
       .then((d: any) => {
-        if (cancelled) return;
         const arr = Array.isArray(d) ? d : (d?.departments || []);
         setAllDepts(arr);
       })
-      .catch(() => setAllDepts([]))
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((e: any) => setError(e?.message || 'Failed to load departments'))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const card: React.CSSProperties = {
     background: colors.surface1, borderRadius: '14px', border: `1px solid ${colors.hairline}`,
@@ -69,6 +72,8 @@ export default function DepartmentsHub() {
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: colors.primary, borderTopColor: 'transparent' }} />
           </div>
+        ) : error ? (
+          <BrainError message={error} onRetry={load} />
         ) : depts.length === 0 ? (
           <div style={card} className="text-center py-16 px-6">
             <Building2 className="w-9 h-9 mx-auto mb-3" style={{ color: colors.inkTertiary }} />

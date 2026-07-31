@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
+import { BrainError } from '../components/BrainStates';
 import {
   Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
   Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart
@@ -15,19 +16,31 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
   const [costData, setCostData] = useState<any>(null);
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getModelRegistry().catch(() => []),
-      api.getCostTelemetry(24).catch(() => null),
-      api.getAgentRegistry().catch(() => []),
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    // Per-call defaults keep partial data visible; a total outage (every call
+    // rejected) surfaces an error+retry instead of an empty dashboard.
+    Promise.allSettled([
+      api.getModelRegistry(),
+      api.getCostTelemetry(24),
+      api.getAgentRegistry(),
     ]).then(([m, c, a]) => {
-      setModels(m || []);
-      setCostData(c);
-      setAgents(a || []);
+      if (m.status === 'rejected' && c.status === 'rejected' && a.status === 'rejected') {
+        setError((m.reason as any)?.message || 'Infrastructure services are unreachable');
+        setLoading(false);
+        return;
+      }
+      setModels(m.status === 'fulfilled' ? (m.value || []) : []);
+      setCostData(c.status === 'fulfilled' ? c.value : null);
+      setAgents(a.status === 'fulfilled' ? (a.value || []) : []);
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'models', label: 'Model Registry', icon: Cpu },
@@ -70,8 +83,10 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
           </div>
         )}
 
+        {!loading && error && <BrainError message={error} onRetry={load} />}
+
         {/* N1: Model Registry */}
-        {!loading && tab === 'models' && (
+        {!loading && !error && tab === 'models' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Model Registry & 4-Tier Routing</h2>
@@ -136,7 +151,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
         )}
 
         {/* N2: Cost Governor */}
-        {!loading && tab === 'cost' && (
+        {!loading && !error && tab === 'cost' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Inference Cost Governor</h2>
@@ -232,7 +247,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
         )}
 
         {/* N3: Agent Protocol */}
-        {!loading && tab === 'agents' && (
+        {!loading && !error && tab === 'agents' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-[18px] font-semibold tracking-tight">Agent Protocol & Circuit Breakers</h2>

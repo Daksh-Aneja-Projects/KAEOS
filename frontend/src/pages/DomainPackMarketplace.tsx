@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   Package, Search, Star, Download, Shield, Zap, Bot,
   CheckCircle, ArrowRight, Filter, TrendingUp
@@ -21,22 +21,34 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
   const [packs, setPacks] = useState<any[]>([]);
   const [installations, setInstallations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState('');
   const [filterCat, setFilterCat] = useState('all');
   const [selectedPack, setSelectedPack] = useState<any>(null);
 
-  useEffect(() => {
-    Promise.all([
-      api.getDomainPacks().catch(() => ({ packs: [] })),
-      api.getDomainPackInstallations().catch(() => ({ installations: [] })),
+  const load = React.useCallback(() => {
+    setLoading(true);
+    setError(null);
+    // The pack catalog is the anchor; a failed installations call still renders.
+    Promise.allSettled([
+      api.getDomainPacks(),
+      api.getDomainPackInstallations(),
     ]).then(([p, inst]) => {
-      setPacks(p?.packs || []);
-      setInstallations(inst?.installations || []);
+      if (p.status === 'rejected') {
+        setError((p.reason as any)?.message || 'Failed to load the marketplace');
+        setLoading(false);
+        return;
+      }
+      setPacks(p.value?.packs || []);
+      setInstallations(inst.status === 'fulfilled' ? (inst.value?.installations || []) : []);
       setLoading(false);
     });
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
   if (loading) return <BrainLoading message="Loading marketplace..." />;
+  if (error) return <BrainError message={error} onRetry={load} />;
 
   const categories = ['all', ...Array.from(new Set(packs.map(p => p.category)))];
   const filteredPacks = packs.filter(p => {

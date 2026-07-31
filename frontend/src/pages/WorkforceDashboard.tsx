@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   Building2, Users, Clock, Zap, BarChart3, ArrowRight, Rocket,
   Activity, CheckCircle, AlertTriangle, Heart, TrendingUp, ShieldAlert
@@ -31,6 +31,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   const [trend, setTrend] = useState<any>(null);
   const [graduations, setGraduations] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const { lastMessage } = useWebSocket();
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
@@ -50,15 +51,23 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   const trendDelta: number | null = trend?.trend_delta_pct ?? null;
 
   const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
+    if (showSpinner) { setLoading(true); setError(null); }
+    let anchorFailed: any = null;
     const [ov, deps, activity, trendData, grads, sarData] = await Promise.all([
-      api.getWorkforceOverview().catch(() => null),
+      api.getWorkforceOverview().catch((e) => { anchorFailed = e; return null; }),
       api.getWorkforceDepartments().catch(() => ({ departments: [] })),
       api.getOODAEvents().catch(() => ({ events: [] })),
       api.getAutonomyTrend(30).catch(() => null),
       api.getGraduations().catch(() => null),
       api.getSafeAutonomy(30).catch(() => null),
     ]);
+    // Only the initial (spinner) load flips to an error screen; a failed
+    // background refresh keeps the last good data on screen.
+    if (anchorFailed && showSpinner) {
+      setError(anchorFailed?.message || 'Workforce services are unreachable');
+      setLoading(false);
+      return;
+    }
     setOverview(ov);
     setDepartments(deps?.departments || []);
     setRecentActivity(activity?.events?.slice(0, 8) || []);
@@ -79,6 +88,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   }, [lastMessage, load]);
 
   if (loading) return <BrainLoading message="Loading Enterprise Workforce..." />;
+  if (error) return <BrainError message={error} onRetry={() => load(true)} />;
 
   const hasDepartments = departments.length > 0;
   const statusColor = (s: string) => {

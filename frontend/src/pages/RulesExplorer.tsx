@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { RuleItem } from '../api/client';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import { BookOpen, Search, ChevronDown, ChevronRight, Shield, Clock, CheckCircle } from 'lucide-react';
 
 const DOMAINS = ['all', 'support', 'sales', 'engineering', 'finance', 'hr'];
@@ -27,6 +27,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
   const [localDomain, setLocalDomain] = useState('all');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Sync localDomain with the incoming domain prop
@@ -36,11 +37,16 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
     }
   }, [domain]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     const params = localDomain === 'all' ? {} : { domain: localDomain };
-    api.getRules(params).then((r) => { setRules(r.rules); setTotal(r.total); setLoading(false); });
+    api.getRules(params)
+      .then((r) => { setRules(r.rules); setTotal(r.total); setLoading(false); })
+      .catch((e: any) => { setError(e?.message || 'Failed to load rules'); setLoading(false); });
   }, [localDomain]);
+
+  useEffect(() => { load(); }, [load]);
 
   const filteredRules = rules.filter(r =>
     r.statement.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -48,6 +54,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
   );
 
   if (loading) return <BrainLoading message="Loading the Knowledge Polystore…" />;
+  if (error) return <BrainError message={error} onRetry={load} />;
 
   const card: React.CSSProperties = {
     background: colors.surface1,

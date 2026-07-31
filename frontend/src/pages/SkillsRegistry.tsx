@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { SkillItem, ExecutionItem } from '../api/client';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { BrainLoading, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import SkillContractViewer from '../components/SkillContractViewer';
 import { BrainCircuit, Search, Play, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Zap, FileCode2 } from 'lucide-react';
 
@@ -15,20 +15,24 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
   const [viewContract, setViewContract] = useState<SkillItem | null>(null);
   const [execs, setExecs] = useState<ExecutionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
-    const d = domain.toLowerCase() === 'all domains' ? 'all' : domain.toLowerCase();
-    const params = d === 'all' ? {} : { domain: d };
-
+    setError(null);
     api.getSkills().then((r) => {
       setSkills(r.skills);
       setTotalExec(r.total_executions);
       setAvgSr(r.avg_success_rate);
       setLoading(false);
+    }).catch((e: any) => {
+      setError(e?.message || 'Failed to load skills');
+      setLoading(false);
     });
-  }, [domain]);
+  }, []);
+
+  useEffect(() => { load(); }, [load, domain]);
 
   useEffect(() => {
     if (selected) {
@@ -42,6 +46,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
   );
 
   if (loading) return <BrainLoading message="Loading the Skill Compiler…" />;
+  if (error) return <BrainError message={error} onRetry={load} />;
 
   // Show contract viewer if a skill is selected for contract view
   if (viewContract) {
