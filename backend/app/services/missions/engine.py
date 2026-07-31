@@ -423,10 +423,10 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
 def _apply_step_result(db, mission, step, result: dict) -> None:
     """Fold one executor result into the step + mission (no commit)."""
     status = result.get("status")
+    cost = _cost_of(result)
+    step.cost_usd = cost
+    mission.spent_usd = (mission.spent_usd or 0.0) + cost
     if status == "SUCCESS_CLEAN":
-        cost = _cost_of(result)
-        step.cost_usd = cost
-        mission.spent_usd = (mission.spent_usd or 0.0) + cost
         step.status = "DONE"
         step.completed_at = datetime.now(timezone.utc)
         step.result_summary = _recommendation_of(result) or \
