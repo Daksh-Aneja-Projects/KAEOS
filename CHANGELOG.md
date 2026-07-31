@@ -11,6 +11,12 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-31 - "Federated Front Door"
+
+A production-readiness release: enterprise SSO reaches parity (real SAML 2.0
+alongside OIDC), the last orphaned backends get self-service UIs, every data
+page fails loudly instead of silently, and KAEOS ships a real Kubernetes story.
+
 ### Added - Enterprise SAML 2.0 SSO
 - **Real, signature-verified SAML 2.0** replaces the `/auth/sso/saml` 501 stub.
   KAEOS is now a SAML Service Provider (SP-initiated HTTP-Redirect/POST):
@@ -33,6 +39,32 @@ All notable changes to KAEOS are documented here. This project adheres to
 - Tests: `tests/test_saml.py` - a locally-generated cert signs a real assertion
   and every attack (tamper, wrong cert, wrong audience/recipient, expiry, wrong
   `InResponseTo`, unsigned, replay) is refused.
+
+### Added - Self-service platform access (de-orphaned billing + enterprise)
+- New Settings -> Platform surface (`PlatformAccessSettings`): **Metered Usage
+  & ROI** (billing.py), **Outbound Webhooks** (create/list/delete with an event
+  picker), and **Platform API Keys** (issue-once with a copy-guard, list,
+  revoke). All admin-gated.
+- Backend: tenant-scoped self-service API-key routes (`GET/POST/DELETE
+  /api-keys`) with security-event audit; `core.auth` gains `list_api_keys` and a
+  tenant-scoped revoke so an admin can only touch their OWN keys (a prefix guess
+  cannot reach another tenant). Fixed the stale `/enterprise/*` client paths
+  that 404'd against the bare `/api/v1` mount.
+
+### Added - Kubernetes / Helm
+- `deploy/helm/kaeos`: backend + frontend Deployments, Services, opt-in Ingress
+  (`/api` + `/ws` + `/health` to backend, `/` to the SPA), backend HPA (2->8 on
+  70% CPU), and a Secret. Migrations run as a pre-install/pre-upgrade **Helm-hook
+  Job** as the owner role, so replicas never race on DDL and app pods stay
+  non-owner (RLS applies). Managed Postgres+pgvector / Redis are values-driven.
+
+### Fixed - Fetch errors surface with retry
+- Ten data pages either swallowed a failed fetch to an empty default or had a
+  `.then` with no `.catch` that hung the loading spinner forever. Each now
+  renders `<BrainError onRetry>` when its anchor call fails, keeping partial data
+  where a page legitimately aggregates several calls (SkillsRegistry,
+  RulesExplorer, InfrastructureDashboard, WorkforceDashboard, WorkforceAnalytics,
+  DepartmentsHub, Automation, ExtractionHub, DomainPackMarketplace, MyWork).
 
 ## [1.4.1] - 2026-07-28 - "Green Lane"
 

@@ -3,8 +3,8 @@ name: kaeos
 description: KAEOS - the governed autonomous-enterprise operating system (backend API + frontend SPA).
 type: application
 # Chart version tracks the chart; appVersion tracks the app image tag default.
-version: 0.1.0
-appVersion: "1.4.1"
+version: 0.1.1
+appVersion: "1.5.0"
 kubeVersion: ">=1.25.0-0"
 maintainers:
   - name: KAEOS
