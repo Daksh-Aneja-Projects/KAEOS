@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.polystore import get_vector_store
-from app.services.llm_router import LLMRouter
+from app.services.llm_router import get_tenant_router
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,16 @@ class EnterpriseMemoryService:
     """Semantic organizational memory backed by the polystore VectorStore."""
 
     @staticmethod
-    async def _embed(text_value: str) -> List[float]:
-        vectors = await LLMRouter().embed([text_value], model=_EMBED_MODEL)
-        return vectors[0] if vectors else []
+    async def _embed(text_value: str, tenant_id: Optional[str] = None) -> tuple[List[float], dict]:
+        """Embed on the tenant's model (BYOK) and return ``(vector, provenance)``.
+
+        ``provenance`` carries the embedding model name + a simulated flag to stamp
+        onto the upserted vector, so a later pass can detect vectors that must be
+        re-embedded (model changed) or excluded (non-semantic pseudo-vectors).
+        """
+        router = await get_tenant_router(tenant_id)
+        vectors = await router.embed([text_value], model=_EMBED_MODEL)
+        return (vectors[0] if vectors else []), router.embedding_metadata()
 
     @staticmethod
     async def store_decision_memory(
@@ -49,14 +56,14 @@ class EnterpriseMemoryService:
         memory_id = str(uuid.uuid4())
         content = f"Context: {context}. Decision: {decision}. Outcome: {outcome}"
         try:
-            embedding = await EnterpriseMemoryService._embed(content)
+            embedding, emeta = await EnterpriseMemoryService._embed(content, tenant_id)
             store = get_vector_store()
             await store.upsert(
                 vector_id=memory_id,
                 tenant_id=tenant_id,
                 content=content,
                 embedding=embedding,
-                metadata={"memory_type": "DECISION", "decision": decision, "outcome": outcome},
+                metadata={"memory_type": "DECISION", "decision": decision, "outcome": outcome, **emeta},
                 namespace=_MEMORY_NAMESPACE,
             )
             logger.info(f"[Memory] Stored decision memory {memory_id} for {tenant_id}")
@@ -73,7 +80,7 @@ class EnterpriseMemoryService:
     ) -> List[Dict[str, Any]]:
         """Cosine semantic search over stored memories for the current context."""
         try:
-            embedding = await EnterpriseMemoryService._embed(current_context)
+            embedding, _ = await EnterpriseMemoryService._embed(current_context, tenant_id)
             store = get_vector_store()
             results = await store.search(
                 tenant_id=tenant_id,

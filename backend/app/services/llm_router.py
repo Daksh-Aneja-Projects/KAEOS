@@ -187,6 +187,10 @@ class LLMRouter:
     def __init__(self, api_keys: Optional[dict] = None):
         self.api_keys = api_keys or {}
         self.embeddings_simulated: bool = False
+        # The embedding model actually used by the most recent embed() call
+        # (may differ from the requested model, e.g. rerouted to local nomic).
+        # Stamped onto upserted vectors so a later pass can detect re-embedding.
+        self.last_embedding_model: Optional[str] = None
         self._degraded: bool = False
 
     # ── BYOK: per-tenant model resolution ────────────────────────────────
@@ -200,6 +204,10 @@ class LLMRouter:
         so a partial configuration is always safe.
         """
         router = cls()
+        # Bind the tenant up front so the router is tenant-scoped even if the
+        # config load below fails (missing table, transient DB error) — it then
+        # simply runs on the platform defaults rather than losing tenant identity.
+        router.tenant_id = tenant_id
         try:
             from sqlalchemy import select
             from app.core.database import AsyncSessionLocal
@@ -242,7 +250,6 @@ class LLMRouter:
             router.FALLBACK_CHAINS = chains
             router.api_keys = keys
             router.tenant_profiles = profiles
-            router.tenant_id = tenant_id
         except Exception as e:
             logger.warning(f"[LLM] tenant config load failed for {tenant_id}: {e} — using defaults")
         return router
@@ -787,6 +794,19 @@ class LLMRouter:
             "simulated": True,
         }
 
+    def embedding_metadata(self) -> dict:
+        """Provenance to stamp on every upserted vector.
+
+        ``embedding_model`` records which model produced the vector (from the most
+        recent embed() call) so a later pass can detect and re-embed stale vectors
+        after a model change; ``simulated`` marks non-semantic pseudo-vectors (no
+        real provider) so search can exclude or down-weight them.
+        """
+        return {
+            "embedding_model": self.last_embedding_model,
+            "simulated": bool(self.embeddings_simulated),
+        }
+
     @staticmethod
     def _embedding_dim(model: str) -> int:
         return _EMBEDDING_DIMS.get(model, 1536)
@@ -853,6 +873,7 @@ class LLMRouter:
         is available at all. Sets ``self.embeddings_simulated``.
         """
         model, api_base = await self._resolve_embedding_model(model, tenant_api_keys)
+        self.last_embedding_model = model
         dim = self._embedding_dim(model)
 
         if not await self.provider_available(tenant_api_keys):
@@ -943,3 +964,18 @@ class LLMRouter:
             {"id": "text-embedding-3-large", "provider": "openai", "dimensions": 3072},
             {"id": "embed-english-v3.0", "provider": "cohere", "dimensions": 1024},
         ]
+
+
+async def get_tenant_router(tenant_id: Optional[str] = None) -> LLMRouter:
+    """Resolve an LLM router bound to the current tenant's fine-tuned models (BYOK).
+
+    Uses the ambient ``current_tenant_id`` when no id is passed (the same
+    request-scoped contextvar cost metering and the budget gate already read), so
+    the tenant's promoted/fine-tuned models actually reach the call site instead
+    of the bare platform defaults. Falls back to a default router when there is no
+    tenant context — system jobs, boot probes — so those paths never break.
+    """
+    tid = tenant_id or current_tenant_id.get()
+    if not tid:
+        return LLMRouter()
+    return await LLMRouter.for_tenant(tid)

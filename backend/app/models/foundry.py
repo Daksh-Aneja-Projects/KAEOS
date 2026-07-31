@@ -98,6 +98,10 @@ class ModelEvolutionRun(Base):
     simulated = Column(Boolean, default=False)              # eval ran without a real provider → not trustworthy
 
     detail = Column(JSON, default=dict)                     # {margin, metric, per_example:[...], notes}
+    # sha256 of the concatenated held-out eval prompts — reproducibility: the same
+    # deterministic eval slice always hashes the same, so two runs are comparable
+    # and a scoring change is attributable to the model, not a shifted prompt set.
+    prompt_hash = Column(String(64), nullable=True)
     decision = Column(String(24), nullable=True)           # PROMOTED | REJECTED
     decided_by = Column(String(128), nullable=True)
     decided_at = Column(DateTime(timezone=True), nullable=True)

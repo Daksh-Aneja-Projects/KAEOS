@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 import logging
-from app.services.llm_router import LLMRouter
+from app.services.llm_router import get_tenant_router
 from app.services.json_utils import extract_json_list
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,10 @@ class ComplianceEngine:
         if not skill_tags:
             return violations
 
-        router = LLMRouter()
-        
+        # Tenant-aware router (from the ambient request context) so a tenant's
+        # fine-tuned compliance model is used when configured.
+        router = await get_tenant_router()
+
         # Hardcoded critical checks that don't need LLM
         for tag in skill_tags:
             if tag == "SOX" and not context.get("has_human_approver"):

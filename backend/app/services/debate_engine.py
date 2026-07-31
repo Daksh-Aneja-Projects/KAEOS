@@ -8,7 +8,7 @@ import json
 from app.core.database import AsyncSessionLocal
 from app.models.agent_factory import DebateTranscript
 from app.models.domain import Skill
-from app.services.llm_router import LLMRouter
+from app.services.llm_router import LLMRouter, get_tenant_router
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,21 @@ class DebateEngine:
         logger.info(f"[Debate] Starting for {skill.skill_id} — {reason}")
         ctx = self._build_context(skill, context)
 
+        # Bind to THIS tenant's fine-tuned reasoning model (BYOK). Resolved as a
+        # local, not stored on self, because a DebateEngine instance is shared
+        # across tenants/requests — mutating self.llm would race.
+        llm = await get_tenant_router(tenant_id)
+
         # Turn 1
-        proposer_1 = await self._proposer(ctx)
-        advocate_1 = await self._advocate(ctx, proposer_1)
-        
+        proposer_1 = await self._proposer(llm, ctx)
+        advocate_1 = await self._advocate(llm, ctx, proposer_1)
+
         # Turn 2
         ctx_turn2 = ctx + f"\n\n[PREVIOUS EXCHANGES]\nPROPOSER: {json.dumps(proposer_1)}\nADVOCATE: {json.dumps(advocate_1)}"
-        proposer_2 = await self._proposer(ctx_turn2)
-        advocate_2 = await self._advocate(ctx_turn2, proposer_2)
-        
-        arbitrator = await self._arbitrator(ctx_turn2, proposer_2, advocate_2)
+        proposer_2 = await self._proposer(llm, ctx_turn2)
+        advocate_2 = await self._advocate(llm, ctx_turn2, proposer_2)
+
+        arbitrator = await self._arbitrator(llm, ctx_turn2, proposer_2, advocate_2)
         
         # Assign final arguments for persistence
         proposer = proposer_2
@@ -118,7 +123,7 @@ class DebateEngine:
         steps = "\n".join(f"  Step {i+1}: {s.get('action','?')}" for i, s in enumerate(skill.steps or []))
         return f"SKILL: {skill.skill_id} | Dept: {skill.department} | Conf: {skill.confidence} ({skill.confidence_tier}) | Success: {skill.success_rate} over {skill.execution_count} runs | Tags: {skill.compliance_tags}\nSTEPS:\n{steps}\nINTENT: {context.get('intent','N/A')}"
 
-    async def _proposer(self, ctx: str) -> dict:
+    async def _proposer(self, llm, ctx: str) -> dict:
         try:
             prompt = f"""You are the PROPOSER AGENT. Build an affirmative case for executing this action.
 Provide minimum 3 evidence points grounded in the skill data. Cite specific numbers.
@@ -128,12 +133,12 @@ Provide minimum 3 evidence points grounded in the skill data. Cite specific numb
 Respond in JSON: {{"evidence":["...","...","..."],"conclusion":"...","confidence":0.0-1.0,"grounded_in":["..."]}}"""
             # Short JSON verdict — cap generation with ample headroom (perf; a
             # well-formed response is far under this, so it never truncates).
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.3, max_tokens=700)
+            resp = await llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.3, max_tokens=700)
             return self._parse_json(resp)
         except Exception as e:
             return {"evidence": [str(e)], "conclusion": "Error", "confidence": 0.3, "grounded_in": []}
 
-    async def _advocate(self, ctx: str, proposer: dict) -> dict:
+    async def _advocate(self, llm, ctx: str, proposer: dict) -> dict:
         try:
             prompt = f"""You are the DEVIL'S ADVOCATE. Find flaws, risks, counter-evidence against this action.
 Check if Proposer's claims are grounded. Identify edge cases and blast radius.
@@ -143,12 +148,12 @@ Check if Proposer's claims are grounded. Identify edge cases and blast radius.
 PROPOSER: {self._compact(proposer)}
 
 Respond in JSON: {{"counter_evidence":["..."],"risks":["..."],"conclusion":"...","ungrounded_claims_found":0}}"""
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.4, max_tokens=700)
+            resp = await llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.4, max_tokens=700)
             return self._parse_json(resp)
         except Exception as e:
             return {"counter_evidence": [str(e)], "risks": ["Analysis failed"], "conclusion": "Escalate", "ungrounded_claims_found": 0}
 
-    async def _arbitrator(self, ctx: str, proposer: dict, advocate: dict) -> dict:
+    async def _arbitrator(self, llm, ctx: str, proposer: dict, advocate: dict) -> dict:
         try:
             prompt = f"""You are the ARBITRATOR. Evaluate Proposer vs Advocate and render a decision.
 >=0.7 confidence: PROCEED | 0.5-0.69: ESCALATE | <0.5: BLOCK
@@ -159,7 +164,7 @@ PROPOSER: {self._compact(proposer)}
 ADVOCATE: {self._compact(advocate)}
 
 Respond in JSON: {{"final_confidence":0.0-1.0,"rationale":"...","decision":"PROCEED|ESCALATE|BLOCK","weight_proposer":0.0-1.0,"weight_advocate":0.0-1.0}}"""
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2, max_tokens=500)
+            resp = await llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2, max_tokens=500)
             result = self._parse_json(resp)
             c = result.get("final_confidence", 0.5)
             result["decision"] = "PROCEED" if c >= 0.7 else ("ESCALATE" if c >= 0.5 else "BLOCK")

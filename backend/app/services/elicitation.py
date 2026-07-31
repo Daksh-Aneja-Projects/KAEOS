@@ -79,8 +79,8 @@ class ElicitationEngine:
     
     async def generate_question(self, employee_context: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Generates targeted micro-survey questions based on KB gaps and recent actions."""
-        from app.services.llm_router import LLMRouter
-        router = LLMRouter()
+        from app.services.llm_router import get_tenant_router
+        router = await get_tenant_router()
         
         # 1. Check Cognitive Load Limits
         if employee_context.get("questions_this_week", 0) >= 3:

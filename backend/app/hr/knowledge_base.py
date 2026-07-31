@@ -44,9 +44,9 @@ class HRKnowledgeBase:
         chunks = [c.strip() for c in text.split("\n\n") if c.strip()] or [text.strip()]
         try:
             from app.core.polystore import get_vector_store
-            from app.services.llm_router import LLMRouter
+            from app.services.llm_router import get_tenant_router
             store = get_vector_store()
-            router = LLMRouter()
+            router = await get_tenant_router(tenant_id)
             for i, chunk in enumerate(chunks):
                 embedding = (await router.embed([chunk]))[0]
                 await store.upsert(
@@ -54,7 +54,7 @@ class HRKnowledgeBase:
                     tenant_id=tenant_id,
                     content=chunk,
                     embedding=embedding,
-                    metadata={"source": doc_name},
+                    metadata={"source": doc_name, **router.embedding_metadata()},
                     namespace="hr_kb",
                 )
             logger.info(f"[KB] Indexed {len(chunks)} chunk(s) of {doc_name!r} for tenant={tenant_id}")
@@ -70,9 +70,10 @@ class HRKnowledgeBase:
         logger.info(f"[KB] Retrieving context for query={query!r} tenant={tenant_id}")
         try:
             from app.core.polystore import get_vector_store
-            from app.services.llm_router import LLMRouter
+            from app.services.llm_router import get_tenant_router
             store = get_vector_store()
-            query_embedding = (await LLMRouter().embed([query]))[0]
+            router = await get_tenant_router(tenant_id)
+            query_embedding = (await router.embed([query]))[0]
             results = await store.search(
                 tenant_id=tenant_id,
                 query_embedding=query_embedding,

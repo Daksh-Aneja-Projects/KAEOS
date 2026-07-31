@@ -48,9 +48,9 @@ async def _retrieve_grounding(tenant_id: str, query: str, limit: int = 4) -> lis
     """
     try:
         from app.core.polystore import get_vector_store
-        from app.services.llm_router import LLMRouter
+        from app.services.llm_router import get_tenant_router
 
-        llm = LLMRouter()
+        llm = await get_tenant_router(tenant_id)
         embedding = (await llm.embed([query]))[0]
         if llm.embeddings_simulated:
             logger.info("[Chat] embeddings are simulated; reporting no grounding.")
@@ -133,8 +133,8 @@ async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_
 
     async def event_generator():
         try:
-            from app.services.llm_router import LLMRouter
-            router_svc = LLMRouter()
+            from app.services.llm_router import get_tenant_router
+            router_svc = await get_tenant_router(tenant_id)
 
             # 1. Retrieve REAL grounding, then report exactly what was found.
             hits = await _retrieve_grounding(tenant_id, last_msg)

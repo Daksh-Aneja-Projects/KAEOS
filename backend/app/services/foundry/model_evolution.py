@@ -190,6 +190,11 @@ async def run_evaluation(
             return res, False
         return (res.get("content") or ""), bool(res.get("simulated"))
 
+    # Reproducibility stamp: hash the exact prompt set this run scored against.
+    prompt_hash = hashlib.sha256(
+        "\x00".join(_build_prompt(ex) for ex in eval_set).encode()
+    ).hexdigest()
+
     base_total = cand_total = 0.0
     simulated = False
     per_example = []
@@ -221,6 +226,7 @@ async def run_evaluation(
     run.score_delta = round(delta, 4)
     run.simulated = simulated
     run.win = win
+    run.prompt_hash = prompt_hash
     run.detail = {
         "margin": WIN_MARGIN,
         "metric": "exact_match|token_f1",

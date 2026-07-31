@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.fairness import FairnessAuditLog, FairnessConfig
 from app.models.domain import Skill
-from app.services.llm_router import LLMRouter
+from app.services.llm_router import get_tenant_router
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,6 @@ class FairnessEngine:
     Any action designated by the department config as requiring fairness assessment
     is assessed against protected attributes.
     """
-
-    def __init__(self):
-        self.llm = LLMRouter()
 
     # Terms that mark a decision as people-affecting / protected-class impacting.
     _FAIRNESS_TRIGGER_TERMS = frozenset({
@@ -96,8 +93,11 @@ class FairnessEngine:
         if entity_metadata:
             action_desc += f"\n\nAFFECTED ENTITIES (Sample data from Graph): {entity_metadata}"
 
-        # LLM fairness assessment
-        assessment = await self._assess_fairness(action_desc, attributes)
+        # LLM fairness assessment on THIS tenant's fine-tuned model (BYOK).
+        # Local var, not self.llm: FairnessEngine is a shared singleton, so
+        # mutating self would race across concurrent tenants.
+        llm = await get_tenant_router(tenant_id)
+        assessment = await self._assess_fairness(llm, action_desc, attributes)
 
         score = assessment.get("overall_score", 0.5)
         passed = score >= threshold
@@ -201,7 +201,7 @@ class FairnessEngine:
         steps = ", ".join(s.get("action", "?") for s in (skill.steps or [])[:5])
         return f"Skill '{skill.skill_id}' in {skill.department}/{skill.domain}: {steps}. Intent: {context.get('intent', 'N/A')}"
 
-    async def _assess_fairness(self, action_desc: str, attributes: list) -> dict:
+    async def _assess_fairness(self, llm, action_desc: str, attributes: list) -> dict:
         """Use LLM to assess fairness impact across protected attributes."""
         try:
             prompt = f"""You are an AI Ethics & Fairness assessor for enterprise HCM systems.
@@ -217,7 +217,7 @@ Flag any attribute scoring below 0.85.
 Respond in JSON:
 {{"overall_score": 0.0-1.0, "attribute_scores": {{"gender": {{"score": 0.9, "flag": false}}}}, "flagged_attributes": ["age"], "rationale": "Plain language explanation suitable for regulators"}}"""
 
-            resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2)
+            resp = await llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.2)
             from app.services.json_utils import extract_json_object
             return extract_json_object(resp)
         except Exception as e:
