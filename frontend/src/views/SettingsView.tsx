@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshC
 import SecuritySettings from './SecuritySettings';
 import DataGovernanceSettings from './DataGovernanceSettings';
 import NotificationSettings from './NotificationSettings';
+import PlatformAccessSettings from './PlatformAccessSettings';
 import { Lock } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -248,6 +249,9 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
 
       {tab === 'platform' && (
         <div className="space-y-4">
+          {/* Usage, webhooks, API keys (billing.py + enterprise.py) */}
+          <PlatformAccessSettings />
+
           {/* Theme Toggle */}
           <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
             <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Appearance</span>

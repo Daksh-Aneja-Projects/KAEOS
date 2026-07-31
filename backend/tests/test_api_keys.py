@@ -53,3 +53,29 @@ async def test_revocation_propagates_via_db():
 
 async def test_unknown_key_returns_none():
     assert await auth_mod.get_api_key_by_hash(auth_mod.hash_key("kt_nonexistent")) is None
+
+
+async def test_list_keys_is_tenant_scoped():
+    await auth_mod.generate_api_key("tenant_a", "a1", role="operator")
+    await auth_mod.generate_api_key("tenant_a", "a2", role="admin")
+    await auth_mod.generate_api_key("tenant_b", "b1", role="viewer")
+
+    a_keys = await auth_mod.list_api_keys("tenant_a")
+    assert {k["name"] for k in a_keys} == {"a1", "a2"}
+    assert all("api_key" not in k for k in a_keys)   # raw key never returned by list
+
+    b_keys = await auth_mod.list_api_keys("tenant_b")
+    assert {k["name"] for k in b_keys} == {"b1"}
+
+
+async def test_scoped_revoke_cannot_touch_another_tenant():
+    issued = await auth_mod.generate_api_key("tenant_a", "mine")
+    key_id = issued["key_id"]
+
+    # A tenant_b admin cannot revoke tenant_a's key even with the right prefix.
+    assert await auth_mod.revoke_api_key(key_id, tenant_id="tenant_b") is False
+    assert (await auth_mod.get_api_key_by_hash(auth_mod.hash_key(issued["api_key"])))["active"] is True
+
+    # The owning tenant can.
+    assert await auth_mod.revoke_api_key(key_id, tenant_id="tenant_a") is True
+    assert (await auth_mod.get_api_key_by_hash(auth_mod.hash_key(issued["api_key"])))["active"] is False

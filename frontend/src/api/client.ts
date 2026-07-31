@@ -657,10 +657,15 @@ export const api = {
   getBillingUsage: () => request<any>('/billing/usage'),
   getBillingRoi: () => request<any>('/billing/roi'),
 
-  // Webhooks (enterprise.py)
-  getWebhooks: () => request<{ subscriptions: any[] }>('/enterprise/webhooks'),
-  createWebhook: (body: { name: string; endpoint: string; events: string[] }) => request<any>('/enterprise/webhooks', { method: 'POST', body: JSON.stringify(body) }),
-  deleteWebhook: (id: string) => request<any>(`/enterprise/webhooks/${id}`, { method: 'DELETE' }),
+  // Webhooks (enterprise.py — router mounts at /api/v1, so no /enterprise segment)
+  getWebhooks: () => request<{ subscriptions: any[] }>('/webhooks'),
+  createWebhook: (body: { name: string; endpoint: string; events: string[] }) => request<any>('/webhooks', { method: 'POST', body: JSON.stringify(body) }),
+  deleteWebhook: (id: string) => request<any>(`/webhooks/${id}`, { method: 'DELETE' }),
+
+  // Platform API keys (enterprise.py) — self-service, tenant-scoped, admin-only
+  getApiKeys: () => request<{ keys: any[] }>('/api-keys'),
+  createApiKey: (body: { name: string; role: string }) => request<{ api_key: string; key_id: string; role: string }>('/api-keys', { method: 'POST', body: JSON.stringify(body) }),
+  revokeApiKey: (keyId: string) => request<any>(`/api-keys/${keyId}`, { method: 'DELETE' }),
 
   // Notification channels (notifications.py) — SMTP / Slack / webhook fan-out
   getNotificationEvents: () => request<{ events: string[]; kinds: NotificationKind[] }>('/notifications/events'),
@@ -838,8 +843,8 @@ export const api = {
   getHealthReport: () => request<any>('/reports/health'),
   getComplianceReport: () => request<any>('/reports/compliance'),
   getTenantStats: () => request<any>('/tenants/stats'),
-  // (webhooks live under /enterprise/webhooks — see the Webhooks block above; the
-  //  old stale /webhooks aliases were removed to avoid duplicate keys.)
+  // (webhooks + API keys live at bare /webhooks and /api-keys — the enterprise
+  //  router mounts at /api/v1 with no /enterprise segment; see blocks above.)
   getEventLog: (limit: number = 50) => request<any>(`/events/log?limit=${limit}`),
 
   // ─── AEOS Agent Factory APIs ───

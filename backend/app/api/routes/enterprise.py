@@ -158,6 +158,54 @@ async def delete_webhook(
         raise HTTPException(404, "Webhook not found")
     return {"status": "unsubscribed"}
 
+# ═══════════════════════════════════════════
+# PLATFORM API KEYS (self-service, tenant-scoped)
+# ═══════════════════════════════════════════
+class ApiKeyCreate(BaseModel):
+    name: str
+    role: str = "operator"   # viewer | operator | admin
+
+
+@router.get("/api-keys")
+async def list_platform_keys(tenant: dict = Depends(require_role("admin"))):
+    """This tenant's platform API keys (metadata only; the raw key is shown once
+    at creation and never again)."""
+    from app.core.auth import list_api_keys
+    return {"keys": await list_api_keys(tenant["tenant_id"])}
+
+
+@router.post("/api-keys")
+async def create_platform_key(body: ApiKeyCreate, tenant: dict = Depends(require_role("admin"))):
+    """Issue a new API key for this tenant. Returns the raw `kt_...` value ONCE."""
+    role = body.role.lower()
+    if role not in ("viewer", "operator", "admin"):
+        raise HTTPException(400, "role must be viewer, operator or admin")
+    from app.core.auth import generate_api_key
+    result = await generate_api_key(tenant["tenant_id"], body.name.strip() or "unnamed", role)
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="api_key", resource_id=result["key_id"],
+    )
+    return result
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_platform_key(key_id: str, tenant: dict = Depends(require_role("admin"))):
+    """Revoke one of THIS tenant's keys. Scoped so an admin cannot touch another
+    tenant's keys by guessing a prefix; propagates fleet-wide immediately."""
+    from app.core.auth import revoke_api_key
+    ok = await revoke_api_key(key_id, tenant_id=tenant["tenant_id"])
+    if not ok:
+        raise HTTPException(404, "Key not found")
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="api_key", resource_id=key_id,
+    )
+    return {"status": "revoked", "key_id": key_id}
+
+
 @router.get("/events/log")
 async def event_log(
     event_type: Optional[str] = None,

@@ -71,14 +71,38 @@ async def generate_api_key(tenant_id: str, name: str, role: str = "operator") ->
     return {"api_key": raw_key, "key_id": hashed[:12], "tenant_id": tenant_id, "role": role}
 
 
-async def revoke_api_key(key_id_prefix: str) -> bool:
-    """Revoke a key by its id prefix. Propagates immediately (DB-backed)."""
+async def list_api_keys(tenant_id: str) -> list[dict]:
+    """All keys for one tenant (metadata only; the raw key is never recoverable)."""
     from app.core.database import MaintenanceSessionLocal
     from app.models.api_key import ApiKey
     async with MaintenanceSessionLocal() as db:
-        row = (await db.execute(
-            select(ApiKey).where(ApiKey.hashed_key.like(f"{key_id_prefix}%"), ApiKey.active == True)  # noqa: E712
-        )).scalars().first()
+        rows = (await db.execute(
+            select(ApiKey).where(ApiKey.tenant_id == tenant_id).order_by(ApiKey.created_at.desc())
+        )).scalars().all()
+    return [{
+        "key_id": k.hashed_key[:12],
+        "name": k.name,
+        "role": k.role,
+        "active": k.active,
+        "created_at": k.created_at.isoformat() if k.created_at else None,
+        "revoked_at": k.revoked_at.isoformat() if k.revoked_at else None,
+    } for k in rows]
+
+
+async def revoke_api_key(key_id_prefix: str, tenant_id: Optional[str] = None) -> bool:
+    """Revoke a key by its id prefix. Propagates immediately (DB-backed).
+
+    When ``tenant_id`` is given the revoke is scoped to that tenant, so a tenant
+    admin can only revoke their OWN keys (the self-service route always passes
+    it). The superadmin bootstrap path omits it for cross-tenant operation.
+    """
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.api_key import ApiKey
+    async with MaintenanceSessionLocal() as db:
+        conds = [ApiKey.hashed_key.like(f"{key_id_prefix}%"), ApiKey.active == True]  # noqa: E712
+        if tenant_id is not None:
+            conds.append(ApiKey.tenant_id == tenant_id)
+        row = (await db.execute(select(ApiKey).where(*conds))).scalars().first()
         if not row:
             return False
         row.active = False
