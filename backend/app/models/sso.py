@@ -6,7 +6,7 @@ client secret is stored Fernet-encrypted at rest (never in plaintext, never
 returned by the API). Tenant-scoped: placed under RLS on Postgres like every
 other tenant table.
 """
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, Text
 from sqlalchemy.sql import func
 import uuid
 
@@ -33,6 +33,14 @@ class SSOConnection(Base):
     client_id = Column(String(256), nullable=False, default="")
     # Fernet-encrypted client secret (write-only; never serialized back out).
     client_secret_encrypted = Column(String, nullable=True)
+
+    # SAML 2.0 only. `issuer` above doubles as the IdP EntityID; these two carry
+    # the rest of the IdP half of the trust: where to send the AuthnRequest, and
+    # the certificate whose public key must have signed the assertion. The cert
+    # is public by definition, so it is stored in the clear (unlike the OIDC
+    # client secret above).
+    idp_sso_url = Column(String(512), nullable=True)
+    idp_x509_cert = Column(Text, nullable=True)
 
     # Domain-based routing: a user whose email domain matches is sent here.
     email_domain = Column(String(256), nullable=True, index=True)

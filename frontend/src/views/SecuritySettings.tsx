@@ -21,8 +21,10 @@ const SecuritySettings: React.FC = () => {
   const [conns, setConns] = useState<any[]>([]);
   const [ssoBusy, setSsoBusy] = useState(false);
   const [ssoMsg, setSsoMsg] = useState('');
+  const [protocol, setProtocol] = useState<'OIDC' | 'SAML'>('OIDC');
   const [form, setForm] = useState({
     provider_label: '', issuer: '', client_id: '', client_secret: '',
+    idp_sso_url: '', idp_x509_cert: '',
     email_domain: '', default_role: 'VIEWER',
   });
 
@@ -55,9 +57,9 @@ const SecuritySettings: React.FC = () => {
   const saveConnection = async () => {
     setSsoBusy(true); setSsoMsg('');
     try {
-      await api.upsertSSOConnection({ protocol: 'OIDC', ...form, is_enabled: true });
+      await api.upsertSSOConnection({ protocol, ...form, is_enabled: true });
       setSsoMsg('Connection saved.');
-      setForm({ provider_label: '', issuer: '', client_id: '', client_secret: '', email_domain: '', default_role: 'VIEWER' });
+      setForm({ provider_label: '', issuer: '', client_id: '', client_secret: '', idp_sso_url: '', idp_x509_cert: '', email_domain: '', default_role: 'VIEWER' });
       await loadSso();
     } catch (e: any) { setSsoMsg(e?.message || 'Save failed'); }
     finally { setSsoBusy(false); }
@@ -117,7 +119,7 @@ const SecuritySettings: React.FC = () => {
       <div className="p-5" style={card}>
         <div className="flex items-center gap-2 mb-3">
           <ShieldCheck className="w-5 h-5" style={{ color: colors.primary }} />
-          <span className="text-[16px] font-medium" style={{ color: colors.ink }}>Enterprise SSO (OpenID Connect)</span>
+          <span className="text-[16px] font-medium" style={{ color: colors.ink }}>Enterprise SSO (OpenID Connect &amp; SAML 2.0)</span>
         </div>
 
         {conns.length > 0 && (
@@ -126,7 +128,10 @@ const SecuritySettings: React.FC = () => {
               <div key={c.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: colors.surface2 }}>
                 <div className="text-[13px]" style={{ color: colors.ink }}>
                   <span className="font-medium">{c.provider_label || c.protocol}</span>
-                  <span className="ml-2" style={{ color: colors.inkSubtle }}>{c.email_domain || 'no domain'} · {c.client_secret_set ? 'secret set' : 'no secret'} · {c.is_enabled ? 'enabled' : 'disabled'}</span>
+                  <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded" style={{ background: colors.primary + '1f', color: colors.primary }}>{c.protocol}</span>
+                  <span className="ml-2" style={{ color: colors.inkSubtle }}>
+                    {c.email_domain || 'no domain'} · {c.protocol === 'SAML' ? (c.idp_x509_cert_set ? 'cert set' : 'no cert') : (c.client_secret_set ? 'secret set' : 'no secret')} · {c.is_enabled ? 'enabled' : 'disabled'}
+                  </span>
                 </div>
                 <button onClick={() => deleteConnection(c.id)} className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
               </div>
@@ -134,19 +139,46 @@ const SecuritySettings: React.FC = () => {
           </div>
         )}
 
+        {/* Protocol toggle */}
+        <div className="flex gap-1 mb-3 p-1 rounded-lg w-fit" style={{ background: colors.surface2 }}>
+          {(['OIDC', 'SAML'] as const).map(p => (
+            <button key={p} onClick={() => setProtocol(p)}
+              className="px-3 py-1 rounded-md text-[12px] font-medium"
+              style={protocol === p ? { background: colors.primary, color: '#fff' } : { color: colors.inkSubtle }}>
+              {p}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <input style={input} placeholder="Provider label (e.g. Okta)" value={form.provider_label} onChange={e => setForm({ ...form, provider_label: e.target.value })} />
           <input style={input} placeholder="Email domain (e.g. acme.com)" value={form.email_domain} onChange={e => setForm({ ...form, email_domain: e.target.value })} />
-          <input style={input} placeholder="Issuer URL (https://…)" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
-          <input style={input} placeholder="Client ID" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })} />
-          <input style={input} type="password" placeholder="Client secret" value={form.client_secret} onChange={e => setForm({ ...form, client_secret: e.target.value })} />
+          {protocol === 'OIDC' ? (
+            <>
+              <input style={input} placeholder="Issuer URL (https://…)" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
+              <input style={input} placeholder="Client ID" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })} />
+              <input style={input} type="password" placeholder="Client secret" value={form.client_secret} onChange={e => setForm({ ...form, client_secret: e.target.value })} />
+            </>
+          ) : (
+            <>
+              <input style={input} placeholder="IdP EntityID / Issuer" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
+              <input style={input} placeholder="IdP SSO URL (https://…)" value={form.idp_sso_url} onChange={e => setForm({ ...form, idp_sso_url: e.target.value })} />
+              <textarea style={{ ...input, minHeight: 72, resize: 'vertical' }} className="md:col-span-2" placeholder="IdP X.509 signing certificate (PEM or base64 body)" value={form.idp_x509_cert} onChange={e => setForm({ ...form, idp_x509_cert: e.target.value })} />
+            </>
+          )}
           <select style={input} value={form.default_role} onChange={e => setForm({ ...form, default_role: e.target.value })}>
             <option value="VIEWER">New users → Viewer</option>
             <option value="ANALYST">New users → Analyst</option>
             <option value="ADMIN">New users → Admin</option>
           </select>
         </div>
-        <button onClick={saveConnection} disabled={ssoBusy || !form.issuer || !form.client_id}
+        {protocol === 'SAML' && (
+          <p className="text-[11px] mt-2" style={{ color: colors.inkSubtle }}>
+            Give your IdP the SP metadata at <span className="font-mono">/api/v1/auth/sso/saml/metadata</span>. KAEOS requires signed assertions.
+          </p>
+        )}
+        <button onClick={saveConnection}
+          disabled={ssoBusy || !form.issuer || (protocol === 'OIDC' ? !form.client_id : (!form.idp_sso_url || !form.idp_x509_cert))}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium mt-3"
           style={{ background: colors.primary, color: '#fff' }}>
           {ssoBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Save connection

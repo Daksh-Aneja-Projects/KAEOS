@@ -84,8 +84,8 @@ human override at every step.
 +----------------------------------------------------------------------+
 ```
 
-Notes on the auth box: single sign-on is OpenID Connect (Azure AD, Okta, Google, Auth0);
-SAML is roadmap. See [Security model](SECURITY_MODEL.md).
+Notes on the auth box: single sign-on is OpenID Connect (Azure AD, Okta, Google, Auth0)
+and SAML 2.0 (signature-verified, SP-initiated). See [Security model](SECURITY_MODEL.md).
 
 The execute stage uses tiered BYOK routing (local Ollama or cloud providers via LiteLLM);
 see [BYOK](BYOK.md) for the tier table and the measured confidence ceiling.

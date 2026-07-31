@@ -11,6 +11,29 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - Enterprise SAML 2.0 SSO
+- **Real, signature-verified SAML 2.0** replaces the `/auth/sso/saml` 501 stub.
+  KAEOS is now a SAML Service Provider (SP-initiated HTTP-Redirect/POST):
+  - `GET /auth/sso/saml/metadata` publishes SP metadata for the IdP admin.
+  - `GET /auth/sso/saml/login` issues a signed-`RelayState` AuthnRequest and
+    redirects to the tenant's IdP.
+  - `POST /auth/sso/saml/acs` verifies the assertion's XML-DSig signature
+    (`signxml`, pure Python - no `xmlsec` C library, so it installs on every
+    platform) against the configured IdP certificate, reads **only the verified
+    subtree** (defeating XML Signature Wrapping), and enforces Status, validity
+    windows with clock skew, `AudienceRestriction` == this SP, `Recipient` ==
+    this ACS, `InResponseTo` == the request we issued, and single-use assertion
+    IDs (Redis-backed, in-process fallback). Encrypted assertions are refused
+    rather than accepted unverified.
+- Both protocols share one provisioning path (`sso.provision_and_login`), so JIT
+  user creation and role mapping are identical. Login-page "Continue with SSO"
+  and the Settings -> Security admin surface now handle OIDC **and** SAML.
+- Connection registry gains `idp_sso_url` + `idp_x509_cert` (migration `0027`;
+  the cert is public, so plaintext, unlike the Fernet-encrypted OIDC secret).
+- Tests: `tests/test_saml.py` - a locally-generated cert signs a real assertion
+  and every attack (tamper, wrong cert, wrong audience/recipient, expiry, wrong
+  `InResponseTo`, unsigned, replay) is refused.
+
 ## [1.4.1] - 2026-07-28 - "Green Lane"
 
 Patch release. CI/tooling only; no application code or API changes.

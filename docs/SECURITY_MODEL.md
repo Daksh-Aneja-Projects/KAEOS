@@ -69,4 +69,15 @@ IdP's JWKS**, and just-in-time user provisioning that mints a normal KAEOS sessi
 Works with Azure AD, Okta, Google, and Auth0. Per-tenant IdP config
 (`/auth/sso/connections`, ADMIN-gated) stores the client secret Fernet-encrypted at
 rest and never returns it; the login endpoints (`/auth/sso/oidc/authorize` ->
-`/callback`) are the only pre-auth surface. SAML is on the roadmap.
+`/callback`) are the only pre-auth surface.
+
+Real SAML 2.0 as well: KAEOS is a Service Provider in the SP-initiated
+HTTP-Redirect/POST profile. SP metadata is published at
+`/auth/sso/saml/metadata`; the ACS (`/auth/sso/saml/acs`) verifies the IdP's
+XML-DSig signature (`signxml`, pure Python) against the configured certificate,
+reads only the *verified* subtree (defeating XML Signature Wrapping), and
+enforces Status, validity windows (with clock skew), AudienceRestriction ==
+this SP, Recipient == this ACS, `InResponseTo` == the request we issued, and
+single-use assertion IDs. Encrypted assertions are refused rather than accepted
+unverified. Both protocols provision through one path, so JIT provisioning and
+role mapping are identical.

@@ -177,9 +177,22 @@ async def test_upsert_update_keeps_secret_when_omitted(db):
     assert out["client_secret_set"] is True and out["client_id"] == "c2"
 
 
-async def test_saml_upsert_is_501(db):
+async def test_saml_upsert_requires_idp_fields(db):
     from fastapi import HTTPException
-    data = sso_routes.SSOConnectionIn(protocol="SAML", issuer="x", client_id="y", client_secret="z")
+    # Creating a SAML connection without the IdP URL + cert is a 400, not a silent create.
+    data = sso_routes.SSOConnectionIn(protocol="SAML", issuer="https://idp.example/entity")
     with pytest.raises(HTTPException) as ei:
         await sso_routes.upsert_connection(data, user={"role": "ADMIN"}, tenant_id=T, db=db)
-    assert ei.value.status_code == 501
+    assert ei.value.status_code == 400
+    assert "idp_sso_url" in ei.value.detail
+
+    # With both present it creates and reports the cert as set (never the cert body).
+    ok = sso_routes.SSOConnectionIn(
+        protocol="SAML", provider_label="Okta SAML", issuer="https://idp.example/entity",
+        idp_sso_url="https://idp.example/sso", idp_x509_cert="MIIBcert...", email_domain="corp.com",
+    )
+    out = await sso_routes.upsert_connection(ok, user={"role": "ADMIN"}, tenant_id=T, db=db)
+    assert out["protocol"] == "SAML"
+    assert out["idp_sso_url"] == "https://idp.example/sso"
+    assert out["idp_x509_cert_set"] is True
+    assert "idp_x509_cert" not in out

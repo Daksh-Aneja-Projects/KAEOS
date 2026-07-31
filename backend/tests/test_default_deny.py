@@ -23,7 +23,12 @@ _ALLOWLIST = {
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/accept-invite",   # invitee sets their own password (magic-link)
-    "/api/v1/auth/sso/saml",
+    # SAML Assertion Consumer Service: public BY DESIGN (the IdP's browser POST
+    # carries no KAEOS JWT). Authenticated by the IdP's XML-DSig signature over
+    # the assertion, verified against the tenant's configured certificate, with
+    # audience/recipient/window/InResponseTo/single-use checks. See
+    # app/services/saml.py:verify_response and tests/test_saml.py.
+    "/api/v1/auth/sso/saml/acs",
     # Realtime sync + security-event ingest: external systems (Workday,
     # Salesforce, SIEM relays) cannot hold KAEOS JWTs, so these are public BY
     # DESIGN and authenticated by an HMAC-SHA256 signature over the raw body

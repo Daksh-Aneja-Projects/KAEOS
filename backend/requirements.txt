@@ -47,6 +47,12 @@ PyJWT==2.13.0
 # encrypt BYOK connector credentials at rest. It used to arrive transitively via
 # python-jose[cryptography]; pin it explicitly so removing that never breaks it.
 cryptography==48.0.1
+# SAML 2.0 SP (app/services/saml.py). signxml is pure Python on top of lxml +
+# cryptography, so XML-DSig verification works on Windows/macOS/Linux without
+# the xmlsec C library that python3-saml/pysaml2 require. defusedxml handles the
+# pre-signature (untrusted) parse: no entity expansion, no external DTDs.
+signxml==5.1.0
+defusedxml==0.7.1
 tenacity==8.3.0
 circuitbreaker==2.0.0
 passlib[bcrypt]==1.7.4

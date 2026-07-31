@@ -9,7 +9,7 @@ import logging
 import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from app.core.tenant import get_tenant_id
 from app.models.sso import SSOConnection
 from app.api.routes.auth import require_role
 from app.services import sso as sso_svc
+from app.services import saml as saml_svc
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +38,16 @@ async def discover_sso(email: str):
     conn = await sso_svc.connection_for_email(email)  # owner-session lookup inside
     if not conn:
         return {"sso": False}
+    if conn.protocol == "SAML":
+        authorize_url = f"/api/v1/auth/sso/saml/login?tenant_id={conn.tenant_id}"
+    else:
+        authorize_url = f"/api/v1/auth/sso/oidc/authorize?tenant_id={conn.tenant_id}"
     return {
         "sso": True,
         "protocol": conn.protocol,
         "provider_label": conn.provider_label,
         "tenant_id": conn.tenant_id,
-        "authorize_url": f"/api/v1/auth/sso/oidc/authorize?tenant_id={conn.tenant_id}",
+        "authorize_url": authorize_url,
     }
 
 
@@ -114,14 +119,83 @@ async def oidc_callback(request: Request, code: Optional[str] = None,
     return result
 
 
+# ── public: SAML 2.0 SP-initiated flow ────────────────────────────────────────
+
+@router.get("/saml/metadata", response_class=Response)
+async def saml_metadata(request: Request):
+    """SP metadata XML - hand this to the IdP administrator."""
+    return Response(content=saml_svc.sp_metadata(str(request.base_url)),
+                    media_type="application/samlmetadata+xml")
+
+
+@router.get("/saml/login")
+async def saml_login(request: Request, tenant_id: Optional[str] = None,
+                     email: Optional[str] = None, return_to: Optional[str] = None):
+    """Begin SAML login: redirect the browser to the tenant's IdP with an AuthnRequest."""
+    if email and not tenant_id:
+        conn = await sso_svc.connection_for_email(email)
+    elif tenant_id:
+        async with MaintenanceSessionLocal() as owner:
+            conn = await sso_svc.get_connection(owner, tenant_id, protocol="SAML")
+    else:
+        raise HTTPException(status_code=400, detail="tenant_id or email is required")
+
+    if not conn or conn.protocol != "SAML":
+        raise HTTPException(status_code=404, detail="No SAML connection configured")
+
+    try:
+        # RelayState carries the signed state; its `nonce` slot holds the
+        # AuthnRequest ID so the ACS can enforce InResponseTo statelessly.
+        request_id = saml_svc.new_request_id()
+        relay = sso_svc.sign_state(conn.tenant_id, request_id, return_to)
+        url = saml_svc.build_authn_request(conn, str(request.base_url), relay, request_id)
+    except sso_svc.SSOError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return RedirectResponse(url, status_code=302)
+
+
+@router.post("/saml/acs")
+async def saml_acs(request: Request,
+                   SAMLResponse: str = Form(...),           # noqa: N803 - the SAML wire name
+                   RelayState: Optional[str] = Form(None)):  # noqa: N803
+    """Assertion Consumer Service: verify the IdP's signed assertion, mint a session."""
+    if not RelayState:
+        raise HTTPException(status_code=400, detail="Missing RelayState")
+    try:
+        st = sso_svc.verify_state(RelayState)
+    except sso_svc.SSOError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    tenant_id, request_id, return_to = st["tid"], st.get("nonce") or None, st.get("rt") or ""
+
+    async with MaintenanceSessionLocal() as owner:
+        conn = await sso_svc.get_connection(owner, tenant_id, protocol="SAML")
+        if not conn:
+            raise HTTPException(status_code=404, detail="SAML connection no longer exists")
+        try:
+            claims = saml_svc.verify_response(SAMLResponse, conn, str(request.base_url), request_id)
+            await saml_svc.claim_assertion_id(claims["assertion_id"])
+            result = await sso_svc.provision_and_login(owner, tenant_id, claims, conn.default_role)
+        except sso_svc.SSOError as e:
+            logger.warning("[SAML] ACS rejected an assertion for tenant=%s: %s", tenant_id, e)
+            raise HTTPException(status_code=401, detail=str(e))
+
+    # Same hand-back contract as OIDC: fragment, never the query string.
+    if return_to:
+        sep = "&" if "#" in return_to else "#"
+        return RedirectResponse(f"{return_to}{sep}token={result['access_token']}", status_code=302)
+    return result
+
+
 # ── admin: Settings -> Security config surface ────────────────────────────────
 
 class SSOConnectionIn(BaseModel):
     protocol: str = "OIDC"
     provider_label: str = ""
     issuer: str
-    client_id: str
+    client_id: str = ""                   # OIDC only
     client_secret: Optional[str] = None   # write-only; omitted on update keeps the stored one
+    idp_sso_url: Optional[str] = None     # SAML only
+    idp_x509_cert: Optional[str] = None   # SAML only
     email_domain: Optional[str] = None
     default_role: str = "VIEWER"
     is_enabled: bool = True
@@ -137,6 +211,8 @@ def _serialize(conn: SSOConnection) -> dict:
         "issuer": conn.issuer,
         "client_id": conn.client_id,
         "client_secret_set": bool(conn.client_secret_encrypted),
+        "idp_sso_url": conn.idp_sso_url,
+        "idp_x509_cert_set": bool(conn.idp_x509_cert),
         "email_domain": conn.email_domain,
         "default_role": conn.default_role,
         "is_enabled": conn.is_enabled,
@@ -161,8 +237,6 @@ async def upsert_connection(data: SSOConnectionIn,
     """Create or update this tenant's IdP connection (one per protocol)."""
     if data.protocol not in ("OIDC", "SAML"):
         raise HTTPException(status_code=400, detail="protocol must be OIDC or SAML")
-    if data.protocol == "SAML":
-        raise HTTPException(status_code=501, detail="SAML is not yet implemented; use OIDC.")
     if data.default_role not in ("ADMIN", "ANALYST", "VIEWER"):
         raise HTTPException(status_code=400, detail="default_role must be ADMIN, ANALYST or VIEWER")
 
@@ -175,15 +249,27 @@ async def upsert_connection(data: SSOConnectionIn,
 
     conn = existing or SSOConnection(tenant_id=tenant_id, protocol=data.protocol)
     conn.provider_label = data.provider_label
-    conn.issuer = data.issuer.rstrip("/")
-    conn.client_id = data.client_id
+    conn.issuer = data.issuer.rstrip("/")   # OIDC issuer URL / SAML IdP EntityID
     conn.email_domain = (data.email_domain or "").strip().lower() or None
     conn.default_role = data.default_role
     conn.is_enabled = data.is_enabled
-    if data.client_secret:
-        conn.client_secret_encrypted = sso_svc.encrypt_client_secret(data.client_secret)
-    elif existing is None:
-        raise HTTPException(status_code=400, detail="client_secret is required to create a connection")
+
+    if data.protocol == "OIDC":
+        conn.client_id = data.client_id
+        if data.client_secret:
+            conn.client_secret_encrypted = sso_svc.encrypt_client_secret(data.client_secret)
+        elif existing is None:
+            raise HTTPException(status_code=400, detail="client_secret is required to create an OIDC connection")
+    else:  # SAML
+        if data.idp_sso_url:
+            conn.idp_sso_url = data.idp_sso_url.strip()
+        if data.idp_x509_cert:
+            conn.idp_x509_cert = data.idp_x509_cert.strip()
+        if existing is None and (not conn.idp_sso_url or not conn.idp_x509_cert):
+            raise HTTPException(
+                status_code=400,
+                detail="idp_sso_url and idp_x509_cert are required to create a SAML connection",
+            )
 
     if existing is None:
         db.add(conn)
