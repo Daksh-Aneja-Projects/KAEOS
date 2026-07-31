@@ -1,0 +1,24 @@
+KAEOS {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}".
+
+Migrations ran as a pre-upgrade Job (owner role); app pods run as the non-owner
+role so Postgres RLS applies.
+
+{{- if .Values.ingress.enabled }}
+Reach it at: http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+No ingress is enabled. Port-forward to try it:
+
+  kubectl port-forward svc/{{ include "kaeos.fullname" . }}-frontend 8080:{{ .Values.service.frontendPort }}
+  kubectl port-forward svc/{{ include "kaeos.fullname" . }}-backend  8001:{{ .Values.service.backendPort }}
+{{- end }}
+
+BEFORE production:
+  1. Replace every CHANGE_ME in values (or set secrets.existingSecret to a
+     Secret fed by your secrets manager).
+  2. Point externalDatabase.appUrl / ownerUrl at managed Postgres WITH pgvector,
+     using the non-owner role for appUrl and the owner role for ownerUrl.
+  3. Point externalRedis.url at managed Redis.
+  4. Push backend/ and frontend/ images and set image.repository / tags.
+
+Check rollout:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}

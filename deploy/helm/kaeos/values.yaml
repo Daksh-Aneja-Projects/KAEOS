@@ -1,0 +1,114 @@
+# KAEOS Helm values. Managed Postgres (with pgvector) and Redis are expected to
+# be provided out of cluster - a hand-rolled StatefulSet is not a production
+# datastore. Point `externalDatabase` / `externalRedis` at your managed
+# services, or a Bitnami subchart if you insist on in-cluster data.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io
+  # Set these to your pushed images (CI builds backend/ and frontend/).
+  repository: daksh-aneja-projects/kaeos
+  pullPolicy: IfNotPresent
+  # Overridden per component below; falls back to Chart.appVersion.
+  tag: ""
+
+imagePullSecrets: []
+
+backend:
+  image:
+    repository: ""          # defaults to {image.repository}-backend
+    tag: ""                 # defaults to image.tag or Chart.appVersion
+  replicaCount: 2
+  # start-prod.sh migrates then runs gunicorn; in k8s the migration Job (a Helm
+  # hook) owns migrations, so app pods run gunicorn directly and never race.
+  command: ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8001"]
+  containerPort: 8001
+  env:
+    ENVIRONMENT: production
+    GUNICORN_WORKERS: "4"
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits:   { cpu: "1",    memory: "1Gi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  # Both probes hit /health, which returns 503 when the primary datastore is
+  # unreachable (fail-closed), so a broken pod is pulled from the Service.
+  livenessProbe:
+    httpGet: { path: /health, port: 8001 }
+    initialDelaySeconds: 20
+    periodSeconds: 20
+  readinessProbe:
+    httpGet: { path: /health, port: 8001 }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+frontend:
+  image:
+    repository: ""          # defaults to {image.repository}-frontend
+    tag: ""
+  replicaCount: 2
+  containerPort: 80
+  resources:
+    requests: { cpu: "50m",  memory: "64Mi" }
+    limits:   { cpu: "250m", memory: "128Mi" }
+  livenessProbe:
+    httpGet: { path: /, port: 80 }
+    initialDelaySeconds: 5
+    periodSeconds: 20
+
+service:
+  type: ClusterIP
+  backendPort: 8001
+  frontendPort: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: kaeos.example.com
+  tls:
+    enabled: false
+    secretName: kaeos-tls
+  # Frontend at /, API at /api and /ws (both hit the backend).
+  apiPaths: ["/api", "/ws", "/health"]
+
+# ── data services (managed, out of cluster) ──────────────────────────────────
+externalDatabase:
+  # App connects as the NON-OWNER role so Postgres RLS actually applies.
+  appUrl: "postgresql+asyncpg://kaeos_app:CHANGE_ME@postgres:5432/kaeos"
+  # Owner URL: migrations + seeders only (bypasses RLS by design).
+  ownerUrl: "postgresql+asyncpg://kaeos:CHANGE_ME@postgres:5432/kaeos"
+
+externalRedis:
+  url: "redis://redis:6379/0"
+
+# ── secrets ──────────────────────────────────────────────────────────────────
+# Provided here for convenience; in production prefer an existing Secret
+# (set secrets.existingSecret) fed by a secrets manager / External Secrets.
+secrets:
+  existingSecret: ""        # if set, all keys are read from it instead of below
+  SECRET_KEY: "CHANGE_ME_32_BYTES_MINIMUM_SECRET"
+  ADMIN_EMAIL: "admin@kaeos.ai"
+  ADMIN_PASSWORD: "CHANGE_ME"
+  ADMIN_SECRET: "CHANGE_ME_ADMIN_BOOTSTRAP_SECRET"
+  # Optional: PUBLIC_BASE_URL for OIDC/SAML redirect + ACS URLs.
+  PUBLIC_BASE_URL: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities: { drop: ["ALL"] }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
