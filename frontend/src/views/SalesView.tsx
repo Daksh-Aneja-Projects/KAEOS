@@ -7,6 +7,7 @@ import {
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -143,9 +144,9 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   };
 
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'N/A').replace(/_/g, ' ')}
+      {humanize(status) || 'N/A'}
     </span>
   );
 
@@ -214,7 +215,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             style={{ background: actionMsg.includes('failed') ? '#ef444415' : '#22c55e15', color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
             {actionMsg.includes('failed') ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             {actionMsg}
-            <button onClick={() => setActionMsg('')} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            <button onClick={() => setActionMsg('')} className="ml-auto text-[11px] opacity-60">dismiss</button>
           </div>
         )}
 
@@ -230,14 +231,14 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
               <span className="text-[13px] font-semibold">
                 {quote.discount}% discount on {quote.opportunity}
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                 style={{
                   background: (quote.result?.approved ? '#22c55e' : '#f59e0b') + '20',
                   color: quote.result?.approved ? '#22c55e' : '#f59e0b',
                 }}>
                 {quote.result?.approved ? 'Within policy' : 'Needs approval'}
               </span>
-              <button onClick={() => setQuote(null)} className="ml-auto text-[10px] opacity-60">dismiss</button>
+              <button onClick={() => setQuote(null)} className="ml-auto text-[11px] opacity-60">dismiss</button>
             </div>
             <div className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>
               {quote.result?.maximum_allowable_discount != null && (
@@ -308,7 +309,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                           <div className="flex flex-wrap gap-1">
                             <button onClick={() => runAgent('Pipeline coach', o.id, api.runSalesPipelineAgent)}
                               disabled={runningAgent === o.id}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#6366f115', color: '#6366f1' }}>
                               {runningAgent === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                               Coach
@@ -316,7 +317,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             <button onClick={() => runAgent('Proposal draft', `${o.id}-proposal`, () => api.runSalesProposalAgent(o.id))}
                               disabled={!!runningAgent}
                               title="Draft a proposal for this deal. It always goes to a human for review before it leaves."
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
                               {runningAgent === `${o.id}-proposal` ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
                               Proposal
@@ -324,7 +325,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             <button onClick={() => runCpq(o)}
                               disabled={!!runningAgent}
                               title="Check whether a requested discount is allowed, and what it does to margin"
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#14b8a615', color: '#14b8a6' }}>
                               {runningAgent === `${o.id}-cpq` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Calculator className="w-3 h-3" />}
                               Quote
@@ -366,13 +367,13 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             {[1,2,3,4,5].map(s => (
                               <Star key={s} className="w-3 h-3" fill={(l.score || 0) >= s ? '#f59e0b' : 'none'} style={{ color: '#f59e0b' }} />
                             ))}
-                            <span className="ml-1 font-mono text-[10px]">{l.score || 0}/5</span>
+                            <span className="ml-1 font-mono text-[11px]">{l.score || 0}/5</span>
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Lead scoring', l.id, api.runSalesLeadScoringAgent)}
                             disabled={runningAgent === l.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#f59e0b15', color: '#f59e0b' }}>
                             {runningAgent === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Score
@@ -405,7 +406,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3 font-mono">${(f.pipeline || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">
                           <div className="space-y-1">
-                            <div className="flex justify-between text-[10px]">
+                            <div className="flex justify-between text-[11px]">
                               <span>${(f.quota || 0).toLocaleString()}</span>
                               <span style={{ color: (f.committed / f.quota) > 0.8 ? '#22c55e' : '#f59e0b' }}>
                                 {f.quota ? Math.round((f.committed / f.quota) * 100) : 0}%
@@ -419,7 +420,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Forecast predict', f.id, api.runSalesForecastAgent)}
                             disabled={runningAgent === f.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#22c55e15', color: '#22c55e' }}>
                             {runningAgent === f.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Predict
@@ -455,7 +456,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                           <div className="flex flex-wrap gap-1">
                             <button onClick={() => runAgent('Account health', a.id, api.runSalesAccountAgent)}
                               disabled={!!runningAgent}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#3b82f615', color: '#3b82f6' }}>
                               {runningAgent === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                               Health
@@ -463,7 +464,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                             <button onClick={() => runAgent('Churn risk', `${a.id}-churn`, () => api.runSalesChurnRiskAgent(a.id))}
                               disabled={!!runningAgent}
                               title="Estimate how likely this account is to leave, and what would keep it"
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#ef444415', color: '#ef4444' }}>
                               {runningAgent === `${a.id}-churn` ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldAlert className="w-3 h-3" />}
                               Churn Risk
@@ -498,15 +499,15 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>
                           {c.paid_date ? new Date(c.paid_date.replace(' ', 'T')).toLocaleDateString() : 'Not yet paid'}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[10px]" style={{ color: colors.inkSubtle }}>
+                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
                           {c.plan_id ? `#${c.plan_id.slice(-6)}` : 'No plan'}
                         </td>
                         <td className="px-4 py-3">
                           {c.paid_date ? (
-                            <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Settled</span>
+                            <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Settled</span>
                           ) : (
                             <button onClick={() => payCommission(c)} disabled={!!runningAgent}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#14b8a615', color: '#14b8a6' }}>
                               {runningAgent === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <BadgeDollarSign className="w-3 h-3" />}
                               Approve payout

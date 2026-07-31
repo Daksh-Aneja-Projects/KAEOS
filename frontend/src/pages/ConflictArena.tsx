@@ -77,7 +77,7 @@ const ConflictArena = () => {
       </div>
      </div>
      <div className="px-4 py-2 rounded-xl" style={{ background: colors.error + '14', border: `1px solid ${colors.error}33` }}>
-      <div className="text-[10px] uppercase font-bold tracking-wider" style={{ color: colors.error }}>Open Conflicts</div>
+      <div className="text-[11px] uppercase font-bold tracking-wider" style={{ color: colors.error }}>Open Conflicts</div>
       <div className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: colors.error }}>{openCount}</div>
      </div>
     </div>

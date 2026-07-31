@@ -119,7 +119,7 @@ export const LiveIndicator: React.FC<LiveIndicatorProps> = ({
 
   if (!isLive) {
     return (
-      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
         style={{ background: 'rgba(229, 83, 75, 0.08)', color: '#E5534B' }}>
         <WifiOff className="w-3 h-3" /> DISCONNECTED
       </span>
@@ -128,7 +128,7 @@ export const LiveIndicator: React.FC<LiveIndicatorProps> = ({
 
   if (isStale) {
     return (
-      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
         style={{ background: 'rgba(245, 166, 35, 0.08)', color: '#F5A623' }}>
         <Wifi className="w-3 h-3" /> STALE ({staleness}s)
       </span>
@@ -136,7 +136,7 @@ export const LiveIndicator: React.FC<LiveIndicatorProps> = ({
   }
 
   return (
-    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
       style={{ background: 'rgba(39, 166, 68, 0.08)', color: '#27A644' }}>
       <span className="relative flex h-2 w-2">
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: '#27A644' }}></span>

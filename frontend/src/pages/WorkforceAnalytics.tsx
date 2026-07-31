@@ -92,13 +92,13 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                 </div>
               </div>
               <div className="text-[24px] font-bold mt-2" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
-              {kpi.sub && <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
+              <div className="text-[11px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              {kpi.sub && <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
               {/* Real per-day execution volume from the autonomy-trend series */}
               {kpi.spark && dailyExecutions.length > 1 && (
                 <div className="mt-1.5">
                   <Sparkline points={dailyExecutions} color={kpi.color} width={150} height={24} />
-                  <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>daily governed executions, 30d</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>daily governed executions, 30d</div>
                 </div>
               )}
             </div>
@@ -139,15 +139,15 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                 </span>
               </div>
               <div className="h-2 rounded-full" style={{ background: colors.hairline }}>
-                <div className="h-full rounded-full" style={{
+                <div className="h-full rounded-full transition-all duration-500" style={{
                   width: `${Math.min(data.human_escalation_rate_pct || 0, 100)}%`,
                   background: (data.human_escalation_rate_pct || 0) < 15 ? '#22c55e' : '#f59e0b',
                 }} />
               </div>
-              <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
+              <div className="text-[11px] inline-flex items-center gap-1" style={{ color: colors.inkSubtle }}>
                 {(data.human_escalation_rate_pct || 0) < 15
-                  ? '✓ Within target - below 15% threshold'
-                  : '⚠ Above 15% target - review agent capabilities'}
+                  ? <><CheckCircle className="w-3 h-3" style={{ color: '#22c55e' }} /> Within target - below 15% threshold</>
+                  : <><AlertTriangle className="w-3 h-3" style={{ color: '#f59e0b' }} /> Above 15% target - review agent capabilities</>}
               </div>
             </div>
           </div>
@@ -180,7 +180,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                     <div className="flex items-center gap-2">
                       <DomainIcon hint={dept.slug || dept.icon} fallbackHint={dept.name} size={26} />
                       <span className="text-[14px] font-semibold">{dept.name}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full" style={{ background: healthColor(dept.health_score) + '15', color: healthColor(dept.health_score) }}>
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-full" style={{ background: healthColor(dept.health_score) + '15', color: healthColor(dept.health_score) }}>
                         {dept.health_score}% health
                       </span>
                     </div>
@@ -192,7 +192,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                   {/* Task / hours / cost bars - all real per-department fields */}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: colors.inkSubtle }}>
+                      <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Tasks Completed</span>
                         <span className="font-mono">{(dept.tasks_completed || 0).toLocaleString()}</span>
                       </div>
@@ -204,7 +204,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                       </div>
                     </div>
                     <div>
-                      <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: colors.inkSubtle }}>
+                      <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Hours Saved</span>
                         <span className="font-mono">{dept.hours_saved}h</span>
                       </div>
@@ -216,7 +216,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                       </div>
                     </div>
                     <div>
-                      <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: colors.inkSubtle }}>
+                      <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Cost Saved</span>
                         <span className="font-mono">${(dept.cost_saved || 0).toLocaleString()}</span>
                       </div>

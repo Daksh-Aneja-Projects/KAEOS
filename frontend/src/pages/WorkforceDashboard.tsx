@@ -11,7 +11,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { humanize } from '../lib/format';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   Building2, Users, Clock, Zap, BarChart3, ArrowRight, Rocket,
@@ -33,7 +34,6 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { lastMessage } = useWebSocket();
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [sar, setSar] = useState<any>(null);
 
@@ -80,12 +80,9 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
 
   useEffect(() => { load(true); }, [load]);
 
-  // Any tenant event re-reads the KPIs. The old handler only reacted to three
-  // exact message types (`overview_update`, `departments_update`, ...) that
-  // the backend never emits - so the dashboard sat frozen while agents ran.
-  useEffect(() => {
-    if (lastMessage) load(false);
-  }, [lastMessage, load]);
+  // Any tenant event re-reads the KPIs, and a 20s timer keeps the page moving
+  // even when the WebSocket is quiet. The timer pauses while the tab is hidden.
+  useLiveRefresh(() => load(false), { intervalMs: 20000 });
 
   if (loading) return <BrainLoading message="Loading Enterprise Workforce..." />;
   if (error) return <BrainError message={error} onRetry={() => load(true)} />;
@@ -167,7 +164,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
               }}>
                 <div className="flex items-center gap-2 mb-1">
                   <Zap className="w-4 h-4" style={{ color: autonomyRate === null ? colors.inkSubtle : autonomyColor }} />
-                  <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>
+                  <span className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>
                     Safe Autonomy Rate
                   </span>
                 </div>
@@ -219,7 +216,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     </div>
                     <div>
                       <LiveValue value={kpi.value} className="text-[20px] font-bold leading-none tabular-nums block" flashColor={kpi.color} />
-                      <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+                      <div className="text-[11px] uppercase tracking-wider mt-1" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
                     </div>
                   </div>
                 ))}
@@ -247,7 +244,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                       ].map(f => (
                         <div key={f.label} className="p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                           <div className="text-[20px] font-bold" style={{ color: f.color }}>{f.value ?? 0}</div>
-                          <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{f.label}</div>
+                          <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{f.label}</div>
                         </div>
                       ))}
                     </div>
@@ -268,7 +265,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                             return (
                               <div key={s.skill}>
                                 <div className="flex items-center justify-between text-[11px] mb-1">
-                                  <span className="truncate font-medium" title={s.skill}>{s.skill.replace(/_/g, ' ')}</span>
+                                  <span className="truncate font-medium" title={s.skill}>{humanize(s.skill)}</span>
                                   <span className="font-mono font-bold ml-2 shrink-0" style={{ color: barColor }}>
                                     {pct}%
                                     <span className="font-normal ml-1.5" style={{ color: colors.inkSubtle }}>{s.total} runs</span>
@@ -315,12 +312,12 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#ef44440d' }}>
                       <ShieldAlert className="w-4 h-4 shrink-0" style={{ color: '#ef4444' }} />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold truncate">{g.skill_id}</div>
-                        <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                        <div className="text-[12px] font-semibold truncate" title={g.skill_id}>{humanize(g.skill_id)}</div>
+                        <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                           {g.executions.toLocaleString()} runs · confidence {g.confidence} · high-consequence
                         </div>
                       </div>
-                      <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#ef4444' }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#ef4444' }}>
                         Always human
                       </span>
                     </div>
@@ -329,12 +326,12 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#22c55e0d' }}>
                       <CheckCircle className="w-4 h-4 shrink-0" style={{ color: '#22c55e' }} />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold truncate">{g.skill_id}</div>
-                        <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                        <div className="text-[12px] font-semibold truncate" title={g.skill_id}>{humanize(g.skill_id)}</div>
+                        <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                           {g.executions.toLocaleString()} runs · {Math.round(g.success_rate * 100)}% success · confidence {g.confidence}
                         </div>
                       </div>
-                      <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#22c55e' }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#22c55e' }}>
                         Autonomous
                       </span>
                     </div>
@@ -343,12 +340,12 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     <div key={g.skill_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: '#f59e0b0d' }}>
                       <Clock className="w-4 h-4 shrink-0" style={{ color: '#f59e0b' }} />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold truncate">{g.skill_id}</div>
-                        <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                        <div className="text-[12px] font-semibold truncate" title={g.skill_id}>{humanize(g.skill_id)}</div>
+                        <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                           {g.executions.toLocaleString()} runs · {g.to_threshold} from autonomy
                         </div>
                       </div>
-                      <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#f59e0b' }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: '#f59e0b' }}>
                         Earning
                       </span>
                     </div>
@@ -370,9 +367,9 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                         <div>
                           <h3 className="text-[15px] font-bold group-hover:text-primary transition-colors">{dept.name}</h3>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold"
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                               style={{ background: statusColor(dept.status) + '20', color: statusColor(dept.status) }}>
-                              {dept.status}
+                              {humanize(dept.status)}
                             </span>
                           </div>
                         </div>
@@ -399,7 +396,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                       ].map(m => (
                         <div key={m.label} className="min-w-0">
                           <div className="text-[14px] font-bold tabular-nums">{m.value}</div>
-                          <div className="text-[9px] truncate" style={{ color: colors.inkSubtle }}>{m.label}</div>
+                          <div className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{m.label}</div>
                         </div>
                       ))}
                     </div>
@@ -419,12 +416,12 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                   {recentActivity.map((evt: any, i: number) => (
                     <div key={evt.id || i} className="flex items-center gap-3 px-3 py-1.5 rounded text-[11px]"
                       style={{ background: i === 0 ? colors.primary + '08' : 'transparent' }}>
-                      <span className="font-mono text-[10px]" style={{ color: colors.inkSubtle }}>
+                      <span className="font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
                         {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : '-'}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold"
                         style={{ background: colors.primary + '20', color: colors.primary }}>
-                        {evt.loop_phase || evt.event_type || 'EVENT'}
+                        {humanize(evt.loop_phase || evt.event_type || 'Event')}
                       </span>
                       <span style={{ color: colors.inkSubtle }}>
                         {evt.summary || evt.description || 'Cognitive activity recorded'}

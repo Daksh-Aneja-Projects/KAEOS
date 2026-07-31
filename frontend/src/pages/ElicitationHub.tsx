@@ -125,7 +125,7 @@ export default function ElicitationHub() {
                 ? <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
                 : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -137,7 +137,7 @@ export default function ElicitationHub() {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Who to ask</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Who to ask</label>
                 {d.contributors.length > 0 ? (
                   <select value={genEmployee} onChange={e => setGenEmployee(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
@@ -155,7 +155,7 @@ export default function ElicitationHub() {
                 )}
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Subject area (optional)</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Subject area (optional)</label>
                 <input value={genDomain} onChange={e => setGenDomain(e.target.value)}
                   placeholder="finance, support, engineering…"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
@@ -315,7 +315,7 @@ export default function ElicitationHub() {
                       <div><span className="block" style={{ color: colors.inkSubtle }}>Rate</span><span className="font-bold" style={{ color: colors.ink }}>{Math.round(c.response_rate * 100)}%</span></div>
                     </div>
                     {c.badge && (
-                      <span className="mt-2 inline-block px-2 py-0.5 text-[10px] font-bold rounded"
+                      <span className="mt-2 inline-block px-2 py-0.5 text-[11px] font-bold rounded"
                         style={{ background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}30` }}>{c.badge}</span>
                     )}
                   </div>

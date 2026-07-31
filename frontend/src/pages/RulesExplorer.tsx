@@ -309,7 +309,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
             }}>
             {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -326,20 +326,20 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
               style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Domain</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Domain</label>
                 <input value={form.domain} onChange={e => setForm({ ...form, domain: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Half-life (days)</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Half-life (days)</label>
                 <input type="number" min={1} value={form.half_life_days}
                   onChange={e => setForm({ ...form, half_life_days: Number(e.target.value) })}
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Compliance tags</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Compliance tags</label>
                 <input value={form.compliance_tags} onChange={e => setForm({ ...form, compliance_tags: e.target.value })}
                   placeholder="SOX, GDPR"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
@@ -348,13 +348,13 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>When this happens (JSON)</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>When this happens (JSON)</label>
                 <textarea value={form.trigger} onChange={e => setForm({ ...form, trigger: e.target.value })}
                   className="w-full h-20 px-3 py-2 rounded-lg text-[12px] font-mono outline-none resize-y"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Do this (JSON)</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Do this (JSON)</label>
                 <textarea value={form.action} onChange={e => setForm({ ...form, action: e.target.value })}
                   className="w-full h-20 px-3 py-2 rounded-lg text-[12px] font-mono outline-none resize-y"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
@@ -431,7 +431,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                           <td className="px-6 py-4">
                             <div className="flex gap-1 flex-wrap">
                               {r.compliance_tags?.map((t) => (
-                                <span key={t} className="px-2 py-0.5 text-[10px] font-semibold rounded"
+                                <span key={t} className="px-2 py-0.5 text-[11px] font-semibold rounded"
                                   style={{ background: colors.info + '18', color: colors.info, border: `1px solid ${colors.info}30` }}>{t}</span>
                               ))}
                             </div>
@@ -561,7 +561,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                                       {(versions[r.id].versions || []).map((v: any) => (
                                         <div key={`${v.version}-${v.chain_hash}`} className="flex items-center gap-3 text-[12px]">
                                           <span className="font-mono w-8 shrink-0" style={{ color: colors.inkTertiary }}>v{v.version}</span>
-                                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold shrink-0"
+                                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold shrink-0"
                                             style={{ background: colors.primary + '18', color: colors.primary }}>
                                             {v.event_type?.replace(/_/g, ' ').toLowerCase()}
                                           </span>

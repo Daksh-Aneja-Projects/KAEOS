@@ -13,6 +13,9 @@ import {
   FileSpreadsheet, ClipboardList, Wallet, Receipt
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
+import { CountUp } from '../components/CountUp';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { humanize } from '../lib/format';
 
 // Small chart renderers fed only by the /finance/analytics computed payload.
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7'];
@@ -27,14 +30,14 @@ function MiniBars({ items, colors, money }: { items: { label: string; value: num
     <div className="space-y-2">
       {items.map((it, idx) => (
         <div key={it.label} className="flex items-center gap-2">
-          <span className="text-[10px] w-24 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+          <span className="text-[11px] w-24 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
           <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
             <div className="h-3.5 rounded transition-all duration-500" style={{
               width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
               background: CHART_PALETTE[idx % CHART_PALETTE.length],
             }} />
           </div>
-          <span className="text-[10px] font-mono w-14 shrink-0 text-right" style={{ color: colors.ink }}>
+          <span className="text-[11px] font-mono w-14 shrink-0 text-right" style={{ color: colors.ink }}>
             {money ? fmtMoney(it.value) : it.value.toLocaleString()}
           </span>
         </div>
@@ -56,12 +59,12 @@ function MiniDonut({ items, colors }: { items: { label: string; value: number }[
       <div className="w-24 h-24 rounded-full shrink-0 relative" style={{ background: total > 0 ? `conic-gradient(${segs.join(', ')})` : colors.canvas }}>
         <div className="absolute inset-[12px] rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
           <span className="text-[16px] font-bold leading-none">{total.toLocaleString()}</span>
-          <span className="text-[8px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>total</span>
+          <span className="text-[11px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>total</span>
         </div>
       </div>
       <div className="flex-1 min-w-0 space-y-1.5">
         {items.map((it, idx) => (
-          <div key={it.label} className="flex items-center gap-1.5 text-[10px]">
+          <div key={it.label} className="flex items-center gap-1.5 text-[11px]">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CHART_PALETTE[idx % CHART_PALETTE.length] }} />
             <span className="truncate" style={{ color: colors.inkSubtle }}>{it.label}</span>
             <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{it.value.toLocaleString()}</span>
@@ -97,6 +100,7 @@ export default function FinanceDashboard() {
     });
   };
   useEffect(() => { load(); }, []);
+  useLiveRefresh(load, { intervalMs: 20000 });
 
   if (loading) return <BrainLoading message="Loading Financial Intelligence..." />;
   if (error && !dept && !finStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
@@ -159,12 +163,12 @@ export default function FinanceDashboard() {
               </p>
               <div className="flex items-center gap-2 mt-1.5">
                 {dept?.status && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#3b82f620', color: '#3b82f6' }}>
-                    {dept.status}
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#3b82f620', color: '#3b82f6' }}>
+                    {humanize(dept.status)}
                   </span>
                 )}
                 {(dept?.compliance_frameworks || []).map((f: string) => (
-                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
                     {f}
                   </span>
                 ))}
@@ -175,7 +179,7 @@ export default function FinanceDashboard() {
             <div className="flex items-center gap-2">
               <span className="text-[12px]" style={{ color: colors.inkSubtle }}>Department Health:</span>
               <span className="text-[20px] font-bold" style={{ color: healthColor(dept.health_score || 0) }}>
-                {Math.round((dept.health_score || 0) * 100)}%
+                <CountUp value={Math.round((dept.health_score || 0) * 100)} suffix="%" />
               </span>
             </div>
           )}
@@ -194,8 +198,8 @@ export default function FinanceDashboard() {
             <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}12` }}>
               <kpi.icon className="w-5 h-5 mx-auto mb-1" style={{ color: kpi.color }} />
               <div className="text-[16px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
-              {kpi.sub && <div className="text-[9px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
+              <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              {kpi.sub && <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
             </div>
           ))}
         </div>
@@ -218,7 +222,7 @@ export default function FinanceDashboard() {
                       <BarChart3 className="w-4 h-4" style={{ color: '#ec4899' }} /> {aging.title}
                     </h3>
                     {overdueKpi?.value != null && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#ef444418', color: '#ef4444' }}>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#ef444418', color: '#ef4444' }}>
                         {overdueKpi.value.toLocaleString()} overdue
                       </span>
                     )}
@@ -241,7 +245,7 @@ export default function FinanceDashboard() {
                       <Briefcase className="w-4 h-4" style={{ color: '#f59e0b' }} /> {vendors.title}
                     </h3>
                     {complianceKpi?.value != null && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#22c55e18', color: '#22c55e' }}>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#22c55e18', color: '#22c55e' }}>
                         {complianceKpi.value.toFixed(1)}% expense compliance
                       </span>
                     )}
@@ -264,7 +268,7 @@ export default function FinanceDashboard() {
               </div>
               <div className="flex-1">
                 <div className="text-[13px] font-semibold group-hover:text-primary transition-colors">{link.label}</div>
-                <div className="text-[10px]" style={{ color: colors.inkSubtle }}>Explore ledger & workflows →</div>
+                <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Explore ledger & workflows →</div>
               </div>
               <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.primary }} />
             </button>
@@ -287,9 +291,9 @@ export default function FinanceDashboard() {
                         <span className="text-[12px] font-semibold flex items-center gap-1.5">
                           <DomainIcon hint={cap.icon || cap.name} fallbackHint={cap.name} size={24} /> {cap.name}
                         </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                           style={{ background: cap.status === 'ACTIVE' ? '#22c55e20' : '#f59e0b20', color: cap.status === 'ACTIVE' ? '#22c55e' : '#f59e0b' }}>
-                          {cap.status}
+                          {humanize(cap.status)}
                         </span>
                       </div>
                       <p className="text-[11px]" style={{ color: colors.inkSubtle }}>{cap.description}</p>
@@ -314,10 +318,10 @@ export default function FinanceDashboard() {
                     <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold" style={{ background: colors.primary + '18', color: colors.primary }}>{(agent.agent_name || '?').charAt(0)}</div>
                     <div>
                       <div className="text-[12px] font-bold">{agent.agent_name}</div>
-                      <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-500/10 text-green-500">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
                 </div>
               ))}
             </div>

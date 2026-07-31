@@ -133,7 +133,7 @@ const ActionsLedger = () => {
             }}>
             {banner.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -206,7 +206,7 @@ const ActionsLedger = () => {
                         </button>
                       ) : (
                         <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
-                          {a.status === 'REVERSED' ? 'Reversed' : '—'}
+                          {a.status === 'REVERSED' ? 'Reversed' : '-'}
                         </span>
                       )}
                     </span>

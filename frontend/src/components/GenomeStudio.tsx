@@ -112,13 +112,13 @@ export default function GenomeStudio() {
                   <div className="text-[12px] font-bold text-emerald-500">{point.version} &bull; {point.time} &bull; {point.executions} executions</div>
                   <div className="mt-2 flex items-center gap-6">
                     <div>
-                      <div className="text-[10px] font-bold uppercase" style={{ color: colors.inkSubtle }}>Execution Fitness</div>
+                      <div className="text-[11px] font-bold uppercase" style={{ color: colors.inkSubtle }}>Execution Fitness</div>
                       <div className="text-[16px] font-mono font-bold" style={{ color: scoreColor(point.fitness) }}>
                         {(point.fitness * 100).toFixed(1)}%
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold uppercase" style={{ color: colors.inkSubtle }}>Failure Risk</div>
+                      <div className="text-[11px] font-bold uppercase" style={{ color: colors.inkSubtle }}>Failure Risk</div>
                       <div className="text-[16px] font-mono font-bold" style={{ color: point.risk > 0.3 ? '#ef4444' : '#22c55e' }}>
                         {(point.risk * 100).toFixed(1)}%
                       </div>

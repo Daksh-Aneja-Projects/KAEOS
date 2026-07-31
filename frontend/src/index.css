@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Inter is loaded once in index.html; here we add only the mono face. */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -312,4 +313,16 @@
   background: linear-gradient(90deg, transparent 0%, rgba(94, 106, 210, 0.05) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ── Reduced Motion ──
+   Respect the OS setting: strip animations and transitions to a hair.
+   rAF-driven canvases guard themselves in JS (they render a static frame). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

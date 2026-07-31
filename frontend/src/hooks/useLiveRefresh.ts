@@ -18,13 +18,18 @@ import { useWebSocket } from './useWebSocket';
  * data would not fit them - and a hook that does not fit its call sites is
  * dead code, however elegant.
  *
- * `events` filters on substrings of the event payload; omit it to refresh on
- * any tenant event.
+ * `opts` may be a bare `events` array (substring filter on the event payload;
+ * omit to refresh on any tenant event) or an options object. Pass
+ * `{ intervalMs }` to ALSO poll on a timer - the dashboards that must feel live
+ * even when the WebSocket is quiet use this. The timer pauses while the tab is
+ * hidden and re-fires on return, so a backgrounded tab never burns queries.
  */
 export function useLiveRefresh(
   loader: () => void | Promise<void>,
-  events?: string[],
+  opts?: string[] | { events?: string[]; intervalMs?: number },
 ) {
+  const events = Array.isArray(opts) ? opts : opts?.events;
+  const intervalMs = Array.isArray(opts) ? undefined : opts?.intervalMs;
   const { lastMessage, status } = useWebSocket();
 
   // Hold the newest loader without making it a dependency: callers pass inline
@@ -40,6 +45,21 @@ export function useLiveRefresh(
     }
     void loaderRef.current();
   }, [lastMessage, events]);
+
+  // Interval refresh, paused while the tab is hidden.
+  useEffect(() => {
+    if (!intervalMs) return;
+    let id: ReturnType<typeof setInterval> | null = null;
+    const stop = () => { if (id) { clearInterval(id); id = null; } };
+    const start = () => { stop(); id = setInterval(() => void loaderRef.current(), intervalMs); };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else { void loaderRef.current(); start(); }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [intervalMs]);
 
   return { live: status === 'connected' };
 }

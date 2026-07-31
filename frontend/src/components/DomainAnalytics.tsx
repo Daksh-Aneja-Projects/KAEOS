@@ -52,7 +52,7 @@ const BarChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
               filter: hover === idx ? 'brightness(1.15)' : undefined,
             }} />
             {hover === idx && (
-              <div className="absolute -top-6 left-0 text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
+              <div className="absolute -top-6 left-0 text-[11px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
                 style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
                 {item.value.toLocaleString()} · {((item.value / totalV) * 100).toFixed(0)}% of total
               </div>
@@ -89,10 +89,10 @@ const FunnelChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
                   background: `${PALETTE[idx % PALETTE.length]}${pct > 50 ? 'ff' : 'aa'}`,
                   filter: hover === idx ? 'brightness(1.15)' : undefined,
                 }}>
-                <span className="text-[10px] font-semibold text-white px-1 truncate">{item.value.toLocaleString()}</span>
+                <span className="text-[11px] font-semibold text-white px-1 truncate">{item.value.toLocaleString()}</span>
               </div>
               {hover === idx && idx > 0 && (
-                <div className="absolute -top-6 text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
+                <div className="absolute -top-6 text-[11px] px-1.5 py-0.5 rounded whitespace-nowrap z-10"
                   style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: conv >= 50 ? '#22c55e' : '#f59e0b' }}>
                   {conv.toFixed(0)}% converted from previous stage
                 </div>
@@ -131,7 +131,7 @@ const DonutChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
             <span className="text-[18px] font-bold leading-none" style={{ color: hv ? PALETTE[(hover as number) % PALETTE.length] : colors.ink }}>
               {hv ? hv.value.toLocaleString() : total.toLocaleString()}
             </span>
-            <span className="text-[8px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>
+            <span className="text-[11px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>
               {hv ? `${pct(hv.value).toFixed(0)}% ${hv.label}` : 'total'}
             </span>
           </div>
@@ -145,7 +145,7 @@ const DonutChart: React.FC<{ chart: DomainChart }> = ({ chart }) => {
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: PALETTE[idx % PALETTE.length] }} />
                 <span className="truncate" style={{ color: colors.inkSubtle }}>{item.label}</span>
                 <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{item.value.toLocaleString()}</span>
-                <span className="text-[10px] w-9 text-right" style={{ color: colors.inkSubtle }}>{pct(item.value).toFixed(0)}%</span>
+                <span className="text-[11px] w-9 text-right" style={{ color: colors.inkSubtle }}>{pct(item.value).toFixed(0)}%</span>
               </div>
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.canvas }}>
                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct(item.value)}%`, background: PALETTE[idx % PALETTE.length], filter: hover === idx ? 'brightness(1.15)' : undefined }} />
@@ -209,7 +209,7 @@ const DomainAnalytics: React.FC<{ domain: string }> = ({ domain }) => {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {data.kpis.map(kpi => (
           <div key={kpi.key} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-            <p className="text-[10px] font-medium uppercase tracking-wide truncate" style={{ color: colors.inkSubtle }} title={kpi.label}>
+            <p className="text-[11px] font-medium uppercase tracking-wide truncate" style={{ color: colors.inkSubtle }} title={kpi.label}>
               {kpi.label}
             </p>
             <p className="text-[20px] font-bold mt-1 tracking-tight" style={{ color: colors.ink }}>{formatValue(kpi)}</p>

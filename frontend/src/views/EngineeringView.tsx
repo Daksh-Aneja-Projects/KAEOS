@@ -112,7 +112,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
       : h === 'OUTAGE' ? '#ef4444' : '#6b7280';
 
   const Badge: React.FC<{ text?: string | null; color: string }> = ({ text, color }) => (
-    <span className="px-2 py-0.5 rounded text-[10px] font-bold"
+    <span className="px-2 py-0.5 rounded text-[11px] font-bold"
       style={{ background: color + '18', color }}>
       {text || '-'}
     </span>
@@ -120,7 +120,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
 
   const AgentButton: React.FC<{ id: string; label: string; onRun: () => void }> = ({ id, label, onRun }) => (
     <button onClick={onRun} disabled={runningAgent === id}
-      className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+      className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
       style={{ background: '#6366f115', color: '#6366f1' }}>
       {runningAgent === id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
       {label}
@@ -179,7 +179,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
           {stats.map(({ label, value, icon: Icon, color }) => (
             <div key={label} style={card} className="p-3.5">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>{label}</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>{label}</span>
                 <Icon className="w-3.5 h-3.5" style={{ color }} />
               </div>
               <div className="text-[22px] font-bold font-mono" style={{ color: colors.ink }}>{value ?? '-'}</div>
@@ -239,7 +239,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                 <tr key={s.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                   <td className="px-4 py-3">
                     <div className="font-medium">{s.name}</div>
-                    <div className="text-[10px]" style={{ color: colors.inkTertiary }}>{s.description}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkTertiary }}>{s.description}</div>
                   </td>
                   <td className="px-4 py-3"><Badge text={s.tier} color={s.tier === 'TIER_1' ? '#ef4444' : s.tier === 'TIER_2' ? '#f59e0b' : '#6b7280'} /></td>
                   <td className="px-4 py-3"><Badge text={s.health} color={healthColor(s.health)} /></td>
@@ -289,7 +289,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   <td className="px-4 py-3">
                     <div className="font-medium">{p.title}</div>
                     {p.ai_summary && (
-                      <div className="text-[10px] mt-0.5" style={{ color: colors.inkTertiary }}>{p.ai_summary}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{p.ai_summary}</div>
                     )}
                   </td>
                   <td className="px-4 py-3"><Badge text={p.status} color="#6366f1" /></td>
@@ -449,7 +449,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               )}
               {(pm.action_items || []).length > 0 && (
                 <div className="mt-2">
-                  <div className="text-[10px] font-bold uppercase mb-1" style={{ color: colors.inkTertiary }}>Action items</div>
+                  <div className="text-[11px] font-bold uppercase mb-1" style={{ color: colors.inkTertiary }}>Action items</div>
                   {pm.action_items.map((a: any, idx: number) => (
                     <div key={idx} className="flex items-center gap-2 text-[11px] py-0.5">
                       {a.done

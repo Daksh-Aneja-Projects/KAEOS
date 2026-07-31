@@ -199,7 +199,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
                   <td className="px-4 py-3 font-mono">{r.times_fired}</td>
                   <td className="px-4 py-3">
                     <button onClick={() => toggle(r)}
-                      className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ background: r.is_active ? '#22c55e18' : colors.surface2, color: r.is_active ? '#22c55e' : colors.inkSubtle }}>
                       {r.is_active ? 'active' : 'paused'}
                     </button>

@@ -124,11 +124,11 @@ export default function EvolutionStudio() {
               
               <div className="flex items-center gap-6 mt-2 pt-4 border-t" style={{ borderColor: colors.hairline }}>
                 <div className="flex flex-col">
-                  <span className="text-[10px] uppercase font-bold" style={{ color: colors.inkSubtle }}>Expected Cost</span>
+                  <span className="text-[11px] uppercase font-bold" style={{ color: colors.inkSubtle }}>Expected Cost</span>
                   <span className="font-mono text-[13px]">${opt.expected_cost.toLocaleString()}</span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[10px] uppercase font-bold" style={{ color: colors.inkSubtle }}>Expected Risk</span>
+                  <span className="text-[11px] uppercase font-bold" style={{ color: colors.inkSubtle }}>Expected Risk</span>
                   <span className="font-mono text-[13px]" style={{ color: scoreColor(1 - opt.risk) }}>{(opt.risk * 100).toFixed(0)}%</span>
                 </div>
                 {/* No "apply" affordance: the backend exposes read-only

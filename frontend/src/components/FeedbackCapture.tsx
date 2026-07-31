@@ -95,7 +95,7 @@ export default function FeedbackCapture({ executionId, instruction, colors }: Pr
             </button>
           </div>
           {state === 'saving' && <Loader2 className="w-4 h-4 animate-spin" style={{ color: colors.primary }} />}
-          <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Feeds your AI Foundry training data</span>
+          <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Feeds your AI Foundry training data</span>
         </div>
       )}
       {error && <div className="text-[11px] mt-2" style={{ color: colors.error }}>{error}</div>}

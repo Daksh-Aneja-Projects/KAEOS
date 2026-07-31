@@ -151,7 +151,7 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-medium truncate" style={{ color: colors.ink }}>{ev.title}</span>
-                    {ev.requires_action && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(245,166,35,0.12)', color: '#fbbf24' }}>Action</span>}
+                    {ev.requires_action && <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(245,166,35,0.12)', color: '#fbbf24' }}>Action</span>}
                   </div>
                   {ev.description && <p className="text-[12px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{ev.description}</p>}
                 </div>

@@ -178,7 +178,7 @@ export default function UserManagement() {
           style={{ background: '#ef444415', color: '#ef4444' }}>
           <XCircle className="w-4 h-4 shrink-0" />
           <span className="flex-1">{exportError}</span>
-          <button onClick={() => setExportError(null)} className="text-[10px] opacity-70">dismiss</button>
+          <button onClick={() => setExportError(null)} className="text-[11px] opacity-70">dismiss</button>
         </div>
       )}
 
@@ -234,7 +234,7 @@ export default function UserManagement() {
                   <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
                 ))}
               </select>
-              <p className="text-[10px] mt-1" style={{ color: colors.inkSubtle }}>
+              <p className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
                 Scoped users only see their own department's operational pages.
               </p>
             </div>
@@ -266,7 +266,7 @@ export default function UserManagement() {
             style={{ background: roleColor(r.role) + '10', border: `1px solid ${roleColor(r.role)}20` }}>
             {React.createElement(roleIcon(r.role), { className: 'w-3.5 h-3.5', style: { color: roleColor(r.role) } })}
             <span className="text-[11px] font-semibold" style={{ color: roleColor(r.role) }}>{r.role}</span>
-            <span className="text-[10px]" style={{ color: colors.inkSubtle }}>{r.desc}</span>
+            <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{r.desc}</span>
           </div>
         ))}
       </div>
@@ -296,7 +296,7 @@ export default function UserManagement() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
-          <div className="grid grid-cols-12 text-[10px] font-semibold uppercase tracking-wider px-5 py-3"
+          <div className="grid grid-cols-12 text-[11px] font-semibold uppercase tracking-wider px-5 py-3"
             style={{ background: colors.surface1, color: colors.inkSubtle }}>
             <div className="col-span-2">User</div>
             <div className="col-span-3">Email</div>
@@ -318,7 +318,7 @@ export default function UserManagement() {
                   </div>
                   <div className="min-w-0">
                     <div className="font-medium truncate" title={u.display_name}>{u.display_name}</div>
-                    {u.is_demo && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>DEMO</span>}
+                    {u.is_demo && <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>DEMO</span>}
                   </div>
                 </div>
                 <div className="col-span-3 text-[12px] truncate pr-2" title={u.email} style={{ color: colors.inkSubtle }}>{u.email}</div>
@@ -333,7 +333,7 @@ export default function UserManagement() {
                       <option value="VIEWER">VIEWER</option>
                     </select>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold cursor-pointer"
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold cursor-pointer"
                       onClick={() => !u.is_demo && setEditingRole(u.id)}
                       style={{ background: roleColor(u.role) + '15', color: roleColor(u.role) }}>
                       <RIcon className="w-3 h-3" /> {u.role}
@@ -353,14 +353,14 @@ export default function UserManagement() {
                       ))}
                     </select>
                   ) : u.department ? (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold cursor-pointer"
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-bold cursor-pointer"
                       onClick={() => setEditingDept(u.id)}
                       title={`Scoped to ${deptLabel(u.department)}. Click to change.`}
                       style={{ background: deptColor(u.department) + '15', color: deptColor(u.department) }}>
                       {deptShort(u.department)}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium cursor-pointer"
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium cursor-pointer"
                       onClick={() => setEditingDept(u.id)}
                       title="Org-wide access. Click to scope to a department."
                       style={{ color: colors.inkSubtle, background: colors.surface2 }}>

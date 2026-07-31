@@ -188,7 +188,7 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
         <MessageSquare className="w-6 h-6 text-white" />
         {pendingCount > 0 && (
           <span
-            className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white"
+            className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center text-white"
             style={{ background: '#ef4444' }}
           >
             {pendingCount}
@@ -213,7 +213,7 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
           </div>
           <div>
             <div className="text-[13px] font-semibold" style={{ color: colors.ink }}>KAEOS Copilot</div>
-            <div className="flex items-center gap-1 text-[10px]" style={{ color: '#22c55e' }}>
+            <div className="flex items-center gap-1 text-[11px]" style={{ color: '#22c55e' }}>
               <div className="w-1.5 h-1.5 rounded-full bg-green-500" /> Grounded in your workspace
             </div>
           </div>
@@ -238,11 +238,11 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
                   {msg.role === 'system'
                     ? <KaeosLogo className="w-3 h-3" color="currentColor" />
                     : <Bot className="w-3 h-3" style={{ color: '#8b5cf6' }} />}
-                  <span className="text-[10px] font-semibold" style={{ color: colors.inkSubtle }}>
+                  <span className="text-[11px] font-semibold" style={{ color: colors.inkSubtle }}>
                     {msg.agent_name || 'System'}
                   </span>
                   {typeof msg.confidence === 'number' && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: '#22c55e15', color: '#22c55e' }}>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: '#22c55e15', color: '#22c55e' }}>
                       {(msg.confidence * 100).toFixed(0)}%
                     </span>
                   )}
@@ -260,7 +260,7 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
               {msg.sources && msg.sources.length > 0 && (
                 <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                   {msg.sources.map((s, i) => (
-                    <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full"
+                    <span key={i} className="text-[11px] px-1.5 py-0.5 rounded-full"
                       style={{ background: colors.primary + '10', color: colors.primary, border: `1px solid ${colors.primary}20` }}>
                       {s}
                     </span>
@@ -277,15 +277,15 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
                     </div>
                     {msg.action.status === 'pending' ? (
                       <div className="flex gap-1.5">
-                        <button onClick={() => handleAction(msg.id, 'approved')} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium" style={{ background: '#22c55e15', color: '#22c55e' }}>
+                        <button onClick={() => handleAction(msg.id, 'approved')} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium" style={{ background: '#22c55e15', color: '#22c55e' }}>
                           <CheckCircle className="w-3 h-3" /> Approve
                         </button>
-                        <button onClick={() => handleAction(msg.id, 'rejected')} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium" style={{ background: '#ef444415', color: '#ef4444' }}>
+                        <button onClick={() => handleAction(msg.id, 'rejected')} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium" style={{ background: '#ef444415', color: '#ef4444' }}>
                           <XCircle className="w-3 h-3" /> Reject
                         </button>
                       </div>
                     ) : (
-                      <span className="text-[10px] font-bold" style={{ color: msg.action.status === 'approved' ? '#22c55e' : '#ef4444' }}>
+                      <span className="text-[11px] font-bold" style={{ color: msg.action.status === 'approved' ? '#22c55e' : '#ef4444' }}>
                         {msg.action.status === 'approved' ? 'Approved' : 'Rejected'}
                       </span>
                     )}
@@ -293,7 +293,7 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
                 </div>
               )}
 
-              <div className="text-[9px] mt-1" style={{ color: colors.inkSubtle }}>
+              <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
                 {msg.timestamp.toLocaleTimeString()}
               </div>
             </div>

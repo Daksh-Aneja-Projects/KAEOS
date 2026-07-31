@@ -300,7 +300,7 @@ const NotificationSettings: React.FC = () => {
                       <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>all events</span>
                     ) : (
                       c.events.map(ev => (
-                        <span key={ev} className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{ev}</span>
+                        <span key={ev} className="text-[11px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{ev}</span>
                       ))
                     )}
                   </div>
@@ -383,7 +383,7 @@ const NotificationSettings: React.FC = () => {
             }}>
             {digestMsg.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{digestMsg.text}</span>
-            <button onClick={() => setDigestMsg(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setDigestMsg(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 

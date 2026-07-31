@@ -4,6 +4,7 @@ import { api, downloadFile } from '../api/client';
 import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2, ScrollText, Trash2, RotateCcw, Lock, Download } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
 
 const TIER_COLOR: Record<string, string> = { HIGH: '#ef4444', LIMITED: '#f59e0b', MINIMAL: '#22c55e' };
 
@@ -126,11 +127,11 @@ const ComplianceDashboard = () => {
      </div>
      <div className="flex gap-3 items-center">
       <div className="px-4 py-2 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-       <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Tagged Rules</div>
+       <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Tagged Rules</div>
        <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.ink }}>{data.total_tagged_rules}</div>
       </div>
       <div className="px-4 py-2 rounded-xl" style={{ background: colors.warning + '14', border: `1px solid ${colors.warning}33` }}>
-       <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.warning }}>Untagged</div>
+       <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.warning }}>Untagged</div>
        <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.warning }}>{data.untagged_rules}</div>
       </div>
       <button onClick={exportCompliance} disabled={exporting}
@@ -148,7 +149,7 @@ const ComplianceDashboard = () => {
        style={{ background: colors.error + '15', color: colors.error }}>
       <XCircle className="w-4 h-4 shrink-0" />
       <span className="flex-1">{exportError}</span>
-      <button onClick={() => setExportError(null)} className="text-[10px] opacity-70">dismiss</button>
+      <button onClick={() => setExportError(null)} className="text-[11px] opacity-70">dismiss</button>
      </div>
     )}
 
@@ -199,13 +200,13 @@ const ComplianceDashboard = () => {
        {([['HIGH', reg.risk_summary?.HIGH ?? 0], ['LIMITED', reg.risk_summary?.LIMITED ?? 0], ['MINIMAL', reg.risk_summary?.MINIMAL ?? 0]] as const).map(([tier, n]) => (
         <div key={tier} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
          <div className="text-[22px] font-bold" style={{ color: TIER_COLOR[tier] }}>{n}</div>
-         <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{tier} risk</div>
+         <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{tier} risk</div>
         </div>
        ))}
        {([['compliance_blocks', 'Blocks'], ['audit_failures', 'Audit fails'], ['human_overrides', 'Overrides']] as const).map(([k, label]) => (
         <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
          <div className="text-[22px] font-bold" style={{ color: (reg.monitor?.[k] ?? 0) > 0 ? colors.warning : colors.ink }}>{reg.monitor?.[k] ?? 0}</div>
-         <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label} (30d)</div>
+         <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label} (30d)</div>
         </div>
        ))}
       </div>
@@ -225,13 +226,13 @@ const ComplianceDashboard = () => {
          </div>
          {(reg.risk_register || []).slice(0, 20).map((r: any) => (
           <div key={r.skill_id} className="grid grid-cols-[1.4fr_0.8fr_1.2fr_0.7fr_0.8fr] gap-3 px-5 py-2.5 items-center border-b" style={{ borderColor: colors.hairline }}>
-           <span className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>
-            {r.high_consequence && <span title="high-consequence" style={{ color: colors.warning }}>▲ </span>}{r.skill_id}
+           <span className="text-[12px] font-medium truncate inline-flex items-center gap-1" style={{ color: colors.ink }} title={r.skill_id}>
+            {r.high_consequence && <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: colors.warning }} aria-label="high-consequence" />}{humanize(r.skill_id)}
            </span>
-           <span className="text-[12px]" style={{ color: colors.inkSubtle }}>{r.department}</span>
-           <span className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{(r.frameworks || []).join(', ') || '—'}</span>
+           <span className="text-[12px]" style={{ color: colors.inkSubtle }}>{humanize(r.department)}</span>
+           <span className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{(r.frameworks || []).join(', ') || '-'}</span>
            <span className="text-[12px] font-mono" style={{ color: colors.ink }}>{(r.autonomy * 100).toFixed(0)}%</span>
-           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: TIER_COLOR[r.risk_tier] + '22', color: TIER_COLOR[r.risk_tier] }}>{r.risk_tier}</span>
+           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: TIER_COLOR[r.risk_tier] + '22', color: TIER_COLOR[r.risk_tier] }}>{humanize(r.risk_tier)}</span>
           </div>
          ))}
         </div>
@@ -260,18 +261,19 @@ const ComplianceDashboard = () => {
         <div className="mt-4 p-4 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
          <div className="flex items-center justify-between mb-2">
           <span className="text-[13px] font-semibold">{evidence.framework} evidence pack</span>
-          <span className="text-[10px]" style={{ color: colors.inkSubtle }}>{evidence.scope} · {evidence.window_days}d window</span>
+          <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{evidence.scope} · {evidence.window_days}d window</span>
          </div>
          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {([['control_count', 'Controls'], ['control_executions', 'Control runs'], ['provenance_entries', 'Ledger entries'], ['actions_recorded', 'Actions']] as const).map(([k, label]) => (
            <div key={k} className="text-center p-2 rounded-lg" style={{ background: colors.surface1 }}>
             <div className="text-[18px] font-bold" style={{ color: colors.ink }}>{evidence[k] ?? 0}</div>
-            <div className="text-[9px]" style={{ color: colors.inkSubtle }}>{label}</div>
+            <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{label}</div>
            </div>
           ))}
          </div>
-         <div className="text-[10px] mt-2" style={{ color: evidence.complete ? colors.success : colors.warning }}>
-          {evidence.complete ? '✓ Evidence assembled from real ledger rows' : 'No controls carry this framework tag yet'} · generated {evidence.generated_at ? new Date(evidence.generated_at).toLocaleString() : ''}
+         <div className="text-[11px] mt-2 inline-flex items-center gap-1" style={{ color: evidence.complete ? colors.success : colors.warning }}>
+          {evidence.complete && <Check className="w-3 h-3 shrink-0" />}
+          {evidence.complete ? 'Evidence assembled from real ledger rows' : 'No controls carry this framework tag yet'} · generated {evidence.generated_at ? new Date(evidence.generated_at).toLocaleString() : ''}
          </div>
         </div>
        )}
@@ -292,7 +294,7 @@ const ComplianceDashboard = () => {
         {([['implemented', 'Implemented', colors.success], ['operational', 'Operational', colors.warning], ['external', 'External', colors.inkSubtle]] as const).map(([k, label, c]) => (
          <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
           <div className="text-[22px] font-bold tabular-nums" style={{ color: c }}>{controls.summary?.[k] ?? 0}</div>
-          <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
+          <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
          </div>
         ))}
        </div>
@@ -314,10 +316,10 @@ const ComplianceDashboard = () => {
           <div className="min-w-0 flex-1">
            <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[13px] font-semibold" style={{ color: colors.ink }}>{c.name}</span>
-            <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: colors.surface2, color: colors.inkSubtle }}>{c.status}</span>
+            <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: colors.surface2, color: colors.inkSubtle }}>{c.status}</span>
            </div>
            <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{c.description}</div>
-           <div className="text-[10px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+           <div className="text-[11px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
             {Object.entries(c.frameworks || {}).map(([fw, crit]: any) => (
              <span key={fw} style={{ color: colors.inkTertiary }}>{fw}: {(crit as string[]).join(', ')}</span>
             ))}
@@ -326,7 +328,7 @@ const ComplianceDashboard = () => {
          </div>
         ))}
        </div>
-       <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{controls.honest_note}</div>
+       <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{controls.honest_note}</div>
       </div>
      </div>
     )}

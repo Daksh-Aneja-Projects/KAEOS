@@ -184,10 +184,10 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                     <gate.icon className="w-4 h-4" style={{ color: sc.text }} />
                     <span className="text-[11px] font-semibold" style={{ color: sc.text }}>{gate.label}</span>
                   </div>
-                  <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{gate.desc}</span>
+                  <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{gate.desc}</span>
                   <div className="flex items-center gap-1" style={{ color: sc.text }}>
                     {sc.icon}
-                    <span className="text-[10px] font-bold uppercase">
+                    <span className="text-[11px] font-bold uppercase">
                       {status === 'pass' ? 'Passed' : status === 'fail' ? 'Failed' : status === 'hitl' ? 'HITL' : 'Skipped'}
                     </span>
                   </div>
@@ -222,7 +222,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{step.action || step.step_id || `Step ${i + 1}`}</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded"
                       style={{
                         background: step.status === 'SUCCESS' ? 'rgba(39,166,68,0.1)' : 'rgba(229,83,75,0.1)',
                         color: step.status === 'SUCCESS' ? colors.success : colors.error,
@@ -230,12 +230,12 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                       {step.status}
                     </span>
                     {step.confidence != null && (
-                      <span className="text-[10px] font-mono" style={{ color: colors.inkTertiary }}>conf: {typeof step.confidence === 'number' ? step.confidence.toFixed(2) : step.confidence}</span>
+                      <span className="text-[11px] font-mono" style={{ color: colors.inkTertiary }}>conf: {typeof step.confidence === 'number' ? step.confidence.toFixed(2) : step.confidence}</span>
                     )}
                   </div>
                   {step.decision && <p className="text-[12px] mt-1" style={{ color: colors.inkSubtle }}>{step.decision}</p>}
                   {step.tool_called && (
-                    <span className="inline-flex items-center gap-1 text-[10px] mt-1 px-1.5 py-0.5 rounded font-mono"
+                    <span className="inline-flex items-center gap-1 text-[11px] mt-1 px-1.5 py-0.5 rounded font-mono"
                       style={{ background: 'rgba(94,106,210,0.08)', color: colors.primary }}>
                       <Cpu className="w-3 h-3" /> {step.tool_called}
                     </span>
@@ -280,7 +280,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                   <User2 className="w-4 h-4" style={{ color: colors.success }} />
                   <span className="text-[12px] font-semibold" style={{ color: colors.success }}>Proposer</span>
                   {debate.proposer_argument?.confidence != null && (
-                    <span className="text-[10px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
+                    <span className="text-[11px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
                       conf: {debate.proposer_argument.confidence.toFixed?.(2) || debate.proposer_argument.confidence}
                     </span>
                   )}
@@ -303,7 +303,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                   <User2 className="w-4 h-4" style={{ color: colors.error }} />
                   <span className="text-[12px] font-semibold" style={{ color: colors.error }}>Devil's Advocate</span>
                   {debate.advocate_argument?.ungrounded_claims_found != null && (
-                    <span className="text-[10px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
+                    <span className="text-[11px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
                       {debate.advocate_argument.ungrounded_claims_found} ungrounded
                     </span>
                   )}
@@ -325,7 +325,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                 <div className="flex items-center gap-2 mb-3">
                   <Scale className="w-4 h-4" style={{ color: colors.primary }} />
                   <span className="text-[12px] font-semibold" style={{ color: colors.primary }}>Arbitrator</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
                     style={{
                       background: debate.arbitrator_decision?.decision === 'PROCEED' ? 'rgba(39,166,68,0.12)' : debate.arbitrator_decision?.decision === 'BLOCK' ? 'rgba(229,83,75,0.12)' : 'rgba(245,166,35,0.12)',
                       color: debate.arbitrator_decision?.decision === 'PROCEED' ? colors.success : debate.arbitrator_decision?.decision === 'BLOCK' ? colors.error : colors.warning,
@@ -336,7 +336,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                 <p className="text-[12px] mb-2" style={{ color: colors.inkMuted }}>{debate.arbitrator_decision?.rationale || 'No rationale'}</p>
                 {debate.arbitrator_decision?.final_confidence != null && (
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Final confidence:</span>
+                    <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Final confidence:</span>
                     <div className="flex-1 h-1.5 rounded-full" style={{ background: colors.surface3 }}>
                       <div className="h-full rounded-full transition-all" style={{
                         width: `${(debate.arbitrator_decision.final_confidence || 0) * 100}%`,
@@ -393,7 +393,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
                       background: flagged ? 'rgba(229,83,75,0.06)' : colors.surface2,
                       border: `1px solid ${flagged ? 'rgba(229,83,75,0.2)' : colors.hairline}`,
                     }}>
-                      <span className="text-[10px] uppercase font-semibold block mb-1" style={{ color: colors.inkTertiary }}>{attr}</span>
+                      <span className="text-[11px] uppercase font-semibold block mb-1" style={{ color: colors.inkTertiary }}>{attr}</span>
                       <span className="text-[16px] font-bold" style={{ color: flagged ? colors.error : colors.success }}>
                         {(score * 100).toFixed(0)}%
                       </span>
@@ -425,7 +425,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
               <span className="text-[12px] font-medium block" style={{ color: colors.ink }}>Execution Record</span>
               <span className="text-[11px] font-mono block truncate" style={{ color: colors.inkTertiary }}>{execution.id}</span>
             </div>
-            <span className="text-[10px]" style={{ color: colors.inkSubtle }}>{new Date(execution.started_at).toISOString()}</span>
+            <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{new Date(execution.started_at).toISOString()}</span>
           </div>
           <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
             <Shield className="w-4 h-4" style={{ color: colors.success }} />
@@ -433,7 +433,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
               <span className="text-[12px] font-medium block" style={{ color: colors.ink }}>Route Type</span>
               <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{execution.route_type || 'SKILL_EXEC'}</span>
             </div>
-            <span className="text-[10px] font-mono" style={{ color: colors.inkTertiary }}>
+            <span className="text-[11px] font-mono" style={{ color: colors.inkTertiary }}>
               Δ conf: {execution.confidence_delta != null ? (execution.confidence_delta > 0 ? '+' : '') + execution.confidence_delta.toFixed(3) : '-'}
             </span>
           </div>

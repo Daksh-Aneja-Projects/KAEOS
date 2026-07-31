@@ -172,7 +172,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
             }}>
             {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -185,28 +185,28 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow ID</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow ID</label>
                 <input value={compileForm.workflow_id} onChange={e => setCompileForm({ ...compileForm, workflow_id: e.target.value })}
                   placeholder="wf_invoice_approval"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow name</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Workflow name</label>
                 <input value={compileForm.workflow_name} onChange={e => setCompileForm({ ...compileForm, workflow_name: e.target.value })}
                   placeholder="Invoice Approval"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Domain</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Domain</label>
                 <input value={compileForm.domain} onChange={e => setCompileForm({ ...compileForm, domain: e.target.value })}
                   placeholder="finance"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
                   style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
               </div>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Tools it may call</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Tools it may call</label>
                 <input value={compileForm.required_tools} onChange={e => setCompileForm({ ...compileForm, required_tools: e.target.value })}
                   placeholder="netsuite, slack"
                   className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
@@ -282,7 +282,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                         </text>
                       </svg>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Confidence</div>
+                        <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Confidence</div>
                         <div className="text-[13px] font-medium" style={{ color: colors.inkMuted }}>{s.confidence_tier?.replace(/_/g, ' ')}</div>
                       </div>
                     </div>
@@ -311,7 +311,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                     {s.compliance_tags?.length > 0 && (
                       <div className="mt-3 flex gap-1.5 flex-wrap">
                         {s.compliance_tags.map((t) => (
-                          <span key={t} className="px-2 py-0.5 text-[10px] font-semibold rounded"
+                          <span key={t} className="px-2 py-0.5 text-[11px] font-semibold rounded"
                             style={{ background: colors.info + '18', color: colors.info, border: `1px solid ${colors.info}30` }}>{t}</span>
                         ))}
                       </div>
@@ -366,7 +366,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                           <MessageCircleQuestion className="w-3.5 h-3.5" style={{ color: colors.info }} />
                           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: colors.inkSubtle }}>What this skill did</span>
                           {explanations[s.skill_id].degraded && (
-                            <span className="ml-auto flex items-center gap-1 text-[10px]" style={{ color: colors.warning }}>
+                            <span className="ml-auto flex items-center gap-1 text-[11px]" style={{ color: colors.warning }}>
                               <AlertTriangle className="w-3 h-3" /> partial
                             </span>
                           )}
@@ -418,7 +418,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                                   : <XCircle className="w-4 h-4 flex-shrink-0" style={{ color: colors.error }} />}
                                 <span className="text-[13px] flex-1 truncate" style={{ color: colors.inkMuted }}>{e.task_intent}</span>
                                 <span className="text-[12px] font-mono tabular-nums" style={{ color: colors.inkSubtle }}>{e.duration_ms}ms</span>
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold"
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold"
                                   style={ok
                                     ? { background: colors.success + '18', color: colors.success, border: `1px solid ${colors.success}30` }
                                     : { background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}30` }}>

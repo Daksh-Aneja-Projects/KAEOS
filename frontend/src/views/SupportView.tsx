@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   Ticket, BookOpen, Clock, MessageSquare, BarChart3,
   Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, AlertTriangle,
-  Wand2, FilePlus2
+  Wand2, FilePlus2, Star
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
@@ -111,9 +112,9 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
   };
 
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'N/A').replace(/_/g, ' ')}
+      {humanize(status) || 'N/A'}
     </span>
   );
 
@@ -181,7 +182,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             style={{ background: actionMsg.includes('failed') ? '#ef444415' : '#22c55e15', color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
             {actionMsg.includes('failed') ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             {actionMsg}
-            <button onClick={() => setActionMsg('')} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            <button onClick={() => setActionMsg('')} className="ml-auto text-[11px] opacity-60">dismiss</button>
           </div>
         )}
 
@@ -201,9 +202,9 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
               <span className="text-[13px] font-semibold">
                 {draft.result?.article_title || 'Knowledge base draft'}
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                 style={{ background: '#f59e0b20', color: '#f59e0b' }}>Unpublished draft</span>
-              <button onClick={() => setDraft(null)} className="ml-auto text-[10px] opacity-60">dismiss</button>
+              <button onClick={() => setDraft(null)} className="ml-auto text-[11px] opacity-60">dismiss</button>
             </div>
             <p className="text-[11px] mb-2" style={{ color: colors.inkTertiary }}>
               Written from "{draft.ticket}". It is saved as a draft in the Knowledge Base tab and is not visible to customers until someone publishes it.
@@ -211,7 +212,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             {(draft.result?.categories || []).length > 0 && (
               <div className="flex flex-wrap gap-1 mb-2">
                 {(draft.result.categories as string[]).map(c => (
-                  <span key={c} className="text-[10px] px-2 py-0.5 rounded-full"
+                  <span key={c} className="text-[11px] px-2 py-0.5 rounded-full"
                     style={{ background: colors.canvas, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{c}</span>
                 ))}
               </div>
@@ -271,7 +272,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                           <input type="checkbox" aria-label={`Select ticket ${t.subject}`}
                             checked={bulk.isSelected(t.id)} onChange={() => bulk.toggle(t.id)} />
                         </td>
-                        <td className="px-4 py-3 font-mono text-[10px]">#{t.id?.toString().slice(-6)}</td>
+                        <td className="px-4 py-3 font-mono text-[11px]">#{t.id?.toString().slice(-6)}</td>
                         <td className="px-4 py-3 font-medium max-w-[160px]"><span className="block truncate">{t.subject}</span></td>
                         <td className="px-4 py-3"><Badge status={t.status} /></td>
                         <td className="px-4 py-3"><Badge status={t.priority} /></td>
@@ -285,27 +286,27 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                           <div className="flex gap-1">
                             <button onClick={() => runAgent('Triage', `${t.id}-triage`, () => api.runSupportTriageAgent(t.id))}
                               disabled={!!runningAgent}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#6366f115', color: '#6366f1' }}>
                               {runningAgent === `${t.id}-triage` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />} Triage
                             </button>
                             <button onClick={() => runAgent('Auto-resolve', `${t.id}-resolve`, () => api.runSupportAutoResolveAgent(t.id))}
                               disabled={!!runningAgent}
                               title="Draft and apply a full resolution. Customer-facing replies always stop for a human first."
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#22c55e15', color: '#22c55e' }}>
                               {runningAgent === `${t.id}-resolve` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />} Resolve
                             </button>
                             <button onClick={() => documentTicket(t)}
                               disabled={!!runningAgent}
                               title="Turn this ticket into a knowledge base draft so the next person does not have to ask"
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
                               {runningAgent === `${t.id}-document` ? <Loader2 className="w-3 h-3 animate-spin" /> : <FilePlus2 className="w-3 h-3" />} Document
                             </button>
                             <button onClick={() => runAgent('Escalate', `${t.id}-escalate`, () => api.runSupportEscalationAgent(t.id))}
                               disabled={!!runningAgent}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                               style={{ background: '#ef444415', color: '#ef4444' }}>
                               {runningAgent === `${t.id}-escalate` ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />} Escalate
                             </button>
@@ -410,20 +411,25 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                       <tr key={s.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                         <td className="px-4 py-3 font-medium">{s.customer}</td>
                         <td className="px-4 py-3">
-                          <div className="flex">
-                            {[1,2,3,4,5].map(r => (
-                              <span key={r} className="text-[14px]">{(s.rating || 0) >= r ? '★' : '☆'}</span>
-                            ))}
+                          <div className="flex items-center gap-0.5" title={`${s.rating || 0} of 5`}>
+                            {[1,2,3,4,5].map(r => {
+                              const filled = (s.rating || 0) >= r;
+                              return (
+                                <Star key={r} className="w-3.5 h-3.5"
+                                  style={{ color: '#f59e0b' }}
+                                  fill={filled ? '#f59e0b' : 'none'} />
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="px-4 py-3"><Badge status={s.sentiment} /></td>
-                        <td className="px-4 py-3 font-mono text-[10px]">{s.ticket_id ? `#${s.ticket_id.toString().slice(-6)}` : '-'}</td>
+                        <td className="px-4 py-3 font-mono text-[11px]">{s.ticket_id ? `#${s.ticket_id.toString().slice(-6)}` : '-'}</td>
                         <td className="px-4 py-3 max-w-[160px]"><span className="block truncate" style={{ color: colors.inkSubtle }}>{s.comment || '-'}</span></td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{timeAgo(s.created_at)}</td>
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Feedback analysis', s.id, api.runSupportFeedbackAgent)}
                             disabled={runningAgent === s.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#3b82f615', color: '#3b82f6' }}>
                             {runningAgent === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Analyze

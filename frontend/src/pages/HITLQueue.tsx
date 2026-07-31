@@ -135,12 +135,12 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2.5 mb-2 flex-wrap">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"
                         style={{ background: colors.warning + '18', color: colors.warning }}>
                         <Clock className="w-3 h-3" /> Pending Review
                       </span>
                       {item.route_type === 'GATED_AGENT' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"
                           style={{ background: colors.primary + '18', color: colors.primary }}>
                           <GitBranch className="w-3 h-3" /> Pipeline Gate
                         </span>

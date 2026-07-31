@@ -76,9 +76,9 @@ const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> 
             </div>
             <div>
               <div className="text-[22px] font-bold" style={{ color: gradeColor }}>{res}%</div>
-              <div className="text-[10px]" style={{ color: colors.inkSubtle }}>integrity retained</div>
+              <div className="text-[11px]" style={{ color: colors.inkSubtle }}>integrity retained</div>
               {result.safe_response_rate != null && (
-                <div className="text-[10px] mt-1" style={{ color: colors.inkSubtle }}>
+                <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
                   {(result.safe_response_rate * 100).toFixed(0)}% handled autonomously
                 </div>
               )}
@@ -91,17 +91,17 @@ const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> 
               <div key={s.step} className="rounded-lg p-2" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="font-medium" style={{ color: colors.ink }}>{s.shock.replace(/_/g, ' ')}</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full"
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full"
                     style={{ background: s.response === 'autonomous' ? '#22c55e18' : '#f59e0b18', color: s.response === 'autonomous' ? '#22c55e' : '#f59e0b' }}>
                     {s.response === 'autonomous' ? 'autonomous' : 'human'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[9px] w-16 truncate" style={{ color: colors.inkSubtle }}>{s.department}</span>
+                  <span className="text-[11px] w-16 truncate" style={{ color: colors.inkSubtle }}>{s.department}</span>
                   <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                     <div className="h-full rounded-full transition-all" style={{ width: `${s.integrity_after}%`, background: s.integrity_after >= 65 ? '#22c55e' : s.integrity_after >= 40 ? '#f59e0b' : '#ef4444' }} />
                   </div>
-                  <span className="text-[9px] font-mono w-16 text-right" style={{ color: colors.inkSubtle }}>-{s.damage} → {s.integrity_after}%</span>
+                  <span className="text-[11px] font-mono w-16 text-right" style={{ color: colors.inkSubtle }}>-{s.damage} → {s.integrity_after}%</span>
                 </div>
               </div>
             ))}
@@ -113,7 +113,7 @@ const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> 
             <div className="text-[11px]" style={{ color: colors.ink }}>
               Weakest link: <span className="font-semibold">{result.weakest_link?.department}</span>
               <span style={{ color: colors.inkSubtle }}> (−{result.weakest_link?.damage} integrity)</span>
-              <div className="text-[10px] mt-1" style={{ color: colors.inkSubtle }}>{result.verdict}</div>
+              <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>{result.verdict}</div>
             </div>
           </div>
         </div>

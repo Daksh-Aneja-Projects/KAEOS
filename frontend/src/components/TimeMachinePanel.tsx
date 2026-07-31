@@ -64,7 +64,7 @@ const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any
       <div className="flex items-center gap-2">
         <History className="w-4 h-4" style={{ color: colors.primary }} />
         <span className="text-[13px] font-semibold" style={{ color: colors.ink }}>Time Machine</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '18', color: colors.primary }}>{data.total} decisions</span>
+        <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '18', color: colors.primary }}>{data.total} decisions</span>
       </div>
 
       {/* Scrubber: reconstruct the north-star as of any moment */}
@@ -77,12 +77,12 @@ const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any
         </div>
         <input type="range" min={1} max={total} value={idx} onChange={e => scrubTo(parseInt(e.target.value))}
           className="w-full" style={{ accentColor: colors.primary }} />
-        <div className="flex justify-between text-[10px]" style={{ color: colors.inkTertiary }}>
+        <div className="flex justify-between text-[11px]" style={{ color: colors.inkTertiary }}>
           <span>oldest</span>
           <span>{asOf?.decisions_so_far != null ? `${asOf.decisions_so_far} of ${data.total} decisions` : 'now'}</span>
           <span>now</span>
         </div>
-        <p className="text-[10px] mt-1" style={{ color: colors.inkSubtle }}>
+        <p className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
           Safe-autonomy-rate reconstructed from every decision up to this point in time.
         </p>
       </div>
@@ -97,7 +97,7 @@ const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any
               style={{ background: selected?.execution_id === e.execution_id ? colors.surface2 : 'transparent', border: `1px solid ${selected?.execution_id === e.execution_id ? colors.hairline : 'transparent'}` }}>
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KLASS_COLOR[e.klass] || '#6b7280' }} />
               <span className="text-[11px] flex-1 truncate" style={{ color: colors.ink }}>{e.skill_id}</span>
-              <span className="text-[9px]" style={{ color: colors.inkSubtle }}>{e.department}</span>
+              <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{e.department}</span>
             </button>
           ))}
         </div>
@@ -107,20 +107,20 @@ const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any
       {selected && (
         <div className="rounded-lg p-3" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
           <div className="text-[12px] font-medium mb-1" style={{ color: colors.ink }}>{selected.skill_id}</div>
-          <div className="text-[10px] mb-2" style={{ color: colors.inkSubtle }}>
+          <div className="text-[11px] mb-2" style={{ color: colors.inkSubtle }}>
             was <span style={{ color: KLASS_COLOR[selected.klass] }}>{selected.klass.replace('_', ' ')}</span>. What if it…
           </div>
           <div className="flex gap-1.5">
             <button onClick={() => runCf('approve')} disabled={busy === 'approve'}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold" style={{ background: '#22c55e18', color: '#22c55e' }}>
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold" style={{ background: '#22c55e18', color: '#22c55e' }}>
               <Check className="w-3 h-3" /> ran clean
             </button>
             <button onClick={() => runCf('escalate')} disabled={busy === 'escalate'}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold" style={{ background: '#f59e0b18', color: '#f59e0b' }}>
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold" style={{ background: '#f59e0b18', color: '#f59e0b' }}>
               <AlertTriangle className="w-3 h-3" /> escalated
             </button>
             <button onClick={() => runCf('fail')} disabled={busy === 'fail'}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold" style={{ background: '#ef444418', color: '#ef4444' }}>
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold" style={{ background: '#ef444418', color: '#ef4444' }}>
               <X className="w-3 h-3" /> failed
             </button>
           </div>
@@ -128,14 +128,14 @@ const TimeMachinePanel: React.FC<{ colors: any; onImpact?: (event: any, cf?: any
             <div className="mt-3 flex items-center gap-3">
               <div className="text-center">
                 <div className="text-[16px] font-bold" style={{ color: colors.inkSubtle }}>{cf.before_rate == null ? '--' : `${(cf.before_rate * 100).toFixed(0)}%`}</div>
-                <div className="text-[9px]" style={{ color: colors.inkTertiary }}>actual</div>
+                <div className="text-[11px]" style={{ color: colors.inkTertiary }}>actual</div>
               </div>
               <Undo2 className="w-4 h-4" style={{ color: colors.inkSubtle }} />
               <div className="text-center">
                 <div className="text-[16px] font-bold" style={{ color: (cf.delta ?? 0) > 0 ? '#22c55e' : (cf.delta ?? 0) < 0 ? '#ef4444' : colors.ink }}>
                   {cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`}
                 </div>
-                <div className="text-[9px]" style={{ color: colors.inkTertiary }}>counterfactual</div>
+                <div className="text-[11px]" style={{ color: colors.inkTertiary }}>counterfactual</div>
               </div>
               {cf.delta != null && (
                 <span className="text-[11px] font-semibold" style={{ color: cf.delta > 0 ? '#22c55e' : cf.delta < 0 ? '#ef4444' : colors.inkSubtle }}>

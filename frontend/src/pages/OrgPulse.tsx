@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Activity, AlertTriangle, HeartPulse, Hourglass, Loader2, OctagonAlert, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Hourglass, Loader2, OctagonAlert, RefreshCw, Diamond, Square } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrgPulse as OrgPulsePayload, SLABreach, WorkflowEvent } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainIcon from '../components/DomainIcon';
 import LiveBadge from '../components/LiveBadge';
+import { CountUp } from '../components/CountUp';
 import { BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
 import { timeAgo } from '../lib/time';
 
 /**
@@ -128,7 +130,7 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
         <div>
           <h2 className="text-[13px] font-bold flex items-center gap-1.5">
             <Activity className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Precog: Safe-Autonomy Forecast
-            <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1"
+            <span className="flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full ml-1"
               style={{ background: '#8b5cf618', color: '#8b5cf6' }}>
               <span className="w-1.5 h-1.5 rounded-full precog-now inline-block" style={{ background: '#8b5cf6' }} /> LIVE
             </span>
@@ -142,7 +144,7 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
             <div className="text-[20px] font-bold" style={{ color: dirColor }}>
               {(headline.projected_rate * 100).toFixed(0)}%
             </div>
-            <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>
+            <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>
               {headline.direction || 'projected'}{headline.current_rate != null ? ` from ${(headline.current_rate * 100).toFixed(0)}%` : ''}
             </div>
           </div>
@@ -180,14 +182,14 @@ const ForecastSection: React.FC<{ forecast: any; colors: any }> = ({ forecast, c
               {(hp.val * 100).toFixed(1)}% {hp.kind === 'forecast' ? 'projected' : 'observed'}
             </div>
             {hp.kind === 'forecast' && hp.lo != null && (
-              <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+              <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                 95% band {(hp.lo * 100).toFixed(0)}–{(hp.hi * 100).toFixed(0)}%
               </div>
             )}
           </div>
         )}
       </div>
-      <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: colors.inkSubtle }}>
+      <div className="flex items-center gap-4 mt-2 text-[11px]" style={{ color: colors.inkSubtle }}>
         <span className="flex items-center gap-1"><span className="w-3 h-0.5 inline-block" style={{ background: colors.primary }} /> observed</span>
         <span className="flex items-center gap-1"><span className="w-3 h-0.5 inline-block" style={{ background: '#8b5cf6' }} /> forecast</span>
         <span className="flex items-center gap-1"><span className="w-3 h-2 inline-block rounded-sm" style={{ background: '#8b5cf6', opacity: 0.2 }} /> 95% band</span>
@@ -243,7 +245,7 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
         <div>
           <h2 className="text-[13px] font-bold flex items-center gap-1.5">
             <Activity className="w-4 h-4" style={{ color: '#3b82f6' }} /> Signals &amp; Responses
-            <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1"
+            <span className="flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full ml-1"
               style={{ background: '#3b82f618', color: '#3b82f6' }}>
               <span className="w-1.5 h-1.5 rounded-full precog-now inline-block" style={{ background: '#3b82f6' }} /> LIVE
             </span>
@@ -257,7 +259,7 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
           <select value={kind} onChange={e => setKind(e.target.value)}
             className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
             style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
-            {SIGNAL_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+            {SIGNAL_KINDS.map(k => <option key={k} value={k}>{humanize(k)}</option>)}
           </select>
           <select value={severity} onChange={e => setSeverity(e.target.value)}
             className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
@@ -284,9 +286,9 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
         <div className="space-y-2">
           {list.map((s: any) => (
             <div key={s.id} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 shrink-0"
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded mt-0.5 shrink-0"
                 style={{ background: (SEV_COLOR[s.severity] || '#6b7280') + '22', color: SEV_COLOR[s.severity] || '#6b7280' }}>
-                {s.kind}
+                {humanize(s.kind)}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-[12px] font-medium" style={{ color: colors.ink }}>{s.title}</div>
@@ -294,23 +296,25 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
                 {(s.matched_entities || []).length > 0 && (
                   <div className="flex gap-1 mt-1.5 flex-wrap">
                     {s.matched_entities.slice(0, 6).map((m: any, i: number) => (
-                      <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full"
+                      <span key={i} className="text-[11px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
                         style={{ background: colors.surface2, color: colors.inkSubtle }}>
-                        {m.type === 'skill' ? '◆' : '▪'} {m.name}
+                        {m.type === 'skill'
+                          ? <Diamond className="w-2.5 h-2.5" />
+                          : <Square className="w-2.5 h-2.5" />} {m.name}
                       </span>
                     ))}
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                   style={{ background: (RESP_COLOR[s.response_kind] || '#6b7280') + '22', color: RESP_COLOR[s.response_kind] || '#6b7280' }}>
-                  {s.response_kind === 'NONE' ? 'no action' : s.response_kind}
+                  {s.response_kind === 'NONE' ? 'No action' : humanize(s.response_kind)}
                 </span>
                 {(!s.response_kind || s.response_kind === 'NONE') && (
                   <button onClick={() => respond(s.id)} disabled={responding === s.id}
                     title="Enact the governed response for this signal"
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                     style={{ background: '#8b5cf622', color: '#8b5cf6', opacity: responding === s.id ? 0.5 : 1 }}>
                     {responding === s.id ? 'Responding…' : 'Respond'}
                   </button>
@@ -369,7 +373,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   };
 
   useEffect(() => { load(); }, [load]);
-  useLiveRefresh(load);
+  useLiveRefresh(load, { intervalMs: 20000 });
 
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>;
@@ -410,9 +414,9 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             <div className="absolute inset-2.5 rounded-full flex flex-col items-center justify-center"
               style={{ background: colors.surface1 }}>
               <span className="text-[30px] font-bold" style={{ color: healthColor(orgHealth) }}>
-                {orgHealth ?? '-'}
+                {orgHealth == null ? '-' : <CountUp value={orgHealth} />}
               </span>
-              <span className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>health</span>
+              <span className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>health</span>
             </div>
           </div>
           <p className="text-[11px] mt-4 text-center" style={{ color: colors.inkSubtle }}>
@@ -434,14 +438,14 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               <p className="text-[12px] font-semibold truncate">{DOMAIN_LABEL[d.domain] || d.domain}</p>
               <div className="mt-2 space-y-0.5">
                 {(d.kpis || []).slice(0, 3).map(k => (
-                  <div key={k.key} className="flex justify-between text-[10px]">
+                  <div key={k.key} className="flex justify-between text-[11px]">
                     <span className="truncate" style={{ color: colors.inkSubtle }}>{k.label}</span>
                     <span className="font-mono ml-1">{fmtKpi(k.value, k.format)}</span>
                   </div>
                 ))}
               </div>
               {(d.critical_count || d.warning_count || d.sla_breaches) ? (
-                <div className="flex gap-2 mt-2 text-[10px] font-semibold">
+                <div className="flex gap-2 mt-2 text-[11px] font-semibold">
                   {d.critical_count ? <span style={{ color: '#ef4444' }}>{d.critical_count} critical</span> : null}
                   {d.warning_count ? <span style={{ color: '#f59e0b' }}>{d.warning_count} warning</span> : null}
                   {d.sla_breaches ? <span style={{ color: '#f97316' }}>{d.sla_breaches} past SLA</span> : null}
@@ -476,7 +480,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                   title={`Open ${ins.domain} department`}>
                   <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wide mr-1.5" style={{ color }}>
+                    <span className="text-[11px] font-bold uppercase tracking-wide mr-1.5" style={{ color }}>
                       {ins.domain}
                     </span>
                     <span style={{ color: colors.ink }}>{ins.message}</span>
@@ -501,13 +505,13 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             {activity.map(e => (
               <div key={e.id} className="flex items-center gap-2 text-[11px] px-2 py-1.5 rounded"
                 style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                   style={{ background: `${colors.primary}15`, color: colors.primary }}>
                   {e.domain}
                 </span>
-                <span style={{ color: colors.inkSubtle }}>{e.entity_type.replace(/_/g, ' ')}</span>
-                <span className="font-mono" style={{ color: colors.ink }}>
-                  {e.from_state} → {e.to_state}
+                <span style={{ color: colors.inkSubtle }}>{humanize(e.entity_type)}</span>
+                <span style={{ color: colors.ink }}>
+                  {humanize(e.from_state)} → {humanize(e.to_state)}
                 </span>
                 <span className="ml-auto whitespace-nowrap" style={{ color: colors.inkTertiary }}>
                   {e.actor ? `${e.actor} · ` : ''}{timeAgo(e.at)}
@@ -529,7 +533,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
           <h2 className="text-[13px] font-bold flex items-center gap-1.5">
             <Hourglass className="w-4 h-4" style={{ color: '#f59e0b' }} /> SLA Breaches
             {stale.length > 0 && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                 style={{ background: '#ef444418', color: '#ef4444' }}>{stale.length}</span>
             )}
           </h2>
@@ -565,18 +569,18 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                     style={{ borderBottom: `1px solid ${colors.hairline}` }}
                     title={`Open ${b.domain} department`}>
                     <td className="px-3 py-2">
-                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                      <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                         style={{ background: `${colors.primary}15`, color: colors.primary }}>{b.domain}</span>
                     </td>
                     <td className="px-3 py-2 font-medium max-w-[240px]">
                       <span className="block truncate" title={b.title}>
                         {b.title}
                         <span className="ml-1.5 font-normal" style={{ color: colors.inkTertiary }}>
-                          {b.entity_type.replace(/_/g, ' ')}
+                          {humanize(b.entity_type)}
                         </span>
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono">{b.state.replace(/_/g, ' ')}</td>
+                    <td className="px-3 py-2">{humanize(b.state)}</td>
                     <td className="px-3 py-2 font-mono" style={{ color: colors.inkSubtle }}>{b.sla_hours}h</td>
                     <td className="px-3 py-2 font-mono" style={{ color: colors.inkSubtle }}>
                       {b.age_hours >= 48 ? `${(b.age_hours / 24).toFixed(1)}d` : `${b.age_hours.toFixed(1)}h`}

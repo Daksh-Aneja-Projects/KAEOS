@@ -137,7 +137,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                     <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{entry.actor_role}</span>
                   </div>
                   <p className="text-[12px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{entry.reasoning || entry.rule_statement}</p>
-                  <p className="text-[10px] mt-1 font-mono" style={{ color: colors.inkTertiary }}>{entry.chain_hash?.slice(0, 16)}…</p>
+                  <p className="text-[11px] mt-1 font-mono" style={{ color: colors.inkTertiary }}>{entry.chain_hash?.slice(0, 16)}…</p>
                 </div>
                 <span className="text-[11px] flex-shrink-0" style={{ color: colors.inkTertiary }}>{timeAgo(entry.timestamp)}</span>
               </div>
@@ -165,7 +165,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                       <span className="text-[11px] font-normal ml-1" style={{ color: colors.inkTertiary }}>/ threshold {log.threshold.toFixed(2)}</span>
                     )}
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                     style={{ background: log.passed ? 'rgba(64,192,87,0.12)' : 'rgba(229,83,75,0.12)', color: log.passed ? colors.success : colors.error }}>
                     {log.passed ? 'PASSED' : 'BLOCKED'}
                   </span>
@@ -179,9 +179,9 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
               )}
               {log.flagged_attributes?.length > 0 && (
                 <div className="flex gap-1.5 mt-2 items-center">
-                  <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Flagged:</span>
+                  <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Flagged:</span>
                   {log.flagged_attributes.map((a: string) => (
-                    <span key={a} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{a}</span>
+                    <span key={a} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{a}</span>
                   ))}
                 </div>
               )}

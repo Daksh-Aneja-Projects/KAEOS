@@ -243,7 +243,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
         ].map((m, i) => (
           <div key={i} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{m.label}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{m.label}</span>
               <m.icon className="w-4 h-4" style={{ color: m.color }} />
             </div>
             <span className="text-[24px] font-bold" style={{ color: colors.ink, fontVariantNumeric: 'tabular-nums' }}>{m.value}</span>
@@ -267,7 +267,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
             <React.Fragment key={step.label}>
               <div className="flex-1 text-center p-3 rounded-lg" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <span className="text-[12px] font-semibold block" style={{ color: colors.primary }}>{step.label}</span>
-                <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{step.desc}</span>
+                <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{step.desc}</span>
               </div>
               {i < 3 && <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: colors.hairlineStrong }} />}
             </React.Fragment>
@@ -294,7 +294,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
               ].map(s => (
                 <div key={s.label} className="p-3 rounded-lg text-center" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="text-[22px] font-bold" style={{ color: s.color }}>{s.value}</div>
-                  <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
                 </div>
               ))}
             </div>
@@ -325,7 +325,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
                 <div key={d.execution_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{d.skill_id || d.task_intent || d.execution_id}</div>
-                    <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{d.status}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{d.status}</div>
                   </div>
                   {d._recorded ? (
                     <span className="text-[11px] font-semibold" style={{ color: d._recorded === 'GOOD' ? '#22c55e' : d._recorded === 'BAD' ? '#ef4444' : '#8b5cf6' }}>
@@ -338,7 +338,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
                         return (
                           <button key={o} disabled={recordingId === d.execution_id}
                             onClick={() => recordOutcomeFor(d.execution_id, o)}
-                            className="px-2 py-1 rounded text-[10px] font-semibold transition-opacity"
+                            className="px-2 py-1 rounded text-[11px] font-semibold transition-opacity"
                             style={{ background: c + '18', color: c, opacity: recordingId === d.execution_id ? 0.5 : 1 }}>
                             {o}
                           </button>
@@ -395,9 +395,9 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
                   </div>
                   <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{ev.description}</p>
                   <div className="flex items-center gap-3 mt-1.5">
-                    <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{timeAgo(ev.timestamp)}</span>
+                    <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{timeAgo(ev.timestamp)}</span>
                     {ev.source && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded"
+                      <span className="text-[11px] px-1.5 py-0.5 rounded"
                         style={{ background: colors.surface3, color: colors.inkTertiary }}>{ev.source}</span>
                     )}
                   </div>

@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -39,8 +40,8 @@ export default class ErrorBoundary extends Component<Props, State> {
           <div style={{
             width: 48, height: 48, borderRadius: 12,
             background: 'rgba(229, 83, 75, 0.12)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', fontSize: 24,
-          }}>⚠</div>
+            alignItems: 'center', justifyContent: 'center',
+          }}><AlertTriangle style={{ width: 24, height: 24, color: '#e5534b' }} /></div>
           <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: 'var(--color-ink, #f7f8f8)' }}>
             {this.props.fallbackTitle || 'Module Error'}
           </h3>

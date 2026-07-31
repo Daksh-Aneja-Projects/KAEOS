@@ -245,14 +245,14 @@ export default function AIFoundry() {
                     }}>
                     <div className="flex items-center gap-2 mb-1.5">
                       <p.icon className="w-4 h-4" style={{ color: accent }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: accent }}>
                         {p.phase}
                       </span>
-                      {isLive && <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: colors.primary }}>LIVE</span>}
+                      {isLive && <span className="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: colors.primary }}>LIVE</span>}
                       {isDone && <CheckCircle2 className="ml-auto w-3.5 h-3.5" style={{ color: '#27a644' }} />}
                     </div>
                     <div className="text-[12px] font-semibold" style={{ color: colors.ink }}>{p.label}</div>
-                    <div className="text-[10px] mt-0.5 leading-snug" style={{ color: colors.inkSubtle }}>{p.blurb}</div>
+                    <div className="text-[11px] mt-0.5 leading-snug" style={{ color: colors.inkSubtle }}>{p.blurb}</div>
                   </div>
                   {i < ROADMAP.length - 1 && (
                     <div className="flex items-center shrink-0">
@@ -274,8 +274,8 @@ export default function AIFoundry() {
               </div>
               <div className="min-w-0">
                 <div className="text-[22px] font-bold leading-none tabular-nums">{k.value.toLocaleString()}</div>
-                <div className="text-[10px] uppercase tracking-wider mt-1 truncate" style={{ color: colors.inkSubtle }}>{k.label}</div>
-                {k.sub && <div className="text-[10px] mt-0.5" style={{ color: colors.inkTertiary }}>{k.sub}</div>}
+                <div className="text-[11px] uppercase tracking-wider mt-1 truncate" style={{ color: colors.inkSubtle }}>{k.label}</div>
+                {k.sub && <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{k.sub}</div>}
               </div>
             </div>
           ))}
@@ -318,7 +318,7 @@ export default function AIFoundry() {
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: colors.surface3 }}>
                         <div className="h-full rounded-full transition-all" style={{ width: `${(count / maxLabel) * 100}%`, background: meta.color }} />
                       </div>
-                      {meta.blurb && <div className="text-[10px] mt-1" style={{ color: colors.inkTertiary }}>{meta.blurb}</div>}
+                      {meta.blurb && <div className="text-[11px] mt-1" style={{ color: colors.inkTertiary }}>{meta.blurb}</div>}
                     </div>
                   );
                 })}
@@ -408,7 +408,7 @@ export default function AIFoundry() {
                     <step.icon className="w-4 h-4" style={{ color: colors.primary }} />
                   </div>
                   <div className="text-[12px] font-semibold" style={{ color: colors.ink }}>{step.label}</div>
-                  <div className="text-[10px] mt-0.5 leading-snug" style={{ color: colors.inkSubtle }}>{step.sub}</div>
+                  <div className="text-[11px] mt-0.5 leading-snug" style={{ color: colors.inkSubtle }}>{step.sub}</div>
                 </div>
                 {i < arr.length - 1 && <ArrowRight className="w-4 h-4 shrink-0" style={{ color: colors.inkTertiary }} />}
               </React.Fragment>
@@ -440,7 +440,7 @@ export default function AIFoundry() {
 
           <div className="flex items-end gap-2 flex-wrap mb-4">
             <div>
-              <label className="text-[10px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Tier</label>
+              <label className="text-[11px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Tier</label>
               <select value={tier} onChange={e => setTier(e.target.value)}
                 className="text-[12px] rounded-lg px-2.5 py-2 outline-none"
                 style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
@@ -448,7 +448,7 @@ export default function AIFoundry() {
               </select>
             </div>
             <div className="flex-1 min-w-[220px]">
-              <label className="text-[10px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Candidate model</label>
+              <label className="text-[11px] uppercase tracking-wide block mb-1" style={{ color: colors.inkSubtle }}>Candidate model</label>
               <input value={candidate} onChange={e => setCandidate(e.target.value)}
                 placeholder="e.g. ollama/qwen2.5-coder:14b"
                 className="text-[12px] rounded-lg px-2.5 py-2 outline-none w-full"
@@ -479,7 +479,7 @@ export default function AIFoundry() {
                 return (
                   <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg flex-wrap"
                     style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0"
                       style={{ background: (r.win ? '#27a644' : '#6b7280') + '22', color: r.win ? '#27a644' : '#6b7280' }}>
                       {r.win ? 'WIN' : r.status || 'RUN'}
                     </span>
@@ -487,30 +487,30 @@ export default function AIFoundry() {
                       <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>
                         {r.candidate_model} <span style={{ color: colors.inkTertiary }}>vs</span> {r.baseline_model}
                       </div>
-                      <div className="text-[10px] mt-0.5" style={{ color: colors.inkSubtle }}>
+                      <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
                         {r.tier} · baseline {r.baseline_score ?? '-'} · candidate {r.candidate_score ?? '-'}
                         {r.score_delta != null && ` · delta ${r.score_delta}`}
                         {r.eval_size ? ` · n=${r.eval_size}` : ''}
                       </div>
                     </div>
                     {r.simulated && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0"
                         style={{ background: '#f59e0b22', color: '#f59e0b' }} title="No live provider ran; cannot be promoted">
                         SIMULATED
                       </span>
                     )}
                     {decided ? (
-                      <span className="text-[10px] font-semibold shrink-0" style={{ color: colors.inkSubtle }}>{r.decision}</span>
+                      <span className="text-[11px] font-semibold shrink-0" style={{ color: colors.inkSubtle }}>{r.decision}</span>
                     ) : (
                       <div className="flex gap-1.5 shrink-0">
                         <button onClick={() => decideRun(r.id, 'promote')} disabled={!promotable || actingOn === r.id}
                           title={promotable ? 'Promote this candidate for its tier' : 'Only a non-simulated winning run can be promoted'}
-                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-white"
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white"
                           style={{ background: '#27a644', opacity: promotable && actingOn !== r.id ? 1 : 0.4 }}>
                           Promote
                         </button>
                         <button onClick={() => decideRun(r.id, 'reject')} disabled={actingOn === r.id}
-                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg"
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg"
                           style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
                           Reject
                         </button>

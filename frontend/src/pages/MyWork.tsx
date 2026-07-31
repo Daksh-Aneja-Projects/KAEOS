@@ -110,12 +110,12 @@ const MyWork: React.FC<{ domain?: string }> = () => {
                 onClick={() => navigate(DOMAIN_ROUTE[it.domain] || '/pulse')}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors hover:brightness-110 text-[12px]"
                 style={{ background: colors.canvas }}>
-                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
                   style={{ background: `${colors.primary}15`, color: colors.primary }}>{it.domain}</span>
                 <span className="font-medium truncate flex-1 min-w-0" title={it.title || it.entity_id}>{it.title || it.entity_id}</span>
                 <span className="whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{it.entity_type.replace(/_/g, ' ')}</span>
                 {it.state && (
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                  <span className="font-mono text-[11px] px-1.5 py-0.5 rounded shrink-0"
                     style={{ background: colors.surface2, color: colors.inkSubtle }}>{it.state}</span>
                 )}
                 <span className="ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{timeAgo(it.at)}</span>
@@ -173,7 +173,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
             {segments.map(s => (
               <div key={s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px]"
                 style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-                <span className="text-[9px] font-bold uppercase" style={{ color: colors.primary }}>{s.domain}</span>
+                <span className="text-[11px] font-bold uppercase" style={{ color: colors.primary }}>{s.domain}</span>
                 <span style={{ color: colors.ink }}>{s.name}</span>
                 <button onClick={() => removeSegment(s.id)} style={{ color: colors.inkTertiary }}>
                   <Trash2 className="w-3 h-3" />

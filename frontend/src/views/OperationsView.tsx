@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
+import { humanize } from '../lib/format';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
@@ -93,9 +94,9 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   };
 
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'N/A').replace(/_/g, ' ')}
+      {humanize(status) || 'N/A'}
     </span>
   );
 
@@ -164,7 +165,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
             style={{ background: actionMsg.includes('failed') ? '#ef444415' : '#22c55e15', color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
             {actionMsg.includes('failed') ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             {actionMsg}
-            <button onClick={() => setActionMsg('')} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            <button onClick={() => setActionMsg('')} className="ml-auto text-[11px] opacity-60">dismiss</button>
           </div>
         )}
 
@@ -205,14 +206,14 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                             <div className="h-1.5 rounded-full w-20" style={{ background: colors.hairline }}>
                               <div className="h-full rounded-full" style={{ width: `${p.budget ? Math.min(100, Math.round((p.spent / p.budget) * 100)) : Math.min(100, Math.round(p.completion_pct || 0))}%`, background: p.budget && (p.spent / p.budget) > 0.9 ? '#ef4444' : '#6366f1' }} />
                             </div>
-                            <span className="text-[10px] font-mono">${(p.spent || 0).toLocaleString()}</span>
+                            <span className="text-[11px] font-mono">${(p.spent || 0).toLocaleString()}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{p.start_date || '-'} → {p.end_date || '?'}</td>
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Project eval', p.id, api.runOperationsProjectAgent)}
                             disabled={runningAgent === p.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#6366f115', color: '#6366f1' }}>
                             {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Evaluate
@@ -253,7 +254,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Resource check', r.id, api.runOperationsResourceAgent)}
                             disabled={runningAgent === r.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#22c55e15', color: '#22c55e' }}>
                             {runningAgent === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Check
@@ -285,14 +286,14 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                         <td className="px-4 py-3 font-mono">${(v.contract_value || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">
                           {v.soc2_verified
-                            ? <span style={{ color: '#22c55e' }}>✓ Verified</span>
+                            ? <span className="inline-flex items-center gap-1" style={{ color: '#22c55e' }}><CheckCircle2 className="w-3 h-3" /> Verified</span>
                             : <span style={{ color: '#f59e0b' }}>Pending</span>}
                         </td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{v.contract_expiry || '-'}</td>
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Vendor eval', v.id, api.runOperationsVendorAgent)}
                             disabled={runningAgent === v.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#f59e0b15', color: '#f59e0b' }}>
                             {runningAgent === v.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Evaluate
@@ -339,7 +340,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Procurement audit', p.id, api.runOperationsProcurementAgent)}
                             disabled={runningAgent === p.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#3b82f615', color: '#3b82f6' }}>
                             {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Audit
@@ -385,7 +386,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('QA audit', i.id, api.runOperationsQualityAgent)}
                             disabled={runningAgent === i.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
                             style={{ background: '#ef444415', color: '#ef4444' }}>
                             {runningAgent === i.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Audit

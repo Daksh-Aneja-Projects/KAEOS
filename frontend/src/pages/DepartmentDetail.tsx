@@ -70,11 +70,11 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                   {dept.description || `Digital ${dept.name} department`}
                 </p>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: statusColor(dept.status) + '20', color: statusColor(dept.status) }}>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(dept.status) + '20', color: statusColor(dept.status) }}>
                     {dept.status}
                   </span>
                   {dept.compliance_frameworks?.map((f: string) => (
-                    <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                    <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
                       <Shield className="w-2.5 h-2.5" /> {f}
                     </span>
                   ))}
@@ -103,7 +103,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
           ].map(kpi => (
             <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}15` }}>
               <div className="text-[20px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-[9px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              <div className="text-[11px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
             </div>
           ))}
         </div>
@@ -119,7 +119,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
               }}>
               <tab.icon className="w-4 h-4" />
               {tab.label}
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: colors.surface1 }}>{tab.count}</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[11px] font-bold" style={{ background: colors.surface1 }}>{tab.count}</span>
             </button>
           ))}
         </div>
@@ -136,7 +136,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                     <DomainIcon hint={cap.icon || cap.name} fallbackHint={cap.name} size={30} />
                     <h3 className="text-[14px] font-semibold">{cap.name}</h3>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: statusColor(cap.status) + '20', color: statusColor(cap.status) }}>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(cap.status) + '20', color: statusColor(cap.status) }}>
                     {cap.status}
                   </span>
                 </div>
@@ -144,15 +144,15 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
                     <div className="text-[14px] font-bold">{Math.round((cap.automation_pct || 0) * 100)}%</div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Automated</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Automated</div>
                   </div>
                   <div>
                     <div className="text-[14px] font-bold">{cap.tasks_completed || 0}</div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Tasks</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Tasks</div>
                   </div>
                   <div>
                     <div className="text-[14px] font-bold">{cap.active_agents || 0}</div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Agents</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Agents</div>
                   </div>
                 </div>
               </div>
@@ -173,25 +173,25 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold">{agent.agent_name}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>{agent.agent_type}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: statusColor(agent.status) + '20', color: statusColor(agent.status) }}>{agent.status}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>{agent.agent_type}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(agent.status) + '20', color: statusColor(agent.status) }}>{agent.status}</span>
                   </div>
                   <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{agent.role_in_department || 'General agent'}</div>
                 </div>
                 <div className="flex items-center gap-5 text-center">
                   <div>
                     <div className="text-[14px] font-bold font-mono">{agent.tasks_handled || 0}</div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Tasks</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Tasks</div>
                   </div>
                   <div>
                     <div className="text-[14px] font-bold font-mono" style={{ color: healthColor(agent.health_score || 0) }}>{Math.round((agent.health_score || 0) * 100)}%</div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Health</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Health</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-mono" style={{ color: colors.inkSubtle }}>
+                    <div className="text-[11px] font-mono" style={{ color: colors.inkSubtle }}>
                       {agent.last_active_at ? new Date(agent.last_active_at).toLocaleDateString() : '-'}
                     </div>
-                    <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Last Active</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Last Active</div>
                   </div>
                 </div>
               </div>
@@ -202,7 +202,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
         {/* Processes Tab */}
         {activeTab === 'processes' && (
           <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
-            <div className="grid grid-cols-8 text-[10px] font-semibold uppercase tracking-wider px-4 py-2.5" style={{ background: colors.surface1, color: colors.inkSubtle }}>
+            <div className="grid grid-cols-8 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5" style={{ background: colors.surface1, color: colors.inkSubtle }}>
               <div className="col-span-2">Process</div>
               <div>Status</div>
               <div>Trigger</div>
@@ -218,9 +218,9 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 style={{ borderTop: `1px solid ${colors.hairline}`, background: i % 2 === 0 ? 'transparent' : colors.surface1 + '40' }}>
                 <div className="col-span-2">
                   <div className="font-medium">{proc.name}</div>
-                  <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{proc.description?.slice(0, 50)}</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{proc.description?.slice(0, 50)}</div>
                 </div>
-                <div><span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: statusColor(proc.status) + '20', color: statusColor(proc.status) }}>{proc.status}</span></div>
+                <div><span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(proc.status) + '20', color: statusColor(proc.status) }}>{proc.status}</span></div>
                 <div className="text-[11px] capitalize" style={{ color: colors.inkSubtle }}>{proc.trigger_type?.toLowerCase() || 'manual'}</div>
                 <div className="text-center font-mono">{proc.execution_count || 0}</div>
                 <div className="text-center font-mono" style={{ color: (proc.success_rate || 0) > 0.9 ? '#22c55e' : '#f59e0b' }}>

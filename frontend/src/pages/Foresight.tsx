@@ -147,7 +147,7 @@ const Foresight = () => {
             <div className="flex items-center gap-2 flex-wrap">
              <h3 className="text-[15px] font-semibold" style={{ color: colors.ink }}>{s.title}</h3>
              {s.is_inevitable_surprise && (
-              <span className="px-2 py-0.5 text-[10px] font-semibold rounded" style={{ background: `${colors.error}20`, color: colors.error }}>
+              <span className="px-2 py-0.5 text-[11px] font-semibold rounded" style={{ background: `${colors.error}20`, color: colors.error }}>
                INEVITABLE SURPRISE
               </span>
              )}
@@ -174,9 +174,9 @@ const Foresight = () => {
             { label: 'Preparedness gap', value: pct(s.preparedness_gap), hint: `${s.governed_responses} governed response(s)` },
            ].map(f => (
             <div key={f.label} className="px-3 py-2 rounded-lg" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-             <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{f.label}</div>
+             <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{f.label}</div>
              <div className="text-[16px] font-semibold" style={{ color: colors.ink }}>{f.value}</div>
-             <div className="text-[10px] mt-0.5 truncate" style={{ color: colors.inkSubtle }} title={f.hint}>{f.hint}</div>
+             <div className="text-[11px] mt-0.5 truncate" style={{ color: colors.inkSubtle }} title={f.hint}>{f.hint}</div>
             </div>
            ))}
           </div>
@@ -285,7 +285,7 @@ const Foresight = () => {
           <span className="text-[12px] truncate" style={{ color: colors.ink }}>
            {d.kind === 'mission_step' ? `${d.name} (mission step ${d.seq})` : (d.skill || 'Pending approval')}
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded whitespace-nowrap" style={{ background: `${colors.warning}20`, color: colors.warning }}>
+          <span className="text-[11px] px-2 py-0.5 rounded whitespace-nowrap" style={{ background: `${colors.warning}20`, color: colors.warning }}>
            {d.kind === 'mission_step' ? d.department || 'mission' : 'HITL'}
           </span>
          </div>

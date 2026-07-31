@@ -8,6 +8,7 @@ import {
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
@@ -196,9 +197,9 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
 
   // ── Status Badge ──
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'UNKNOWN').replace(/_/g, ' ')}
+      {humanize(status) || 'Unknown'}
     </span>
   );
 
@@ -407,12 +408,12 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                               )}
                             </div>
                             {c.ai_summary && (
-                              <p className="text-[10px] mt-1 line-clamp-2" style={{ color: colors.inkSubtle }}>{c.ai_summary}</p>
+                              <p className="text-[11px] mt-1 line-clamp-2" style={{ color: colors.inkSubtle }}>{c.ai_summary}</p>
                             )}
                             {(c.ai_red_flags || []).length > 0 && (
                               <div className="mt-1.5 space-y-0.5">
                                 {(c.ai_red_flags || []).slice(0, 3).map((f, idx) => (
-                                  <div key={idx} className="flex items-start gap-1 text-[10px]" style={{ color: colors.error }}>
+                                  <div key={idx} className="flex items-start gap-1 text-[11px]" style={{ color: colors.error }}>
                                     <ShieldAlert className="w-3 h-3 flex-shrink-0 mt-0.5" />
                                     <span className="line-clamp-1">{f}</span>
                                   </div>
@@ -421,7 +422,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                             )}
                             {execId && (
                               <a href={`/platform/decisions?execution_id=${execId}`}
-                                className="mt-1.5 flex items-center gap-1 text-[10px]" style={{ color: colors.primary }}>
+                                className="mt-1.5 flex items-center gap-1 text-[11px]" style={{ color: colors.primary }}>
                                 <ExternalLink className="w-3 h-3" /> Provenance {execId.slice(0, 8)}…
                               </a>
                             )}
@@ -430,7 +431,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                               <button
                                 onClick={() => handleScreen(c.id)}
                                 disabled={screeningId === c.id}
-                                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium disabled:opacity-50"
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium disabled:opacity-50"
                                 style={{ background: colors.primary + '15', color: colors.primary }}>
                                 {screeningId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
                                 Screen
@@ -439,7 +440,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                                 <button
                                   onClick={() => handleAdvance(c.id, next)}
                                   disabled={advancingId === c.id}
-                                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium disabled:opacity-50"
+                                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium disabled:opacity-50"
                                   style={{ background: colors.surface2, color: colors.inkSubtle }}>
                                   {advancingId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpRight className="w-3 h-3" />}
                                   Advance
@@ -450,7 +451,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                         );
                       })}
                       {inStage.length === 0 && (
-                        <div className="text-[10px] text-center py-3 rounded-lg border border-dashed"
+                        <div className="text-[11px] text-center py-3 rounded-lg border border-dashed"
                           style={{ color: colors.inkTertiary, borderColor: colors.hairline }}>-</div>
                       )}
                     </div>
@@ -506,7 +507,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                   </td>
                   <td className="px-5 py-3 text-[12px] font-mono" style={{ color: colors.inkMuted }}>{t.employee_id.slice(0, 8)}…</td>
                   <td className="px-5 py-3">
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: colors.surface2, color: colors.inkSubtle }}>{(t.leave_type || '-').replace(/_/g, ' ')}</span>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(t.leave_type) || '-'}</span>
                   </td>
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.start_date || '-'}</td>
                   <td className="px-5 py-3 text-[12px]" style={{ color: colors.inkMuted }}>{t.end_date || '-'}</td>
@@ -569,7 +570,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                       {rev.self_rating != null ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[14px] font-bold" style={{ color: ratingColor(rev.self_rating) }}>{rev.self_rating}</span>
-                          <span className="text-[10px]" style={{ color: colors.inkTertiary }}>/ 5</span>
+                          <span className="text-[11px]" style={{ color: colors.inkTertiary }}>/ 5</span>
                         </div>
                       ) : <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Pending</span>}
                     </td>
@@ -577,7 +578,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                       {rev.manager_rating != null ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[14px] font-bold" style={{ color: ratingColor(rev.manager_rating) }}>{rev.manager_rating}</span>
-                          <span className="text-[10px]" style={{ color: colors.inkTertiary }}>/ 5</span>
+                          <span className="text-[11px]" style={{ color: colors.inkTertiary }}>/ 5</span>
                         </div>
                       ) : <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Pending</span>}
                     </td>

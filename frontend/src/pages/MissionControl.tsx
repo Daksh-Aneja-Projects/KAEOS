@@ -7,6 +7,8 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import DomainIcon from '../components/DomainIcon';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { humanize } from '../lib/format';
 
 /**
  * Mission Control — goal-level autonomous orchestration. A plain-language goal is
@@ -46,6 +48,8 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
   }, []);
 
   useEffect(() => { loadList(); }, [loadList]);
+  // Keep the mission list live; selecting/advancing a mission is untouched.
+  useLiveRefresh(loadList, { intervalMs: 20000 });
 
   const openMission = async (id: string) => {
     try { setSelected(await api.getMission(id)); } catch (e) { console.error(e); }
@@ -173,13 +177,13 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                   style={{ borderColor: colors.hairline, background: selected?.id === m.id ? colors.surface2 : 'transparent' }}>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{m.goal}</div>
-                    <div className="text-[10px] mt-0.5" style={{ color: colors.inkSubtle }}>
+                    <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
                       {(m.departments || []).join(' · ') || 'no departments'}
                     </div>
                   </div>
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded shrink-0"
                     style={{ background: (STATUS_COLOR[m.status] || colors.inkSubtle) + '22', color: STATUS_COLOR[m.status] || colors.inkSubtle }}>
-                    {m.status}
+                    {humanize(m.status)}
                   </span>
                 </button>
               ))}
@@ -198,9 +202,9 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[15px] font-semibold">{selected.goal}</span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
                           style={{ background: (STATUS_COLOR[selected.status] || colors.inkSubtle) + '22', color: STATUS_COLOR[selected.status] || colors.inkSubtle }}>
-                          {selected.status}
+                          {humanize(selected.status)}
                         </span>
                       </div>
                       {selected.narrative && (
@@ -234,7 +238,7 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                         <span>${(selected.spent_usd || 0).toFixed(4)} / ${selected.budget_usd.toFixed(2)}</span>
                       </div>
                       <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.surface2 }}>
-                        <div className="h-full rounded-full" style={{ width: `${budgetPct}%`, background: budgetPct >= 100 ? colors.error : colors.primary }} />
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${budgetPct}%`, background: budgetPct >= 100 ? colors.error : colors.primary }} />
                       </div>
                     </div>
                   )}
@@ -266,11 +270,11 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                               <DomainIcon hint={s.department} size={18} />
                               <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{s.name}</span>
                               {s.hitl_required && (
-                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full"
                                   style={{ background: '#f59e0b22', color: '#f59e0b' }}>HITL</span>
                               )}
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                                style={{ background: sc + '18', color: sc }}>{s.status}</span>
+                              <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium"
+                                style={{ background: sc + '18', color: sc }}>{humanize(s.status)}</span>
                             </div>
                             <div className="text-[11px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: colors.inkSubtle }}>
                               <span>confidence {(s.confidence ?? 0).toFixed(2)}</span>
@@ -308,8 +312,8 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                     <div className="space-y-2">
                       {selected.ledger.map((e: any, i: number) => (
                         <div key={i} className="flex items-start gap-2 text-[12px]">
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
-                            style={{ background: colors.surface2, color: colors.inkSubtle }}>{e.kind}</span>
+                          <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
+                            style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(e.kind)}</span>
                           <span style={{ color: colors.inkSubtle }}>{e.message}</span>
                         </div>
                       ))}

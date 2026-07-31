@@ -154,7 +154,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
             }}>
             {actionMsg.ok ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
             <span>{actionMsg.text}</span>
-            <button onClick={() => setActionMsg(null)} className="ml-auto text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setActionMsg(null)} className="ml-auto text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -180,19 +180,19 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                       <div>
                         <h3 className="text-[17px] font-bold group-hover:text-primary transition-colors">{pack.name}</h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full" style={{ background: colors.primary + '10', color: colors.primary }}>v{pack.version}</span>
-                          <span className="text-[10px]" style={{ color: colors.inkSubtle }}>by {pack.author}</span>
-                          <span className="text-[10px] capitalize px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle }}>{pack.category}</span>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full" style={{ background: colors.primary + '10', color: colors.primary }}>v{pack.version}</span>
+                          <span className="text-[11px]" style={{ color: colors.inkSubtle }}>by {pack.author}</span>
+                          <span className="text-[11px] capitalize px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle }}>{pack.category}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2 shrink-0">
                       {installed ? (
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
                           <CheckCircle className="w-3 h-3" /> Installed
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>
                           <Download className="w-3 h-3" /> Available
                         </span>
                       )}
@@ -250,7 +250,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                   {(pack.compliance_frameworks || []).length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {pack.compliance_frameworks.map((f: string) => (
-                        <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold"
+                        <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
                           style={{ background: '#8b5cf610', color: '#8b5cf6' }}>
                           <Shield className="w-2.5 h-2.5" /> {f}
                         </span>

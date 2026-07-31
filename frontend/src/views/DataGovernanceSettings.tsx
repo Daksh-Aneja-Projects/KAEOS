@@ -67,7 +67,7 @@ const DataGovernanceSettings: React.FC = () => {
               ['Input tokens', usage.input_tokens], ['Output tokens', usage.output_tokens]].map(([label, val]) => (
               <div key={String(label)} className="p-3 rounded-lg" style={{ background: colors.surface2 }}>
                 <div className="text-[18px] font-bold tabular-nums" style={{ color: colors.ink }}>{val ?? '-'}</div>
-                <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
+                <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
               </div>
             ))}
           </div>

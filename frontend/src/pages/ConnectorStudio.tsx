@@ -166,7 +166,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                 <div className="grid grid-cols-4 gap-3">
                   {Object.entries(catalog.by_domain).sort().map(([domain, ids]: [string, any]) => (
                     <div key={domain} className="p-2.5 rounded-lg" style={{ background: colors.surface2 }}>
-                      <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5 capitalize"
+                      <div className="text-[11px] font-bold uppercase tracking-wide mb-1.5 capitalize"
                         style={{ color: colors.inkTertiary }}>
                         {domain} · {ids.length}
                       </div>
@@ -176,7 +176,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                           return (
                             <span key={id}
                               title={p?.handles_pii ? 'Handles PII - scrubbed on ingest' : undefined}
-                              className="px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1"
+                              className="px-1.5 py-0.5 rounded text-[11px] font-medium flex items-center gap-1"
                               style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
                               {id}
                               {p?.handles_pii && <Shield className="w-2.5 h-2.5" style={{ color: '#f59e0b' }} />}
@@ -231,19 +231,19 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                     </div>
                     <p className="text-[11px] mb-3 line-clamp-2" style={{ color: colors.inkSubtle }}>{c.description}</p>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 text-[10px]" style={{ color: colors.inkSubtle }}>
+                      <div className="flex items-center gap-3 text-[11px]" style={{ color: colors.inkSubtle }}>
                         <span>{c.events_ingested?.toLocaleString() || 0} events</span>
                         <span>{c.signals_extracted || 0} signals</span>
                       </div>
                       {c.status === 'CONNECTED' ? (
                         <button onClick={(e) => { e.stopPropagation(); openMapper(c); }}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium"
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
                           style={{ background: colors.primary + '15', color: colors.primary }}>
                           <MapPin className="w-3 h-3" /> Map Schema
                         </button>
                       ) : (
                         <button onClick={(e) => { e.stopPropagation(); api.connectConnector(c.id).then(() => window.location.reload()); }}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium"
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
                           style={{ background: '#22c55e15', color: '#22c55e' }}>
                           <Zap className="w-3 h-3" /> Connect
                         </button>
@@ -275,15 +275,15 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                 </p>
               </div>
               <div className="flex items-center gap-2 text-[11px]">
-                <span style={{ color: '#22c55e' }}>✓ {mappings.filter(m => m.confidence_tier === 'GREEN').length} auto</span>
-                <span style={{ color: '#f59e0b' }}>⚠ {mappings.filter(m => m.confidence_tier === 'AMBER').length} review</span>
+                <span className="inline-flex items-center gap-1" style={{ color: '#22c55e' }}><CheckCircle className="w-3 h-3" /> {mappings.filter(m => m.confidence_tier === 'GREEN').length} auto</span>
+                <span className="inline-flex items-center gap-1" style={{ color: '#f59e0b' }}><AlertCircle className="w-3 h-3" /> {mappings.filter(m => m.confidence_tier === 'AMBER').length} review</span>
                 <span style={{ color: '#ef4444' }}>{mappings.filter(m => m.confidence_tier === 'RED').length} manual</span>
               </div>
             </div>
 
             {/* Mapping Table */}
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
-              <div className="grid grid-cols-12 gap-0 text-[10px] font-semibold uppercase tracking-wider px-4 py-2.5"
+              <div className="grid grid-cols-12 gap-0 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5"
                 style={{ background: colors.surface1, color: colors.inkSubtle, borderBottom: `1px solid ${colors.hairline}` }}>
                 <div className="col-span-2">Source Field</div>
                 <div className="col-span-1">Object</div>
@@ -301,25 +301,25 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                   style={{ borderBottom: `1px solid ${colors.hairline}`, background: i % 2 === 0 ? 'transparent' : colors.surface1 + '40' }}>
                   <div className="col-span-2 font-mono text-[11px]" style={{ color: colors.primary }}>{m.source_field}</div>
                   <div className="col-span-1 text-[11px]" style={{ color: colors.inkSubtle }}>{m.source_object}</div>
-                  <div className="col-span-1 text-[10px] font-mono" style={{ color: colors.inkSubtle }}>{m.source_type}</div>
+                  <div className="col-span-1 text-[11px] font-mono" style={{ color: colors.inkSubtle }}>{m.source_type}</div>
                   <div className="col-span-1 text-center">
                     <ArrowRight className="w-3 h-3 mx-auto" style={{ color: confColor(m.confidence_tier) }} />
                   </div>
                   <div className="col-span-2 font-medium">{m.target_entity}</div>
                   <div className="col-span-2 font-mono text-[11px]">{m.target_field}</div>
                   <div className="col-span-1 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                       style={{ background: confColor(m.confidence_tier) + '20', color: confColor(m.confidence_tier) }}>
                       {(m.ai_confidence * 100).toFixed(0)}%
                     </span>
                   </div>
                   <div className="col-span-1 text-center">
                     {m.is_pii ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold"
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold"
                         style={{ background: '#ef444420', color: '#ef4444' }}>
                         <Lock className="w-2.5 h-2.5" /> {m.pii_category || 'PII'}
                       </span>
-                    ) : <span className="text-[10px]" style={{ color: colors.inkSubtle }}>-</span>}
+                    ) : <span className="text-[11px]" style={{ color: colors.inkSubtle }}>-</span>}
                   </div>
                   <div className="col-span-1 text-center">
                     {m.admin_confirmed ? (
@@ -329,7 +329,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                         api.confirmSchemaMapping(m.id, 'admin').catch(() => {});
                         setMappings(prev => prev.map(p => p.id === m.id ? { ...p, admin_confirmed: true } : p));
                       }}
-                        className="px-2 py-0.5 rounded text-[10px] font-medium"
+                        className="px-2 py-0.5 rounded text-[11px] font-medium"
                         style={{ background: colors.primary + '15', color: colors.primary }}>
                         Confirm
                       </button>
@@ -381,7 +381,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                       <mode.icon className="w-4 h-4" style={{ color: mode.color }} />
                       <span className="text-[12px] font-semibold">{mode.label}</span>
                     </div>
-                    <span className="text-[10px]" style={{ color: colors.inkSubtle }}>{mode.desc}</span>
+                    <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{mode.desc}</span>
                   </div>
                 ))}
               </div>
@@ -456,7 +456,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                     return (
                       <div key={ent.entity_type} className="p-3 rounded-lg text-center" style={{ background: color + '15' }}>
                         <div className="text-[20px] font-bold" style={{ color }}>{ent.freshness_pct.toFixed(0)}%</div>
-                        <div className="text-[10px] font-medium mt-1">{ent.entity_type}</div>
+                        <div className="text-[11px] font-medium mt-1">{ent.entity_type}</div>
                       </div>
                     );
                   });
@@ -560,7 +560,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
           style={{ background: (banner.ok ? '#22c55e' : '#ef4444') + '15', color: banner.ok ? '#22c55e' : '#ef4444' }}>
           {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
           <span className="flex-1">{banner.text}</span>
-          <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+          <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
         </div>
       )}
 
@@ -575,7 +575,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
         </p>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="min-w-[240px]">
-            <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Connector</label>
+            <label className="text-[11px] uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Connector</label>
             <select value={target} onChange={e => { setTarget(e.target.value); setSecret(null); }}
               className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
               style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
@@ -600,12 +600,12 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
                   setTimeout(() => setCopied(false), 1800);
                 }).catch(() => { /* clipboard blocked - the value is on screen to copy by hand */ });
               }}
-                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold shrink-0"
+                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold shrink-0"
                 style={{ background: colors.primary + '15', color: colors.primary }}>
                 <Copy className="w-3 h-3" /> {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+            <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
               Send events to <span className="font-mono">{secret.ingest_url}</span> with header{' '}
               <span className="font-mono">X-KAEOS-Signature</span> set to the HMAC-SHA256 of the raw body.
             </div>
@@ -650,7 +650,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
               ) : outbound.map(o => (
                 <div key={o.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded text-[11px]"
                   style={{ background: colors.surface2 }}>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0"
+                  <span className="px-1.5 py-0.5 rounded text-[11px] font-bold shrink-0"
                     style={{ background: statusTone(o.status) + '20', color: statusTone(o.status) }}>
                     {statusLabel(o.status)}
                   </span>
@@ -688,7 +688,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
               ) : ledger.map(l => (
                 <div key={l.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded text-[11px]"
                   style={{ background: colors.surface2 }}>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0"
+                  <span className="px-1.5 py-0.5 rounded text-[11px] font-bold shrink-0"
                     style={{ background: colors.primary + '18', color: colors.primary }}>
                     {l.direction === 'IN' ? 'incoming' : 'outgoing'}
                   </span>
@@ -745,7 +745,7 @@ function ConnectorHealthCards({ connectors, healthData, setHealthData, colors, c
                 <div className="flex justify-between"><span>Freshness</span><span className="font-mono" style={{ color: freshnessColor(h.freshness_pct) }}>{h.freshness_pct}%</span></div>
               </div>
             ) : (
-              <div className="text-[10px] py-2" style={{ color: colors.inkSubtle }}>Loading health…</div>
+              <div className="text-[11px] py-2" style={{ color: colors.inkSubtle }}>Loading health…</div>
             )}
           </div>
         );
@@ -790,15 +790,15 @@ function ConnectorFeedPanel({ connectors, colors, card }: any) {
           feedEvents.map((evt, i) => (
             <div key={evt.id} className="flex items-center gap-3 px-3 py-1.5 rounded text-[11px]"
               style={{ background: i === 0 ? typeColor(evt.signal_type) + '08' : 'transparent' }}>
-              <span className="font-mono text-[10px]" style={{ color: colors.inkSubtle }}>
+              <span className="font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
                 {evt.created_at ? new Date(evt.created_at).toLocaleTimeString() : '-'}
               </span>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: typeColor(evt.signal_type) + '20', color: typeColor(evt.signal_type) }}>
+              <span className="px-1.5 py-0.5 rounded text-[11px] font-bold" style={{ background: typeColor(evt.signal_type) + '20', color: typeColor(evt.signal_type) }}>
                 {evt.signal_type}
               </span>
               <span style={{ color: colors.inkSubtle }}>
                 {evt.summary || `${evt.source_type}: ${evt.source_entity}`}
-                {evt.pii_present && <span className="ml-1 text-[9px] font-bold" style={{ color: '#ef4444' }}>PII</span>}
+                {evt.pii_present && <span className="ml-1 text-[11px] font-bold" style={{ color: '#ef4444' }}>PII</span>}
               </span>
             </div>
           ))

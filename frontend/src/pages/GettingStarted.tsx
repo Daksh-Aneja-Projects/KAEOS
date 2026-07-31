@@ -176,7 +176,7 @@ export default function GettingStarted() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[14px] font-semibold" style={{ color: colors.ink, textDecoration: s.done ? 'none' : 'none' }}>{s.title}</span>
-                  {s.optional && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: colors.surface3, color: colors.inkTertiary }}>Optional</span>}
+                  {s.optional && <span className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: colors.surface3, color: colors.inkTertiary }}>Optional</span>}
                 </div>
                 <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{s.desc}</p>
               </div>

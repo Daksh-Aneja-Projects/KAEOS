@@ -5,8 +5,10 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
-import { toPct } from '../lib/format';
+import { CountUp } from '../components/CountUp';
+import { toPct, humanize } from '../lib/format';
 import { canSeeDepartment } from '../lib/departments';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { BrainError } from '../components/BrainStates';
 
 /**
@@ -26,8 +28,10 @@ export default function DepartmentsHub() {
   // users (department = null) see the full directory.
   const depts = allDepts.filter(d => canSeeDepartment(user?.department, d.slug || d.id));
 
-  const load = React.useCallback(() => {
-    setLoading(true);
+  // `silent === true` skips the spinner so the interval refresh updates the grid
+  // in place; the initial load and the error-retry still show it.
+  const load = React.useCallback((silent?: boolean) => {
+    if (silent !== true) setLoading(true);
     setError(null);
     return api.getWorkforceDepartments()
       .then((d: any) => {
@@ -39,6 +43,7 @@ export default function DepartmentsHub() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(() => load(true), { intervalMs: 20000 });
 
   const card: React.CSSProperties = {
     background: colors.surface1, borderRadius: '14px', border: `1px solid ${colors.hairline}`,
@@ -103,15 +108,15 @@ export default function DepartmentsHub() {
                       <DomainIcon hint={d.slug || d.icon} fallbackHint={d.name} size={44} />
                       <div className="min-w-0">
                         <h3 className="text-[15px] font-bold truncate group-hover:text-primary transition-colors" title={d.name} style={{ color: colors.ink }}>{d.name}</h3>
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                        <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full"
                           style={{ background: (d.status === 'ACTIVE' ? colors.success : colors.inkSubtle) + '20', color: d.status === 'ACTIVE' ? colors.success : colors.inkSubtle }}>
-                          {d.status || 'ACTIVE'}
+                          {humanize(d.status || 'Active')}
                         </span>
                       </div>
                     </div>
                     {health != null && (
                       <div className="flex items-center gap-1 shrink-0 text-[12px] font-semibold" style={{ color: health >= 80 ? colors.success : health >= 60 ? colors.warning : colors.error }}>
-                        <Activity className="w-3.5 h-3.5" /> {Math.round(health)}%
+                        <Activity className="w-3.5 h-3.5" /> <CountUp value={Math.round(health)} suffix="%" />
                       </div>
                     )}
                   </div>
@@ -126,8 +131,8 @@ export default function DepartmentsHub() {
                       { icon: Activity, label: 'Procs', value: d.process_count ?? 0 },
                     ].map(s => (
                       <div key={s.label} className="text-center">
-                        <div className="text-[15px] font-bold tabular-nums" style={{ color: colors.ink }}>{s.value}</div>
-                        <div className="text-[9px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkTertiary }}>{s.label}</div>
+                        <div className="text-[15px] font-bold tabular-nums" style={{ color: colors.ink }}><CountUp value={s.value} /></div>
+                        <div className="text-[11px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkTertiary }}>{s.label}</div>
                       </div>
                     ))}
                   </div>

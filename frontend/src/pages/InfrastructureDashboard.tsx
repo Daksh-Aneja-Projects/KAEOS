@@ -2,6 +2,9 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainError } from '../components/BrainStates';
+import { CountUp } from '../components/CountUp';
+import { humanize } from '../lib/format';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import {
   Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
   Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart,
@@ -52,8 +55,10 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
   const [estimate, setEstimate] = useState<any>(null);
   const [budget, setBudget] = useState<any>(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  // `silent === true` keeps the current view while the interval refresh pulls
+  // new telemetry; the first load and error-retry still show the spinner.
+  const load = useCallback((silent?: boolean) => {
+    if (silent !== true) setLoading(true);
     setError(null);
     // Per-call defaults keep partial data visible; a total outage (every call
     // rejected) surfaces an error+retry instead of an empty dashboard.
@@ -75,6 +80,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(() => load(true), { intervalMs: 20000 });
 
   const resetCircuit = async (agentName: string) => {
     setResetting(agentName);
@@ -159,7 +165,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
             }}>
             {banner.ok ? <CheckCircle className="w-4 h-4 shrink-0 mt-px" /> : <XCircle className="w-4 h-4 shrink-0 mt-px" />}
             <span className="flex-1">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="text-[10px] opacity-70">dismiss</button>
+            <button onClick={() => setBanner(null)} className="text-[11px] opacity-70">dismiss</button>
           </div>
         )}
 
@@ -180,9 +186,9 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                 const labels: Record<string, string> = { FAST: '<$0.004/task', STANDARD: '<$0.02/task', DEEP: '<$0.04/task', VERTICAL: '<$0.01/task' };
                 return (
                   <div key={tier} className="p-3 rounded-xl text-center" style={{ background: tierColor(tier) + '10', border: `1px solid ${tierColor(tier)}20` }}>
-                    <div className="text-[10px] font-bold" style={{ color: tierColor(tier) }}>TIER: {tier}</div>
-                    <div className="text-[20px] font-bold mt-1">{count}</div>
-                    <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{labels[tier]}</div>
+                    <div className="text-[11px] font-bold" style={{ color: tierColor(tier) }}>Tier: {humanize(tier)}</div>
+                    <div className="text-[20px] font-bold mt-1"><CountUp value={count} /></div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{labels[tier]}</div>
                   </div>
                 );
               })}
@@ -199,7 +205,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
               </p>
               <div className="flex items-end gap-2 flex-wrap">
                 <div className="min-w-[240px]">
-                  <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Kind of work</label>
+                  <label className="text-[11px] uppercase tracking-wider block mb-1" style={{ color: colors.inkSubtle }}>Kind of work</label>
                   <select value={task} onChange={e => setTask(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
                     style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
@@ -220,13 +226,13 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
               {route && (
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model chosen</div>
+                    <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model chosen</div>
                     <div className="text-[13px] font-semibold font-mono truncate" title={route.model_name}>{route.model_name}</div>
                     <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
-                      {route.provider} · <span style={{ color: tierColor(route.tier) }}>{route.tier} tier</span>
+                      {route.provider} · <span style={{ color: tierColor(route.tier) }}>{humanize(route.tier)} tier</span>
                       {route.is_canary && <span style={{ color: '#f59e0b' }}> · canary</span>}
                     </div>
-                    <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                    <div className="text-[11px] mt-1.5" style={{ color: colors.inkTertiary }}>
                       {route.source === 'default_fallback'
                         ? 'No model is registered for this tier yet, so the platform default would be used.'
                         : 'Selected from your registry by success rate.'}
@@ -234,14 +240,14 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   </div>
                   {estimate && (
                     <div className="p-3 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Expected size</div>
+                      <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Expected size</div>
                       <div className="text-[20px] font-bold">
                         ${Number(estimate.estimated_cost_usd ?? 0).toFixed(4)}
                       </div>
                       <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>
                         about {((estimate.estimated_input_tokens || 0) + (estimate.estimated_output_tokens || 0)).toLocaleString()} tokens per run
                       </div>
-                      <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                      <div className="text-[11px] mt-1.5" style={{ color: colors.inkTertiary }}>
                         {(estimate.estimated_input_tokens || 0).toLocaleString()} in · {(estimate.estimated_output_tokens || 0).toLocaleString()} out
                       </div>
                     </div>
@@ -251,10 +257,10 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                     const tone = copy.tone === 'ok' ? '#22c55e' : copy.tone === 'warn' ? '#f59e0b' : '#ef4444';
                     return (
                       <div className="p-3 rounded-xl" style={{ background: tone + '10', border: `1px solid ${tone}30` }}>
-                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Budget verdict</div>
+                        <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Budget verdict</div>
                         <div className="text-[13px] font-semibold" style={{ color: tone }}>{copy.text}</div>
                         {budget.reason === 'no_budget_configured' ? (
-                          <div className="text-[10px] mt-1.5" style={{ color: colors.inkTertiary }}>
+                          <div className="text-[11px] mt-1.5" style={{ color: colors.inkTertiary }}>
                             No spending limit is set for this workspace, so nothing is being enforced.
                           </div>
                         ) : (
@@ -272,7 +278,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
 
             {/* Model Table */}
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
-              <div className="grid grid-cols-9 text-[10px] font-semibold uppercase tracking-wider px-4 py-2.5"
+              <div className="grid grid-cols-9 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5"
                 style={{ background: colors.surface1, color: colors.inkSubtle }}>
                 <div className="col-span-2">Model</div>
                 <div>Provider</div>
@@ -292,16 +298,16 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   style={{ borderTop: `1px solid ${colors.hairline}` }}>
                   <div className="col-span-2 font-mono text-[11px] truncate pr-2" title={m.model_name}>{m.model_name}</div>
                   <div className="capitalize truncate pr-2" title={m.provider}>{m.provider}</div>
-                  <div><span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: tierColor(m.tier) + '20', color: tierColor(m.tier) }}>{m.tier}</span></div>
+                  <div><span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: tierColor(m.tier) + '20', color: tierColor(m.tier) }}>{humanize(m.tier)}</span></div>
                   <div className="text-center font-mono text-[11px]">{m.avg_latency_ms ?? '-'}ms</div>
                   <div className="text-center font-mono text-[11px]" style={{ color: (m.success_rate ?? 0) >= 0.95 ? '#22c55e' : '#f59e0b' }}>{m.success_rate != null ? (m.success_rate * 100).toFixed(1) + '%' : '-'}</div>
                   <div className="text-center font-mono text-[11px]">{m.cost_per_1k_input != null ? `$${m.cost_per_1k_input}` : '-'}</div>
                   <div className="text-center font-mono text-[11px]">{m.max_context_window != null ? `${(m.max_context_window / 1024).toFixed(0)}k` : '-'}</div>
                   <div className="text-center">
                     {m.is_canary ? (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>CANARY</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>CANARY</span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>ACTIVE</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>ACTIVE</span>
                     )}
                   </div>
                 </div>
@@ -328,7 +334,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                 { label: 'Budget Used', value: costData?.budget?.usage_pct != null ? `${costData.budget.usage_pct}%` : '-', color: '#8b5cf6' },
               ].map(s => (
                 <div key={s.label} className="p-4 rounded-xl min-w-0" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                  <div className="text-[10px] uppercase tracking-wider mb-1 truncate" title={s.label} style={{ color: colors.inkSubtle }}>{s.label}</div>
+                  <div className="text-[11px] uppercase tracking-wider mb-1 truncate" title={s.label} style={{ color: colors.inkSubtle }}>{s.label}</div>
                   <div className="text-[22px] font-bold" style={{ color: s.value === '-' ? colors.inkSubtle : s.color }}>{s.value}</div>
                 </div>
               ))}
@@ -353,7 +359,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                       <div key={tier} className="flex items-center gap-3">
                         <span className="text-[11px] font-mono w-24 truncate capitalize" title={tier} style={{ color: c }}>{tier}</span>
                         <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} />
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: c }} />
                         </div>
                         <span className="text-[11px] font-mono w-24 text-right">{(tierData?.tokens ?? 0).toLocaleString()} tok</span>
                         <span className="text-[11px] font-mono w-16 text-right" style={{ color: colors.inkSubtle }}>{tierData?.calls ?? 0} calls</span>
@@ -374,13 +380,13 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Tokens</span>
+                      <span className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Tokens</span>
                       <span className="text-[11px] font-mono">
                         {(costData.budget.token_used ?? 0).toLocaleString()} / {(costData.budget.token_limit ?? 0).toLocaleString()}
                       </span>
                     </div>
                     <div className="h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                      <div className="h-full rounded-full" style={{
+                      <div className="h-full rounded-full transition-all duration-500" style={{
                         width: `${Math.min(100, ((costData.budget.token_used ?? 0) / Math.max(costData.budget.token_limit ?? 1, 1)) * 100)}%`,
                         background: (costData.budget.usage_pct ?? 0) >= 80 ? '#ef4444' : (costData.budget.usage_pct ?? 0) >= 50 ? '#f59e0b' : '#22c55e',
                       }} />
@@ -388,13 +394,13 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Spend</span>
+                      <span className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Spend</span>
                       <span className="text-[11px] font-mono">
                         ${(costData.budget.cost_used_usd ?? 0).toFixed(2)} / ${(costData.budget.cost_limit_usd ?? 0).toFixed(2)}
                       </span>
                     </div>
                     <div className="h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                      <div className="h-full rounded-full" style={{
+                      <div className="h-full rounded-full transition-all duration-500" style={{
                         width: `${Math.min(100, ((costData.budget.cost_used_usd ?? 0) / Math.max(costData.budget.cost_limit_usd ?? 1, 0.01)) * 100)}%`,
                         background: '#22c55e',
                       }} />
@@ -429,14 +435,14 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-semibold truncate" title={a.agent_name}>{a.agent_name}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0" style={{ background: colors.primary + '15', color: colors.primary }}>{a.agent_type}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold flex-shrink-0" style={{ background: colors.primary + '15', color: colors.primary }}>{humanize(a.agent_type)}</span>
                       {a.model_tier_preference && (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0" style={{ background: tierColor(a.model_tier_preference) + '15', color: tierColor(a.model_tier_preference) }}>
-                          {a.model_tier_preference}
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold flex-shrink-0" style={{ background: tierColor(a.model_tier_preference) + '15', color: tierColor(a.model_tier_preference) }}>
+                          {humanize(a.model_tier_preference)}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-[10px]" style={{ color: colors.inkSubtle }}>
+                    <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: colors.inkSubtle }}>
                       <span className="truncate" title={(a.capabilities || []).join(', ')}>Capabilities: {(a.capabilities || []).join(', ')}</span>
                       {a.last_heartbeat && (
                         <span className="flex-shrink-0 whitespace-nowrap">Heartbeat: {new Date(a.last_heartbeat).toLocaleString()}</span>
@@ -446,15 +452,15 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   <div className="flex items-center gap-4 text-[11px] flex-shrink-0">
                     <div className="text-center">
                       <div className="font-mono font-bold">{a.current_load}/{a.max_concurrent}</div>
-                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Load</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Load</div>
                     </div>
                     <div className="text-center">
                       <div className="font-mono font-bold" style={{ color: (a.failure_count ?? 0) > 0 ? '#f59e0b' : colors.ink }}>{a.failure_count ?? 0}</div>
-                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Failures</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Failures</div>
                     </div>
                     <div className="text-center">
-                      <div className="font-bold" style={{ color: circuitColor(a.circuit_state) }}>{a.circuit_state}</div>
-                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Circuit</div>
+                      <div className="font-bold" style={{ color: circuitColor(a.circuit_state) }}>{humanize(a.circuit_state)}</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Circuit</div>
                     </div>
                     {a.circuit_state !== 'CLOSED' && (
                       <button onClick={() => resetCircuit(a.agent_name)} disabled={resetting === a.agent_name}
@@ -466,8 +472,8 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                       </button>
                     )}
                     <div className="text-center">
-                      <div className="font-bold" style={{ color: healthColor(a.health_status) }}>{a.health_status}</div>
-                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Health</div>
+                      <div className="font-bold" style={{ color: healthColor(a.health_status) }}>{humanize(a.health_status)}</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Health</div>
                     </div>
                   </div>
                 </div>

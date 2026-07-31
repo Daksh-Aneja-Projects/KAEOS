@@ -86,7 +86,7 @@ const ProvenanceLedger = () => {
        style={{ background: colors.error + '15', color: colors.error }}>
       <XCircle className="w-4 h-4 shrink-0" />
       <span className="flex-1">{exportError}</span>
-      <button onClick={() => setExportError(null)} className="text-[10px] opacity-70">dismiss</button>
+      <button onClick={() => setExportError(null)} className="text-[11px] opacity-70">dismiss</button>
      </div>
     )}
 

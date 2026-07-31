@@ -221,6 +221,10 @@ export default function TwinGraph({
     const N = simNodes.length;
     if (!N) return;
 
+    // Honor reduced motion: compute one static frame, never loop.
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
     const step = (now: number) => {
       const alpha = alphaRef.current;
       // Cool toward a floor > 0 so the graph keeps breathing.
@@ -358,8 +362,9 @@ export default function TwinGraph({
         el.setAttribute('cy', String(u * u * a.y + 2 * u * p * my + p * p * b.y));
       });
 
-      raf = requestAnimationFrame(step);
+      if (!reduced) raf = requestAnimationFrame(step);
     };
+    if (reduced) { step(performance.now()); return; }
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [simNodes, simLinks, particleLinks, index, clusters]);
@@ -636,21 +641,21 @@ export default function TwinGraph({
       <div className="absolute bottom-3 left-3 group" style={{ zIndex: 5 }}>
         <div className="absolute bottom-full left-0 mb-2 px-3 py-2 rounded-lg hidden group-hover:block"
           style={{ background: 'rgba(11,12,14,0.94)', border: '1px solid #2a2d33', minWidth: 200 }}>
-          <div className="text-[9px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#565b64' }}>Departments</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#565b64' }}>Departments</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
             {clusters.map(c => (
               <div key={c.deptId} className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color, boxShadow: `0 0 5px ${c.color}66` }} />
-                <span className="text-[10px] whitespace-nowrap" style={{ color: '#c9cdd4' }}>{c.name}</span>
+                <span className="text-[11px] whitespace-nowrap" style={{ color: '#c9cdd4' }}>{c.name}</span>
               </div>
             ))}
           </div>
-          <div className="text-[9px] font-semibold uppercase tracking-wider mt-2 mb-1" style={{ color: '#565b64' }}>Node types</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider mt-2 mb-1" style={{ color: '#565b64' }}>Node types</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
             {presentTypes.map(t => (
               <div key={t} className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[t] }} />
-                <span className="text-[10px]" style={{ color: '#8a8f98' }}>{t}</span>
+                <span className="text-[11px]" style={{ color: '#8a8f98' }}>{t}</span>
               </div>
             ))}
           </div>
@@ -664,11 +669,11 @@ export default function TwinGraph({
           {presentTypes.map(t => (
             <span key={t} className="w-1.5 h-1.5 rounded-full" style={{ background: TYPE_COLORS[t] }} />
           ))}
-          <span className="text-[9px] ml-1" style={{ color: '#565b64' }}>legend</span>
+          <span className="text-[11px] ml-1" style={{ color: '#565b64' }}>legend</span>
         </div>
       </div>
 
-      <div className="absolute bottom-3 right-3 text-[9px] px-2 py-1 rounded-md"
+      <div className="absolute bottom-3 right-3 text-[11px] px-2 py-1 rounded-md"
         style={{ color: '#565b64', background: 'rgba(11,12,14,0.6)' }}>
         hover for names · drag · scroll to zoom
       </div>

@@ -12,6 +12,9 @@ import {
   ArrowRight, Bot, Zap, Shield, Sparkles
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
+import { CountUp } from '../components/CountUp';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { humanize } from '../lib/format';
 
 export default function OperationsDashboard() {
   const { colors } = useTheme();
@@ -33,6 +36,7 @@ export default function OperationsDashboard() {
     });
   };
   useEffect(() => { load(); }, []);
+  useLiveRefresh(load, { intervalMs: 20000 });
 
   if (loading) return <BrainLoading message="Loading Operational Infrastructure status..." />;
   if (error && !dept && !opsStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
@@ -94,12 +98,12 @@ export default function OperationsDashboard() {
               </p>
               <div className="flex items-center gap-2 mt-1.5">
                 {dept?.status && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#10b98120', color: '#10b981' }}>
-                    {dept.status}
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#10b98120', color: '#10b981' }}>
+                    {humanize(dept.status)}
                   </span>
                 )}
                 {(dept?.compliance_frameworks || []).map((f: string) => (
-                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#10b98115', color: '#10b981' }}>
+                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#10b98115', color: '#10b981' }}>
                     {f}
                   </span>
                 ))}
@@ -110,7 +114,7 @@ export default function OperationsDashboard() {
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-[12px] whitespace-nowrap" style={{ color: colors.inkSubtle }}>PMO Health:</span>
               <span className="text-[20px] font-bold" style={{ color: healthColor(dept.health_score || 0) }}>
-                {Math.round((dept.health_score || 0) * 100)}%
+                <CountUp value={Math.round((dept.health_score || 0) * 100)} suffix="%" />
               </span>
             </div>
           )}
@@ -119,14 +123,14 @@ export default function OperationsDashboard() {
         {/* Operational Indicators */}
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Active Projects', value: opsStats?.active_projects ?? '0', icon: CheckSquare, color: '#10b981' },
-            { label: 'Warning tasks', value: opsStats?.blocked_tasks ?? '0', icon: ShieldAlert, color: '#ef4444' },
-            { label: 'Pending Purchases', value: opsStats?.pending_purchases ?? '0', icon: Wrench, color: '#f59e0b' },
-            { label: 'Failed QA Checks', value: opsStats?.failed_inspections ?? '0', icon: Clipboard, color: '#ec4899' },
+            { label: 'Active Projects', value: opsStats?.active_projects ?? 0, icon: CheckSquare, color: '#10b981' },
+            { label: 'Warning tasks', value: opsStats?.blocked_tasks ?? 0, icon: ShieldAlert, color: '#ef4444' },
+            { label: 'Pending Purchases', value: opsStats?.pending_purchases ?? 0, icon: Wrench, color: '#f59e0b' },
+            { label: 'Failed QA Checks', value: opsStats?.failed_inspections ?? 0, icon: Clipboard, color: '#ec4899' },
           ].map(kpi => (
             <div key={kpi.label} className="p-4 rounded-xl flex items-center justify-between" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}12` }}>
               <div>
-                <div className="text-[22px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
+                <div className="text-[22px] font-bold" style={{ color: kpi.color }}>{typeof kpi.value === 'number' ? <CountUp value={kpi.value} /> : kpi.value}</div>
                 <div className="text-[11px] font-semibold" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
               </div>
               <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: kpi.color + '15' }}>
@@ -166,9 +170,9 @@ export default function OperationsDashboard() {
                         <span className="text-[12px] font-semibold flex items-center gap-1.5">
                           <DomainIcon hint={cap.icon || cap.name} fallbackHint={cap.name} size={24} /> {cap.name}
                         </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                           style={{ background: cap.status === 'ACTIVE' ? '#22c55e20' : '#f59e0b20', color: cap.status === 'ACTIVE' ? '#22c55e' : '#f59e0b' }}>
-                          {cap.status}
+                          {humanize(cap.status)}
                         </span>
                       </div>
                       <p className="text-[11px]" style={{ color: colors.inkSubtle }}>{cap.description}</p>
@@ -193,10 +197,10 @@ export default function OperationsDashboard() {
                     <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold flex-shrink-0" style={{ background: colors.primary + '18', color: colors.primary }}>{(agent.agent_name || '?').charAt(0)}</div>
                     <div className="min-w-0">
                       <div className="text-[12px] font-bold truncate" title={agent.agent_name}>{agent.agent_name}</div>
-                      <div className="text-[10px] truncate" title={agent.role_in_department} style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
+                      <div className="text-[11px] truncate" title={agent.role_in_department} style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500 flex-shrink-0 whitespace-nowrap ml-2">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-500/10 text-green-500 flex-shrink-0 whitespace-nowrap ml-2">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
                 </div>
               ))}
             </div>

@@ -62,7 +62,7 @@ const RedTeamDashboard = () => {
      {summary && (
       <div className="flex gap-3">
        <div className="px-4 py-2 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-        <div className="text-[10px] uppercase font-bold tracking-wider" style={{ color: colors.inkSubtle }}>Skills Scanned</div>
+        <div className="text-[11px] uppercase font-bold tracking-wider" style={{ color: colors.inkSubtle }}>Skills Scanned</div>
         <div className="text-xl font-bold tabular-nums">{summary.total_skills_scanned}</div>
        </div>
        {(() => {
@@ -70,7 +70,7 @@ const RedTeamDashboard = () => {
         const c = vuln ? colors.error : colors.success;
         return (
          <div className="px-4 py-2 rounded-xl" style={{ background: c + '14', border: `1px solid ${c}33` }}>
-          <div className="text-[10px] uppercase font-bold tracking-wider" style={{ color: c }}>Vulnerabilities</div>
+          <div className="text-[11px] uppercase font-bold tracking-wider" style={{ color: c }}>Vulnerabilities</div>
           <div className="text-xl font-bold tabular-nums" style={{ color: c }}>{summary.total_vulnerabilities}</div>
          </div>
         );

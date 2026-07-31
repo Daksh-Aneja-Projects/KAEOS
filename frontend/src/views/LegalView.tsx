@@ -6,6 +6,7 @@ import {
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
@@ -90,9 +91,9 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   };
 
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'N/A').replace(/_/g, ' ')}
+      {humanize(status) || 'N/A'}
     </span>
   );
 
@@ -162,7 +163,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             style={{ background: actionMsg.includes('failed') ? '#ef444415' : '#22c55e15', color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
             {actionMsg.includes('failed') ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             {actionMsg}
-            <button onClick={() => setActionMsg('')} className="ml-auto text-[10px] opacity-60">dismiss</button>
+            <button onClick={() => setActionMsg('')} className="ml-auto text-[11px] opacity-60">dismiss</button>
           </div>
         )}
 
@@ -223,7 +224,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Contract review', c.id, api.runContractReviewAgent)}
                             disabled={runningAgent === c.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
                             style={{ background: '#6366f115', color: '#6366f1' }}>
                             {runningAgent === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Review
@@ -262,7 +263,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Compliance audit', o.id, api.runComplianceAuditAgent)}
                             disabled={runningAgent === o.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
                             style={{ background: '#22c55e15', color: '#22c55e' }}>
                             {runningAgent === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Audit
@@ -295,7 +296,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Case evaluation', c.id, api.runLitigationAgent)}
                             disabled={runningAgent === c.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
                             style={{ background: '#ef444415', color: '#ef4444' }}>
                             {runningAgent === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Evaluate
@@ -328,7 +329,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('DSAR validation', d.id, api.runPrivacyDsarAgent)}
                             disabled={runningAgent === d.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
                             style={{ background: '#3b82f615', color: '#3b82f6' }}>
                             {runningAgent === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Validate
@@ -361,7 +362,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Patent eval', p.id, api.runPatentEvalAgent)}
                             disabled={runningAgent === p.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
                             style={{ background: '#f59e0b15', color: '#f59e0b' }}>
                             {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Evaluate

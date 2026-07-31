@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import TimeMachinePanel from '../components/TimeMachinePanel';
 import WargamePanel from '../components/WargamePanel';
+import { humanize } from '../lib/format';
 
 const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering'];
 const WHATIF_RISK = ['conservative', 'balanced', 'aggressive'];
@@ -335,12 +336,12 @@ export default function RealityExperience() {
           pulseDepartments(depts, sev, r?.weakest_link?.department);
           setActivity({
             mode: 'wargame',
-            label: `Wargame · ${(r?.playbook || 'adversarial cascade').replace(/_/g, ' ')}`,
+            label: `Wargame · ${humanize(r?.playbook || 'adversarial cascade')}`,
             severity: sev,
             headline: `Integrity retained ${r?.resilience_score ?? 0}% (grade ${r?.grade ?? '-'}). Weakest link: ${r?.weakest_link?.department ?? 'n/a'}.`,
-            itemsLabel: 'CASCADE — SHOCK BY SHOCK',
+            itemsLabel: 'CASCADE: SHOCK BY SHOCK',
             items: (r?.steps || []).map((s: any) => ({
-              label: `${String(s.shock).replace(/_/g, ' ')} → ${s.department}`,
+              label: `${humanize(s.shock)} → ${s.department}`,
               sub: `-${s.damage} integrity → ${s.integrity_after}% remaining`,
               right: s.response === 'autonomous' ? 'AUTONOMOUS' : 'HUMAN',
               tone: s.response === 'autonomous' ? 'good' : 'warn',
@@ -369,10 +370,10 @@ export default function RealityExperience() {
             severity: sev,
             headline: cf
               ? `Counterfactual: had this decision ${cf.flip === 'approve' ? 'run clean' : cf.flip === 'fail' ? 'failed' : 'escalated'}, safe-autonomy would move to ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`} (${deltaPts ?? 'no change'}).`
-              : `Replaying a real ${klass.replace(/_/g, ' ')} decision in ${evt?.department || 'the org'}. Pick an outcome to run the counterfactual.`,
+              : `Replaying a real ${humanize(klass)} decision in ${evt?.department || 'the org'}. Pick an outcome to run the counterfactual.`,
             itemsLabel: 'DECISION UNDER REPLAY',
             items: [
-              { label: evt?.skill_id || 'decision', sub: `Actual outcome: ${klass.replace(/_/g, ' ')}`, right: (evt?.department || '').toUpperCase(), tone: klass === 'failed' || klass === 'overridden' ? 'bad' : klass === 'routed_to_human' ? 'warn' : 'good' },
+              { label: evt?.skill_id || 'decision', sub: `Actual outcome: ${humanize(klass)}`, right: humanize(evt?.department), tone: klass === 'failed' || klass === 'overridden' ? 'bad' : klass === 'routed_to_human' ? 'warn' : 'good' },
               ...(cf ? [{
                 label: `Counterfactual: ${cf.flip}`,
                 sub: `actual ${cf.before_rate == null ? '--' : `${(cf.before_rate * 100).toFixed(0)}%`} → counterfactual ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`}`,
@@ -383,7 +384,7 @@ export default function RealityExperience() {
             why: [
               ['Decision Selected', evt?.skill_id || 'n/a'],
               ['Department', evt?.department || 'n/a'],
-              ['Actual Classification', klass.replace(/_/g, ' ') || 'n/a'],
+              ['Actual Classification', humanize(klass) || 'n/a'],
               ['Counterfactual', cf ? `flipped to "${cf.flip}"` : 'not run yet'],
               ['North-Star Recompute', cf ? `${cf.before_rate == null ? '--' : `${(cf.before_rate * 100).toFixed(0)}%`} → ${cf.after_rate == null ? '--' : `${(cf.after_rate * 100).toFixed(0)}%`}` : 'pending'],
               ['Delta', deltaPts ?? 'pending'],
@@ -498,7 +499,7 @@ export default function RealityExperience() {
           </div>
           <div className="min-w-0">
             <div className="text-xl font-bold leading-none">{t.value?.toLocaleString() ?? '-'}</div>
-            <div className="text-[10px] uppercase font-semibold mt-1 tracking-wide whitespace-nowrap" style={{ color: colors.inkTertiary }}>{t.label}</div>
+            <div className="text-[11px] uppercase font-semibold mt-1 tracking-wide whitespace-nowrap" style={{ color: colors.inkTertiary }}>{t.label}</div>
           </div>
         </div>
       ))}
@@ -514,11 +515,11 @@ export default function RealityExperience() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-              <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
+              <div className="text-[11px] font-mono mb-1" style={{ color: colors.primary }}>SHOCKS PROCESSED</div>
               <div className="text-2xl font-bold">{learningStats.shocks_processed ?? 0}</div>
             </div>
             <div className="p-3 border rounded" style={{ borderColor: colors.hairline, background: colors.canvas }}>
-              <div className="text-[10px] font-mono mb-1" style={{ color: colors.primary }}>RISK PENALTY</div>
+              <div className="text-[11px] font-mono mb-1" style={{ color: colors.primary }}>RISK PENALTY</div>
               <div className="text-2xl font-bold text-red-500">-{learningStats.modifiers?.MITIGATE_FAILURE?.toFixed(1) || 0}</div>
             </div>
           </div>
@@ -526,7 +527,7 @@ export default function RealityExperience() {
             <div className="font-semibold mb-2">Recent Outcomes</div>
             <div className="overflow-y-auto space-y-1 pr-1" style={{ maxHeight: 200 }}>
               {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
-                <div key={i} className="p-2 border rounded font-mono text-[10px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+                <div key={i} className="p-2 border rounded font-mono text-[11px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                   <div className="flex justify-between">
                     <span className="font-bold">{o.shock_type}</span>
                     <span className={o.severity > 60 ? 'text-red-500' : 'text-amber-500'}>sev {o.severity?.toFixed(0)}</span>
@@ -605,7 +606,7 @@ export default function RealityExperience() {
               </p>
             </div>
             {twinMeta && (
-              <div className="text-[10px] font-mono px-2 py-1 rounded whitespace-nowrap" style={{ background: colors.primary + '15', color: colors.primary }}>
+              <div className="text-[11px] font-mono px-2 py-1 rounded whitespace-nowrap" style={{ background: colors.primary + '15', color: colors.primary }}>
                 {twinMeta.shown} of {twinMeta.total.toLocaleString()} nodes
               </div>
             )}
@@ -615,7 +616,7 @@ export default function RealityExperience() {
           {legend.length > 0 && (
             <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
               {legend.map(l => (
-                <span key={l.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: colors.inkSubtle }}>
+                <span key={l.label} className="flex items-center gap-1.5 text-[11px]" style={{ color: colors.inkSubtle }}>
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: l.color }} />
                   {l.label}
                 </span>
@@ -637,7 +638,7 @@ export default function RealityExperience() {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div className="text-[10px] font-mono px-2 py-0.5 rounded inline-block mb-3" style={{ background: colors.primary + '20', color: colors.primary }}>
+              <div className="text-[11px] font-mono px-2 py-0.5 rounded inline-block mb-3" style={{ background: colors.primary + '20', color: colors.primary }}>
                 {selectedNode.label}
               </div>
               <div className="space-y-2 text-xs">
@@ -645,7 +646,7 @@ export default function RealityExperience() {
                   .filter(([k]) => !['id', 'name', 'label', 'group', 'x', 'y', 'vx', 'vy', 'hx', 'hy', 'r', 'fixed', 'phase'].includes(k))
                   .map(([k, v]) => (
                     <div key={k} className="border-b pb-1" style={{ borderColor: colors.hairline }}>
-                      <div className="font-semibold capitalize" style={{ color: colors.inkSubtle }}>{k.replace(/_/g, ' ')}</div>
+                      <div className="font-semibold" style={{ color: colors.inkSubtle }}>{humanize(k)}</div>
                       <div className="font-mono truncate">{String(v)}</div>
                     </div>
                   ))}
@@ -700,7 +701,7 @@ export default function RealityExperience() {
                   );
                 })}
               </div>
-              <p className="text-[10px] mt-3" style={{ color: colors.inkTertiary }}>
+              <p className="text-[11px] mt-3" style={{ color: colors.inkTertiary }}>
                 Ranked by severity. Inject more shocks to compare their blast side by side.
               </p>
             </div>
@@ -749,7 +750,7 @@ export default function RealityExperience() {
                           <div className="flex items-center gap-1.5 justify-end text-[18px] font-bold">
                             <RotateCcw className="w-4 h-4" style={{ color: colors.inkSubtle }} />~{whatIfResult.estimated_rollback_time_hours}h
                           </div>
-                          <div className="text-[10px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>Rollback time</div>
+                          <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>Rollback time</div>
                         </div>
                       )}
                     </div>
@@ -764,7 +765,7 @@ export default function RealityExperience() {
                         ].map(s => (
                           <div key={s.label} className="p-3 rounded-lg text-center" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                             <div className="text-[24px] font-bold">{s.value}</div>
-                            <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                            <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
                           </div>
                         ))}
                       </div>
@@ -786,7 +787,7 @@ export default function RealityExperience() {
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sevColor(String(r.severity).toUpperCase()) }} />
                                 <span className="text-[12px] font-semibold">{r.factor}</span>
-                                <span className="ml-auto text-[10px] font-bold uppercase" style={{ color: sevColor(String(r.severity).toUpperCase()) }}>{r.severity}</span>
+                                <span className="ml-auto text-[11px] font-bold uppercase" style={{ color: sevColor(String(r.severity).toUpperCase()) }}>{r.severity}</span>
                               </div>
                               {r.mitigation && (
                                 <div className="text-[11px] pl-4" style={{ color: colors.inkSubtle }}>
@@ -832,13 +833,13 @@ export default function RealityExperience() {
                             <span className="font-bold font-mono flex items-center gap-2">
                               {opt.option?.action}
                               {recommended && (
-                                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white" style={{ background: colors.primary }}>RECOMMENDED</span>
+                                <span className="px-1.5 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ background: colors.primary }}>RECOMMENDED</span>
                               )}
                             </span>
                             <span className="font-bold font-mono" style={{ color: colors.primary }}>{opt.score?.total_score?.toFixed(1)} pts</span>
                           </div>
                           <div className="mb-2" style={{ color: colors.inkTertiary }}>{opt.option?.description}</div>
-                          <div className="flex gap-4 font-mono text-[10px]">
+                          <div className="flex gap-4 font-mono text-[11px]">
                             <span>Cost: {opt.score?.estimated_cost}</span>
                             <span>Time: {opt.score?.estimated_time_days}d</span>
                             <span>Risk: {((opt.score?.risk_penalty || 0) * 100).toFixed(0)}%</span>
@@ -958,7 +959,7 @@ export default function RealityExperience() {
                   <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: colors.primary }} />
                   <div className="min-w-0 flex-1">
                     <div className="leading-snug break-words" style={{ color: colors.ink }}>{f.event}</div>
-                    <div className="text-[10px] font-mono mt-1 truncate" style={{ color: colors.inkTertiary }}>{String(f.id).slice(0, 8)}</div>
+                    <div className="text-[11px] font-mono mt-1 truncate" style={{ color: colors.inkTertiary }}>{String(f.id).slice(0, 8)}</div>
                   </div>
                 </div>
               ))}

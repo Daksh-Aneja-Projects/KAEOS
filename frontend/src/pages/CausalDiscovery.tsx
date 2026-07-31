@@ -137,7 +137,7 @@ const CausalDiscovery = () => {
                   })}
                 </svg>
               </div>
-              <div className="flex items-center gap-4 mt-1 text-[10px]" style={{ color: colors.inkSubtle }}>
+              <div className="flex items-center gap-4 mt-1 text-[11px]" style={{ color: colors.inkSubtle }}>
                 <span>node size = adverse-event volume</span>
                 <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: '#ef4444' }} /> strong (≥0.7)</span>
                 <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: '#f59e0b' }} /> moderate</span>
@@ -159,7 +159,7 @@ const CausalDiscovery = () => {
                   <span className="text-[13px]" style={{ color: edgeColor(l) }}>{l.kind === 'leads' ? '→' : '↔'}</span>
                   <DomainIcon hint={l.target} size={18} />
                   <span className="text-[12px] font-medium" style={{ color: colors.ink }}>{l.target}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full ml-2" style={{ background: edgeColor(l) + '22', color: edgeColor(l) }}>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full ml-2" style={{ background: edgeColor(l) + '22', color: edgeColor(l) }}>
                     {l.kind === 'leads' ? `leads by ${l.lag_days}d` : 'co-occurs'}
                   </span>
                   <span className="ml-auto text-[12px] font-mono" style={{ color: colors.inkSubtle }}>r = {l.strength.toFixed(2)}</span>

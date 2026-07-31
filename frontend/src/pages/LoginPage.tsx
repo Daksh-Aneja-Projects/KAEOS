@@ -141,7 +141,7 @@ export default function LoginPage() {
           {/* Enterprise SSO (OIDC) */}
           <div className="flex items-center gap-3 py-1">
             <div className="flex-1 h-px" style={{ background: colors.hairline }} />
-            <span className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>or</span>
+            <span className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>or</span>
             <div className="flex-1 h-px" style={{ background: colors.hairline }} />
           </div>
           <button type="button" onClick={handleSSO} disabled={ssoBusy}
@@ -163,7 +163,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center mt-6 text-[10px] tracking-wider uppercase" style={{ color: colors.inkTertiary }}>
+        <p className="text-center mt-6 text-[11px] tracking-wider uppercase" style={{ color: colors.inkTertiary }}>
           Governed Enterprise AI
         </p>
       </div>

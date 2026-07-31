@@ -8,6 +8,7 @@ import {
   Activity, Shield, Users, ChevronRight
 } from 'lucide-react';
 import { STREAM_INTERVALS } from '../services/realtime';
+import { humanize } from '../lib/format';
 
 interface OODAEvent {
   id: string;
@@ -106,14 +107,14 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                   {React.createElement(p.icon, { className: 'w-5 h-5', style: { color: p.color } })}
                   <span className="text-[14px] font-bold" style={{ color: p.color }}>{p.label}</span>
                 </div>
-                <div className="text-[10px] mb-2" style={{ color: colors.inkSubtle }}>{p.desc}</div>
+                <div className="text-[11px] mb-2" style={{ color: colors.inkSubtle }}>{p.desc}</div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                     style={{ background: p.color + '20', color: p.color }}>
                     {count} events
                   </span>
                   {active && (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold animate-pulse"
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold animate-pulse"
                       style={{ background: '#f59e0b20', color: '#f59e0b' }}>
                       ACTIVE
                     </span>
@@ -155,9 +156,9 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                   DEBATE_REQUIRED: { label: 'Debate', color: '#f59e0b' },
                 };
                 return Object.entries(gates).map(([g, n]) => {
-                  const meta = gateMeta[g] || { label: g.replace(/_/g, ' ').toLowerCase(), color: colors.inkSubtle };
+                  const meta = gateMeta[g] || { label: humanize(g), color: colors.inkSubtle };
                   return (
-                    <span key={g} className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap"
+                    <span key={g} className="px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap"
                       style={{ background: meta.color + '15', color: meta.color }}>
                       {n} {meta.label}
                     </span>
@@ -165,7 +166,7 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                 });
               })()}
             </div>
-            <div className="flex items-center gap-2 text-[10px]">
+            <div className="flex items-center gap-2 text-[11px]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} /> Complete</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#f59e0b' }} /> Active</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: colors.inkSubtle }} /> Pending</span>
@@ -197,23 +198,23 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                       {e.gate && (
                         <div className="flex items-center gap-1.5 mt-1.5">
                           {e.gate === 'DEBATE_REQUIRED' && (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ background: '#f59e0b15', color: '#f59e0b' }}>
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#f59e0b15', color: '#f59e0b' }}>
                               Debate Engine Active
                             </span>
                           )}
                           {e.gate === 'AUTO_APPROVED' && (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ background: '#22c55e15', color: '#22c55e' }}>
-                              ✓ Auto-Approved
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1" style={{ background: '#22c55e15', color: '#22c55e' }}>
+                              <CheckCircle className="w-3 h-3" /> Auto-Approved
                             </span>
                           )}
                           {e.gate === 'HITL_REQUIRED' && (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>
-                              ⚠ Human Review Required
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1" style={{ background: '#ef444415', color: '#ef4444' }}>
+                              <AlertTriangle className="w-3 h-3" /> Human Review Required
                             </span>
                           )}
                           {!['DEBATE_REQUIRED', 'AUTO_APPROVED', 'HITL_REQUIRED'].includes(e.gate) && (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold capitalize" style={{ background: colors.inkSubtle + '15', color: colors.inkSubtle }}>
-                              {e.gate.replace(/_/g, ' ').toLowerCase()}
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: colors.inkSubtle + '15', color: colors.inkSubtle }}>
+                              {humanize(e.gate)}
                             </span>
                           )}
                         </div>
@@ -228,7 +229,7 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
                           {(e.confidence * 100).toFixed(0)}%
                         </div>
                       )}
-                      <div className="text-[9px] font-mono" style={{ color: colors.inkSubtle }}>
+                      <div className="text-[11px] font-mono" style={{ color: colors.inkSubtle }}>
                         {e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : ''}
                       </div>
                     </div>

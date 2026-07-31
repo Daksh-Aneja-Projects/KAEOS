@@ -119,7 +119,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                       </div>
                       <div className="w-40 flex-shrink-0">
                         <div className="text-[13px] font-semibold" style={{ color: colors.ink }}>{meta.label}</div>
-                        <div className="text-[10px] font-mono" style={{ color: colors.inkTertiary }}>{cfg.layer}</div>
+                        <div className="text-[11px] font-mono" style={{ color: colors.inkTertiary }}>{cfg.layer}</div>
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-mono truncate block" title={cfg.model_name} style={{ color: colors.ink }}>{cfg.model_name}</span>
@@ -151,12 +151,12 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                       {ceiling != null ? (
                         <>
                           <div>
-                            <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>Autonomy ceiling</div>
+                            <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>Autonomy ceiling</div>
                             <div className="text-[14px] font-bold font-mono" style={{ color: ceilingColor }}>{(ceiling * 100).toFixed(0)}%</div>
                           </div>
                           {[['JSON', profile.json_compliance], ['Reasoning', profile.reasoning_depth], ['Instructions', profile.instruction_following]].map(([label, val]: any) => (
                             <div key={label}>
-                              <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>{label}</div>
+                              <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>{label}</div>
                               <div className="text-[12px] font-mono" style={{ color: val >= 0.8 ? '#22c55e' : val >= 0.5 ? '#f59e0b' : '#ef4444' }}>
                                 {val != null ? `${(val * 100).toFixed(0)}%` : '-'}
                               </div>
@@ -164,7 +164,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                           ))}
                           {profile.latency_ms != null && (
                             <div>
-                              <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>Latency</div>
+                              <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>Latency</div>
                               <div className="text-[12px] font-mono" style={{ color: colors.inkSubtle }}>{profile.latency_ms}ms</div>
                             </div>
                           )}
@@ -234,7 +234,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                 <span className="text-[13px] font-medium truncate block" title={ev.event_name} style={{ color: colors.ink }}>{ev.event_name}</span>
                 <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{ev.department} · {ev.event_type}</p>
               </div>
-              {ev.is_blocking && <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>Blocking</span>}
+              {ev.is_blocking && <span className="text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>Blocking</span>}
             </div>
           ))}
         </div>
@@ -292,7 +292,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                   <div className="w-12 text-right text-[13px] font-mono font-bold" style={{ color: colors.primary }}>
                     {(a.min_confidence * 100).toFixed(0)}%
                   </div>
-                  <div className="w-16 text-[10px]" style={{ color: colors.inkSubtle }}>
+                  <div className="w-16 text-[11px]" style={{ color: colors.inkSubtle }}>
                     {savingDomain === a.domain ? 'saving…' : a.is_default ? 'default' : 'custom'}
                   </div>
                 </div>

@@ -242,8 +242,8 @@ function TenantList({ colors, tenants, loading, hasSecret, advancing, onAdvance,
             {/* Progress */}
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px]" style={{ color: colors.inkTertiary }}>Stage {idx + 1} of {STAGES.length}</span>
-                <span className="text-[10px] tabular-nums" style={{ color: colors.inkTertiary }}>{pct}%</span>
+                <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Stage {idx + 1} of {STAGES.length}</span>
+                <span className="text-[11px] tabular-nums" style={{ color: colors.inkTertiary }}>{pct}%</span>
               </div>
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.surface3 }}>
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: done ? colors.success : colors.primary }} />
@@ -429,7 +429,7 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
               ['Admin email', adminEmail],
             ].map(([k, v]) => (
               <div key={k} className="p-3 rounded-lg" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-                <div className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{k}</div>
+                <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{k}</div>
                 <div className="text-[13px] font-medium mt-0.5 truncate" style={{ color: colors.ink }}>{v}</div>
               </div>
             ))}
@@ -467,7 +467,7 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
               <div key={k} className="flex items-center justify-between px-4 py-3"
                 style={{ background: i % 2 ? colors.surface2 : colors.surface1, borderTop: i ? `1px solid ${colors.hairline}` : 'none' }}>
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{k}</div>
+                  <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{k}</div>
                   <div className="text-[13px] font-mono mt-0.5 truncate" style={{ color: colors.ink }}>{v}</div>
                 </div>
                 <button onClick={() => copy(k as string, v as string)} className="shrink-0 ml-3 p-1.5 rounded hover:opacity-70" style={{ color: colors.inkSubtle }}>

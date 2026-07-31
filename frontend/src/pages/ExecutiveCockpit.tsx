@@ -3,6 +3,9 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { useParallelApi } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { CountUp } from '../components/CountUp';
+import { humanize } from '../lib/format';
 import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
 import { STREAM_INTERVALS } from '../services/realtime';
 import {
@@ -45,6 +48,10 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
     STREAM_INTERVALS.COCKPIT,
     { emptyCheck: (d) => !d }
   );
+
+  // The health / feed / cost panels load once via useParallelApi; re-pull them
+  // on a timer (and on any tenant event) so the KPIs never sit frozen.
+  useLiveRefresh(refetchAll, { intervalMs: 20000 });
 
   const health = results.health;
   const feed = results.feed?.events || [];
@@ -94,18 +101,19 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
       <div className="grid grid-cols-5 gap-4">
         {/* Health Score */}
         <div style={{ ...card, gridColumn: 'span 1' }} className="flex flex-col items-center justify-center">
-          <span className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>System Health</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>System Health</span>
           <div className="relative w-20 h-20">
             <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
               <circle cx="50" cy="50" r="42" fill="none" stroke={colors.hairline} strokeWidth="8" />
               <circle cx="50" cy="50" r="42" fill="none" stroke={scoreColor} strokeWidth="8"
-                strokeDasharray={`${score * 2.64} 264`} strokeLinecap="round" />
+                strokeDasharray={`${score * 2.64} 264`} strokeLinecap="round"
+                style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.16, 1, 0.3, 1)' }} />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[22px] font-bold" style={{ color: scoreColor }}>{score}</span>
+              <span className="text-[22px] font-bold" style={{ color: scoreColor }}><CountUp value={score} /></span>
             </div>
           </div>
-          <div className="flex items-center gap-1 mt-2 text-[10px]" style={{ color: trendColor }}>
+          <div className="flex items-center gap-1 mt-2 text-[11px]" style={{ color: trendColor }}>
             {React.createElement(trendIcon, { className: 'w-3 h-3' })}
             {scoreTrend === 'up' ? 'Trending up' : scoreTrend === 'down' ? 'Trending down' : 'Stable'}
           </div>
@@ -123,9 +131,9 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <span className="text-[11px] font-medium uppercase tracking-wider truncate" style={{ color: colors.inkSubtle }}>{kpi.label}</span>
               {React.createElement(kpi.icon, { className: 'w-4 h-4 flex-shrink-0', style: { color: kpi.color } })}
             </div>
-            <div className="text-[24px] font-bold tracking-tight" style={{ color: colors.ink }}>{kpi.value}</div>
+            <div className="text-[24px] font-bold tracking-tight" style={{ color: colors.ink }}>{typeof kpi.value === 'number' ? <CountUp value={kpi.value} /> : kpi.value}</div>
             {kpi.sub && (
-              <div className="text-[10px] truncate" style={{ color: colors.inkSubtle }} title={kpi.sub}>{kpi.sub}</div>
+              <div className="text-[11px] truncate" style={{ color: colors.inkSubtle }} title={kpi.sub}>{kpi.sub}</div>
             )}
           </div>
         ))}
@@ -139,7 +147,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <Activity className="w-4 h-4" style={{ color: colors.primary }} /> Agent Consciousness Stream
             </h3>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-bold"
               style={{ background: '#22c55e15', color: '#22c55e' }}>LIVE</span>
           </div>
           <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
@@ -150,9 +158,9 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                   <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: sevColor }} />
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-medium truncate">{e.title || 'Agent activity'}</div>
-                    <div className="text-[10px]" style={{ color: colors.inkSubtle }}>{e.event_type || 'execution'}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(e.event_type || 'execution')}</div>
                   </div>
-                  <span className="text-[9px] font-mono flex-shrink-0" style={{ color: colors.inkSubtle }}>
+                  <span className="text-[11px] font-mono flex-shrink-0" style={{ color: colors.inkSubtle }}>
                     {e.created_at ? new Date(e.created_at).toLocaleTimeString() : ''}
                   </span>
                 </div>
@@ -170,7 +178,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <Globe className="w-4 h-4" style={{ color: '#f59e0b' }} /> Pioneer Intelligence
             </h3>
-            <span className="text-[10px]" style={{ color: colors.inkSubtle }}>
+            <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
               {pioneerAlerts.length > 0 ? `${pioneerAlerts.length} signals` : 'No signals'}
             </span>
           </div>
@@ -187,14 +195,14 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 return (
                   <div key={i} className="p-2.5 rounded-lg" style={{ background: sevColor + '08', border: `1px solid ${sevColor}20` }}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: sevColor + '20', color: sevColor }}>
-                        {item.type || 'SIGNAL'}
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold" style={{ background: sevColor + '20', color: sevColor }}>
+                        {humanize(item.type || 'Signal')}
                       </span>
-                      <span className="text-[9px]" style={{ color: colors.inkSubtle }}>{item.time || ''}</span>
+                      <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{item.time || ''}</span>
                     </div>
                     <div className="text-[11px]">{item.title}</div>
                     {item.source && (
-                      <div className="text-[9px] mt-1" style={{ color: colors.inkSubtle }}>Source: {item.source}</div>
+                      <div className="text-[11px] mt-1" style={{ color: colors.inkSubtle }}>Source: {item.source}</div>
                     )}
                   </div>
                 );
@@ -209,7 +217,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
             <h3 className="text-[13px] font-semibold flex items-center gap-2">
               <Ghost className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Ghost Executions
             </h3>
-            <span className="text-[10px]" style={{ color: colors.inkSubtle }}>
+            <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
               {ghostExecutions.length > 0 ? `${ghostExecutions.length} zero-prompt runs` : 'None'}
             </span>
           </div>
@@ -227,10 +235,10 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 return (
                   <div key={g.id} className="p-2.5 rounded-lg" style={{ background: tone + '08', border: `1px solid ${tone}20` }}>
                     <div className="flex items-center justify-between mb-1 gap-2">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap" style={{ background: tone + '20', color: tone }}>
-                        {gated ? 'AWAITING APPROVAL' : g.status || 'RUNNING'}
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold whitespace-nowrap" style={{ background: tone + '20', color: tone }}>
+                        {gated ? 'Awaiting Approval' : humanize(g.status || 'Running')}
                       </span>
-                      <span className="text-[9px] truncate" style={{ color: colors.inkSubtle }}>{g.skill_name || ''}</span>
+                      <span className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{g.skill_name || ''}</span>
                     </div>
                     <div className="text-[11px]">{g.task_intent || 'Zero-prompt execution'}</div>
                   </div>
@@ -256,11 +264,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               {/* Budget ring + headline token/call volume */}
               <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: colors.canvas }}>
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Token Budget Used</div>
+                  <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>Token Budget Used</div>
                   <div className="text-[22px] font-bold" style={{ color: colors.ink }}>
                     {costData.budget?.usage_pct ?? 0}%
                   </div>
-                  <div className="text-[10px]" style={{ color: colors.inkSubtle }}>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
                     {(costData.budget?.token_used ?? 0).toLocaleString()} / {(costData.budget?.token_limit ?? 0).toLocaleString()} tokens
                   </div>
                 </div>
@@ -268,7 +276,8 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     <circle cx="50" cy="50" r="42" fill="none" stroke={colors.hairline} strokeWidth="6" />
                     <circle cx="50" cy="50" r="42" fill="none" stroke="#22c55e" strokeWidth="6"
-                      strokeDasharray={`${Math.max(1.5, (costData.budget?.usage_pct ?? 0) * 2.64)} 264`} strokeLinecap="round" />
+                      strokeDasharray={`${Math.max(1.5, (costData.budget?.usage_pct ?? 0) * 2.64)} 264`} strokeLinecap="round"
+                      style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.16, 1, 0.3, 1)' }} />
                   </svg>
                 </div>
               </div>
@@ -277,11 +286,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
                   <div className="text-[18px] font-bold">{(costData.total_tokens ?? 0).toLocaleString()}</div>
-                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Tokens (24h)</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Tokens (24h)</div>
                 </div>
                 <div className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
                   <div className="text-[18px] font-bold">{(costData.total_events ?? 0).toLocaleString()}</div>
-                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>LLM Calls (24h)</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>LLM Calls (24h)</div>
                 </div>
               </div>
 
@@ -294,14 +303,14 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 const tierColor: Record<string, string> = { reasoning: '#8b5cf6', fast: '#3b82f6', classification: '#f59e0b', embedding: '#22c55e', unspecified: colors.inkSubtle };
                 return (
                   <div className="p-2.5 rounded-lg space-y-1.5" style={{ background: colors.canvas }}>
-                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (calls · avg latency)</div>
+                    <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (calls · avg latency)</div>
                     {tiers.map(([name, v]) => (
                       <div key={name} className="flex items-center gap-2">
-                        <span className="text-[10px] w-20 truncate capitalize" style={{ color: colors.ink }}>{name}</span>
+                        <span className="text-[11px] w-20 truncate capitalize" style={{ color: colors.ink }}>{name}</span>
                         <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                           <div className="h-full rounded-full" style={{ width: `${((v?.tokens ?? 0) / maxTok) * 100}%`, background: tierColor[name] || colors.primary }} />
                         </div>
-                        <span className="text-[9px] font-mono w-28 text-right" style={{ color: colors.inkSubtle }}>
+                        <span className="text-[11px] font-mono w-28 text-right" style={{ color: colors.inkSubtle }}>
                           {v?.calls ?? 0} · {v?.avg_latency_ms ? `${(v.avg_latency_ms / 1000).toFixed(1)}s` : '--'}
                         </span>
                       </div>
@@ -314,11 +323,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2 rounded-lg text-center" style={{ background: colors.canvas }}>
                   <div className="text-[15px] font-bold">${(costData.total_cost_usd ?? 0).toFixed(2)}</div>
-                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Cost (24h)</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Cost (24h)</div>
                 </div>
                 <div className="p-2 rounded-lg text-center" style={{ background: colors.canvas }}>
                   <div className="text-[15px] font-bold">${(costData.avg_cost_per_task ?? 0).toFixed(3)}</div>
-                  <div className="text-[9px]" style={{ color: colors.inkSubtle }}>Avg/Task</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Avg/Task</div>
                 </div>
               </div>
             </div>
@@ -335,7 +344,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <MessageSquare className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Debate Engine
             </h3>
             {debateQueue.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                 style={{ background: '#f59e0b20', color: '#f59e0b' }}>{debateQueue.length} pending</span>
             )}
           </div>
@@ -351,11 +360,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 <div key={d.id || i} className="p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="text-[11px] font-medium mb-1">{d.action}</div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px]" style={{ color: colors.inkSubtle }}>
-                      {d.status || 'OPEN'}
+                    <span className="text-[11px]" style={{ color: colors.inkSubtle }}>
+                      {humanize(d.status || 'Open')}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono" style={{ color: '#f59e0b' }}>
+                      <span className="text-[11px] font-mono" style={{ color: '#f59e0b' }}>
                         {d.confidence != null ? `${(d.confidence * 100).toFixed(0)}%` : '-'}
                       </span>
                     </div>
@@ -399,7 +408,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                       <TrendGlyph className="w-3 h-3 flex-shrink-0" style={{ color: trendCol }} aria-label={`coverage ${cov.trend}`} />
                     )}
                     {bu.rule_count != null && (
-                      <span className="text-[9px] w-6 text-right" style={{ color: colors.inkSubtle }}>{bu.rule_count}r</span>
+                      <span className="text-[11px] w-6 text-right" style={{ color: colors.inkSubtle }}>{bu.rule_count}r</span>
                     )}
                   </div>
                 );
@@ -433,14 +442,14 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <div className="space-y-2">
                 {tiers.map(t => (
                   <div key={t.tier} className="flex items-center gap-2">
-                    <span className="text-[9px] font-mono w-20 truncate" style={{ color: t.color }}>{t.tier}</span>
+                    <span className="text-[11px] font-mono w-20 truncate" style={{ color: t.color }}>{t.tier}</span>
                     <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                       <div className="h-full rounded-full" style={{ width: `${(t.count / total) * 100}%`, background: t.color + '80' }} />
                     </div>
-                    <span className="text-[10px] font-mono w-9 text-right">{((t.count / total) * 100).toFixed(0)}%</span>
+                    <span className="text-[11px] font-mono w-9 text-right">{((t.count / total) * 100).toFixed(0)}%</span>
                   </div>
                 ))}
-                <div className="text-[10px] text-center pt-1" style={{ color: colors.inkSubtle }}>
+                <div className="text-[11px] text-center pt-1" style={{ color: colors.inkSubtle }}>
                   {health?.total_rules ?? 0} total rules
                 </div>
                 {/* Knowledge freshness - from health.freshness */}
@@ -455,7 +464,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                   if (sum <= 0) return null;
                   return (
                     <div className="pt-2 mt-1 border-t" style={{ borderColor: colors.hairline }}>
-                      <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Knowledge Freshness</div>
+                      <div className="text-[11px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Knowledge Freshness</div>
                       <div className="flex h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                         {segs.map(s => s.value > 0 && (
                           <div key={s.key} style={{ width: `${(s.value / sum) * 100}%`, background: s.color }} />
@@ -463,7 +472,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                       </div>
                       <div className="flex items-center gap-3 mt-1.5">
                         {segs.map(s => (
-                          <span key={s.key} className="flex items-center gap-1 text-[9px]" style={{ color: colors.inkSubtle }}>
+                          <span key={s.key} className="flex items-center gap-1 text-[11px]" style={{ color: colors.inkSubtle }}>
                             <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />
                             {s.label} {(s.value * 100).toFixed(0)}%
                           </span>
@@ -487,7 +496,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               <Hourglass className="w-4 h-4" style={{ color: '#ef4444' }} /> Rule Decay Alerts
             </h3>
             {(health?.decay_alerts?.length ?? 0) > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                 style={{ background: '#ef444415', color: '#ef4444' }}>{health!.decay_alerts.length} at risk</span>
             )}
           </div>
@@ -500,14 +509,14 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 return (
                   <div key={a.rule_id} className="p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold flex-shrink-0" style={{ background: urgColor + '20', color: urgColor }}>{a.urgency}</span>
-                      <span className="text-[9px] uppercase flex-shrink-0" style={{ color: colors.inkSubtle }}>{a.domain}</span>
-                      <span className="ml-auto text-[10px] font-mono flex-shrink-0" style={{ color: urgColor }}>
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold flex-shrink-0" style={{ background: urgColor + '20', color: urgColor }}>{humanize(a.urgency)}</span>
+                      <span className="text-[11px] flex-shrink-0" style={{ color: colors.inkSubtle }}>{humanize(a.domain)}</span>
+                      <span className="ml-auto text-[11px] font-mono flex-shrink-0" style={{ color: urgColor }}>
                         {a.current_confidence != null ? `${(a.current_confidence * 100).toFixed(0)}%` : '-'}
                       </span>
                     </div>
                     <div className="text-[11px] truncate" title={a.statement}>{a.statement}</div>
-                    <div className="text-[9px] mt-0.5" style={{ color: colors.inkSubtle }}>
+                    <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
                       {a.days_since_validation}d since validation, half-life {a.half_life_days}d
                     </div>
                   </div>
@@ -538,13 +547,13 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                   ].map(s => (
                     <div key={s.label} className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas }}>
                       <div className="text-[16px] font-bold">{s.value}</div>
-                      <div className="text-[9px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
+                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{s.label}</div>
                     </div>
                   ))}
                 </div>
                 {(em.top_contributors?.length ?? 0) > 0 && (
                   <div>
-                    <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Top Contributors</div>
+                    <div className="text-[11px] uppercase tracking-wider mb-1.5" style={{ color: colors.inkSubtle }}>Top Contributors</div>
                     <div className="space-y-1.5">
                       {em.top_contributors.slice(0, 4).map((c: any) => (
                         <div key={c.name} className="flex items-center gap-2">
@@ -552,7 +561,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                           <div className="w-24 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: colors.hairline }}>
                             <div className="h-full rounded-full" style={{ width: `${(c.score ?? 0) * 100}%`, background: '#3b82f6' }} />
                           </div>
-                          <span className="text-[10px] font-mono w-8 text-right flex-shrink-0" style={{ color: colors.inkSubtle }}>{c.contributions}</span>
+                          <span className="text-[11px] font-mono w-8 text-right flex-shrink-0" style={{ color: colors.inkSubtle }}>{c.contributions}</span>
                         </div>
                       ))}
                     </div>

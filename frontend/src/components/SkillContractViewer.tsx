@@ -118,7 +118,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
             const val = (confVector as any)[d.key] || 0;
             return (
               <div key={d.key} className="text-center">
-                <div className="text-[10px] uppercase font-semibold mb-2" style={{ color: colors.inkTertiary }}>{d.label}</div>
+                <div className="text-[11px] uppercase font-semibold mb-2" style={{ color: colors.inkTertiary }}>{d.label}</div>
                 <div className="relative mx-auto" style={{ width: 52, height: 52 }}>
                   <svg width="52" height="52" viewBox="0 0 52 52">
                     <circle cx="26" cy="26" r="22" fill="none" stroke={colors.surface3} strokeWidth="4" />
@@ -171,7 +171,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
                       {(step.action || step.id || '').replace(/_/g, ' ')}
                     </span>
                     {step.tool && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded"
                         style={{ background: `${colors.info}12`, color: colors.info }}>
                         <Wrench className="w-3 h-3 inline mr-0.5" />{step.tool}
                       </span>
@@ -179,7 +179,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
                   </div>
                   {step.condition && (
                     <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                      <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded"
                         style={{ background: `${colors.warning}12`, color: colors.warning }}>IF</span>
                       <span className="text-[11px] font-mono" style={{ color: colors.inkSubtle }}>{step.condition}</span>
                     </div>
@@ -187,7 +187,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
                   {step.thresholds && (
                     <div className="flex gap-2 mt-1.5 flex-wrap">
                       {Object.entries(step.thresholds).map(([k, v]) => (
-                        <span key={k} className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                        <span key={k} className="text-[11px] px-1.5 py-0.5 rounded font-mono"
                           style={{ background: colors.surface3, color: colors.inkSubtle }}>
                           {k}: {String(v)}
                         </span>
@@ -220,11 +220,11 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
                     {(exc.id || '').replace(/_/g, ' ')}
                   </span>
                   {exc.auto_apply && (
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                    <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded-full"
                       style={{ background: 'rgba(229,83,75,0.1)', color: colors.error }}>AUTO-APPLY</span>
                   )}
                   {exc.confidence != null && (
-                    <span className="text-[10px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
+                    <span className="text-[11px] font-mono ml-auto" style={{ color: colors.inkTertiary }}>
                       conf: {exc.confidence}
                     </span>
                   )}
@@ -295,7 +295,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
           <ShieldCheck className="w-4 h-4" style={{ color: colors.info }} />
           <span className="text-[12px] font-medium" style={{ color: colors.inkSubtle }}>Compliance:</span>
           {skill.compliance_tags.map((tag: string) => (
-            <span key={tag} className="text-[10px] font-bold px-2 py-0.5 rounded"
+            <span key={tag} className="text-[11px] font-bold px-2 py-0.5 rounded"
               style={{ background: `${colors.info}12`, color: colors.info, border: `1px solid ${colors.info}25` }}>
               {tag}
             </span>

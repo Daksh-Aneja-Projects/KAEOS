@@ -129,6 +129,15 @@ export default function TopologyVisualizer() {
 
   const startLoop = useCallback(() => {
     stopLoop();
+    // Honor reduced motion: settle the layout synchronously and render one
+    // static frame instead of running a per-frame animation loop.
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      for (let i = 0; i < 240; i++) step();
+      setTick(t => (t + 1) % 1_000_000);
+      return;
+    }
     const loop = () => {
       step();
       setTick(t => (t + 1) % 1_000_000);
@@ -253,7 +262,7 @@ export default function TopologyVisualizer() {
           {!loading && graph && graph.nodes.length > 0 && (
             <div className="absolute top-4 left-4 z-10 p-3 rounded-xl backdrop-blur-sm flex flex-col gap-2"
               style={{ background: colors.surface1 + 'cc', border: `1px solid ${colors.hairline}` }}>
-              <div className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: colors.inkSubtle }}>
+              <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: colors.inkSubtle }}>
                 <Network className="w-3 h-3" /> Node types
               </div>
               <div className="flex items-center gap-2 text-[12px]" style={{ color: colors.inkMuted }}>

@@ -8,6 +8,7 @@ import {
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -119,9 +120,9 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   };
 
   const Badge = ({ status }: { status: string }) => (
-    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {(status || 'N/A').replace(/_/g, ' ')}
+      {humanize(status) || 'N/A'}
     </span>
   );
 
@@ -205,7 +206,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                      color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
             {actionMsg.includes('failed') ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             {actionMsg}
-            <button onClick={() => setActionMsg('')} className="ml-auto text-[10px] opacity-60 hover:opacity-100">dismiss</button>
+            <button onClick={() => setActionMsg('')} className="ml-auto text-[11px] opacity-60 hover:opacity-100">dismiss</button>
           </div>
         )}
 
@@ -279,7 +280,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                           <td className="px-4 py-3">
                             <button onClick={() => handleRunAPAgent(inv.id)}
                               disabled={runningAgent === inv.id}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
                               style={{ background: '#ec489915', color: '#ec4899' }}>
                               {runningAgent === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                               Match
@@ -340,13 +341,13 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                           <td className="px-4 py-3">{timeAgo(rec.due_date)}</td>
                           <td className="px-4 py-3">
                             {rec.dunning_level > 0 ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>Level {rec.dunning_level}</span>
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>Level {rec.dunning_level}</span>
                             ) : <span style={{ color: colors.inkTertiary }}>-</span>}
                           </td>
                           <td className="px-4 py-3">
                             <button onClick={() => handleRunARAgent(rec.id)}
                               disabled={runningAgent === rec.id}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
                               style={{ background: '#3b82f615', color: '#3b82f6' }}>
                               {runningAgent === rec.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                               Dunning
@@ -380,19 +381,19 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                       </div>
                       <div className="grid grid-cols-4 gap-4">
                         <div>
-                          <p className="text-[10px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Planned</p>
+                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Planned</p>
                           <p className="text-[16px] font-bold font-mono">{fmt(b.planned)}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Actual</p>
+                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Actual</p>
                           <p className="text-[16px] font-bold font-mono">{fmt(b.actual)}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance</p>
+                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance</p>
                           <p className="text-[16px] font-bold font-mono" style={{ color: b.variance < 0 ? '#ef4444' : '#22c55e' }}>{fmt(Math.abs(b.variance))}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance %</p>
+                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance %</p>
                           <p className="text-[16px] font-bold" style={{ color: (b.variance_pct || 0) < 0 ? '#ef4444' : '#22c55e' }}>{b.variance_pct?.toFixed(1)}%</p>
                         </div>
                       </div>
@@ -425,7 +426,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                               <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                                 <div className="h-full rounded-full" style={{ width: `${(f.confidence || 0) * 100}%`, background: '#8b5cf6' }} />
                               </div>
-                              <span className="text-[10px]">{((f.confidence || 0) * 100).toFixed(0)}%</span>
+                              <span className="text-[11px]">{((f.confidence || 0) * 100).toFixed(0)}%</span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-[11px]" style={{ color: colors.inkSubtle }}>{f.period}</td>
@@ -474,7 +475,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                             {r.compliance_score != null && (() => {
                               const pct = toPct(r.compliance_score)!;
                               return (
-                                <span className="text-[10px] font-bold" style={{ color: pct > 80 ? '#22c55e' : '#ef4444' }}>
+                                <span className="text-[11px] font-bold" style={{ color: pct > 80 ? '#22c55e' : '#ef4444' }}>
                                   {pct.toFixed(0)}%
                                 </span>
                               );
@@ -482,7 +483,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                           </td>
                           <td className="px-4 py-3">
                             {r.violations > 0 ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>{r.violations} issues</span>
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>{r.violations} issues</span>
                             ) : <CheckCircle2 className="w-4 h-4" style={{ color: '#22c55e' }} />}
                           </td>
                         </tr>
@@ -663,7 +664,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                                 <td className="px-4 py-2.5 font-medium">{a.name}</td>
                                 <td className="px-4 py-2.5 font-mono font-semibold">
                                   ${(a.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                  <span className="ml-1 text-[10px]" style={{ color: colors.inkTertiary }}>{a.currency || 'USD'}</span>
+                                  <span className="ml-1 text-[11px]" style={{ color: colors.inkTertiary }}>{a.currency || 'USD'}</span>
                                 </td>
                                 <td className="px-4 py-2.5" style={{ color: colors.inkSubtle }}>{a.department || 'Company-wide'}</td>
                                 <td className="px-4 py-2.5" style={{ color: colors.inkSubtle }}>{a.cost_center || '-'}</td>

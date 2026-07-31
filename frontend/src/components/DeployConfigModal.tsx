@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Rocket, Shield, Gauge, AlertTriangle, X, Zap } from 'lucide-react';
+import { Rocket, Shield, ShieldCheck, ShieldAlert, Gauge, AlertTriangle, X, Zap } from 'lucide-react';
 
 interface Props {
   blueprintId: string;
@@ -17,9 +17,9 @@ export interface DeployConfig {
 }
 
 const RISK_LEVELS = [
-  { id: 'LOW' as const, label: 'Low Risk', desc: 'Conservative execution - extra validation gates', color: '#27a644', icon: '🟢' },
-  { id: 'MEDIUM' as const, label: 'Medium Risk', desc: 'Balanced autonomy with standard guardrails', color: '#f5a623', icon: '🟡' },
-  { id: 'HIGH' as const, label: 'High Risk', desc: 'Maximum autonomy - minimal human intervention', color: '#e5534b', icon: '🔴' },
+  { id: 'LOW' as const, label: 'Low Risk', desc: 'Conservative execution - extra validation gates', color: '#27a644', icon: ShieldCheck },
+  { id: 'MEDIUM' as const, label: 'Medium Risk', desc: 'Balanced autonomy with standard guardrails', color: '#f5a623', icon: Shield },
+  { id: 'HIGH' as const, label: 'High Risk', desc: 'Maximum autonomy - minimal human intervention', color: '#e5534b', icon: ShieldAlert },
 ];
 
 const HITL_MODES = [
@@ -76,10 +76,10 @@ export default function DeployConfigModal({ blueprintId, blueprintName, colors, 
                     background: config.risk_level === r.id ? `${r.color}12` : colors.surface2,
                     border: `1px solid ${config.risk_level === r.id ? `${r.color}40` : colors.hairline}`,
                   }}>
-                  <span className="text-[12px] font-semibold block mb-0.5" style={{ color: config.risk_level === r.id ? r.color : colors.ink }}>
-                    {r.icon} {r.label}
+                  <span className="text-[12px] font-semibold flex items-center gap-1.5 mb-0.5" style={{ color: config.risk_level === r.id ? r.color : colors.ink }}>
+                    <r.icon className="w-3.5 h-3.5 shrink-0" style={{ color: r.color }} /> {r.label}
                   </span>
-                  <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{r.desc}</span>
+                  <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{r.desc}</span>
                 </button>
               ))}
             </div>
@@ -102,7 +102,7 @@ export default function DeployConfigModal({ blueprintId, blueprintName, colors, 
               className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
               style={{ background: `linear-gradient(90deg, ${colors.primary} ${(config.confidence_threshold - 0.5) / 0.49 * 100}%, ${colors.surface3} ${(config.confidence_threshold - 0.5) / 0.49 * 100}%)` }}
             />
-            <div className="flex justify-between mt-1.5 text-[10px]" style={{ color: colors.inkTertiary }}>
+            <div className="flex justify-between mt-1.5 text-[11px]" style={{ color: colors.inkTertiary }}>
               <span>50% (Lenient)</span>
               <span>99% (Strict)</span>
             </div>
@@ -130,7 +130,7 @@ export default function DeployConfigModal({ blueprintId, blueprintName, colors, 
                   </div>
                   <div>
                     <span className="text-[12px] font-medium block" style={{ color: config.hitl_mode === m.id ? colors.ink : colors.inkMuted }}>{m.label}</span>
-                    <span className="text-[10px]" style={{ color: colors.inkTertiary }}>{m.desc}</span>
+                    <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{m.desc}</span>
                   </div>
                 </button>
               ))}

@@ -112,7 +112,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
           return (
             <button key={state} onClick={() => go(state)} disabled={!!busy}
               title={`Move to ${state}`}
-              className="flex items-center gap-0.5 px-2 py-1 rounded-md text-[10px] font-semibold disabled:opacity-50 whitespace-nowrap"
+              className="flex items-center gap-0.5 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
               style={{ background: `${color}15`, color }}>
               {busy === state ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
               {state.replace(/_/g, ' ')}
@@ -135,10 +135,10 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
           style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
           {history === null && <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.inkSubtle }} />}
           {history !== null && history.length === 0 && (
-            <p className="text-[10px]" style={{ color: colors.inkTertiary }}>No transitions recorded yet.</p>
+            <p className="text-[11px]" style={{ color: colors.inkTertiary }}>No transitions recorded yet.</p>
           )}
           {(history || []).map(e => (
-            <div key={e.id} className="flex items-center gap-1.5 text-[10px]">
+            <div key={e.id} className="flex items-center gap-1.5 text-[11px]">
               <span className="font-mono whitespace-nowrap" style={{ color: colors.inkSubtle }}>
                 {e.from_state} → <span style={{ color: STATE_COLORS[e.to_state] || colors.ink }}>{e.to_state}</span>
               </span>
@@ -158,7 +158,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
             className="flex-1 px-2 py-1 rounded text-[11px] focus:outline-none"
             style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
           <button onClick={saveAssignee} disabled={assignBusy}
-            className="px-2 py-1 rounded text-[10px] font-semibold text-white disabled:opacity-50"
+            className="px-2 py-1 rounded text-[11px] font-semibold text-white disabled:opacity-50"
             style={{ background: colors.primary }}>
             {assignBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Assign'}
           </button>
@@ -170,10 +170,10 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
           style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
           {comments === null && <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.inkSubtle }} />}
           {comments !== null && comments.length === 0 && (
-            <p className="text-[10px]" style={{ color: colors.inkTertiary }}>No comments yet.</p>
+            <p className="text-[11px]" style={{ color: colors.inkTertiary }}>No comments yet.</p>
           )}
           {(comments || []).map(c => (
-            <div key={c.id} className="text-[10px]">
+            <div key={c.id} className="text-[11px]">
               <span className="font-semibold" style={{ color: colors.ink }}>{c.author}</span>
               <span className="ml-1" style={{ color: colors.inkTertiary }}>{timeAgo(c.at)}</span>
               <p style={{ color: colors.inkSubtle }}>{c.body}</p>
@@ -185,7 +185,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
               className="flex-1 px-2 py-1 rounded text-[11px] focus:outline-none"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }} />
             <button onClick={postComment} disabled={commentBusy}
-              className="px-2 py-1 rounded text-[10px] font-semibold text-white disabled:opacity-50"
+              className="px-2 py-1 rounded text-[11px] font-semibold text-white disabled:opacity-50"
               style={{ background: colors.primary }}>
               {commentBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Post'}
             </button>

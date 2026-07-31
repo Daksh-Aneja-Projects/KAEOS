@@ -16,6 +16,9 @@ import {
   Award, CheckCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
+import { CountUp } from '../components/CountUp';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { humanize } from '../lib/format';
 
 // Small chart renderers fed only by the /hr/analytics computed payload.
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'];
@@ -26,14 +29,14 @@ function MiniBars({ items, colors }: { items: { label: string; value: number }[]
     <div className="space-y-1.5">
       {items.map((it, idx) => (
         <div key={it.label} className="flex items-center gap-2">
-          <span className="text-[10px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+          <span className="text-[11px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
           <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
             <div className="h-3.5 rounded transition-all duration-500" style={{
               width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
               background: CHART_PALETTE[idx % CHART_PALETTE.length],
             }} />
           </div>
-          <span className="text-[10px] font-mono w-8 shrink-0 text-right" style={{ color: colors.ink }}>{it.value.toLocaleString()}</span>
+          <span className="text-[11px] font-mono w-8 shrink-0 text-right" style={{ color: colors.ink }}>{it.value.toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -53,12 +56,12 @@ function MiniDonut({ items, colors }: { items: { label: string; value: number }[
       <div className="w-20 h-20 rounded-full shrink-0 relative" style={{ background: total > 0 ? `conic-gradient(${segs.join(', ')})` : colors.canvas }}>
         <div className="absolute inset-[10px] rounded-full flex flex-col items-center justify-center" style={{ background: colors.surface1 }}>
           <span className="text-[14px] font-bold leading-none">{total.toLocaleString()}</span>
-          <span className="text-[8px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>total</span>
+          <span className="text-[11px] uppercase tracking-wide mt-0.5" style={{ color: colors.inkSubtle }}>total</span>
         </div>
       </div>
       <div className="flex-1 min-w-0 space-y-1.5">
         {items.map((it, idx) => (
-          <div key={it.label} className="flex items-center gap-1.5 text-[10px]">
+          <div key={it.label} className="flex items-center gap-1.5 text-[11px]">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CHART_PALETTE[idx % CHART_PALETTE.length] }} />
             <span className="truncate" style={{ color: colors.inkSubtle }}>{it.label}</span>
             <span className="font-mono ml-auto pl-2" style={{ color: colors.ink }}>{it.value.toLocaleString()}</span>
@@ -79,7 +82,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     Promise.all([
       api.getWorkforceDepartment('hr').catch(() => null),
       api.getHRDashboard().catch(() => null),
@@ -90,7 +93,9 @@ export default function HRDashboard({ domain }: { domain?: string }) {
       setHRAnalytics(an);
       setLoading(false);
     });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
+  useLiveRefresh(load, { intervalMs: 20000 });
 
   if (loading) return <BrainLoading message="Loading HR intelligence..." />;
 
@@ -145,12 +150,12 @@ export default function HRDashboard({ domain }: { domain?: string }) {
               </p>
               <div className="flex items-center gap-2 mt-1.5">
                 {dept?.status && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
-                    {dept.status}
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
+                    {humanize(dept.status)}
                   </span>
                 )}
                 {(dept?.compliance_frameworks || []).map((f: string) => (
-                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
                     <Shield className="w-2.5 h-2.5" /> {f}
                   </span>
                 ))}
@@ -161,7 +166,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
             <div className="flex items-center gap-2">
               <Heart className="w-5 h-5" style={{ color: healthColor(dept.health_score || 0) }} />
               <span className="text-[20px] font-bold" style={{ color: healthColor(dept.health_score || 0) }}>
-                {Math.round((dept.health_score || 0) * 100)}%
+                <CountUp value={Math.round((dept.health_score || 0) * 100)} suffix="%" />
               </span>
             </div>
           )}
@@ -180,7 +185,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
             <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}12` }}>
               <kpi.icon className="w-5 h-5 mx-auto mb-1" style={{ color: kpi.color }} />
               <div className="text-[18px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-[9px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+              <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
             </div>
           ))}
         </div>
@@ -196,7 +201,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
               </div>
               <div className="flex-1">
                 <div className="text-[14px] font-semibold group-hover:text-primary transition-colors">{link.label}</div>
-                <div className="text-[10px]" style={{ color: colors.inkSubtle }}>View module →</div>
+                <div className="text-[11px]" style={{ color: colors.inkSubtle }}>View module →</div>
               </div>
               <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.primary }} />
             </button>
@@ -215,13 +220,13 @@ export default function HRDashboard({ domain }: { domain?: string }) {
                       <DomainIcon hint={cap.icon || cap.name} fallbackHint={cap.name} size={28} />
                       <span className="text-[13px] font-semibold">{cap.name}</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold"
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
                       style={{ background: cap.status === 'ACTIVE' ? '#22c55e20' : '#f59e0b20', color: cap.status === 'ACTIVE' ? '#22c55e' : '#f59e0b' }}>
-                      {cap.status}
+                      {humanize(cap.status)}
                     </span>
                   </div>
                   <p className="text-[11px] mb-2 line-clamp-2" style={{ color: colors.inkSubtle }}>{cap.description}</p>
-                  <div className="flex items-center gap-3 text-[10px]" style={{ color: colors.inkSubtle }}>
+                  <div className="flex items-center gap-3 text-[11px]" style={{ color: colors.inkSubtle }}>
                     <span>{Math.round((cap.automation_pct || 0) * 100)}% automated</span>
                     <span>{cap.active_agents || 0} agents</span>
                     <span>{cap.tasks_completed || 0} tasks</span>
@@ -275,7 +280,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
                 {/* Candidates by stage, computed live from the requisition funnel */}
                 {funnel && funnel.items.length > 0 && (
                   <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
-                    <div className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: colors.inkSubtle }}>
+                    <div className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: colors.inkSubtle }}>
                       {funnel.title}
                     </div>
                     <MiniBars items={funnel.items} colors={colors} />
@@ -302,7 +307,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
                 {/* Real headcount split from employee records */}
                 {empStatus && empStatus.items.length > 0 && (
                   <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
-                    <div className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: colors.inkSubtle }}>
+                    <div className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: colors.inkSubtle }}>
                       {empStatus.title}
                     </div>
                     <MiniDonut items={empStatus.items} colors={colors} />

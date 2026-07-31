@@ -161,12 +161,12 @@ export default function GateTrace({ running, result, skillLabel }: {
                       : st === 'paused'
                         ? <AlertTriangle className="w-3.5 h-3.5" style={{ color: c }} />
                         : <g.icon className="w-3.5 h-3.5" style={{ color: c, opacity: 0.5 }} />}
-                <span className="text-[9px] leading-tight" style={{ color: st === 'pending' ? colors.inkSubtle : c }}>
+                <span className="text-[11px] leading-tight" style={{ color: st === 'pending' ? colors.inkSubtle : c }}>
                   {g.label}
                 </span>
               </div>
               {/* blurb on hover: teaches the gate vocabulary without clutter */}
-              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded text-[9px] whitespace-nowrap
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded text-[11px] whitespace-nowrap
                               opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10"
                 style={{ background: colors.surface2 || colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
                 {g.blurb}
@@ -203,7 +203,7 @@ export default function GateTrace({ running, result, skillLabel }: {
           model really is $0, and that is the number a buyer compares against
           an analyst's hourly rate. */}
       {!running && (result?.duration_ms || result?.cost) && (
-        <div className="mt-3 pt-3 flex items-center gap-4 text-[10px]"
+        <div className="mt-3 pt-3 flex items-center gap-4 text-[11px]"
           style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
           {result?.duration_ms ? (
             <span><span style={{ color: colors.ink, fontWeight: 600 }}>
@@ -226,7 +226,7 @@ export default function GateTrace({ running, result, skillLabel }: {
         <div className="mt-3 space-y-1.5">
           {result.reasoning_chain.map((step: any, i: number) => (
             <div key={i} className="flex items-start gap-2 text-[11px]">
-              <span className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] shrink-0 mt-0.5"
+              <span className="w-4 h-4 rounded-full flex items-center justify-center text-[11px] shrink-0 mt-0.5"
                 style={{ background: colors.hairline, color: colors.inkSubtle }}>{i + 1}</span>
               <span style={{ color: colors.ink }}>
                 {typeof step.decision === 'string' ? step.decision : JSON.stringify(step.decision)}
