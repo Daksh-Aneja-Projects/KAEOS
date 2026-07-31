@@ -11,6 +11,57 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-01 - "Living Surface"
+
+A correctness-and-craft release. The honesty, closed-loop and memory work is
+independently verified against the code (not just the tests), tenant-scoped
+model routing reaches every high-value call site, and the product surface
+becomes genuinely live: dashboards refresh themselves, numbers count up, and
+meters animate to value.
+
+### Added
+- **Tenant-aware LLM routing.** `get_llm_router` / `get_tenant_router` resolve
+  the ambient tenant so per-tenant fine-tuned models actually reach chat,
+  debate, fairness, compliance, elicitation and the memory / knowledge-base
+  embed paths (bare `LLMRouter()` stays the system-job fallback). The tenant
+  router is resolved into a local var for the shared Compliance / Fairness
+  singletons to avoid a cross-tenant race.
+- **Embedding provenance.** `embed()` records the model used and stamps
+  `{embedding_model, simulated}` into every vector upsert's metadata, so
+  simulated vectors are detectable and re-embedding is possible.
+  `ModelEvolutionRun` gains a `prompt_hash` (sha256 of the held-out eval
+  prompts) for reproducibility. Migration `0029` (additive).
+- **Live, reactive dashboards.** Executive Cockpit, Org Pulse, Mission Control,
+  the seven domain dashboards, Departments and Infrastructure now refresh on a
+  20s interval (paused when the tab is hidden). Hero KPIs animate with a new
+  `CountUp` (rAF ease-out, honors `prefers-reduced-motion`); progress rings and
+  meters transition to value instead of snapping.
+- **Shared `humanize()` helper** turns raw enum / code tokens into plain-English
+  Title Case, applied across the app shell, dashboards and views so no raw
+  status/type/route codes leak to users.
+
+### Changed
+- **Type floor raised to 11px** across the app (no sub-11px text anywhere).
+- Emoji / dingbats replaced with lucide icons; em-dashes removed from all
+  user-facing copy; a global `prefers-reduced-motion` block plus rAF guards on
+  the animated graph views.
+- Inter font de-duplicated; seven unused frontend dependencies removed
+  (recharts, framer-motion, radix, class-variance-authority, tailwind-merge,
+  clsx).
+
+### Fixed
+- **Mission budget accounting.** A mission's gates spend real model budget even
+  when a step pauses for HITL, escalates or fails, but `spent_usd` was only
+  incremented on clean successes; a mission that repeatedly paused or failed
+  could keep spending without ever tripping its budget block. Cost now accrues
+  on every step result.
+
+### Verified (no change required)
+- Independent code-level review confirmed the hallucination-handling, closed
+  loop (Gate 5b fail-closed, L1 outcome vocabulary, L4 attribution, federated
+  peer-evidence) and enterprise-memory wiring from the prior release are
+  production-sound.
+
 ## [1.5.0] - 2026-07-31 - "Federated Front Door"
 
 A production-readiness release: enterprise SSO reaches parity (real SAML 2.0
