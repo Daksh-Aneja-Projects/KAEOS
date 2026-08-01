@@ -40,7 +40,7 @@ from app.api.routes import (
     predictive, polymorphic, federated, kaeos10x,
     platform_config, enterprise, agent_factory, pioneer,
     infrastructure, auth, brain, departments, hitl, ws, executive, chat,
-    privacy, compliance,
+    privacy, compliance, neural,
 )
 from app.hr.api.v1.router import router as hr_router
 from app.finance.api.v1.router import router as finance_router
@@ -354,6 +354,7 @@ app.include_router(sso_routes.router,      prefix=PREFIX)
 from app.api.routes import scim as scim_routes
 app.include_router(scim_routes.router,     prefix=PREFIX)
 app.include_router(brain.router,           prefix=PREFIX)
+app.include_router(neural.router,          prefix=PREFIX)
 # Agent interface — MCP endpoint + Company Skills File export. A thin protocol
 # adapter over the governed routes: agents inherit the same 7 gates, RBAC, and
 # tenant isolation as humans, never a side door around them.
