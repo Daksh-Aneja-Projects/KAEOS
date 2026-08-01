@@ -8,7 +8,7 @@ import {
   BrainCircuit, Search, Play, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight,
   Zap, FileCode2, Hammer, MessageCircleQuestion, Share2, Loader2, AlertTriangle,
 } from 'lucide-react';
-import { toPct } from '../lib/format';
+import { toPct, humanize } from '../lib/format';
 
 export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
@@ -82,7 +82,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
       setExplanations(prev => ({ ...prev, [skillName]: r }));
       setSelected(skillName);
     } catch (e: any) {
-      setBanner({ ok: false, text: `Cannot explain ${skillName.replace(/_/g, ' ')}: ${e?.message || 'unknown error'}` });
+      setBanner({ ok: false, text: `Cannot explain ${humanize(skillName)}: ${e?.message || 'unknown error'}` });
     } finally {
       setRowBusy(null);
     }
@@ -90,7 +90,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
 
   const shareSkill = async (skillName: string, successRate: number) => {
     if (!window.confirm(
-      `Share "${skillName.replace(/_/g, ' ')}" with the federation? Its anonymised procedure leaves this workspace and is recorded in the provenance ledger. This cannot be withdrawn.`
+      `Share "${humanize(skillName)}" with the federation? Its anonymised procedure leaves this workspace and is recorded in the provenance ledger. This cannot be withdrawn.`
     )) return;
     setRowBusy(`${skillName}-share`);
     setBanner(null);
@@ -254,7 +254,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                     {/* Header */}
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-[15px] font-bold" style={{ color: colors.ink }}>{s.skill_id.replace(/_/g, ' ')}</h3>
+                        <h3 className="text-[15px] font-bold" style={{ color: colors.ink }}>{humanize(s.skill_id)}</h3>
                         <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{s.department} · v{s.version}</p>
                       </div>
                       <span className="px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide"
@@ -283,7 +283,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                       </svg>
                       <div>
                         <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Confidence</div>
-                        <div className="text-[13px] font-medium" style={{ color: colors.inkMuted }}>{s.confidence_tier?.replace(/_/g, ' ')}</div>
+                        <div className="text-[13px] font-medium" style={{ color: colors.inkMuted }}>{humanize(s.confidence_tier)}</div>
                       </div>
                     </div>
 
@@ -422,7 +422,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                                   style={ok
                                     ? { background: colors.success + '18', color: colors.success, border: `1px solid ${colors.success}30` }
                                     : { background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}30` }}>
-                                  {e.status.replace(/_/g, ' ')}
+                                  {humanize(e.status)}
                                 </span>
                               </div>
                             );

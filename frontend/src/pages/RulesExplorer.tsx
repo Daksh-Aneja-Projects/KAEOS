@@ -3,6 +3,7 @@ import type { RuleItem } from '../api/client';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
 import {
   BookOpen, Search, ChevronDown, ChevronRight, Shield, Clock, CheckCircle,
   Plus, Upload, Download, Loader2, BadgeCheck, Copy, History, FlaskConical,
@@ -420,7 +421,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                           <td className="px-6 py-4">
                             <span className="px-2 py-0.5 rounded text-[11px] font-semibold"
                               style={{ background: tc + '1f', color: tc, border: `1px solid ${tc}3d` }}>
-                              {r.confidence_tier?.replace(/_/g, ' ')}
+                              {humanize(r.confidence_tier)}
                             </span>
                           </td>
                           <td className="px-6 py-4">
@@ -448,7 +449,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                                   <div className="space-y-3">
                                     {r.confidence_vector && Object.entries(r.confidence_vector).map(([dim, val]) => (
                                       <div key={dim} className="flex items-center gap-3">
-                                        <span className="w-36 text-[12px] capitalize" style={{ color: colors.inkSubtle }}>{dim.replace(/_/g, ' ')}</span>
+                                        <span className="w-36 text-[12px] capitalize" style={{ color: colors.inkSubtle }}>{humanize(dim)}</span>
                                         <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: colors.surface3 }}>
                                           <div className="h-full rounded-full transition-all" style={{ width: `${(val as number) * 100}%`, background: colors.primary }} />
                                         </div>

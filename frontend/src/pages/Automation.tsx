@@ -5,6 +5,7 @@ import type { AutomationRule, WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
 
 /**
  * Automation rules (Sprint 8): declarative "when an entity sits in a state
@@ -131,12 +132,12 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
           <select value={entityType} onChange={e => { setEntityType(e.target.value); setTriggerState(''); setToState(''); }}
             className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
             <option value="">Entity type…</option>
-            {Object.keys(specs).map(k => <option key={k} value={k}>{k.replace(/_/g, ' ')}</option>)}
+            {Object.keys(specs).map(k => <option key={k} value={k}>{humanize(k)}</option>)}
           </select>
           <select value={triggerState} onChange={e => setTriggerState(e.target.value)} disabled={!spec}
             className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
             <option value="">When in state…</option>
-            {states.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+            {states.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
           </select>
           <label className="flex items-center gap-2 text-[12px]" style={{ color: colors.inkSubtle }}>
             for &gt;
@@ -153,7 +154,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
             <select value={toState} onChange={e => setToState(e.target.value)}
               className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
               <option value="">Target state…</option>
-              {targets.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+              {targets.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
             </select>
           )}
           {actionType === 'assign' && (
@@ -188,7 +189,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
                 <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                   <td className="px-4 py-3 font-medium">{r.name}</td>
                   <td className="px-4 py-3 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
-                    {r.entity_type.replace(/_/g, ' ')} in {r.trigger_state} &gt; {r.dwell_hours}h
+                    {humanize(r.entity_type)} in {r.trigger_state} &gt; {r.dwell_hours}h
                   </td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-1"><Bot className="w-3 h-3" style={{ color: colors.primary }} />

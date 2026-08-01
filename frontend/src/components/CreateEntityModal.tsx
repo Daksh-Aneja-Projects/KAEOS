@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Loader2, Plus, X } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 
 /**
  * Config-driven create form for the domain entities exposed by the new
@@ -98,7 +99,7 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
                 className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
                 <option value="">Select…</option>
                 {(f.options || []).map(o => {
-                  const opt = typeof o === 'string' ? { value: o, label: o.replace(/_/g, ' ') } : o;
+                  const opt = typeof o === 'string' ? { value: o, label: humanize(o) } : o;
                   return <option key={opt.value} value={opt.value}>{opt.label}</option>;
                 })}
               </select>

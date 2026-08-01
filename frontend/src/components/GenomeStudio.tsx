@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { Database, TrendingUp, Award, Loader2 } from 'lucide-react';
 import { request } from '../api/client';
+import { humanize } from '../lib/format';
 
 export default function GenomeStudio() {
   const { colors } = useTheme();
@@ -77,7 +78,7 @@ export default function GenomeStudio() {
               return (
                 <div key={name} className="p-3 rounded-lg border" style={{ borderColor: colors.hairline, background: colors.surface2 }}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-[13px] font-bold">{name.replace(/_/g, ' ')}</div>
+                    <div className="text-[13px] font-bold">{humanize(name)}</div>
                     <div className="text-[14px] font-bold font-mono" style={{ color: traitColor(score, inverted) }}>
                       {Number(score).toFixed(1)}{inverted ? ' (lower is better)' : ''}
                     </div>

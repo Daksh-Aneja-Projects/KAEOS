@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 
 /**
  * The floating bar that appears when rows are multi-selected in a domain view.
@@ -49,7 +50,7 @@ const BulkActionBar: React.FC<Props> = ({ domain, entityType, ids, count, bulkAl
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold disabled:opacity-50"
           style={{ background: `${colors.primary}18`, color: colors.primary }}>
           {busy === state ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-          Move all to {state.replace(/_/g, ' ')}
+          Move all to {humanize(state)}
         </button>
       ))}
       {bulkAllowed.length === 0 && (

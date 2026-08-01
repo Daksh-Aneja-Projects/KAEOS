@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { EntityComment, WorkflowEvent } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
+import { humanize } from '../lib/format';
 
 /**
  * Per-row workflow controls: allowed next-state buttons (from the domain's
@@ -60,7 +61,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
     setBusy(to);
     try {
       const res = await api.transitionEntity(domain, entityPath, entityId, to);
-      onDone(`${res.entity_type.replace(/_/g, ' ')} moved ${res.from_state} → ${res.to_state}`);
+      onDone(`${humanize(res.entity_type)} moved ${res.from_state} → ${res.to_state}`);
     } catch (e: any) {
       (onError || onDone)(`Transition failed: ${e?.message || e}`);
     } finally { setBusy(null); }
@@ -115,7 +116,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
               className="flex items-center gap-0.5 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
               style={{ background: `${color}15`, color }}>
               {busy === state ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
-              {state.replace(/_/g, ' ')}
+              {humanize(state)}
             </button>
           );
         })}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { NotificationChannel, NotificationDelivery, NotificationKind } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { toPct } from '../lib/format';
+import { toPct, humanize } from '../lib/format';
 import { Bell, Mail, MessageSquare, Webhook, Plus, Trash2, Loader2, Send, History, Newspaper, Eye, CheckCircle2, XCircle } from 'lucide-react';
 
 /**
@@ -421,7 +421,7 @@ const NotificationSettings: React.FC = () => {
                       return (
                         <div key={`${s.skill}-${i}`} className="flex items-center gap-2 text-[12px]">
                           <span className="truncate flex-1" style={{ color: colors.inkSubtle }}>
-                            {String(s.skill || 'unnamed skill').replace(/_/g, ' ')}
+                            {humanize(String(s.skill || 'unnamed skill'))}
                           </span>
                           <span className="font-mono tabular-nums shrink-0"
                             style={{ color: (r ?? 100) < 60 ? colors.warning : colors.ink }}>

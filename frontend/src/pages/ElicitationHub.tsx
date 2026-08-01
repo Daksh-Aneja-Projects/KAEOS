@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 import { MessagesSquare, Send, Award, CheckCircle, Clock, User, TrendingUp, Sparkles, Loader2, XCircle, AlertTriangle } from 'lucide-react';
+import { humanize } from '../lib/format';
 
 export default function ElicitationHub() {
   const { colors } = useTheme();
@@ -212,7 +213,7 @@ export default function ElicitationHub() {
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold"
                         style={{ background: tc + '1f', color: tc, border: `1px solid ${tc}3d` }}>
-                        {q.question_type.replace(/_/g, ' ')}
+                        {humanize(q.question_type)}
                       </span>
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold"
                         style={highPriority

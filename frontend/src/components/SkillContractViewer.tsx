@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronRight, CheckCircle2, XCircle, ArrowRight,
   Clock, Link2, Eye, Sparkles
 } from 'lucide-react';
+import { humanize } from '../lib/format';
 
 interface Props {
   skill: SkillItem;
@@ -74,7 +75,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
           <div className="flex items-center gap-3 mb-1">
             <FileCode2 className="w-6 h-6" style={{ color: colors.primaryHover }} />
             <h1 className="text-[24px] font-bold tracking-tight" style={{ letterSpacing: '-0.5px', color: colors.ink }}>
-              {skill.skill_id.replace(/_/g, ' ')}
+              {humanize(skill.skill_id)}
             </h1>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
               style={{
@@ -104,7 +105,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
           </span>
           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full"
             style={{ background: `${confColor(skill.confidence)}15`, color: confColor(skill.confidence) }}>
-            {skill.confidence_tier?.replace(/_/g, ' ')}
+            {humanize(skill.confidence_tier)}
           </span>
         </div>
         <div className="grid grid-cols-5 gap-3">
@@ -168,7 +169,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-medium" style={{ color: colors.ink }}>
-                      {(step.action || step.id || '').replace(/_/g, ' ')}
+                      {humanize(step.action || step.id || '')}
                     </span>
                     {step.tool && (
                       <span className="text-[11px] font-mono px-1.5 py-0.5 rounded"
@@ -217,7 +218,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>
-                    {(exc.id || '').replace(/_/g, ' ')}
+                    {humanize(exc.id || '')}
                   </span>
                   {exc.auto_apply && (
                     <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded-full"

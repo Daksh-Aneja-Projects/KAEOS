@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Swords, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
 
 const ConflictArena = () => {
  const { colors } = useTheme();
@@ -100,7 +101,7 @@ const ConflictArena = () => {
          <div className="flex items-center gap-3">
           {statusIcon(c.status)}
           <span className="px-2 py-0.5 rounded text-xs font-medium" style={sevStyle(c.severity)}>{c.severity}</span>
-          <span className="text-xs" style={{ color: colors.inkSubtle }}>{c.conflict_type.replace(/_/g, ' ')}</span>
+          <span className="text-xs" style={{ color: colors.inkSubtle }}>{humanize(c.conflict_type)}</span>
          </div>
          <div className="flex items-center gap-3 text-xs" style={{ color: colors.inkSubtle }}>
           {c.assigned_to && <span>Assigned: <span style={{ color: colors.ink }}>{c.assigned_to}</span></span>}
@@ -133,7 +134,7 @@ const ConflictArena = () => {
 
         {c.status === 'RESOLVED' ? (
          <div className="rounded-xl p-3 text-sm" style={{ background: colors.success + '14', border: `1px solid ${colors.success}33`, color: colors.success }}>
-          Resolved: {c.resolution_type?.replace(/_/g, ' ')} - {c.resolution_note}
+          Resolved: {humanize(c.resolution_type)} - {c.resolution_note}
          </div>
         ) : (
          <div className="flex gap-2 pt-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
@@ -141,7 +142,7 @@ const ConflictArena = () => {
            <button key={rt} onClick={() => handleResolve(c.id, rt)} disabled={resolvingId === c.id}
             className="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}
-           >{resolvingId === c.id ? 'Resolving…' : rt.replace(/_/g, ' ')}</button>
+           >{resolvingId === c.id ? 'Resolving…' : humanize(rt)}</button>
           ))}
          </div>
         )}

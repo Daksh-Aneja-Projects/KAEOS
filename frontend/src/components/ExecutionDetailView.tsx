@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { ExecutionItem } from '../api/client';
 import FeedbackCapture from './FeedbackCapture';
+import { humanize } from '../lib/format';
 import {
   ShieldCheck, Scale, Gauge, Swords, Cpu, Link2, MessageSquare,
   CheckCircle2, XCircle, AlertTriangle, Clock, ChevronDown, ChevronRight,
@@ -159,7 +160,7 @@ export default function ExecutionDetailView({ execution, onBack, colors }: Props
             color: isSuccess ? colors.success : isFailed ? colors.error : colors.warning,
             border: `1px solid ${isSuccess ? 'rgba(39,166,68,0.25)' : isFailed ? 'rgba(229,83,75,0.25)' : 'rgba(245,166,35,0.25)'}`,
           }}>
-          {execution.status.replace(/_/g, ' ')}
+          {humanize(execution.status)}
         </span>
       </div>
 

@@ -7,6 +7,7 @@ import PlatformAccessSettings from './PlatformAccessSettings';
 import { Lock } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 
 const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   const { colors, theme, toggle } = useTheme();
@@ -314,7 +315,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                     : [[k, v] as const]
                 ).map(([k, v]) => (
                   <div key={k} className="flex justify-between py-1 border-b last:border-0" style={{ borderColor: colors.hairline }}>
-                    <span className="text-[12px] capitalize" style={{ color: colors.inkSubtle }}>{String(k).replace(/_/g, ' ')}</span>
+                    <span className="text-[12px] capitalize" style={{ color: colors.inkSubtle }}>{humanize(String(k))}</span>
                     <span className="text-[12px] font-medium font-mono" style={{ color: colors.ink }}>
                       {Array.isArray(v) ? v.length : String(v)}
                     </span>

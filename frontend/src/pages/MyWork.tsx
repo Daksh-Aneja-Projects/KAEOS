@@ -8,6 +8,7 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
 import { timeAgo } from '../lib/time';
+import { humanize } from '../lib/format';
 
 /**
  * Workspace home (Sprints 6 & 10): everything assigned to the caller across
@@ -113,7 +114,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
                 <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
                   style={{ background: `${colors.primary}15`, color: colors.primary }}>{it.domain}</span>
                 <span className="font-medium truncate flex-1 min-w-0" title={it.title || it.entity_id}>{it.title || it.entity_id}</span>
-                <span className="whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{it.entity_type.replace(/_/g, ' ')}</span>
+                <span className="whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{humanize(it.entity_type)}</span>
                 {it.state && (
                   <span className="font-mono text-[11px] px-1.5 py-0.5 rounded shrink-0"
                     style={{ background: colors.surface2, color: colors.inkSubtle }}>{it.state}</span>

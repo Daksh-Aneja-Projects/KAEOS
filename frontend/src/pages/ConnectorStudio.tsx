@@ -8,6 +8,7 @@ import {
   Settings, Activity, MapPin, Shield, BarChart3, Layers, Plug,
   KeyRound, Send, Inbox, ArrowUpFromLine, Copy
 } from 'lucide-react';
+import { humanize } from '../lib/format';
 
 type Screen = 'library' | 'mapper' | 'sync' | 'monitor';
 
@@ -655,7 +656,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
                     {statusLabel(o.status)}
                   </span>
                   <span className="font-medium truncate" style={{ color: colors.ink }}>
-                    {(o.op || 'change').toLowerCase()} {(o.entity_type || 'record').replace(/_/g, ' ')}
+                    {(o.op || 'change').toLowerCase()} {humanize(o.entity_type || 'record')}
                   </span>
                   <span className="truncate" style={{ color: colors.inkSubtle }}>via {o.provider || 'unknown provider'}</span>
                   {(o.attempts ?? 0) > 1 && (
@@ -693,7 +694,7 @@ function SyncOperations({ connectors, selectedConnector, colors, card }: any) {
                     {l.direction === 'IN' ? 'incoming' : 'outgoing'}
                   </span>
                   <span className="font-medium truncate" style={{ color: colors.ink }}>
-                    {(l.entity_type || 'record').replace(/_/g, ' ')}
+                    {humanize(l.entity_type || 'record')}
                   </span>
                   <span className="truncate" style={{ color: colors.inkSubtle }}>{l.provider || 'unknown provider'}</span>
                   <span className="shrink-0 font-semibold" style={{ color: statusTone(l.status) }}>{statusLabel(l.status)}</span>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Swords, Loader2, ShieldAlert, Play } from 'lucide-react';
+import { humanize } from '../lib/format';
 
 /**
  * Autonomy Wargaming (IP-4). Run an adversarial CASCADE of shocks against the twin
@@ -50,7 +51,7 @@ const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> 
         <select value={playbook} onChange={e => setPlaybook(e.target.value)}
           className="w-full text-sm p-2 rounded outline-none"
           style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
-          {playbooks.map(p => <option key={p.id} value={p.id}>{p.id.replace(/_/g, ' ')} ({p.steps.length} shocks)</option>)}
+          {playbooks.map(p => <option key={p.id} value={p.id}>{humanize(p.id)} ({p.steps.length} shocks)</option>)}
         </select>
       </div>
       <button onClick={run} disabled={running}
@@ -90,7 +91,7 @@ const WargamePanel: React.FC<{ colors: any; onImpact?: (result: any) => void }> 
             {result.steps.map((s: any) => (
               <div key={s.step} className="rounded-lg p-2" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-medium" style={{ color: colors.ink }}>{s.shock.replace(/_/g, ' ')}</span>
+                  <span className="font-medium" style={{ color: colors.ink }}>{humanize(s.shock)}</span>
                   <span className="text-[11px] px-1.5 py-0.5 rounded-full"
                     style={{ background: s.response === 'autonomous' ? '#22c55e18' : '#f59e0b18', color: s.response === 'autonomous' ? '#22c55e' : '#f59e0b' }}>
                     {s.response === 'autonomous' ? 'autonomous' : 'human'}
