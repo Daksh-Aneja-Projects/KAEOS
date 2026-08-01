@@ -1,0 +1,55 @@
+/* Neural Map motion. Every animation here is decorative; the reduced-motion
+   block at the bottom freezes all of it. */
+
+@keyframes neural-dash {
+  to { stroke-dashoffset: -20; }
+}
+
+@keyframes neural-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes neural-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.neural-edge-flow {
+  stroke-dasharray: 6 8;
+  animation: neural-dash 1.1s linear infinite;
+}
+
+.neural-edge-slow {
+  stroke-dasharray: 2 6;
+  animation: neural-dash 2.4s linear infinite;
+}
+
+.neural-node-pulse {
+  animation: neural-pulse 2.6s ease-in-out infinite;
+}
+
+.neural-ring-spin {
+  animation: neural-ring-spin 90s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes neural-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.neural-rise {
+  animation: neural-rise 0.5s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neural-rise { animation: none; }
+
+  .neural-edge-flow,
+  .neural-edge-slow,
+  .neural-node-pulse,
+  .neural-ring-spin {
+    animation: none;
+  }
+}

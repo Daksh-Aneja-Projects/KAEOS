@@ -85,6 +85,21 @@ async def test_map_and_hierarchy(async_client: AsyncClient, db):
 
 
 @pytest.mark.asyncio
+async def test_world_is_one_connected_graph(async_client: AsyncClient, db):
+    await _seed(db)
+    r = await async_client.get("/api/v1/neural/world", headers={"X-Tenant-ID": T})
+    assert r.status_code == 200
+    body = r.json()
+    ids = {n["id"] for n in body["nodes"]}
+    assert "brain" in ids and "dept-fin" in ids and "dept-hr" in ids
+    # every hub feeds the brain, and hubs mesh with each other
+    assert any(e["source"] == "dept-fin" and e["target"] == "brain" for e in body["edges"])
+    assert any(e["tier"] == "hub-hub" for e in body["edges"])
+    # other tenants' clusters are invisible
+    assert "dept-x" not in ids
+
+
+@pytest.mark.asyncio
 async def test_brain_ingest_note(async_client: AsyncClient, db):
     r = await async_client.post(
         "/api/v1/neural/brain/ingest",

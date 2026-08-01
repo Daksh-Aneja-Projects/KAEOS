@@ -47,6 +47,11 @@ const TYPE_COLORS: Record<string, string> = {
   Contract: '#f472b6',       // legal contracts (pink)
   Incident: '#f87171',       // engineering incidents (red)
   PurchaseOrder: '#a3e635',  // operations POs (lime)
+  // Neural Map entities.
+  Task: '#f59e0b',           // skills an agent runs (amber)
+  Connector: '#22d3ee',      // integrations feeding a department (cyan)
+  Brain: '#fb923c',          // the company knowledge core (warm coral)
+  Knowledge: '#fbbf24',      // ingested notes/documents
 };
 /** One hue per department: hub node, territory glow, and legend entry all match. */
 const DEPT_PALETTE = [
@@ -55,12 +60,16 @@ const DEPT_PALETTE = [
 const TYPE_RADIUS: Record<string, number> = {
   Department: 16, Capability: 7, Agent: 6, Process: 6, Employee: 5, Vendor: 7, Project: 7,
   Customer: 5, Account: 5.5, Ticket: 5, Contract: 6, Incident: 6, PurchaseOrder: 5,
+  Task: 5, Connector: 6.5, Brain: 22, Knowledge: 4,
 };
 
 const W = 960;
 const H = 680;
 const CX = W / 2;
 const CY = H / 2;
+/** ViewBox size, exported so callers can compute custom seed positions. */
+export const TWIN_W = W;
+export const TWIN_H = H;
 
 type SimNode = GraphNode & {
   x: number; y: number; vx: number; vy: number;
@@ -92,6 +101,10 @@ function seedLayout(nodes: GraphNode[], links: GraphLink[]) {
     const a = (i / Math.max(departments.length, 1)) * 2 * Math.PI - Math.PI / 2;
     positions[d.id] = { x: CX + Math.cos(a) * R_DEPT, y: CY + Math.sin(a) * R_DEPT };
   });
+  // The company brain (if present) anchors the center of the world.
+  for (const n of nodes) {
+    if (n.label === 'Brain') { positions[n.id] = { x: CX, y: CY }; assigned.add(n.id); }
+  }
   const typeOrder = ['Capability', 'Agent', 'Process', 'Employee', 'Vendor', 'Project'];
   departments.forEach(d => {
     const pos = positions[d.id];
@@ -122,25 +135,51 @@ function seedLayout(nodes: GraphNode[], links: GraphLink[]) {
 }
 
 export default function TwinGraph({
-  data, onNodeClick, shock,
-}: { data: GraphData; onNodeClick?: (node: GraphNode) => void; shock?: ShockPulse }) {
+  data, onNodeClick, shock, seedPositions, territories = true, labelsAlways = false,
+}: {
+  data: GraphData;
+  onNodeClick?: (node: GraphNode) => void;
+  shock?: ShockPulse;
+  /** Optional per-node seed/home positions (viewBox space, see TWIN_W/TWIN_H).
+   *  The simulation still runs - these are anchors, not a frozen layout. */
+  seedPositions?: Record<string, { x: number; y: number }>;
+  /** Soft per-department hue fields behind each cluster (default on). */
+  territories?: boolean;
+  /** Always show department name labels (default: only past ~1.5x zoom). */
+  labelsAlways?: boolean;
+}) {
   // ── Static derivations (per data identity) ────────────────────────────────
   const { simNodes, simLinks, adjacency, index, deptColor, clusters } = useMemo(() => {
     const nodes = data?.nodes || [];
     const links = data?.links || [];
     const { positions, adjacency, clusterOf } = seedLayout(nodes, links);
+    if (seedPositions) {
+      for (const [id, p] of Object.entries(seedPositions)) positions[id] = p;
+    }
     const simNodes: SimNode[] = nodes.map((n, i) => {
       const p = positions[n.id] || { x: CX + (i % 13) * 8 - 48, y: CY + (i % 7) * 8 - 24 };
       return {
         ...n, x: p.x, y: p.y, vx: 0, vy: 0, hx: p.x, hy: p.y,
-        r: TYPE_RADIUS[n.label] || 6, fixed: false,
+        r: TYPE_RADIUS[n.label] || 6,
+        // Band layouts pin the structural nodes (hubs + brain): the clusters
+        // stay alive around them and they remain draggable.
+        fixed: !!(seedPositions && (n.label === 'Department' || n.label === 'Brain')),
         phase: (i * 0.618) % (Math.PI * 2),
       };
     });
     const index = new Map(simNodes.map((n, i) => [n.id, i]));
     const simLinks = links
       .filter(l => index.has(l.source) && index.has(l.target))
-      .map(l => ({ s: index.get(l.source)!, t: index.get(l.target)! }));
+      .map(l => {
+        const s = index.get(l.source)!, t = index.get(l.target)!;
+        // With a custom seed layout, springs adopt the seeded geometry as
+        // their rest length - the sim stays alive without fighting the bands.
+        const rest = seedPositions
+          ? Math.min(420, Math.max(48, Math.hypot(
+              simNodes[s].hx - simNodes[t].hx, simNodes[s].hy - simNodes[t].hy)))
+          : undefined;
+        return { s, t, rest };
+      });
     const departments = simNodes.filter(n => n.label === 'Department');
     const deptColor = new Map<string, string>(
       departments.map((d, i) => [d.id, DEPT_PALETTE[i % DEPT_PALETTE.length]]),
@@ -156,7 +195,7 @@ export default function TwinGraph({
         .filter(i => i >= 0),
     }));
     return { simNodes, simLinks, adjacency, index, deptColor, clusters };
-  }, [data]);
+  }, [data, seedPositions]);
   const nodes = data?.nodes || [];
   const links = data?.links || [];
 
@@ -243,7 +282,9 @@ export default function TwinGraph({
         const a = simNodes[l.s], b = simNodes[l.t];
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.max(Math.hypot(dx, dy), 1);
-        const rest = a.label === 'Department' && b.label === 'Department' ? 300 : 64;
+        const rest = l.rest ?? (
+          a.label === 'Department' && b.label === 'Department' ? 300
+            : (a.label === 'Brain' || b.label === 'Brain') ? 230 : 64);
         const f = ((d - rest) / d) * 0.02 * alpha * 8;
         if (!a.fixed) { a.vx += dx * f; a.vy += dy * f; }
         if (!b.fixed) { b.vx -= dx * f; b.vy -= dy * f; }
@@ -266,10 +307,14 @@ export default function TwinGraph({
       }
 
       // Cluster anchoring: departments hold their ring seats firmly, children
-      // gently - keeps the layout readable while staying elastic.
+      // gently - keeps the layout readable while staying elastic. Custom seed
+      // layouts (the Neural Map's horizontal bands) anchor children harder so
+      // the intended structure survives the springs.
       for (const n of simNodes) {
         if (n.fixed) continue;
-        const k = n.label === 'Department' ? 0.05 : 0.006;
+        const k = n.label === 'Department' || n.label === 'Brain'
+          ? (seedPositions ? 0.35 : 0.055)
+          : seedPositions ? 0.02 : 0.006;
         n.vx += (n.hx - n.x) * k * (alpha * 6 + 0.4);
         n.vy += (n.hy - n.y) * k * (alpha * 6 + 0.4);
       }
@@ -387,9 +432,9 @@ export default function TwinGraph({
     // zoomed out the hue territories identify clusters, zoomed in there is
     // room for text without overlapping satellites.
     const k = W / v.w;
-    const opacity = k >= 1.5 ? Math.min(1, 0.3 + (k - 1.5) * 1.6) : 0;
+    const opacity = labelsAlways ? 1 : k >= 1.5 ? Math.min(1, 0.3 + (k - 1.5) * 1.6) : 0;
     deptLabelEls.current.forEach(el => el.setAttribute('opacity', String(opacity)));
-  }, []);
+  }, [labelsAlways]);
 
   const setHover = useCallback((id: string | null) => {
     hoverRef.current = id;
@@ -543,15 +588,17 @@ export default function TwinGraph({
         </defs>
 
         {/* Department territories: soft hue fields that follow each cluster */}
-        <g style={{ pointerEvents: 'none' }}>
-          {clusters.map((c, i) => (
-            <circle
-              key={c.deptId}
-              ref={el => { glowEls.current[i] = el; }}
-              r={0} fill={`url(#twin-territory-${i})`}
-            />
-          ))}
-        </g>
+        {territories && (
+          <g style={{ pointerEvents: 'none' }}>
+            {clusters.map((c, i) => (
+              <circle
+                key={c.deptId}
+                ref={el => { glowEls.current[i] = el; }}
+                r={0} fill={`url(#twin-territory-${i})`}
+              />
+            ))}
+          </g>
+        )}
 
         <g>
           {links.map((l, i) => (
@@ -618,7 +665,7 @@ export default function TwinGraph({
                   <text
                     ref={el => { if (el) deptLabelEls.current.set(n.id, el); }}
                     y={n.r + 14} fill="#e2e8f0" fontSize={11} fontWeight={600}
-                    textAnchor="middle" opacity={0}
+                    textAnchor="middle" opacity={labelsAlways ? 1 : 0}
                     style={{ userSelect: 'none', pointerEvents: 'none' }}
                   >
                     {n.name}

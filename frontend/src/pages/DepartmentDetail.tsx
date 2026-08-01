@@ -15,8 +15,9 @@ import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates'
 import DomainIcon from '../components/DomainIcon';
 import {
   ArrowLeft, Bot, Zap, BarChart3, Heart, CheckCircle,
-  Clock, Activity, Shield, AlertTriangle, Cpu, TrendingUp
+  Clock, Activity, Shield, AlertTriangle, Cpu, TrendingUp, Waypoints
 } from 'lucide-react';
+import { DeptNetworkGraph } from '../components/neural/NeuralMap';
 
 export default function DepartmentDetail({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -25,7 +26,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
   const [dept, setDept] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'capabilities' | 'agents' | 'processes'>('capabilities');
+  const [activeTab, setActiveTab] = useState<'network' | 'capabilities' | 'agents' | 'processes'>('network');
 
   useEffect(() => {
     if (!deptId) return;
@@ -48,6 +49,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
 
   const card = { background: colors.surface1, borderRadius: '12px', border: `1px solid ${colors.hairline}`, padding: '20px' };
   const tabs = [
+    { id: 'network' as const, label: 'Network', icon: Waypoints, count: (dept.agents?.length || 0) + (dept.capabilities?.length || 0) },
     { id: 'capabilities' as const, label: 'Capabilities', icon: Zap, count: dept.capabilities?.length || 0 },
     { id: 'agents' as const, label: 'Agent Fleet', icon: Bot, count: dept.agents?.length || 0 },
     { id: 'processes' as const, label: 'Processes', icon: Activity, count: dept.processes?.length || 0 },
@@ -123,6 +125,16 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
             </button>
           ))}
         </div>
+
+        {/* Network Tab: the department as a living graph */}
+        {activeTab === 'network' && (
+          <div className="rounded-xl overflow-hidden" style={{ height: 560, border: `1px solid ${colors.hairline}` }}>
+            <DeptNetworkGraph
+              deptRef={deptId!}
+              onNavigateDept={(slug) => navigate(`/departments/${slug}`)}
+            />
+          </div>
+        )}
 
         {/* Capabilities Tab */}
         {activeTab === 'capabilities' && (

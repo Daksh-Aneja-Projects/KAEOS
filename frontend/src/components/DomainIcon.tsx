@@ -21,6 +21,7 @@ const ICONS: Record<string, { icon: LucideIcon; color: string }> = {
   sales: { icon: TrendingUp, color: '#f59e0b' },
   support: { icon: Headphones, color: '#3b82f6' },
   it: { icon: Database, color: '#06b6d4' },
+  engineering: { icon: Database, color: '#06b6d4' },
   procurement: { icon: ShoppingCart, color: '#8b5cf6' },
   marketing: { icon: Globe, color: '#f97316' },
   '👥': { icon: Users, color: '#22c55e' },
@@ -71,6 +72,9 @@ function resolve(hint?: string | null): { icon: LucideIcon; color: string } {
   }
   return { icon: Building2, color: '#5e6ad2' };
 }
+
+/** Brand color for a department slug/name - shared with the Neural Map. */
+export const domainColor = (hint?: string | null): string => resolve(hint).color;
 
 interface Props {
   /** slug, name, or legacy emoji - anything that hints at the entity */

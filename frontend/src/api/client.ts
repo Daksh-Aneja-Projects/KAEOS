@@ -85,6 +85,26 @@ export async function downloadFile(path: string, filename: string): Promise<void
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Authenticated multipart upload. FormData must NOT get a manual Content-Type
+ * (the browser sets the boundary), so this bypasses _exec's JSON header.
+ */
+export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const token = localStorage.getItem('kaeos-token');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const devTenant = localStorage.getItem('kaeos-dev-tenant');
+  if (devTenant) headers['X-Tenant-ID'] = devTenant;
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    let detail = err?.detail;
+    if (Array.isArray(detail)) detail = detail.map((d: any) => d?.msg || JSON.stringify(d)).join('; ');
+    throw new Error(detail || `Upload failed (${res.status})`);
+  }
+  return res.json();
+}
+
 // In-flight GET deduplication: many screens fire the same read on mount AND on a
 // live-refresh tick, and several components can request the same endpoint at once.
 // If an identical GET is already in flight, share its promise instead of issuing a
@@ -1566,6 +1586,26 @@ export const api = {
     records_failed?: number; chunks_produced?: number; pii_detections?: number;
     error?: string; log: { timestamp: string; level: string; message: string }[];
   }>('/pipeline/run', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ─── Neural Map (departments around the company brain) ───
+  getNeuralMap: () => request<any>('/neural/map'),
+  getNeuralWorld: () => request<any>('/neural/world'),
+  getNeuralBrainStats: () => request<any>('/neural/brain/stats'),
+  getNeuralDeptGraph: (ref: string) => request<any>(`/neural/departments/${encodeURIComponent(ref)}/graph`),
+  getAgentDossier: (id: string) => request<any>(`/neural/agents/${encodeURIComponent(id)}/dossier`),
+  getSkillDossier: (skillId: string) => request<any>(`/neural/skills/${encodeURIComponent(skillId)}/dossier`),
+  getNeuralHierarchy: () => request<any>('/neural/hierarchy'),
+  neuralBrainSearch: (q: string) => request<any>(`/neural/brain/search?q=${encodeURIComponent(q)}`),
+  neuralBrainIngest: (opts: { text?: string; domain?: string; file?: File }) => {
+    const form = new FormData();
+    if (opts.text) form.append('text', opts.text);
+    if (opts.domain) form.append('domain', opts.domain);
+    if (opts.file) form.append('file', opts.file);
+    return uploadForm<{
+      signal_id: string; stored_chars: number; source: string;
+      embedded: boolean; grounding_ready: boolean; message: string;
+    }>('/neural/brain/ingest', form);
+  },
 
   // ─── Authenticated CSV export URLs (fetched via downloadFile, not <a href>) ───
   usersCsvPath: () => '/auth/users/export.csv',

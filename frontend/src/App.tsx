@@ -163,6 +163,14 @@ function Shell() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Deep surfaces (e.g. the Hierarchy view's Conductor card) open the copilot
+  // without prop-drilling through the whole tree.
+  useEffect(() => {
+    const open = () => setChatOpen(true);
+    window.addEventListener('kaeos-open-copilot', open);
+    return () => window.removeEventListener('kaeos-open-copilot', open);
+  }, []);
+
   // Department-scoped RBAC: a scoped user's sidebar shows only their own
   // department entry; every other department's operational surface is hidden.
   // Cross-domain aggregates (Dashboard, Org Pulse, Analytics, Reality

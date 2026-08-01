@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { Building2, ArrowRight, Users, Bot, Zap, Activity, Package } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router';
+import { Building2, ArrowRight, Users, Bot, Zap, Activity, Package, LayoutGrid, Waypoints, GitFork } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
@@ -10,16 +10,23 @@ import { toPct, humanize } from '../lib/format';
 import { canSeeDepartment } from '../lib/departments';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { BrainError } from '../components/BrainStates';
+import NeuralMapView from '../components/neural/NeuralMap';
+import HierarchyView from '../components/neural/HierarchyView';
 
 /**
  * Departments directory - the single place to jump into any of the governed AI
  * departments. Distinct from the Dashboard (which is the workforce-wide metrics
  * overview); this is the "pick a department" hub.
  */
+type HubView = 'grid' | 'neural' | 'hierarchy';
+
 export default function DepartmentsHub() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const view = (params.get('view') as HubView) || 'grid';
+  const setView = (v: HubView) => setParams(v === 'grid' ? {} : { view: v }, { replace: true });
   const [allDepts, setAllDepts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,9 +56,15 @@ export default function DepartmentsHub() {
     background: colors.surface1, borderRadius: '14px', border: `1px solid ${colors.hairline}`,
   };
 
+  const VIEWS: { id: HubView; label: string; icon: React.ElementType }[] = [
+    { id: 'grid', label: 'Grid', icon: LayoutGrid },
+    { id: 'neural', label: 'Neural map', icon: Waypoints },
+    { id: 'hierarchy', label: 'Hierarchy', icon: GitFork },
+  ];
+
   return (
-    <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+    <div className="h-full flex flex-col min-h-0" style={{ background: colors.canvas, color: colors.ink }}>
+      <div className="w-full max-w-7xl mx-auto px-6 pt-6 pb-4 shrink-0">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -62,17 +75,45 @@ export default function DepartmentsHub() {
             <div>
               <h1 className="text-[24px] font-bold tracking-tight">Departments</h1>
               <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
-                Your governed AI departments. Open one to see its live work, or add a new one from the marketplace.
+                {view === 'neural'
+                  ? 'Your company as a free-flow living graph: agents, tasks, systems and the brain that links every department. Drag anything, click any node.'
+                  : view === 'hierarchy'
+                    ? 'The chain of command: you, the Copilot, and every department it orchestrates.'
+                    : 'Your governed AI departments. Open one to see its live work, or add a new one from the marketplace.'}
               </p>
             </div>
           </div>
-          <button onClick={() => navigate('/marketplace')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white transition-all hover:opacity-90"
-            style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
-            <Package className="w-4 h-4" /> Add from marketplace
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* View switcher */}
+            <div className="flex items-center p-0.5 rounded-lg"
+              style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}
+              role="tablist" aria-label="Departments view">
+              {VIEWS.map(v => (
+                <button key={v.id} onClick={() => setView(v.id)} role="tab" aria-selected={view === v.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                  style={view === v.id
+                    ? { background: colors.primary, color: '#fff' }
+                    : { color: colors.inkSubtle }}>
+                  <v.icon className="w-3.5 h-3.5" /> {v.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => navigate('/marketplace')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white transition-all hover:opacity-90"
+              style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
+              <Package className="w-4 h-4" /> Add from marketplace
+            </button>
+          </div>
         </div>
+      </div>
 
+      <div className={view === 'neural' ? 'flex-1 min-h-0 w-full' : 'flex-1 min-h-0 w-full max-w-7xl mx-auto px-6 pb-6'}>
+        {view === 'neural' ? (
+          <NeuralMapView onOpenDept={(slug) => navigate(`/departments/${slug}`)} />
+        ) : view === 'hierarchy' ? (
+          <HierarchyView />
+        ) : (
+        <div className="h-full overflow-y-auto space-y-5">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: colors.primary, borderTopColor: 'transparent' }} />
@@ -143,6 +184,8 @@ export default function DepartmentsHub() {
               );
             })}
           </div>
+        )}
+        </div>
         )}
       </div>
     </div>
