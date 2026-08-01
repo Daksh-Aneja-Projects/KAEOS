@@ -306,10 +306,26 @@ function FreeFlowGraph({
   departments: any[];
   onOpenBrain?: () => void;
 }) {
+  const { colors } = useTheme();
   const [target, setTarget] = useState<DossierTarget | null>(null);
   const [shock, setShock] = useState<ShockPulse | undefined>(undefined);
+  const [focusIdx, setFocusIdx] = useState<number | null>(null);
+  const [focus, setFocus] = useState<{ x: number; y: number; zoom: number; ts: number } | null>(null);
 
   const data = useMemo(() => toTwinData(nodes, edges), [nodes, edges]);
+
+  // ‹ › camera navigation between department clusters, like walking the wall.
+  const focusDept = useCallback((i: number | null) => {
+    setFocusIdx(i);
+    const n = Math.max(1, departments.length);
+    const margin = 60;
+    const slot = (TWIN_W - margin * 2) / n;
+    if (i === null) {
+      setFocus({ x: TWIN_W / 2, y: TWIN_H / 2, zoom: 1, ts: Date.now() });
+    } else {
+      setFocus({ x: margin + slot * (i + 0.5), y: TWIN_H * 0.44, zoom: 1.4, ts: Date.now() });
+    }
+  }, [departments.length]);
 
   // The video's structure, kept alive by physics: department brains in a
   // horizontal sequence at the bottom, each department's agents floating
@@ -344,7 +360,7 @@ function FreeFlowGraph({
       if (!node.dept || !bySlug.has(node.dept)) continue;
       if (node.type === 'department') {
         pos[node.id] = { x: margin + slot * (bySlug.get(node.dept)! + 0.5), y: TWIN_H * 0.74 };
-      } else if (node.type === 'agent') place(node, TWIN_H * 0.44, 0.72, 12);
+      } else if (node.type === 'agent') place(node, TWIN_H * 0.44, 0.78, 20);
       else if (node.type === 'task') place(node, TWIN_H * 0.24, 0.86, 16);
       else if (node.type === 'connector') place(node, TWIN_H * 0.08, 0.7, 8);
       else if (node.type === 'capability') place(node, TWIN_H * 0.87, 0.6, 6);
@@ -381,14 +397,47 @@ function FreeFlowGraph({
   const handleClick = (node: any) => {
     if (node.label === 'Agent') setTarget({ kind: 'agent', id: node.id, label: node.name });
     else if (node.label === 'Task') setTarget({ kind: 'task', id: node.skill_id, label: node.name });
-    else if (node.label === 'Department') pulseDept(node.id);
+    else if (node.label === 'Department') {
+      pulseDept(node.id);
+      const i = departments.findIndex((d: any) => d.slug === node.dept);
+      if (i >= 0) focusDept(i);
+    }
     else if (node.label === 'Brain') onOpenBrain?.();
   };
+
+  const focused = focusIdx !== null ? departments[focusIdx] : null;
 
   return (
     <div className="relative h-full w-full overflow-hidden">
       <TwinGraph data={data} onNodeClick={handleClick} shock={shock} seedPositions={seedPositions}
-        territories={false} labelsAlways />
+        territories={false} labelsAlways focus={focus} />
+
+      {/* ‹ › walk the departments; the center resets to the whole map. */}
+      {departments.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-1 rounded-full z-10"
+          style={{ background: `${colors.surface1}ee`, border: `1px solid ${colors.hairline}`, backdropFilter: 'blur(8px)' }}>
+          <button
+            onClick={() => focusDept(focusIdx === null ? departments.length - 1 : (focusIdx + departments.length - 1) % departments.length)}
+            aria-label="Previous department"
+            className="px-2 py-0.5 rounded-full text-[15px] leading-none transition-colors hover:opacity-70"
+            style={{ color: colors.inkSubtle }}>
+            &lsaquo;
+          </button>
+          <button onClick={() => focusDept(null)}
+            title="Show the whole map"
+            className="text-[11px] font-bold uppercase tracking-wider px-2 min-w-[128px] text-center transition-colors hover:opacity-80"
+            style={{ fontFamily: 'var(--font-mono, monospace)', color: focused ? domainColor(focused.slug) : colors.inkSubtle }}>
+            {focused ? focused.name : 'All departments'}
+          </button>
+          <button
+            onClick={() => focusDept(focusIdx === null ? 0 : (focusIdx + 1) % departments.length)}
+            aria-label="Next department"
+            className="px-2 py-0.5 rounded-full text-[15px] leading-none transition-colors hover:opacity-70"
+            style={{ color: colors.inkSubtle }}>
+            &rsaquo;
+          </button>
+        </div>
+      )}
 
       {target && <DossierDrawer target={target} onClose={() => setTarget(null)} />}
     </div>
