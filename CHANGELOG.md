@@ -11,6 +11,12 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-01 - "Pioneer Lab"
+
+Surfaces the advanced engines that were built and proven but had no home, and
+fixes a quiet correctness bug that had been degrading every local model call to
+deterministic fallback. A "make the real thing reachable" release.
+
 ### Added
 - **Pioneer Lab.** A consolidated console (`/platform/pioneer-lab`) that finally
   gives a UI to the advanced engines that were built and e2e-tested but had no
@@ -29,6 +35,11 @@ All notable changes to KAEOS are documented here. This project adheres to
   circuit breaker (falling back to deterministic output). Local (`ollama/`,
   `custom/`) models now get their own `LLM_LOCAL_TIMEOUT_SECONDS` (default 240s)
   budget; cloud keeps `LLM_TIMEOUT_SECONDS` (default 30s).
+- **Human-readable copy across admin/detail surfaces.** 32 sites in 16
+  components rendered raw machine tokens (`SUCCESS_CLEAN`, snake_case confidence
+  tiers, entity/conflict/question types, skill IDs, wargame shocks) directly;
+  they now route through the shared `humanize()` helper with correct acronym
+  handling. Sentence-embedded lowercase tokens were left as-is.
 
 ## [1.6.0] - 2026-08-01 - "Living Surface"
 
