@@ -39,7 +39,12 @@ agents, processes, employees, vendors, projects, customers, accounts, tickets,
 contracts, incidents and purchase orders, built from the tenant's own records.
 That is the Company Brain. On top of it run seven pre-built AI departments (HR,
 Finance, Legal, Sales, Support, Operations, Engineering & IT Ops) whose agents
-read the real work and act on it.
+read the real work and act on it. The **Neural Map** renders all of it as one
+living force graph: department brains in sequence, their agents and tasks in
+motion above them, shared systems bridging departments, and the knowledge core
+they all feed - with a per-agent dossier (autonomy ladder, what it replaces,
+the SOP written out) one click away, and a drop-anything ingest bar that
+teaches the brain and the Copilot in the same motion.
 
 Everything they do passes the same 7-gate pipeline: compliance, fairness,
 confidence, human-in-the-loop, adversarial debate, execution, and a hash-chained

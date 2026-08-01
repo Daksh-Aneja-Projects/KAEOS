@@ -11,6 +11,54 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-01 - "Neural Map"
+
+The company becomes a living map. The Departments surface gains three lenses
+(Grid | Neural map | Hierarchy) and the backend gains a composite `/neural`
+read layer that turns existing stores into an org-wide graph, derived agent
+dossiers, and the first real document-upload ingestion path.
+
+### Added
+- **Neural map (free flow).** `GET /api/v1/neural/world` composes the whole
+  organization into ONE graph: every department cluster (integrations, agents,
+  tasks, capabilities, processes), department brains pinned in horizontal
+  sequence, agents floating above their department, shared connectors
+  structurally bridging departments, agents linked by their real message log
+  (`agent_messages`) and by department peerage, and the company brain at the
+  base. Rendered as an Obsidian-style force simulation via the generalized
+  `TwinGraph` engine (new `seedPositions` / `territories` / `labelsAlways`
+  props; springs adopt the seeded geometry as their rest length).
+- **Brain view.** The knowledge core as a dense particle sphere: cluster labels
+  inside its ring, every department on the orbit in its brand color, and an
+  Obsidian-style "brain in numbers" panel (notes, links, skills, runs, and
+  per-domain knowledge bars) that opens when the brain is clicked.
+- **Agent and task dossiers.** `GET /neural/agents/{id}/dossier` and
+  `/neural/skills/{id}/dossier` derive - live, from real fields, no schema
+  change - the autonomy ladder (human led / human assisted / fully autonomous,
+  from `always_hitl`, the AutonomyPolicy dial, and execution history), what the
+  agent replaces, the human's role, the SOP written out in plain English, the
+  skills it breaks into, tool bindings, and its live execution record. Click
+  any agent or task node to open the dossier drawer.
+- **Dump into the brain.** `POST /neural/brain/ingest` is the platform's first
+  real multipart upload endpoint: a note or dropped document becomes a Signal,
+  is embedded into the `enterprise_memory` namespace (the copilot's grounding
+  store) and appears on the knowledge graph - so what you drop immediately
+  changes what the Copilot can cite. Paired with `GET /neural/brain/search`
+  (semantic over memory namespaces + keyword fallback over rules and skills)
+  and `GET /neural/brain/stats`.
+- **Hierarchy.** The chain of command drawn live: Operator, the KAEOS Copilot
+  (renamed from "Conductor" - one assistant, one name; the card opens the
+  existing copilot), and every department with brand-colored health rings,
+  agent rosters, pending-approval count, animated flow lines and live totals.
+- **Department Network tab.** Custom-deployed department pages gain a Network
+  tab rendering the same living graph scoped to one department, with previous/
+  next navigation.
+
+### Changed
+- `DepartmentsHub` restructured around the three-lens switcher; the neural
+  lens renders full-bleed. `DomainIcon` now exports `domainColor()` so the map,
+  hierarchy and knowledge bars share one department palette.
+
 ## [1.7.0] - 2026-08-01 - "Pioneer Lab"
 
 Surfaces the advanced engines that were built and proven but had no home, and

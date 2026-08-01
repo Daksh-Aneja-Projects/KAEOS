@@ -1,7 +1,7 @@
 {
   "name": "kaeos-frontend",
   "private": false,
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "KAEOS — Enterprise Agentic Knowledge Platform Frontend",
   "author": "Daksh Aneja",
   "license": "Apache-2.0",
