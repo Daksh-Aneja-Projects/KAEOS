@@ -20,7 +20,7 @@ const ACRONYMS = new Set([
   'HITL', 'OODA', 'KAEOS', 'AEOS', 'API', 'ID', 'URL', 'SSO', 'SAML', 'CRM',
   'PII', 'RBAC', 'RLS', 'MCP', 'LLM', 'ROI', 'KPI', 'SLA', 'IT', 'HR', 'AI',
   'UI', 'UX', 'PDF', 'CSV', 'JSON', 'SQL', 'CEO', 'CFO', 'CTO', 'COO', 'B2B',
-  'NDA', 'GDPR', 'SOC', 'SOX', 'HIPAA', 'ML',
+  'NDA', 'GDPR', 'SOC', 'SOX', 'HIPAA', 'ML', 'SRE', 'VP',
 ]);
 
 export function humanize(s: string | null | undefined): string {

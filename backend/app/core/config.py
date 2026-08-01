@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     MAX_QUESTIONS_PER_WEEK: int = 3
     QUESTION_MIN_QUALITY: float = 0.7
 
+    # LLM call timeouts (seconds). Cloud APIs answer in seconds; a local
+    # CPU-bound Ollama model routinely needs minutes to generate a few hundred
+    # tokens, so local (ollama/custom) models get their own, longer budget -
+    # a 30s ceiling made every local reasoning call time out and trip the
+    # circuit breaker.
+    LLM_TIMEOUT_SECONDS: int = 30
+    LLM_LOCAL_TIMEOUT_SECONDS: int = 240
+
     # Agent Runtime
     AGENT_SANDBOX_MEMORY_MB: int = 512
     AGENT_SANDBOX_TIMEOUT_SEC: int = 300

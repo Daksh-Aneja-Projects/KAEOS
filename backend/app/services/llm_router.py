@@ -680,12 +680,15 @@ class LLMRouter:
         messages.append({"role": "user", "content": prompt})
 
         api_base = None
+        is_local = model.startswith(("ollama/", "custom/"))
         if model.startswith("ollama/"):
             api_base = effective_keys.get("ollama_base_url", "http://localhost:11434")
         elif model.startswith("custom/"):
             api_base = effective_keys.get("custom_base_url")
             model = model.replace("custom/", "")
 
+        from app.core.config import get_settings as _get_cfg
+        _cfg = _get_cfg()
         response = await litellm.acompletion(
             model=model,
             messages=messages,
@@ -693,7 +696,7 @@ class LLMRouter:
             max_tokens=max_tokens,
             api_base=api_base,
             api_key=effective_keys.get(self._get_provider(model)),
-            timeout=30,
+            timeout=_cfg.LLM_LOCAL_TIMEOUT_SECONDS if is_local else _cfg.LLM_TIMEOUT_SECONDS,
         )
 
         return {
@@ -902,12 +905,18 @@ class LLMRouter:
             effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
 
             _t0 = time.perf_counter()
+            from app.core.config import get_settings as _get_cfg
+            _cfg = _get_cfg()
             response = await litellm.aembedding(
                 model=model,
                 input=[texts[i] for i in miss_idx],
                 api_key=effective_keys.get(self._get_provider(model)),
                 api_base=api_base,
-                timeout=30,
+                timeout=(
+                    _cfg.LLM_LOCAL_TIMEOUT_SECONDS
+                    if model.startswith(("ollama/", "custom/"))
+                    else _cfg.LLM_TIMEOUT_SECONDS
+                ),
             )
             self.embeddings_simulated = False
             usage = getattr(response, "usage", None)

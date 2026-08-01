@@ -11,6 +11,25 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **Pioneer Lab.** A consolidated console (`/platform/pioneer-lab`) that finally
+  gives a UI to the advanced engines that were built and e2e-tested but had no
+  surface: external intelligence (feed a signal, correlate it against the
+  Company Brain, raise a proactive alert), org intelligence (change-readiness
+  scoring, influence-path planning, live skills topology), what-if simulation
+  and macro-shock stress tests, cross-org benchmark with a model-written
+  maturity report, and the tamper-evident / regulatory / federated / polymorphic
+  engine ledgers plus the data-pipeline catalogs. Every panel calls a real
+  endpoint; nothing is decorative.
+
+### Fixed
+- **Local LLM calls no longer time out.** The router used a single 30s timeout
+  for every provider; a CPU-bound local Ollama model routinely needs minutes to
+  generate, so every local reasoning/embedding call timed out and tripped the
+  circuit breaker (falling back to deterministic output). Local (`ollama/`,
+  `custom/`) models now get their own `LLM_LOCAL_TIMEOUT_SECONDS` (default 240s)
+  budget; cloud keeps `LLM_TIMEOUT_SECONDS` (default 30s).
+
 ## [1.6.0] - 2026-08-01 - "Living Surface"
 
 A correctness-and-craft release. The honesty, closed-loop and memory work is

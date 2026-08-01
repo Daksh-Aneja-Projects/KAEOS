@@ -8,7 +8,7 @@ import {
   Landmark, Receipt, Wallet, Scale, ShieldAlert, FileText, ShieldCheck,
   Lock, Lightbulb, BookOpen, Clock, Heart, Compass, Target, TrendingUp,
   CheckSquare, Clipboard, Wrench, Server, GitPullRequest, Siren,
-  Factory, UserPlus, Zap
+  Factory, UserPlus, Zap, FlaskConical
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { api, type PendingHITLItem, type AppNotification } from './api/client';
@@ -70,6 +70,7 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 
 const RealityExperience = lazy(() => import('./pages/RealityExperience'));
 const Foresight = lazy(() => import('./pages/Foresight'));
+const PioneerLab = lazy(() => import('./pages/PioneerLab'));
 
 // ─── v2 AI FOUNDRY + CLIENT ONBOARDING ─────────────────────────────
 const AIFoundry = lazy(() => import('./pages/AIFoundry'));
@@ -113,6 +114,7 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
   { path: '/platform/reality', label: 'Reality Experience', icon: Rocket },
   { path: '/platform/foresight', label: 'Foresight', icon: Compass },
+  { path: '/platform/pioneer-lab', label: 'Pioneer Lab', icon: FlaskConical },
   // Admin/setup last.
   { path: '/platform/onboarding', label: 'Client Onboarding', icon: UserPlus, adminOnly: true },
   { path: '/platform/users', label: 'User Management', icon: Shield, adminOnly: true },
@@ -623,6 +625,7 @@ function Shell() {
                 <Route path="/platform/onboarding" element={<ThemeAdapter><ClientOnboarding /></ThemeAdapter>} />
                 <Route path="/platform/reality" element={<ThemeAdapter><RealityExperience /></ThemeAdapter>} />
                 <Route path="/platform/foresight" element={<ThemeAdapter><Foresight /></ThemeAdapter>} />
+                <Route path="/platform/pioneer-lab" element={<ThemeAdapter><PioneerLab /></ThemeAdapter>} />
                 <Route path="/platform/knowledge" element={<ThemeAdapter><KnowledgeView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />
