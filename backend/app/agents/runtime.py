@@ -1,10 +1,17 @@
 """KAEOS L9 — Agent Runtime (AEOS Enhanced)
 SkillRouter + AgentExecutor with Debate Engine and Fairness Engine gates.
 """
+from collections import deque
 from typing import Dict, Any
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+# Rolling window of recent per-execution gate timings, served by
+# GET /metrics/latency. In-process only: it answers "where do the seconds go
+# right now", not billing (that is CostEvent's job).
+RECENT_STAGE_TIMINGS: deque = deque(maxlen=50)
 
 
 
@@ -271,6 +278,17 @@ class AgentExecutor:
         transitions - the backend only announced FAILURES. These pings make the
         pipeline the UI draws the pipeline that actually ran.
         """
+        # Lap timer: every gate transition already routes through here, so this
+        # is the one place that can attribute wall-time to a stage.
+        ms = None
+        now = time.perf_counter()
+        t_prev = context.get("_gate_t_last")
+        if t_prev is not None:
+            ms = int((now - t_prev) * 1000)
+            context.setdefault("_stage_timings", []).append(
+                {"gate": gate, "state": state, "ms": ms}
+            )
+        context["_gate_t_last"] = now
         try:
             from app.api.routes.ws import manager
             await manager.broadcast_to_tenant(context.get("tenant_id", "default"), {
@@ -280,6 +298,7 @@ class AgentExecutor:
                 "gate": gate,
                 "state": state,
                 "detail": detail,
+                "ms": ms,
             })
         except Exception as e:
             logger.debug(f"[Gate] ws ping skipped: {e}")
@@ -296,6 +315,34 @@ class AgentExecutor:
         the only legitimate caller is the mission engine, which derives it from
         a persisted human-approval record.
         """
+        t0 = time.perf_counter()
+        context["_gate_t_last"] = t0
+        context["_stage_timings"] = []
+        result = await self._run_gates(skill, context, hitl_pre_approved=hitl_pre_approved)
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        if isinstance(result, dict):
+            stages = context.get("_stage_timings", [])
+            result["stage_timings"] = stages
+            result["pipeline_ms"] = total_ms
+            RECENT_STAGE_TIMINGS.append({
+                "execution_id": context.get("execution_id"),
+                "tenant_id": context.get("tenant_id", "default"),
+                "skill_id": skill.get("skill_id", "unknown"),
+                "status": result.get("status"),
+                "pipeline_ms": total_ms,
+                "stages": stages,
+            })
+            logger.info(
+                "[Latency] %s %s pipeline=%dms %s",
+                context.get("execution_id"), result.get("status"), total_ms,
+                " ".join(f"{s['gate']}:{s['ms']}ms" for s in stages),
+            )
+        return result
+
+    async def _run_gates(
+        self, skill: Dict[str, Any], context: Dict[str, Any],
+        *, hitl_pre_approved: bool = False,
+    ) -> Dict[str, Any]:
         # Defense in depth: strip trust-bearing keys a caller (or a request
         # body flowing into context) may have planted. They are server-set only.
         context.pop("hitl_pre_approved", None)
@@ -313,13 +360,33 @@ class AgentExecutor:
         current_execution_id.set(context["execution_id"])
         context["_skill_id_name"] = skill.get("skill_id", "unknown")
 
-        # ── Gate 1: Compliance Pre-Check (L13) ──────────────────────────
+        # ── Gates 1+2: Compliance Pre-Check (L13) + Fairness (AEOS P3) ──
+        # The two gates are independent (neither reads the other's output), and
+        # each can make a real model call - so when both apply they run
+        # concurrently. Verdict ordering is preserved: a compliance BLOCKER is
+        # checked (and returned) first, exactly as in the sequential pipeline.
         # NOTE: check_before_execution is async — it MUST be awaited. A prior
         # bug called it without await, yielding a truthy coroutine that blocked
         # every execution as BLOCKED_COMPLIANCE.
-        violations = await self.compliance.check_before_execution(
-            skill.get("compliance_tags", []), context
-        )
+        import asyncio
+
+        skill_obj = context.get("_skill_obj")
+        fairness_result = None
+        if skill_obj and self.fairness_engine.requires_fairness_check(skill_obj, context):
+            violations, fairness_result = await asyncio.gather(
+                self.compliance.check_before_execution(
+                    skill.get("compliance_tags", []), context
+                ),
+                self.fairness_engine.score_fairness(
+                    skill_obj, context,
+                    tenant_id=context.get("tenant_id", "default"),
+                    execution_id=context.get("execution_id"),
+                ),
+            )
+        else:
+            violations = await self.compliance.check_before_execution(
+                skill.get("compliance_tags", []), context
+            )
         blockers = [v for v in violations if v.get("severity") == "BLOCKER"]
         warnings = [v for v in violations if v.get("severity") != "BLOCKER"]
         if blockers:
@@ -335,14 +402,7 @@ class AgentExecutor:
         # Non-blocking WARNINGs are surfaced downstream (result + provenance).
         context["_compliance_warnings"] = warnings
 
-        # ── Gate 2: Fairness Check (AEOS P3) ────────────────────────────
-        skill_obj = context.get("_skill_obj")
-        if skill_obj and self.fairness_engine.requires_fairness_check(skill_obj, context):
-            fairness_result = await self.fairness_engine.score_fairness(
-                skill_obj, context,
-                tenant_id=context.get("tenant_id", "default"),
-                execution_id=context.get("execution_id"),
-            )
+        if fairness_result is not None:
             if not fairness_result["passed"]:
                 logger.warning(f"Fairness gate BLOCKED: {fairness_result['flagged_attributes']}")
                 from app.models.agent_factory import ActivityEventType, ActivitySeverity
@@ -558,6 +618,7 @@ class AgentExecutor:
             f"[Gate 5] SUCCESS: {skill.get('skill_id', 'unknown')} — "
             f"{exec_result['steps_completed']} steps in {exec_result['duration_ms']}ms"
         )
+        await self._emit_gate(context, "execute", "passed")
 
         # ── Gate 5b: Governed actuation (autonomy that DOES) ─────────────
         # A skill may declare an `actuation` intent {system, object_type,
@@ -634,6 +695,7 @@ class AgentExecutor:
         if not audit_passed:
             logger.error("Audit post-execution checks failed.")
             return {"status": "FAILED_AUDIT", "warnings": warnings}
+        await self._emit_gate(context, "audit", "passed")
 
         result = {
             "status": "SUCCESS_CLEAN",

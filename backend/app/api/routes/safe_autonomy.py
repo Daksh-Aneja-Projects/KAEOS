@@ -1,5 +1,8 @@
 """Safe Autonomy Rate - the north-star metric, exposed for the executive view."""
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -8,6 +11,59 @@ from app.services.safe_autonomy import compute_safe_autonomy
 from app.services.forecast import linear_forecast
 
 router = APIRouter(prefix="/metrics", tags=["Metrics"])
+
+
+@router.get("/latency")
+async def get_latency(
+    hours: int = Query(24, ge=1, le=168),
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Where the seconds go: model-call latency by tier/model (from CostEvent)
+    plus per-gate wall-time for recent executions (in-process ring buffer)."""
+    from app.models.infrastructure import CostEvent
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = (await db.execute(
+        select(CostEvent.model_tier, CostEvent.model_name, CostEvent.latency_ms)
+        .where(CostEvent.tenant_id == tenant_id, CostEvent.timestamp >= cutoff)
+        .order_by(CostEvent.timestamp.desc())
+        .limit(2000)
+    )).all()
+
+    def agg(samples: list[int]) -> dict:
+        samples = sorted(samples)
+        n = len(samples)
+        return {
+            "calls": n,
+            "avg_ms": int(sum(samples) / n),
+            "p50_ms": samples[n // 2],
+            "p95_ms": samples[min(n - 1, int(n * 0.95))],
+            "max_ms": samples[-1],
+        }
+
+    by_tier: dict[str, list[int]] = {}
+    by_model: dict[str, list[int]] = {}
+    for tier, model, ms in rows:
+        if ms is None:
+            continue
+        by_tier.setdefault(tier or "unspecified", []).append(ms)
+        by_model.setdefault(model or "unknown", []).append(ms)
+
+    from app.agents.runtime import RECENT_STAGE_TIMINGS
+    recent = [t for t in RECENT_STAGE_TIMINGS if t.get("tenant_id") == tenant_id]
+
+    return {
+        "window_hours": hours,
+        "model_calls": {k: agg(v) for k, v in by_tier.items()},
+        "by_model": {k: agg(v) for k, v in by_model.items()},
+        "recent_executions": recent[-20:],
+        "note": (
+            "model_calls is measured wall-time per LLM call from metering; "
+            "recent_executions shows per-gate wall-time for the last executions "
+            "in this process."
+        ),
+    }
 
 
 @router.get("/safe-autonomy")

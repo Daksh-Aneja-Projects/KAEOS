@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.tenant import check_department_scope, get_tenant, get_tenant_id
+from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.models.auth import User, UserRole
 from app.models.domain import Connector, Rule, Signal, Skill, SkillExecution
 from app.models.agent_factory import DeployedAgent
@@ -877,6 +877,7 @@ async def brain_ingest(
     text: Optional[str] = Form(None),
     domain: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    tenant: dict = Depends(require_role("operator")),
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db),
 ):

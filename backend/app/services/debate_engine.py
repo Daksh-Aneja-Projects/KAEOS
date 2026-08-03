@@ -62,19 +62,23 @@ class DebateEngine:
         llm = await get_tenant_router(tenant_id)
 
         # Turn 1
-        proposer_1 = await self._proposer(llm, ctx)
-        advocate_1 = await self._advocate(llm, ctx, proposer_1)
+        proposer = await self._proposer(llm, ctx)
+        advocate = await self._advocate(llm, ctx, proposer)
+        arbitrator = await self._arbitrator(llm, ctx, proposer, advocate)
 
-        # Turn 2
-        ctx_turn2 = ctx + f"\n\n[PREVIOUS EXCHANGES]\nPROPOSER: {json.dumps(proposer_1)}\nADVOCATE: {json.dumps(advocate_1)}"
-        proposer_2 = await self._proposer(llm, ctx_turn2)
-        advocate_2 = await self._advocate(llm, ctx_turn2, proposer_2)
-
-        arbitrator = await self._arbitrator(llm, ctx_turn2, proposer_2, advocate_2)
-        
-        # Assign final arguments for persistence
-        proposer = proposer_2
-        advocate = advocate_2
+        # Turn 2 runs ONLY when turn 1 is contested (latency: a decisive
+        # verdict resolves in 3 model calls instead of 5). Contested means the
+        # arbitrator landed in or near the ESCALATE band - exactly the cases
+        # where a second exchange can genuinely change the outcome. A clear
+        # PROCEED (>= 0.8) or clear BLOCK (< 0.5) stands: the advocate has
+        # already had its full shot at the proposal, so this skips no scrutiny,
+        # only a repeat of it.
+        conf_1 = arbitrator.get("final_confidence", 0.5)
+        if 0.5 <= conf_1 < 0.8:
+            ctx_turn2 = ctx + f"\n\n[PREVIOUS EXCHANGES]\nPROPOSER: {self._compact(proposer)}\nADVOCATE: {self._compact(advocate)}\nARBITRATOR: {self._compact(arbitrator)}"
+            proposer = await self._proposer(llm, ctx_turn2)
+            advocate = await self._advocate(llm, ctx_turn2, proposer)
+            arbitrator = await self._arbitrator(llm, ctx_turn2, proposer, advocate)
 
         dur = int((time.time() - start) * 1000)
         escalated = arbitrator.get("final_confidence", 0) < ARBITRATOR_ESCALATION_THRESHOLD
@@ -185,15 +189,21 @@ Respond in JSON: {{"final_confidence":0.0-1.0,"rationale":"...","decision":"PROC
         Example: Finance vs Operations vs HR on "Handling Project X delay".
         """
         logger.info(f"[Debate] Cross-domain debate starting on '{topic}' with {perspectives}")
-        
-        args = {}
-        for p in perspectives:
+
+        # Perspectives are independent of each other - gather them concurrently
+        # instead of paying one model round-trip per domain sequentially.
+        import asyncio
+
+        async def _position(p: str) -> str:
             prompt = f"You are the {p} perspective. Provide a 2-sentence position on: {topic}. Output JSON format: {{\"perspective\": \"...\", \"position\": \"...\"}}"
             try:
                 resp = await self.llm.complete(prompt=prompt, model_tier="reasoning", temperature=0.3)
-                args[p] = self._parse_json(resp).get("position", "Error generating position")
+                return self._parse_json(resp).get("position", "Error generating position")
             except Exception as e:
-                args[p] = str(e)
+                return str(e)
+
+        positions = await asyncio.gather(*(_position(p) for p in perspectives))
+        args = dict(zip(perspectives, positions))
                 
         # Arbitrator synthesis
         arb_prompt = f"Synthesize these perspectives and provide a final recommendation for: {topic}\nPerspectives: {json.dumps(args)}\nOutput JSON: {{\"synthesis\": \"...\", \"recommendation\": \"...\"}}"
