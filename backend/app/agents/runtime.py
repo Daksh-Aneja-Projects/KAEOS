@@ -540,6 +540,10 @@ class AgentExecutor:
                     tenant_id=context.get("tenant_id", "default"),
                 )
                 decision = (transcript.arbitrator_decision or {}).get("decision", "ESCALATE")
+                if decision in ("BLOCK", "ESCALATE"):
+                    # Record the lap on the stopping path too, or the latency
+                    # trace omits the single most expensive gate.
+                    await self._emit_gate(context, "debate", decision.lower())
 
                 if decision == "BLOCK":
                     from app.models.agent_factory import ActivityEventType, ActivitySeverity
