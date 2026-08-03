@@ -70,9 +70,29 @@
   @media (max-width: 760px) { .nav .links { display: none; } }
 
   /* ── Hero ────────────────────────────────────────── */
-  .hero { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .hero { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   #neural { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .hero-veil { position: absolute; inset: 0; background: radial-gradient(ellipse 90% 65% at 50% 42%, transparent 30%, var(--bg) 100%); pointer-events: none; }
+  .hero-aurora {
+    position: absolute; left: 50%; top: 26%; width: 1100px; height: 620px;
+    transform: translate(-50%, -50%); pointer-events: none; filter: blur(70px);
+    background:
+      radial-gradient(ellipse 42% 38% at 38% 52%, rgba(99, 102, 241, 0.16), transparent 70%),
+      radial-gradient(ellipse 38% 34% at 64% 44%, rgba(34, 211, 238, 0.10), transparent 70%);
+    animation: aurora 14s ease-in-out infinite alternate;
+  }
+  @keyframes aurora {
+    0% { transform: translate(-52%, -50%) rotate(-3deg) scale(1); }
+    100% { transform: translate(-48%, -50%) rotate(3deg) scale(1.08); }
+  }
+  .hero-veil { position: absolute; inset: 0; background: radial-gradient(ellipse 100% 88% at 50% 52%, transparent 52%, var(--bg) 100%); pointer-events: none; }
+  .scroll-cue {
+    position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 3;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    color: var(--ink-3); font-size: 10.5px; font-weight: 700; letter-spacing: 0.22em;
+    text-transform: uppercase; transition: opacity 0.4s ease;
+  }
+  .scroll-cue svg { animation: cueFloat 2.1s ease-in-out infinite; }
+  @keyframes cueFloat { 0%, 100% { transform: translateY(0); opacity: 0.9; } 50% { transform: translateY(6px); opacity: 0.4; } }
   .hero-inner { position: relative; z-index: 2; text-align: center; padding: 110px 24px 90px; max-width: 980px; }
   .hero .tag {
     display: inline-flex; align-items: center; gap: 8px;
@@ -295,15 +315,16 @@
 
 <!-- ═══════════ HERO ═══════════ -->
 <header class="hero" id="top">
+  <div class="hero-aurora" aria-hidden="true"></div>
   <canvas id="neural" aria-hidden="true"></canvas>
   <div class="hero-veil"></div>
   <div class="hero-inner">
-    <span class="tag"><span class="dot"></span>v1.9.0 "Fast Lane" is live</span>
+    <a class="tag" href="https://github.com/Daksh-Aneja-Projects/KAEOS/releases/tag/v1.9.0" target="_blank" rel="noopener"><span class="dot"></span>v1.9.0 "Fast Lane" is live</a>
     <h1>The AI Operating System<br /><span class="grad">for Companies</span></h1>
     <p class="sub">
-      A living Company Brain that models your whole organization, then runs real AI departments
-      on top of it. Every action passes a 7-gate governance pipeline, so autonomy is not
-      granted, it is earned - and now, measured to the millisecond.
+      A living Company Brain that models your whole organization and runs real AI
+      departments on top of it. Autonomy is not granted, it is earned - and measured
+      to the millisecond.
     </p>
     <div class="btns">
       <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">
@@ -322,6 +343,10 @@
       <div class="stat"><div class="num" data-count="441">0</div><div class="lbl">E2E Tests</div></div>
       <div class="stat"><div class="num" data-count="0">0</div><div class="lbl">Invented Numbers</div></div>
     </div>
+  </div>
+  <div class="scroll-cue" id="scrollCue">
+    <span>Scroll</span>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
   </div>
 </header>
 
@@ -606,6 +631,7 @@ docker compose up --build</div>
   var DPR = Math.min(window.devicePixelRatio || 1, 2);
   var W = 0, H = 0;
   var COLORS = ["#a78bfa", "#34d399", "#fbbf24", "#60a5fa", "#fb7185", "#fb923c", "#22d3ee"];
+  var NAMES = ["HR", "FINANCE", "LEGAL", "SALES", "SUPPORT", "OPS", "ENGINEERING"];
   var hubs = [], agents = [], pulses = [], particles = [];
   var brain = { x: 0, y: 0, r: 34 };
   var mouse = { x: -9999, y: -9999 };
@@ -614,25 +640,35 @@ docker compose up --build</div>
     W = canvas.clientWidth; H = canvas.clientHeight;
     canvas.width = W * DPR; canvas.height = H * DPR;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    brain.x = W / 2; brain.y = H * 0.84; brain.r = Math.max(24, Math.min(40, W * 0.028));
     hubs = []; agents = [];
     var n = COLORS.length;
-    var span = Math.min(W * 0.84, 1150);
-    var x0 = (W - span) / 2;
+    /* Horseshoe around the copy: the ellipse is anchored to the MEASURED
+       content box, not viewport fractions, so hubs clear the headline,
+       subtitle, CTAs and stats at every screen size. */
+    var inner = document.querySelector(".hero-inner");
+    var heroBox = canvas.getBoundingClientRect();
+    var box = inner.getBoundingClientRect();
+    var cy = (box.top - heroBox.top + box.bottom - heroBox.top) / 2;
+    var RX = Math.min(W * 0.47, box.width / 2 + 110);
+    var RY = Math.min(H * 0.46, box.height / 2 + 64);
+    brain.x = W / 2;
+    /* Hub line clamps at H-96; keep the brain a clear band below it. */
+    brain.y = Math.min(H - 34, cy + RY + 104);
+    brain.r = Math.max(20, Math.min(32, W * 0.024));
     for (var i = 0; i < n; i++) {
-      var t = i / (n - 1);
-      var hx = x0 + span * t;
-      var hy = H * (0.60 - 0.11 * Math.sin(Math.PI * t));
-      hubs.push({ x: hx, y: hy, r: Math.max(9, Math.min(14, W * 0.01)), c: COLORS[i], ph: Math.random() * 6.28 });
+      var deg = 168 - (i * (168 - 12) / (n - 1));   /* 168° → 12° */
+      var a = deg * Math.PI / 180;
+      var hx = W / 2 + Math.cos(a) * RX;
+      var hy = Math.min(H - 96, cy + Math.sin(a) * RY);
+      hubs.push({ x: hx, y: hy, r: Math.max(9, Math.min(14, W * 0.01)), c: COLORS[i], name: NAMES[i], ph: Math.random() * 6.28 });
       var na = 3 + (i % 2);
       for (var j = 0; j < na; j++) {
         agents.push({
           hub: i,
           ang: Math.random() * 6.28,
           spd: 0.14 + Math.random() * 0.22,
-          rad: 40 + Math.random() * 62,
-          lift: 44 + Math.random() * 78,
-          r: 2.4 + Math.random() * 1.8,
+          rad: 26 + Math.random() * 34,
+          r: 2.2 + Math.random() * 1.7,
           ph: Math.random() * 6.28
         });
       }
@@ -646,10 +682,10 @@ docker compose up --build</div>
 
   function agentPos(a, t) {
     var h = hubs[a.hub];
-    var wob = Math.sin(t * 0.7 + a.ph) * 7;
+    var wob = Math.sin(t * 0.7 + a.ph) * 6;
     return {
       x: h.x + Math.cos(a.ang + t * a.spd) * a.rad,
-      y: h.y - a.lift + Math.sin(a.ang + t * a.spd * 0.8) * 16 + wob
+      y: h.y + Math.sin(a.ang + t * a.spd) * a.rad * 0.66 + wob
     };
   }
 
@@ -678,7 +714,10 @@ docker compose up --build</div>
       var g = ctx.createLinearGradient(h.x, h.y, brain.x, brain.y);
       g.addColorStop(0, h.c + "55"); g.addColorStop(1, "rgba(99,102,241,0.10)");
       ctx.strokeStyle = g; ctx.lineWidth = 1.2;
+      ctx.setLineDash([3, 9]);
+      ctx.lineDashOffset = -t * 26;
       ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(brain.x, brain.y); ctx.stroke();
+      ctx.setLineDash([]);
       if (i > 0) {
         var h0 = hubs[i - 1];
         ctx.strokeStyle = "rgba(148, 163, 194, 0.10)"; ctx.lineWidth = 1;
@@ -726,6 +765,20 @@ docker compose up --build</div>
       ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * breathe, 0, 6.29); ctx.fill();
       ctx.strokeStyle = hu.c + "66"; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * breathe + 5, 0, 6.29); ctx.stroke();
+      /* rotating radar segment: quiet proof the system is alive */
+      ctx.strokeStyle = hu.c; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * breathe + 5, t * 0.9 + hu.ph, t * 0.9 + hu.ph + 0.9); ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (W > 640) {
+        ctx.font = "600 10px Inter, sans-serif";
+        ctx.textAlign = "center";
+        try { ctx.letterSpacing = "2px"; } catch (e) {}
+        ctx.fillStyle = hu.c;
+        ctx.globalAlpha = 0.72;
+        ctx.fillText(hu.name, hu.x, hu.y + hu.r + 24);
+        ctx.globalAlpha = 1;
+        try { ctx.letterSpacing = "0px"; } catch (e) {}
+      }
     }
 
     var bg2 = ctx.createRadialGradient(brain.x, brain.y, 0, brain.x, brain.y, brain.r * 4);
@@ -788,6 +841,14 @@ docker compose up --build</div>
     });
   }, { threshold: 0.4 });
   if (nums.length) io.observe(nums[0]);
+
+  /* ── Scroll cue fade ────────────────────────────── */
+  var cue = document.getElementById("scrollCue");
+  if (cue) {
+    window.addEventListener("scroll", function () {
+      cue.style.opacity = window.scrollY > 80 ? "0" : "1";
+    }, { passive: true });
+  }
 
   /* ── Scroll reveals ─────────────────────────────── */
   var io2 = new IntersectionObserver(function (entries) {
