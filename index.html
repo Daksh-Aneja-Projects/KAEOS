@@ -1,450 +1,816 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KAEOS: Autonomy you can audit</title>
-<meta name="description" content="KAEOS runs whole company departments with AI that does the work autonomously and proves every action. Open source, local-first, governed.">
-<meta property="og:title" content="KAEOS: Autonomy you can audit">
-<meta property="og:description" content="AI that runs whole company departments through a seven-gate governance pipeline. One number that matters: the safe autonomy rate.">
-<meta property="og:image" content="https://daksh-aneja-projects.github.io/KAEOS/01-dashboard.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%237c3aed'/%3E%3Ctext x='32' y='44' font-family='Arial' font-size='34' font-weight='700' fill='white' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KAEOS - The AI Operating System for Companies</title>
+<meta name="description" content="KAEOS is a living Company Brain that runs real AI departments under a 7-gate governance pipeline. Autonomy is not granted, it is earned and measured." />
+<meta property="og:title" content="KAEOS - The AI Operating System for Companies" />
+<meta property="og:description" content="Seven AI departments, one Company Brain, and a governance pipeline that measures every decision. Autonomy is earned, not granted." />
+<meta property="og:image" content="https://daksh-aneja-projects.github.io/KAEOS/01-dashboard.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="%236366f1"/><circle cx="16" cy="16" r="12" fill="none" stroke="%2322d3ee" stroke-width="2" opacity="0.7"/><circle cx="26" cy="9" r="2.6" fill="%2322d3ee"/></svg>' />
 <style>
-  :root{
-    --ink:#06070d; --panel:#0b0e1a; --panel2:#0e1222;
-    --line:rgba(139,148,255,.13); --line2:rgba(139,148,255,.22);
-    --text:#e8ebfa; --dim:#9aa3c7; --faint:#667097;
-    --violet:#7c3aed; --cyan:#2dd4ee;
-    --ok:#4ade80; --human:#f5b04c; --block:#f0637a;
-    --disp:"Space Grotesk","IBM Plex Sans",sans-serif;
-    --body:"IBM Plex Sans",system-ui,sans-serif;
-    --mono:"IBM Plex Mono",Consolas,monospace;
+  :root {
+    --bg: #06080d;
+    --bg-2: #0a0e16;
+    --panel: #0d1219;
+    --panel-2: #111726;
+    --hair: rgba(148, 163, 194, 0.14);
+    --hair-strong: rgba(148, 163, 194, 0.26);
+    --ink: #e9edf5;
+    --ink-2: #a7b0c3;
+    --ink-3: #6b7690;
+    --indigo: #6366f1;
+    --cyan: #22d3ee;
+    --emerald: #34d399;
+    --violet: #a78bfa;
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+    --rose: #fb7185;
+    --orange: #fb923c;
+    --grad: linear-gradient(92deg, #818cf8 0%, #22d3ee 100%);
+    --radius: 16px;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  *{margin:0;padding:0;box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{background:var(--ink);color:var(--text);font-family:var(--body);font-weight:300;line-height:1.65;overflow-x:hidden}
-  ::selection{background:rgba(124,58,237,.4)}
-  a{color:var(--cyan);text-decoration:none}
-  :focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
-  .wrap{max-width:1140px;margin:0 auto;padding:0 24px}
-  img{max-width:100%}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+  ::selection { background: rgba(99, 102, 241, 0.4); }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
 
-  /* ---------- nav ---------- */
-  nav{position:sticky;top:0;z-index:50;background:rgba(6,7,13,.78);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-  nav .wrap{display:flex;align-items:center;gap:30px;height:62px}
-  .logo{font-family:var(--disp);font-weight:600;letter-spacing:.3em;font-size:17px;color:#fff}
-  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center}
-  nav .links a{color:var(--dim);font-size:14.5px;font-weight:400}
-  nav .links a:hover{color:#fff}
-  .gh{border:1px solid var(--line2);border-radius:8px;padding:7px 16px;color:#fff !important;font-weight:500}
-  .gh:hover{background:rgba(124,58,237,.15);border-color:var(--violet)}
-  @media(max-width:720px){nav .links a:not(.gh){display:none}}
+  /* ── Nav ─────────────────────────────────────────── */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    display: flex; align-items: center; gap: 28px;
+    padding: 14px 28px;
+    background: rgba(6, 8, 13, 0.78);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--hair);
+  }
+  .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.14em; font-size: 15px; }
+  .nav .brand svg { flex: none; }
+  .nav .links { display: flex; gap: 22px; margin-left: auto; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+  .nav .links a:hover { color: var(--ink); }
+  .nav .cta {
+    font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 10px;
+    background: var(--grad); color: #fff; white-space: nowrap; margin-left: auto;
+  }
+  .nav .links + .cta { margin-left: 0; }
+  @media (max-width: 760px) { .nav .links { display: none; } }
 
-  /* ---------- hero ---------- */
-  .hero{position:relative;padding:90px 0 70px;overflow:hidden}
-  #net{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
-  .hero::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 30% 20%,rgba(124,58,237,.12),transparent 60%)}
-  .hero .wrap{position:relative;z-index:2;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
-  @media(max-width:980px){.hero .wrap{grid-template-columns:1fr}}
-  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;color:var(--cyan);text-transform:uppercase;display:flex;align-items:center;gap:10px}
-  .eyebrow::before{content:"";width:26px;height:1px;background:var(--cyan)}
-  h1{font-family:var(--disp);font-weight:600;font-size:clamp(42px,5.6vw,72px);line-height:1.04;letter-spacing:-.02em;margin:20px 0 22px}
-  h1 .aud{background:linear-gradient(120deg,var(--violet),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{font-size:18px;color:var(--dim);max-width:520px}
-  .sub b{color:var(--text);font-weight:500}
-  .ctas{margin-top:34px;display:flex;gap:14px;flex-wrap:wrap}
-  .btn{display:inline-block;padding:13px 26px;border-radius:10px;font-weight:500;font-size:15.5px;font-family:var(--body);transition:.18s}
-  .btn.primary{background:linear-gradient(135deg,var(--violet),#5b6cf0);color:#fff;box-shadow:0 10px 36px rgba(124,58,237,.35)}
-  .btn.primary:hover{transform:translateY(-2px)}
-  .btn.ghost{border:1px solid var(--line2);color:#dfe4ff}
-  .btn.ghost:hover{border-color:var(--violet)}
+  /* ── Hero ────────────────────────────────────────── */
+  .hero { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  #neural { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hero-veil { position: absolute; inset: 0; background: radial-gradient(ellipse 90% 65% at 50% 42%, transparent 30%, var(--bg) 100%); pointer-events: none; }
+  .hero-inner { position: relative; z-index: 2; text-align: center; padding: 110px 24px 90px; max-width: 980px; }
+  .hero .tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    color: var(--cyan); border: 1px solid rgba(34, 211, 238, 0.3);
+    background: rgba(34, 211, 238, 0.07);
+    padding: 6px 14px; border-radius: 999px; margin-bottom: 26px;
+  }
+  .hero .tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); animation: blink 2.2s ease-in-out infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .hero h1 {
+    font-size: clamp(38px, 6.4vw, 74px); font-weight: 800; line-height: 1.06;
+    letter-spacing: -0.03em; margin-bottom: 22px;
+  }
+  .hero h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.sub { font-size: clamp(15px, 2vw, 19px); color: var(--ink-2); max-width: 700px; margin: 0 auto 36px; }
+  .hero .btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 64px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 14.5px; font-weight: 600; padding: 13px 26px; border-radius: 12px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn.primary { background: var(--grad); color: #fff; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.35); }
+  .btn.ghost { border: 1px solid var(--hair-strong); color: var(--ink); background: rgba(17, 23, 38, 0.6); }
+  .stats { display: flex; gap: clamp(18px, 4.5vw, 58px); justify-content: center; flex-wrap: wrap; }
+  .stat { text-align: center; min-width: 92px; }
+  .stat .num { font-family: var(--mono); font-size: clamp(26px, 3.4vw, 38px); font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat .lbl { font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin-top: 2px; }
 
-  /* ---------- the ledger (signature) ---------- */
-  .ledger{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:14px;
-    box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(124,58,237,.08), 0 0 60px rgba(124,58,237,.10);
-    font-family:var(--mono);font-size:12.6px;line-height:1.9;overflow:hidden}
-  @media(max-width:640px){.ledger{font-size:10.8px}.ledger-body{overflow-x:auto}}
-  .ledger-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);background:rgba(139,148,255,.04)}
-  .ledger-bar i{width:10px;height:10px;border-radius:50%;background:#2c3150;display:inline-block}
-  .ledger-bar span{margin-left:8px;color:var(--faint);font-size:12px;letter-spacing:.08em}
-  .ledger-body{padding:18px 20px 20px;min-height:340px}
-  .ln{white-space:pre;display:block;opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;color:var(--dim)}
-  .ln.show{opacity:1;transform:none}
-  .ln .k{color:#8f9ad0}
-  .ln .ok{color:var(--ok);font-weight:500}
-  .ln .hum{color:var(--human);font-weight:500}
-  .ln .sig{color:var(--cyan)}
-  .ln .hash{color:#7d88c4}
-  .ln.head{color:#fff;font-weight:500}
-  .ln.final{color:var(--ok);font-weight:500}
-  .ln.final.hum-final{color:var(--human)}
-  .caret{display:inline-block;width:8px;height:15px;background:var(--cyan);vertical-align:-2px;animation:blink 1s steps(1) infinite}
-  @keyframes blink{50%{opacity:0}}
-  @media(prefers-reduced-motion:reduce){
-    .ln{opacity:1;transform:none;transition:none}
-    .caret{animation:none}
-    #net{display:none}
+  /* ── Sections ────────────────────────────────────── */
+  section { position: relative; padding: 96px 24px; max-width: 1160px; margin: 0 auto; }
+  .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #818cf8; margin-bottom: 14px; }
+  .kicker.cy { color: var(--cyan); }
+  h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; margin-bottom: 18px; }
+  .lede { font-size: 16.5px; color: var(--ink-2); max-width: 780px; }
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 46px; }
+  @media (max-width: 880px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair); border-radius: var(--radius);
+    padding: 28px 26px; transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+  .card:hover { border-color: rgba(99, 102, 241, 0.45); transform: translateY(-3px); }
+  .card .ico {
+    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+    background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25); margin-bottom: 18px;
+  }
+  .card h3 { font-size: 17px; font-weight: 700; margin-bottom: 9px; }
+  .card p { font-size: 14px; color: var(--ink-2); }
+
+  /* ── Gate rail ───────────────────────────────────── */
+  .rail-wrap { margin-top: 54px; position: relative; }
+  .rail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; position: relative; }
+  @media (max-width: 980px) { .rail { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 640px) { .rail { grid-template-columns: repeat(2, 1fr); } }
+  .rail::before {
+    content: ""; position: absolute; top: 26px; left: 4%; right: 4%; height: 2px;
+    background: linear-gradient(90deg, rgba(99,102,241,0.0), rgba(99,102,241,0.45), rgba(34,211,238,0.45), rgba(34,211,238,0.0));
+  }
+  @media (max-width: 980px) { .rail::before { display: none; } }
+  .gate {
+    position: relative; background: var(--panel);
+    border: 1px solid var(--hair); border-radius: 14px; padding: 18px 14px 16px; text-align: center;
+    animation: gatePulse 7s ease-in-out infinite;
+  }
+  @keyframes gatePulse {
+    0%, 100% { border-color: rgba(148, 163, 194, 0.14); box-shadow: none; }
+    7%, 13% { border-color: rgba(34, 211, 238, 0.65); box-shadow: 0 0 24px rgba(34, 211, 238, 0.12); }
+  }
+  .gate .n {
+    width: 26px; height: 26px; margin: 0 auto 10px; border-radius: 50%;
+    display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 700;
+    background: rgba(99, 102, 241, 0.16); border: 1px solid rgba(99, 102, 241, 0.4); color: #b6bafe;
+  }
+  .gate h4 { font-size: 13.5px; font-weight: 700; margin-bottom: 5px; }
+  .gate p { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+  .gate-note {
+    margin-top: 30px; display: flex; gap: 12px; align-items: flex-start;
+    background: rgba(34, 211, 238, 0.05); border: 1px solid rgba(34, 211, 238, 0.18);
+    border-radius: 14px; padding: 18px 20px; font-size: 14px; color: var(--ink-2);
+  }
+  .gate-note strong { color: var(--cyan); font-weight: 700; }
+  .gate-note svg { flex: none; margin-top: 2px; }
+  .gate-note code { font-family: var(--mono); font-size: 12.5px; color: var(--cyan); }
+
+  /* ── Ceiling meter ───────────────────────────────── */
+  .split { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 54px; align-items: center; margin-top: 10px; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; gap: 34px; } }
+  .meter-panel {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair); border-radius: var(--radius); padding: 30px;
+    position: relative;
+  }
+  .meter-row { margin-bottom: 22px; }
+  .meter-row .top { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
+  .meter-row .top .l { color: var(--ink-2); font-weight: 600; }
+  .meter-row .top .v { font-family: var(--mono); color: var(--ink); font-weight: 700; }
+  .bar { height: 10px; border-radius: 999px; background: rgba(148, 163, 194, 0.1); position: relative; overflow: hidden; }
+  .bar .fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 999px; transition: width 1.4s cubic-bezier(0.22, 1, 0.36, 1); }
+  .cap-tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--rose);
+    background: rgba(251, 113, 133, 0.1); border: 1px solid rgba(251, 113, 133, 0.35);
+    padding: 3px 9px; border-radius: 7px; margin-bottom: 22px;
+  }
+  .verdict { display: flex; align-items: center; gap: 10px; margin-top: 26px; font-family: var(--mono); font-size: 13px; font-weight: 700; flex-wrap: wrap; }
+  .verdict .pill { padding: 5px 13px; border-radius: 8px; }
+  .verdict .clean { background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.4); color: var(--emerald); text-decoration: line-through; opacity: 0.55; }
+  .verdict .arrow { color: var(--ink-3); }
+  .verdict .hitl { background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.4); color: var(--amber); }
+  .feature-list { list-style: none; margin-top: 24px; display: grid; gap: 14px; }
+  .feature-list li { display: flex; gap: 12px; font-size: 14.5px; color: var(--ink-2); }
+  .feature-list li svg { flex: none; margin-top: 3px; }
+  .feature-list li strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Shots gallery ───────────────────────────────── */
+  .shot-hero {
+    margin-top: 48px; border-radius: 18px; overflow: hidden;
+    border: 1px solid var(--hair-strong);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(99, 102, 241, 0.08);
+  }
+  .grid-shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 46px; }
+  @media (max-width: 980px) { .grid-shots { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .grid-shots { grid-template-columns: 1fr; } }
+  .shot {
+    border-radius: 14px; overflow: hidden; background: var(--panel);
+    border: 1px solid var(--hair); transition: transform 0.25s ease, border-color 0.25s ease;
+  }
+  .shot:hover { transform: translateY(-4px); border-color: rgba(99, 102, 241, 0.5); }
+  .shot img { aspect-ratio: 16 / 9.4; object-fit: cover; object-position: top; width: 100%; }
+  .shot .cap { padding: 13px 16px; font-size: 12.5px; color: var(--ink-2); border-top: 1px solid var(--hair); }
+  .shot .cap strong { color: var(--ink); font-weight: 650; display: block; font-size: 13px; margin-bottom: 1px; }
+
+  /* ── Honesty ─────────────────────────────────────── */
+  .honesty { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 44px; }
+  @media (max-width: 800px) { .honesty { grid-template-columns: 1fr; } }
+  .truth {
+    background: var(--panel); border: 1px solid var(--hair); border-radius: 14px;
+    padding: 22px 24px; font-size: 14px; color: var(--ink-2);
+  }
+  .truth strong { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 6px; font-weight: 700; }
+  .truth .no { color: var(--rose); font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; display: inline-block; margin-bottom: 10px; border: 1px solid rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); padding: 3px 9px; border-radius: 7px; }
+
+  /* ── Timeline ────────────────────────────────────── */
+  .timeline { position: relative; margin-top: 52px; display: grid; gap: 0; }
+  .trow {
+    display: grid; grid-template-columns: 110px 26px 1fr; gap: 0 18px; align-items: start;
+    padding-bottom: 34px; position: relative;
+  }
+  .trow .ver { font-family: var(--mono); font-size: 13.5px; font-weight: 700; color: var(--cyan); text-align: right; padding-top: 1px; }
+  .trow .node { position: relative; display: flex; justify-content: center; padding-top: 5px; }
+  .trow .node::before { content: ""; position: absolute; top: 20px; bottom: -6px; width: 2px; background: linear-gradient(180deg, rgba(99,102,241,0.5), rgba(99,102,241,0.08)); }
+  .trow:last-child .node::before { display: none; }
+  .trow .node .dot2 { width: 12px; height: 12px; border-radius: 50%; background: var(--indigo); box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18); position: relative; z-index: 1; }
+  .trow:first-child .node .dot2 { background: var(--cyan); box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2), 0 0 18px rgba(34, 211, 238, 0.5); }
+  .trow h4 { font-size: 15.5px; font-weight: 750; margin-bottom: 3px; }
+  .trow h4 .name { color: var(--ink-2); font-weight: 550; }
+  .trow p { font-size: 13.5px; color: var(--ink-3); max-width: 660px; }
+  .trow .vsm { display: none; }
+  @media (max-width: 620px) {
+    .trow { grid-template-columns: 20px 1fr; }
+    .trow .ver { display: none; }
+    .trow .vsm { display: inline; font-family: var(--mono); color: var(--cyan); margin-right: 8px; }
   }
 
-  /* ---------- readout strip ---------- */
-  .readout{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel)}
-  .readout .wrap{display:flex;flex-wrap:wrap;gap:10px 38px;justify-content:center;padding:18px 24px;
-    font-family:var(--mono);font-size:13.5px;color:var(--faint)}
-  .readout b{color:var(--text);font-weight:500}
-  .readout .ok{color:var(--ok)}
+  /* ── Quick start / footer ────────────────────────── */
+  .qs {
+    margin-top: 44px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair); border-radius: var(--radius); padding: 30px; overflow: hidden;
+  }
+  .qs .code {
+    font-family: var(--mono); font-size: 13.5px; background: #05070b;
+    border: 1px solid var(--hair); border-radius: 12px; padding: 18px 20px;
+    color: #c7d2fe; overflow-x: auto; white-space: pre; line-height: 1.9;
+  }
+  .qs .code .c { color: var(--ink-3); }
+  .tech { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .chip {
+    font-size: 12px; font-weight: 600; color: var(--ink-2);
+    border: 1px solid var(--hair); background: var(--panel); border-radius: 999px; padding: 6px 14px;
+  }
+  footer {
+    border-top: 1px solid var(--hair); padding: 44px 24px 60px; text-align: center;
+    color: var(--ink-3); font-size: 13px;
+  }
+  footer .flinks { display: flex; gap: 26px; justify-content: center; margin-bottom: 18px; font-weight: 600; color: var(--ink-2); flex-wrap: wrap; }
+  footer .flinks a:hover { color: var(--ink); }
 
-  /* ---------- sections ---------- */
-  section{padding:104px 0}
-  .kick{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;color:var(--cyan);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:10px}
-  .kick::before{content:"";width:26px;height:1px;background:var(--cyan)}
-  h2{font-family:var(--disp);font-weight:600;font-size:clamp(30px,4vw,44px);line-height:1.12;letter-spacing:-.015em}
-  .lede{color:var(--dim);font-size:17.5px;max-width:730px;margin-top:16px}
-  .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s ease}
-  .reveal.in{opacity:1;transform:none}
-  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
-
-  /* problem */
-  .quote{font-family:var(--disp);font-weight:400;font-size:clamp(24px,3.2vw,34px);line-height:1.4;color:#e4e8ff;max-width:880px}
-  .quote em{font-style:normal;color:var(--cyan)}
-  .figure{margin-top:34px;display:flex;gap:16px;align-items:baseline;font-family:var(--mono)}
-  .figure b{font-size:44px;font-weight:500;color:var(--human)}
-  .figure span{color:var(--faint);font-size:14px;max-width:420px;line-height:1.5}
-
-  /* how */
-  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:0;margin-top:52px;border:1px solid var(--line);border-radius:16px;overflow:hidden}
-  .step{padding:34px 30px;background:var(--panel);border-right:1px solid var(--line)}
-  .step:last-child{border-right:none}
-  @media(max-width:900px){.step{border-right:none;border-bottom:1px solid var(--line)}.step:last-child{border-bottom:none}}
-  .step .sn{font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:.14em}
-  .step h3{font-family:var(--disp);font-weight:500;font-size:21px;margin:12px 0 10px}
-  .step p{color:var(--dim);font-size:15px}
-
-  /* gates schematic */
-  .schema{margin-top:56px;overflow-x:auto;padding-bottom:8px}
-  .rail{display:flex;align-items:stretch;gap:0;min-width:860px}
-  .g{flex:1;position:relative;padding:20px 14px 16px;border:1px solid var(--line);background:var(--panel);text-align:center;margin-right:26px;border-radius:12px}
-  .g:last-child{margin-right:0}
-  .g::after{content:"→";position:absolute;right:-22px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px}
-  .g:last-child::after{content:""}
-  .g .gn{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.16em}
-  .g b{display:block;font-family:var(--disp);font-weight:500;font-size:15.5px;margin:6px 0 4px;color:#fff}
-  .g span{font-size:12.5px;color:var(--faint);line-height:1.4;display:block}
-  .g.hgate{border-color:rgba(245,176,76,.4);box-shadow:0 0 30px rgba(245,176,76,.07) inset}
-  .g.hgate b{color:var(--human)}
-  .branch{margin-top:14px;font-family:var(--mono);font-size:12.5px;color:var(--human);border-top:1px dashed rgba(245,176,76,.4);padding-top:10px}
-  .schema-note{margin-top:22px;font-size:15px;color:var(--dim);max-width:720px}
-  .schema-note b{color:var(--text);font-weight:500}
-
-  /* product shots */
-  .shot{margin-top:54px;border:1px solid var(--line2);border-radius:16px;overflow:hidden;background:var(--panel);box-shadow:0 34px 90px rgba(0,0,0,.55)}
-  .shot .bar{display:flex;gap:7px;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(139,148,255,.04)}
-  .shot .bar i{width:10px;height:10px;border-radius:50%;background:#2c3150}
-  .shot img{display:block;width:100%}
-  .shot figcaption{padding:15px 22px;font-size:14px;color:var(--dim);border-top:1px solid var(--line);font-family:var(--mono)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:26px}
-  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
-  .grid2 .shot{margin-top:0}
-
-  /* departments */
-  .depts{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:14px;margin-top:48px}
-  .dept{border:1px solid var(--line);border-radius:12px;padding:20px 14px;text-align:center;background:var(--panel);transition:.2s}
-  .dept:hover{border-color:var(--violet);transform:translateY(-3px)}
-  .dept b{display:block;font-family:var(--disp);font-weight:500;font-size:15.5px;margin-bottom:5px}
-  .dept span{font-family:var(--mono);font-size:12px;color:var(--faint)}
-
-  /* honesty ledger */
-  .assert{margin-top:44px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
-  .assert li{list-style:none;display:flex;gap:18px;padding:20px 24px;border-bottom:1px solid var(--line);background:var(--panel);align-items:baseline}
-  .assert li:last-child{border-bottom:none}
-  .assert .m{font-family:var(--mono);color:var(--ok);font-size:14px;white-space:nowrap}
-  .assert p{color:var(--dim);font-size:15.5px}
-  .assert p b{color:var(--text);font-weight:500}
-
-  /* cta + footer */
-  .cta-final{text-align:center;padding:110px 0 120px}
-  .cta-final h2{margin-bottom:14px}
-  .cta-final p{color:var(--dim);max-width:560px;margin:0 auto 34px}
-  footer{border-top:1px solid var(--line);padding:46px 0;background:var(--panel)}
-  footer .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;color:var(--faint);font-size:14px}
-  footer .fmark{font-family:var(--disp);font-weight:600;letter-spacing:.28em;color:#cfd6ff}
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
 </style>
 </head>
 <body>
 
-<nav>
-  <div class="wrap">
-    <span class="logo">KAEOS</span>
-    <div class="links">
-      <a href="#how">How it works</a>
-      <a href="#gates">The pipeline</a>
-      <a href="#product">Product</a>
-      <a href="#honesty">Honesty</a>
-      <a class="gh" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">GitHub ↗</a>
-    </div>
+<nav class="nav">
+  <a class="brand" href="#top" aria-label="KAEOS home">
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="5.5" fill="#6366f1"/>
+      <circle cx="16" cy="16" r="12" stroke="#22d3ee" stroke-width="1.8" opacity="0.75"/>
+      <circle cx="26" cy="9" r="2.4" fill="#22d3ee"/>
+      <line x1="20.5" y1="12.5" x2="24.2" y2="10.4" stroke="#22d3ee" stroke-width="1.4" opacity="0.7"/>
+    </svg>
+    KAEOS
+  </a>
+  <div class="links">
+    <a href="#product">Product</a>
+    <a href="#governance">Governance</a>
+    <a href="#ceiling">Measured Ceiling</a>
+    <a href="#screens">Screens</a>
+    <a href="#releases">Releases</a>
   </div>
+  <a class="cta" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">GitHub</a>
 </nav>
 
-<header class="hero">
-  <canvas id="net" aria-hidden="true"></canvas>
-  <div class="wrap">
-    <div>
-      <p class="eyebrow">Open source · Local-first · Governed</p>
-      <h1>Autonomy you<br>can <span class="aud">audit</span>.</h1>
-      <p class="sub">KAEOS runs whole company departments with AI that <b>does the work</b>:
-        triages the incident, reviews the pull request, scores the deal, flags the late invoice.
-        Every action passes seven gates before it fires, and every decision lands in a
-        tamper-evident ledger.</p>
-      <div class="ctas">
-        <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">Read the code</a>
-        <a class="btn ghost" href="#how">How it works</a>
-      </div>
+<!-- ═══════════ HERO ═══════════ -->
+<header class="hero" id="top">
+  <canvas id="neural" aria-hidden="true"></canvas>
+  <div class="hero-veil"></div>
+  <div class="hero-inner">
+    <span class="tag"><span class="dot"></span>v1.9.0 "Fast Lane" is live</span>
+    <h1>The AI Operating System<br /><span class="grad">for Companies</span></h1>
+    <p class="sub">
+      A living Company Brain that models your whole organization, then runs real AI departments
+      on top of it. Every action passes a 7-gate governance pipeline, so autonomy is not
+      granted, it is earned - and now, measured to the millisecond.
+    </p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0.5a11.5 11.5 0 0 0-3.64 22.41c0.58 0.11 0.79-0.25 0.79-0.55v-2.17c-3.2 0.7-3.87-1.36-3.87-1.36-0.53-1.33-1.28-1.69-1.28-1.69-1.05-0.71 0.08-0.7 0.08-0.7 1.16 0.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36 0.96 0.1-0.75 0.4-1.25 0.73-1.54-2.55-0.29-5.24-1.28-5.24-5.69 0-1.26 0.45-2.28 1.19-3.09-0.12-0.29-0.52-1.46 0.11-3.05 0 0 0.97-0.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.16-1.18 3.16-1.18 0.63 1.59 0.24 2.76 0.12 3.05 0.74 0.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.27 5.68 0.42 0.36 0.78 1.06 0.78 2.14v3.17c0 0.31 0.21 0.67 0.8 0.55A11.5 11.5 0 0 0 12 0.5Z"/></svg>
+        Explore the Code
+      </a>
+      <a class="btn ghost" href="https://github.com/Daksh-Aneja-Projects/KAEOS/releases/tag/v1.9.0" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24H4a1 1 0 0 0-1 1v5.59c0 0.53 0.21 1.04 0.59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.59-4.59a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg>
+        Release Notes
+      </a>
     </div>
-    <div class="ledger" aria-label="Example of a governed decision passing through the KAEOS pipeline">
-      <div class="ledger-bar"><i></i><i></i><i></i><span>kaeos · decision ledger · live</span></div>
-      <div class="ledger-body" id="ledger"><span class="ln head show">▸ signal   finance/invoice INV-2214 · overdue risk</span><span class="ln show">  <span class="k">GATE 1  COMPLIANCE</span>   SOX controls        <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 2  FAIRNESS</span>     bias scan           <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 3  CONFIDENCE</span>   0.91 ≥ 0.82         <span class="ok">PASS</span></span><span class="ln show">  <span class="k">GATE 4  HUMAN</span>        not required        <span class="ok">SKIP</span></span><span class="ln show">  <span class="k">GATE 5  DEBATE</span>       verdict             <span class="ok">PROCEED</span></span><span class="ln show">  <span class="k">GATE 6  EXECUTE</span>      qwen2.5 · local     <span class="sig">1.2s</span></span><span class="ln show">  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#a3f1…9c42</span>        <span class="ok">CHAINED</span></span><span class="ln final show">✓ EXECUTED AUTONOMOUSLY</span></div>
+    <div class="stats">
+      <div class="stat"><div class="num" data-count="7">0</div><div class="lbl">AI Departments</div></div>
+      <div class="stat"><div class="num" data-count="33">0</div><div class="lbl">Agents on Duty</div></div>
+      <div class="stat"><div class="num" data-count="7">0</div><div class="lbl">Governance Gates</div></div>
+      <div class="stat"><div class="num" data-count="441">0</div><div class="lbl">E2E Tests</div></div>
+      <div class="stat"><div class="num" data-count="0">0</div><div class="lbl">Invented Numbers</div></div>
     </div>
   </div>
 </header>
 
-<div class="readout">
-  <div class="wrap">
-    <span>departments=<b>7</b></span>
-    <span>gates=<b>7</b></span>
-    <span>connectors=<b>22</b></span>
-    <span>e2e_tests=<b>441</b></span>
-    <span>tenant_isolation=<b class="ok">RLS ENFORCED</b></span>
-    <span>license=<b>Apache-2.0</b></span>
-  </div>
-</div>
-
-<section id="problem">
-  <div class="wrap reveal">
-    <p class="kick">The problem</p>
-    <p class="quote">Enterprises are not blocked from using AI by capability.
-      They are blocked by <em>accountability</em>. The question that kills every pilot is not
-      "can the model do it". It is "when it acts on its own and we get audited,
-      how do we explain it?"</p>
-    <div class="figure">
-      <b>88%</b>
-      <span>of enterprise agent pilots never reach production. The missing layer is not a smarter
-        agent. It is proof: who approved this, what rule governed it, what an auditor can verify.</span>
+<!-- ═══════════ PRODUCT ═══════════ -->
+<section id="product" class="reveal">
+  <div class="kicker">The Product</div>
+  <h2>One brain. Seven departments.<br />Zero blind trust.</h2>
+  <p class="lede">
+    Enterprise agent pilots fail for a predictable reason: nobody can say, with evidence, when
+    an agent should be allowed to act on its own. KAEOS answers that question with a live org
+    graph, pre-built AI departments for HR, Finance, Legal, Sales, Support, Operations and
+    Engineering, and a governance spine that turns "trust me" into a number you can audit.
+  </p>
+  <div class="cards">
+    <div class="card">
+      <div class="ico">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/><line x1="9.5" y1="10.4" x2="6.3" y2="7.1"/><line x1="14.5" y1="10.4" x2="17.7" y2="7.1"/><line x1="9.5" y1="13.6" x2="6.3" y2="16.9"/><line x1="14.5" y1="13.6" x2="17.7" y2="16.9"/></svg>
+      </div>
+      <h3>A living Company Brain</h3>
+      <p>Departments, agents, skills, employees, vendors, contracts and incidents form one force
+      graph built from your own records. The Neural Map renders it alive: drop a document or
+      speak a note into the brain and the Copilot cites it seconds later.</p>
+    </div>
+    <div class="card">
+      <div class="ico">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      </div>
+      <h3>Governed autonomy</h3>
+      <p>Compliance, fairness, confidence, human-in-the-loop, adversarial debate, execution and a
+      hash-chained audit ledger. Seven gates on every decision, and nothing high-consequence
+      ships without a human, no matter how confident the model claims to be.</p>
+    </div>
+    <div class="card">
+      <div class="ico">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg>
+      </div>
+      <h3>One honest metric</h3>
+      <p>The safe-autonomy rate: the share of work completed cleanly without a human, computed
+      live from real executions. It is the north star the whole platform optimizes, and it only
+      ever moves on evidence.</p>
     </div>
   </div>
 </section>
 
-<section id="how" style="padding-top:0">
-  <div class="wrap reveal">
-    <p class="kick">How it works</p>
-    <h2>Connect. Decide. Govern. Prove.</h2>
-    <div class="steps">
-      <div class="step"><span class="sn">STEP 1</span><h3>Connect your systems</h3>
-        <p>GitHub, Jira, PagerDuty, Workday, SAP, Salesforce, Zendesk and more. 22 live adapters,
-        each with a trust weight: systems of record outrank wikis, and wikis outrank chat.</p></div>
-      <div class="step"><span class="sn">STEP 2</span><h3>Deploy a department</h3>
-        <p>Pick a pack, click deploy. Specialist agents read the real work and act on it through
-        one governed pipeline. Production deploys and customer documents always stop for a human.</p></div>
-      <div class="step"><span class="sn">STEP 3</span><h3>Watch autonomy get earned</h3>
-        <p>The safe autonomy rate: the share of real work completed with no human in the loop, at a
-        fixed error budget, trending over time. Computed from real executions, never invented.</p></div>
+<!-- ═══════════ GOVERNANCE ═══════════ -->
+<section id="governance" class="reveal">
+  <div class="kicker cy">The Governance Spine</div>
+  <h2>Seven gates. Now measured to the millisecond.</h2>
+  <p class="lede">
+    Every decision walks this pipeline. As of v1.9.0 each gate records its wall-time lap,
+    independent gates run in parallel, and the adversarial debate earns its length: a second
+    round runs only when the arbiter is genuinely contested.
+  </p>
+  <div class="rail-wrap">
+    <div class="rail">
+      <div class="gate" style="animation-delay: 0s"><div class="n">1</div><h4>Compliance</h4><p>Regulated tags checked before anything runs</p></div>
+      <div class="gate" style="animation-delay: 1s"><div class="n">2</div><h4>Fairness</h4><p>Protected attributes scored, in parallel with Gate 1</p></div>
+      <div class="gate" style="animation-delay: 2s"><div class="n">3</div><h4>Confidence</h4><p>Capped at the model's measured ceiling</p></div>
+      <div class="gate" style="animation-delay: 3s"><div class="n">4</div><h4>Human Gate</h4><p>High-consequence actions always reach a person</p></div>
+      <div class="gate" style="animation-delay: 4s"><div class="n">5</div><h4>Debate</h4><p>Proposer vs advocate, arbitrated; round two only if contested</p></div>
+      <div class="gate" style="animation-delay: 5s"><div class="n">6</div><h4>Execution</h4><p>Governed writes that fail closed if they don't land</p></div>
+      <div class="gate" style="animation-delay: 6s"><div class="n">7</div><h4>Audit</h4><p>Hash-chained provenance for every outcome</p></div>
     </div>
-  </div>
-</section>
-
-<section id="gates" style="padding-top:0">
-  <div class="wrap reveal">
-    <p class="kick">Every action, one pipeline</p>
-    <h2>Seven gates before anything fires</h2>
-    <p class="lede">Compliance here is not a system prompt. It is code that runs before the model is
-      called, so it cannot be argued with, jailbroken, or forgotten.</p>
-    <div class="schema">
-      <div class="rail">
-        <div class="g"><span class="gn">GATE 1</span><b>Compliance</b><span>SOX · GDPR · HIPAA · EEOC</span></div>
-        <div class="g"><span class="gn">GATE 2</span><b>Fairness</b><span>demographic bias scan</span></div>
-        <div class="g"><span class="gn">GATE 3</span><b>Confidence</b><span>model-aware ceiling</span></div>
-        <div class="g hgate"><span class="gn">GATE 4</span><b>Human</b><span>low confidence or high stakes</span>
-          <div class="branch">⏸ pauses and waits for sign-off</div></div>
-        <div class="g"><span class="gn">GATE 5</span><b>Debate</b><span>adversarial review</span></div>
-        <div class="g"><span class="gn">GATE 6</span><b>Execute</b><span>local or cloud model</span></div>
-        <div class="g"><span class="gn">GATE 7</span><b>Provenance</b><span>hash-chained ledger</span></div>
+    <div class="gate-note">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      <div>
+        <strong>Measured on a real local model:</strong> a contested SOC2 decision ran both debate
+        rounds and correctly escalated to a human, while the fairness gate cost 3 milliseconds of
+        wall-time by running under compliance's model call. Decisive debates finish in 3 reasoning
+        calls instead of 5. Ask the API yourself: <code>GET /metrics/latency</code>
       </div>
     </div>
-    <p class="schema-note"><b>The amber gate is the point.</b> Decisions above the confidence
-      threshold flow through autonomously. Anything below it, and every high-consequence action
-      class like a production deploy or a customer document, stops there until a human signs off.
-      A weaker model earns a lower ceiling, which routes more of its decisions to people, automatically.</p>
   </div>
 </section>
 
-<section id="product" style="padding-top:0">
-  <div class="wrap reveal">
-    <p class="kick">The product, live</p>
-    <h2>Not a mockup. A running system.</h2>
-    <figure class="shot">
-      <div class="bar"><i></i><i></i><i></i></div>
-      <img loading="lazy" src="01-dashboard.png" alt="KAEOS workforce dashboard showing the safe autonomy rate">
-      <figcaption>workforce dashboard · safe autonomy rate, live departments, earned-autonomy skills · PostgreSQL, seeded tenant</figcaption>
-    </figure>
-    <div class="grid2">
-      <figure class="shot">
-        <div class="bar"><i></i><i></i><i></i></div>
-        <img loading="lazy" src="19-reality-twin-full.png" alt="Enterprise twin with shock propagation">
-        <figcaption>enterprise twin · inject a shock, watch it propagate</figcaption>
-      </figure>
-      <figure class="shot">
-        <div class="bar"><i></i><i></i><i></i></div>
-        <img loading="lazy" src="06-decisions-hitl.png" alt="Executive cockpit with pending human approvals">
-        <figcaption>executive cockpit · agents stopped at the human gate</figcaption>
-      </figure>
+<!-- ═══════════ CEILING ═══════════ -->
+<section id="ceiling" class="reveal">
+  <div class="split">
+    <div>
+      <div class="kicker">The Differentiator</div>
+      <h2>Your model earns a ceiling. Every decision lives under it.</h2>
+      <p class="lede" style="font-size: 15.5px;">
+        Bring any model - OpenAI, Anthropic, Mistral, Groq, Azure, or a self-hosted Ollama - and
+        KAEOS probes it: JSON discipline, multi-step reasoning, strict instruction following.
+        The probe produces a confidence ceiling that caps every decision the platform makes on
+        that model. A weaker model mechanically routes more work to humans. Model choice becomes
+        a governance dial, not a gamble.
+      </p>
+      <ul class="feature-list">
+        <li>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+          <span><strong>Fails closed.</strong> If the ceiling lookup itself fails, a conservative failsafe cap routes decisions to a human until it recovers.</span>
+        </li>
+        <li>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+          <span><strong>Enforced in the pipeline itself.</strong> Every domain agent inherits the ceiling at Gate 3, not just the API routes.</span>
+        </li>
+        <li>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+          <span><strong>Data residency respected.</strong> Local-only mode strips every cloud model from the routing chain so PII never leaves the region.</span>
+        </li>
+      </ul>
+    </div>
+    <div class="meter-panel" id="meterPanel">
+      <div style="font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink-3); font-weight: 700; margin-bottom: 18px;">LIVE EXAMPLE - phi4-mini PROBES AT 0.70</div>
+      <span class="cap-tag">MEASURED CEILING: 0.70</span>
+      <div class="meter-row">
+        <div class="top"><span class="l">Skill's claimed confidence</span><span class="v">0.94</span></div>
+        <div class="bar"><div class="fill" data-w="94%" style="background: linear-gradient(90deg, #6366f1, #818cf8);"></div></div>
+      </div>
+      <div class="meter-row">
+        <div class="top"><span class="l">Effective confidence (capped)</span><span class="v">0.70</span></div>
+        <div class="bar"><div class="fill" data-w="70%" style="background: linear-gradient(90deg, #22d3ee, #67e8f9);"></div></div>
+      </div>
+      <div class="meter-row">
+        <div class="top"><span class="l">Autonomous execution threshold</span><span class="v">0.82</span></div>
+        <div class="bar"><div class="fill" data-w="82%" style="background: rgba(148,163,194,0.4);"></div></div>
+      </div>
+      <div class="verdict">
+        <span class="pill clean">SUCCESS_CLEAN</span>
+        <span class="arrow">&#8594;</span>
+        <span class="pill hitl">PENDING_HITL</span>
+      </div>
+      <p style="font-size: 12px; color: var(--ink-3); margin-top: 16px;">The identical skill flips to human review on the weaker model. Swap in a stronger one and autonomy returns.</p>
     </div>
   </div>
 </section>
 
-<section style="padding-top:0">
-  <div class="wrap reveal">
-    <p class="kick">Seven departments</p>
-    <h2>An AI workforce, not a chatbot</h2>
-    <div class="depts">
-      <div class="dept"><b>HR</b><span>7 agents</span></div>
-      <div class="dept"><b>Finance</b><span>5 agents</span></div>
-      <div class="dept"><b>Legal</b><span>5 agents</span></div>
-      <div class="dept"><b>Sales</b><span>6 agents</span></div>
-      <div class="dept"><b>Support</b><span>5 agents</span></div>
-      <div class="dept"><b>Operations</b><span>5 agents</span></div>
-      <div class="dept"><b>Engineering</b><span>3 agents</span></div>
+<!-- ═══════════ SCREENS ═══════════ -->
+<section id="screens" class="reveal">
+  <div class="kicker cy">Real Product, Real Data</div>
+  <h2>Captured from a running instance.</h2>
+  <p class="lede">
+    Every frame below is the live app on a seeded demo tenant against PostgreSQL - not a mockup,
+    not a design comp. The honesty of the numbers is the product.
+  </p>
+  <div class="shot-hero">
+    <img src="01-dashboard.png" alt="KAEOS workforce dashboard: safe-autonomy rate, live departments, and skills that earned autonomy" loading="eager" />
+  </div>
+  <div class="grid-shots">
+    <figure class="shot"><img src="02-departments.png" alt="Seven AI departments with live health and agent rosters" loading="lazy" /><figcaption class="cap"><strong>AI Departments</strong>Seven departments with live health, agents and task counts</figcaption></figure>
+    <figure class="shot"><img src="06-decisions-hitl.png" alt="Human-in-the-loop decision queue" loading="lazy" /><figcaption class="cap"><strong>Decision Queue</strong>Every paused decision, waiting for a human verdict</figcaption></figure>
+    <figure class="shot"><img src="22-knowledge-graph.png" alt="The knowledge graph of the company brain" loading="lazy" /><figcaption class="cap"><strong>Company Brain</strong>The org as a living knowledge graph</figcaption></figure>
+    <figure class="shot"><img src="19-reality-twin-full.png" alt="Reality twin of the organization" loading="lazy" /><figcaption class="cap"><strong>Reality Twin</strong>A DB-backed twin of the whole organization</figcaption></figure>
+    <figure class="shot"><img src="05-agent-factory.png" alt="Agent factory blueprint pipeline" loading="lazy" /><figcaption class="cap"><strong>Agent Factory</strong>Blueprint, compile, deploy - agents as governed artifacts</figcaption></figure>
+    <figure class="shot"><img src="18-skills-registry.png" alt="Skills registry with confidence tiers" loading="lazy" /><figcaption class="cap"><strong>Skills Registry</strong>Skills that earn and lose confidence by outcome</figcaption></figure>
+  </div>
+</section>
+
+<!-- ═══════════ HONESTY ═══════════ -->
+<section id="honesty" class="reveal">
+  <div class="kicker">What We Refuse to Fake</div>
+  <h2>Where a true number is not measurable,<br />you get nothing instead of fiction.</h2>
+  <div class="honesty">
+    <div class="truth">
+      <span class="no">RETURNS NULL</span>
+      <strong>Hours saved and cost reduction</strong>
+      They require a human-baseline duration per skill, a tenant input KAEOS cannot measure. They
+      used to be "computed" by multiplying executions by hardcoded constants. Invented numbers are
+      worse than absent ones, so they are absent.
+    </div>
+    <div class="truth">
+      <span class="no">PUBLISHES LOSSES</span>
+      <strong>Benchmarks report the misses too</strong>
+      On the real-data benchmark some domains land at or below the naive baseline, and those
+      results ship transparently in the docs, not spun as wins.
+    </div>
+    <div class="truth">
+      <span class="no">CANNOT PROMOTE</span>
+      <strong>Simulated evaluations are structurally inert</strong>
+      A Foundry evaluation that ran without a live provider is flagged simulated and can never win
+      or drive a model swap. A fabricated score must never change production routing.
+    </div>
+    <div class="truth">
+      <span class="no">ABSENT BY DESIGN</span>
+      <strong>There is no fake trainer</strong>
+      The Foundry orchestrates fine-tuning but the weight-training step is external and pluggable,
+      and the product says so plainly rather than shipping a pretend one.
     </div>
   </div>
 </section>
 
-<section id="honesty" style="padding-top:0">
-  <div class="wrap reveal">
-    <p class="kick">Honest by design</p>
-    <h2>The numbers are real, or they are absent</h2>
-    <ul class="assert">
-      <li><span class="m">assert ✓</span><p><b>No invented ROI.</b> Metrics KAEOS cannot measure
-        return null with a note, instead of a flattering guess.</p></li>
-      <li><span class="m">assert ✓</span><p><b>Validated on real enterprise data.</b> On real
-        accounts receivable histories it predicts late payment at 81 percent against a 64 percent
-        baseline. The results that miss baseline are reported too, not hidden.</p></li>
-      <li><span class="m">assert ✓</span><p><b>Isolation the database enforces.</b> Postgres
-        row-level security refuses to return another tenant's rows even to an unfiltered query,
-        proven by cross-tenant denial tests in the suite.</p></li>
-      <li><span class="m">assert ✓</span><p><b>Bring any model, keep the guarantees.</b> KAEOS
-        probes whatever model you configure and caps the confidence its decisions may claim, so a
-        weaker model automatically routes more work to humans.</p></li>
-      <li><span class="m">assert ✓</span><p><b>Local-first inference.</b> Routine decisions run on
-        a local model. A data residency mode pins everything in-region, and PII is scrubbed before
-        any cloud call.</p></li>
-    </ul>
+<!-- ═══════════ RELEASES ═══════════ -->
+<section id="releases" class="reveal">
+  <div class="kicker cy">Shipping Record</div>
+  <h2>Seven releases in five weeks.</h2>
+  <p class="lede">Every release tagged, documented and CI-verified. The full story lives in the changelog.</p>
+  <div class="timeline">
+    <div class="trow">
+      <div class="ver">v1.9.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.9.0</span>Fast Lane <span class="name">- the performance release</span></h4>
+      <p>Per-gate latency instrumentation, contested-only debate rounds, parallel gates, a
+      stale-while-revalidate client cache, and four releases' worth of red CI turned green.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.8.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.8.0</span>Neural Map <span class="name">- the company becomes a living map</span></h4>
+      <p>An Obsidian-style force graph of the whole org, agent dossiers with an autonomy ladder,
+      voice-and-drop ingestion into the brain, and a live chain-of-command hierarchy.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.7.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.7.0</span>Pioneer Lab <span class="name">- the frontier console</span></h4>
+      <p>Five experimental lanes in one console, plus a product-wide local-LLM timeout fix that was
+      silently degrading every local call.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.6.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.6.0</span>Living Surface <span class="name">- the UI comes alive</span></h4>
+      <p>Tenant-aware LLM routing with embedding provenance, and a premium live surface: count-ups,
+      humanized copy, 20-second refresh everywhere.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.5.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.5.0</span>Federated Front Door <span class="name">- enterprise entry</span></h4>
+      <p>Real signature-verified SAML 2.0 SSO, self-service platform administration, and a
+      production Helm chart.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.4.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.4.0</span>Provable Trust <span class="name">- evidence over claims</span></h4>
+      <p>Privacy and compliance surfaces wired to real controls, and one canonical definition of the
+      safe-autonomy metric across every surface.</p></div>
+    </div>
+    <div class="trow">
+      <div class="ver">v1.3.0</div>
+      <div class="node"><div class="dot2"></div></div>
+      <div><h4><span class="vsm">v1.3.0</span>Gate Integrity <span class="name">- the pipeline hardened</span></h4>
+      <p>Evidence-based human pre-approval, fail-closed confidence gates, and an audited exception
+      path for every governance failure.</p></div>
+    </div>
   </div>
 </section>
 
-<div class="cta-final reveal">
-  <div class="wrap">
-    <h2>The whole system is public.</h2>
-    <p>Backend, frontend, the seven departments, the gate pipeline, the ledger, and 441
-      end-to-end tests. Read it, run it, audit it.</p>
-    <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">github.com/Daksh-Aneja-Projects/KAEOS</a>
+<!-- ═══════════ QUICK START ═══════════ -->
+<section id="start" class="reveal" style="padding-bottom: 70px;">
+  <div class="kicker">Run It Yourself</div>
+  <h2>Three commands to a running company.</h2>
+  <div class="qs">
+    <div class="code">git clone https://github.com/Daksh-Aneja-Projects/KAEOS.git &amp;&amp; cd KAEOS
+cp .env.example .env    <span class="c"># set DEV_MODE=true for a local trial</span>
+docker compose up --build</div>
+    <div class="tech">
+      <span class="chip">FastAPI</span>
+      <span class="chip">React 19</span>
+      <span class="chip">PostgreSQL + RLS</span>
+      <span class="chip">pgvector</span>
+      <span class="chip">LiteLLM - any model</span>
+      <span class="chip">Local Ollama first</span>
+      <span class="chip">SAML 2.0 SSO</span>
+      <span class="chip">Helm chart</span>
+      <span class="chip">Apache 2.0</span>
+    </div>
   </div>
-</div>
+</section>
 
 <footer>
-  <div class="wrap">
-    <span class="fmark">KAEOS</span>
-    <span>Built by Daksh Aneja and Sathya Sankarasubbu</span>
-    <span>Apache 2.0</span>
+  <div class="flinks">
+    <a href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">Repository</a>
+    <a href="https://github.com/Daksh-Aneja-Projects/KAEOS/releases" target="_blank" rel="noopener">Releases</a>
+    <a href="https://github.com/Daksh-Aneja-Projects/KAEOS/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+    <a href="https://github.com/Daksh-Aneja-Projects/KAEOS/tree/main/docs" target="_blank" rel="noopener">Documentation</a>
+    <a href="https://github.com/Daksh-Aneja-Projects/KAEOS/blob/main/docs/KNOWN_LIMITATIONS.md" target="_blank" rel="noopener">Known Limitations</a>
   </div>
+  KAEOS - built by Daksh Aneja. Apache 2.0. The honesty of the numbers is the product.
 </footer>
 
 <script>
-/* ---------- signature: the live decision ledger ---------- */
-(function(){
-  const body=document.getElementById('ledger');
-  const S_AUTO=[
-    ['head','▸ signal   finance/invoice INV-2214 · overdue risk'],
-    ['','  <span class="k">GATE 1  COMPLIANCE</span>   SOX controls        <span class="ok">PASS</span>'],
-    ['','  <span class="k">GATE 2  FAIRNESS</span>     bias scan           <span class="ok">PASS</span>'],
-    ['','  <span class="k">GATE 3  CONFIDENCE</span>   0.91 ≥ 0.82         <span class="ok">PASS</span>'],
-    ['','  <span class="k">GATE 4  HUMAN</span>        not required        <span class="ok">SKIP</span>'],
-    ['','  <span class="k">GATE 5  DEBATE</span>       verdict             <span class="ok">PROCEED</span>'],
-    ['','  <span class="k">GATE 6  EXECUTE</span>      qwen2.5 · local     <span class="sig">1.2s</span>'],
-    ['','  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#a3f1…9c42</span>        <span class="ok">CHAINED</span>'],
-    ['final','✓ EXECUTED AUTONOMOUSLY'],
-  ];
-  const S_HITL=[
-    ['head','▸ signal   engineering/deploy v2.4.1 → production'],
-    ['','  <span class="k">GATE 1  COMPLIANCE</span>   change mgmt         <span class="ok">PASS</span>'],
-    ['','  <span class="k">GATE 2  FAIRNESS</span>     not applicable      <span class="ok">SKIP</span>'],
-    ['','  <span class="k">GATE 3  CONFIDENCE</span>   0.74 &lt; 0.82         <span class="hum">LOW</span>'],
-    ['','  <span class="k">GATE 4  HUMAN</span>        production deploy   <span class="hum">REQUIRED</span>'],
-    ['','  <span class="hum">⏸ PAUSED · waiting for sign-off…</span>'],
-    ['','  <span class="k">approval</span>            release manager     <span class="ok">APPROVED</span>'],
-    ['','  <span class="k">GATE 6  EXECUTE</span>      resumed             <span class="sig">0.8s</span>'],
-    ['','  <span class="k">GATE 7  PROVENANCE</span>   <span class="hash">#7be2…d141</span>        <span class="ok">CHAINED</span>'],
-    ['final hum-final','⏸→✓ EXECUTED WITH HUMAN SIGN-OFF'],
-  ];
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let scen=0;
-  function render(lines){
-    body.innerHTML='';
-    const els=lines.map(([cls,html])=>{
-      const el=document.createElement('span');
-      el.className='ln '+cls;el.innerHTML=html;body.appendChild(el);return el;
-    });
-    const caret=document.createElement('span');caret.className='caret';body.appendChild(caret);
-    return els;
-  }
-  function play(){
-    const lines=scen%2===0?S_AUTO:S_HITL;scen++;
-    const els=render(lines);
-    if(reduced){els.forEach(e=>e.classList.add('show'));return;}
-    let i=0;
-    (function next(){
-      if(i<els.length){
-        els[i].classList.add('show');
-        const txt=els[i].textContent;
-        const pause=txt.includes('PAUSED')?1600:(els[i].classList.contains('final')?900:430);
-        i++;setTimeout(next,pause);
-      }else setTimeout(play,3400);
-    })();
-  }
-  play();
-})();
+(function () {
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ---------- faint living graph behind the hero ---------- */
-(function(){
-  const cv=document.getElementById('net');if(!cv)return;
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  const ctx=cv.getContext('2d');let nodes=[];
-  function rnd(a){let s=a;return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-  const R=rnd(20260727);
-  function size(){cv.width=cv.offsetWidth*devicePixelRatio;cv.height=cv.offsetHeight*devicePixelRatio;
-    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
-    const n=Math.min(80,Math.floor(cv.offsetWidth/18));nodes=[];
-    for(let i=0;i<n;i++)nodes.push({x:R()*cv.offsetWidth,y:R()*cv.offsetHeight,vx:(R()-.5)*.22,vy:(R()-.5)*.22,r:1+R()*1.9,p:R()*6.28});}
-  size();addEventListener('resize',size);
-  let t=0;
-  (function loop(){
-    t+=1/60;const w=cv.offsetWidth,h=cv.offsetHeight;
-    ctx.clearRect(0,0,w,h);ctx.lineWidth=1;
-    for(const n of nodes){n.x+=n.vx;n.y+=n.vy;
-      if(n.x<-20)n.x=w+20;if(n.x>w+20)n.x=-20;if(n.y<-20)n.y=h+20;if(n.y>h+20)n.y=-20;}
-    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
-      const a=nodes[i],b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
-      if(d2<150*150){ctx.strokeStyle=`rgba(125,135,255,${(1-Math.sqrt(d2)/150)*.10})`;
-        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}}
-    for(const n of nodes){const ap=.3+.5*Math.abs(Math.sin(t*.8+n.p));
-      ctx.fillStyle=`rgba(150,160,255,${.4*ap})`;
-      ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,7);ctx.fill();}
+  /* ── Living neural map hero ─────────────────────── */
+  var canvas = document.getElementById("neural");
+  var ctx = canvas.getContext("2d");
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var W = 0, H = 0;
+  var COLORS = ["#a78bfa", "#34d399", "#fbbf24", "#60a5fa", "#fb7185", "#fb923c", "#22d3ee"];
+  var hubs = [], agents = [], pulses = [], particles = [];
+  var brain = { x: 0, y: 0, r: 34 };
+  var mouse = { x: -9999, y: -9999 };
+
+  function layout() {
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    brain.x = W / 2; brain.y = H * 0.84; brain.r = Math.max(24, Math.min(40, W * 0.028));
+    hubs = []; agents = [];
+    var n = COLORS.length;
+    var span = Math.min(W * 0.84, 1150);
+    var x0 = (W - span) / 2;
+    for (var i = 0; i < n; i++) {
+      var t = i / (n - 1);
+      var hx = x0 + span * t;
+      var hy = H * (0.60 - 0.11 * Math.sin(Math.PI * t));
+      hubs.push({ x: hx, y: hy, r: Math.max(9, Math.min(14, W * 0.01)), c: COLORS[i], ph: Math.random() * 6.28 });
+      var na = 3 + (i % 2);
+      for (var j = 0; j < na; j++) {
+        agents.push({
+          hub: i,
+          ang: Math.random() * 6.28,
+          spd: 0.14 + Math.random() * 0.22,
+          rad: 40 + Math.random() * 62,
+          lift: 44 + Math.random() * 78,
+          r: 2.4 + Math.random() * 1.8,
+          ph: Math.random() * 6.28
+        });
+      }
+    }
+    particles = [];
+    var pc = Math.floor(Math.min(70, W / 18));
+    for (var k = 0; k < pc; k++) {
+      particles.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.16, vy: (Math.random() - 0.5) * 0.16, r: Math.random() * 1.3 + 0.4 });
+    }
+  }
+
+  function agentPos(a, t) {
+    var h = hubs[a.hub];
+    var wob = Math.sin(t * 0.7 + a.ph) * 7;
+    return {
+      x: h.x + Math.cos(a.ang + t * a.spd) * a.rad,
+      y: h.y - a.lift + Math.sin(a.ang + t * a.spd * 0.8) * 16 + wob
+    };
+  }
+
+  function spawnPulse() {
+    if (pulses.length > 8) return;
+    pulses.push({ hub: Math.floor(Math.random() * hubs.length), t: 0, dir: Math.random() > 0.35 ? 1 : -1 });
+  }
+
+  function draw(now) {
+    var t = now / 1000;
+    ctx.clearRect(0, 0, W, H);
+
+    for (var p = 0; p < particles.length; p++) {
+      var pt = particles[p];
+      pt.x += pt.vx; pt.y += pt.vy;
+      if (pt.x < 0) pt.x = W; if (pt.x > W) pt.x = 0;
+      if (pt.y < 0) pt.y = H; if (pt.y > H) pt.y = 0;
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "rgba(148, 163, 194, 0.9)";
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, 6.29); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    for (var i = 0; i < hubs.length; i++) {
+      var h = hubs[i];
+      var g = ctx.createLinearGradient(h.x, h.y, brain.x, brain.y);
+      g.addColorStop(0, h.c + "55"); g.addColorStop(1, "rgba(99,102,241,0.10)");
+      ctx.strokeStyle = g; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(brain.x, brain.y); ctx.stroke();
+      if (i > 0) {
+        var h0 = hubs[i - 1];
+        ctx.strokeStyle = "rgba(148, 163, 194, 0.10)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(h0.x, h0.y); ctx.lineTo(h.x, h.y); ctx.stroke();
+      }
+    }
+
+    for (var q = pulses.length - 1; q >= 0; q--) {
+      var pu = pulses[q];
+      pu.t += 0.011;
+      if (pu.t >= 1) { pulses.splice(q, 1); continue; }
+      var hh = hubs[pu.hub];
+      var tt = pu.dir === 1 ? pu.t : 1 - pu.t;
+      var px = hh.x + (brain.x - hh.x) * tt;
+      var py = hh.y + (brain.y - hh.y) * tt;
+      ctx.fillStyle = hh.c;
+      ctx.globalAlpha = 0.9 * Math.sin(Math.PI * pu.t);
+      ctx.beginPath(); ctx.arc(px, py, 2.6, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    for (var a = 0; a < agents.length; a++) {
+      var ag = agents[a];
+      var pos = agentPos(ag, t);
+      var hb = hubs[ag.hub];
+      var dxm = pos.x - mouse.x, dym = pos.y - mouse.y;
+      var dm = Math.sqrt(dxm * dxm + dym * dym);
+      if (dm > 0 && dm < 90) { pos.x += dxm / dm * (90 - dm) * 0.25; pos.y += dym / dm * (90 - dm) * 0.25; }
+      ctx.strokeStyle = hb.c + "2e"; ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(hb.x, hb.y); ctx.lineTo(pos.x, pos.y); ctx.stroke();
+      ctx.fillStyle = hb.c;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, ag.r, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    for (var m = 0; m < hubs.length; m++) {
+      var hu = hubs[m];
+      var breathe = 1 + Math.sin(t * 1.4 + hu.ph) * 0.08;
+      var rg = ctx.createRadialGradient(hu.x, hu.y, 0, hu.x, hu.y, hu.r * 3.2);
+      rg.addColorStop(0, hu.c + "38"); rg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * 3.2, 0, 6.29); ctx.fill();
+      ctx.fillStyle = hu.c;
+      ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * breathe, 0, 6.29); ctx.fill();
+      ctx.strokeStyle = hu.c + "66"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(hu.x, hu.y, hu.r * breathe + 5, 0, 6.29); ctx.stroke();
+    }
+
+    var bg2 = ctx.createRadialGradient(brain.x, brain.y, 0, brain.x, brain.y, brain.r * 4);
+    bg2.addColorStop(0, "rgba(99, 102, 241, 0.30)");
+    bg2.addColorStop(0.5, "rgba(34, 211, 238, 0.10)");
+    bg2.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = bg2;
+    ctx.beginPath(); ctx.arc(brain.x, brain.y, brain.r * 4, 0, 6.29); ctx.fill();
+    for (var s = 0; s < 26; s++) {
+      var sa = (s / 26) * 6.28 + t * 0.35;
+      var sr = brain.r * (0.35 + 0.62 * Math.abs(Math.sin(s * 2.3 + t * 0.9)));
+      ctx.fillStyle = s % 3 === 0 ? "#67e8f9" : "#818cf8";
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(brain.x + Math.cos(sa) * sr, brain.y + Math.sin(sa) * sr * 0.72, 1.7, 0, 6.29); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(129, 140, 248, 0.5)"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(brain.x, brain.y, brain.r, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = "rgba(34, 211, 238, 0.28)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(brain.x, brain.y, brain.r + 9 + Math.sin(t * 1.8) * 2.4, 0, 6.29); ctx.stroke();
+  }
+
+  var last = 0;
+  function loop(now) {
+    if (now - last > 900 + Math.random() * 900) { spawnPulse(); last = now; }
+    draw(now);
     requestAnimationFrame(loop);
-  })();
-})();
+  }
 
-/* reveal on scroll */
-const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
-document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+  layout();
+  window.addEventListener("resize", layout);
+  window.addEventListener("pointermove", function (e) {
+    var r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
+  });
+  if (reduced) { draw(0); } else { requestAnimationFrame(loop); }
+
+  /* ── Count-ups ──────────────────────────────────── */
+  function countUp(el) {
+    var target = parseInt(el.getAttribute("data-count"), 10);
+    if (reduced || target === 0) { el.textContent = String(target); return; }
+    var t0 = null;
+    function step(ts) {
+      if (!t0) t0 = ts;
+      var k = Math.min(1, (ts - t0) / 1400);
+      k = 1 - Math.pow(1 - k, 3);
+      el.textContent = String(Math.round(target * k));
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var counted = false;
+  var nums = document.querySelectorAll("[data-count]");
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting && !counted) {
+        counted = true;
+        nums.forEach(countUp);
+      }
+    });
+  }, { threshold: 0.4 });
+  if (nums.length) io.observe(nums[0]);
+
+  /* ── Scroll reveals ─────────────────────────────── */
+  var io2 = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add("in"); io2.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach(function (el) { io2.observe(el); });
+
+  /* ── Meter fills ────────────────────────────────── */
+  var mp = document.getElementById("meterPanel");
+  if (mp) {
+    var io3 = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          mp.querySelectorAll(".fill").forEach(function (f) { f.style.width = f.getAttribute("data-w"); });
+          io3.unobserve(mp);
+        }
+      });
+    }, { threshold: 0.4 });
+    io3.observe(mp);
+  }
+})();
 </script>
 </body>
 </html>
