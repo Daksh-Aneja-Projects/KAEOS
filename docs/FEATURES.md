@@ -6,16 +6,17 @@ Back to the [README](../README.md). Related: [Architecture](ARCHITECTURE.md) |
 ## 7 AI-Powered Departments
 
 Deploy any combination of these pre-built AI departments, built on a production-oriented,
-security-hardened architecture (RLS-isolated per tenant, gated agent pipeline):
+security-hardened architecture (RLS-isolated per tenant, gated agent pipeline). Agent counts
+are the agent modules under `backend/app/<department>/agents/`, 41 in total.
 
 | Department | Agents | Key Automations |
 |-----------|--------|-----------------|
 | **Human Resources** | 7 | Recruiting pipeline, onboarding, benefits Q&A, performance synthesis, compensation analysis, employee relations, offboarding |
 | **Finance** | 5 | AP/AR processing, budget variance analysis, expense review, payroll audit, tax compliance |
 | **Legal** | 5 | Contract review, regulatory compliance monitoring, litigation tracking, privacy impact assessment, IP/patent evaluation |
-| **Sales** | 6 | Pipeline management, lead scoring, deal forecasting, account intelligence, CPQ discounting, commission payout |
-| **Customer Support** | 5 | Ticket classification, SLA enforcement, knowledge base retrieval, escalation routing, CSAT analysis |
-| **Operations** | 5 | Project tracking, resource allocation, vendor management, procurement workflows, QA automation |
+| **Sales** | 8 | Pipeline coaching, lead scoring, deal forecasting, account health, churn risk, CPQ discounting, proposal generation, commission payout |
+| **Customer Support** | 7 | Ticket triage, auto-resolution, SLA enforcement, knowledge base retrieval, resolution drafting, escalation routing, CSAT analysis |
+| **Operations** | 6 | Project tracking, resource allocation, vendor management, procurement workflows, facilities, QA automation |
 | **Engineering & IT Ops** | 3 | Code review risk assessment, incident triage with deploy correlation, deployment risk scoring |
 
 **Why Engineering matters most.** Coding is ~55% of enterprise departmental AI spend and IT ops

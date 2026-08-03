@@ -11,6 +11,48 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Documentation
+- **Every published count re-derived from the tracked source.** A full top-to-bottom
+  audit found several figures had drifted as the codebase grew. Corrected: the data
+  model is **233 ORM tables across 77 model modules and 29 migrations** (was "47 tables,
+  30 migrations"); the API is **316 endpoints across 56 route modules** (was 58);
+  **76** service modules (was 88); the frontend is **99 components (45 pages, 18 views,
+  34 shared)** (was "49 pages, 31 components"). The `441` E2E-test badge was verified
+  correct and now sits alongside the full **900** (441 e2e + 459 unit).
+- **Department agent counts corrected in `docs/FEATURES.md`.** Sales is **8** (was 6),
+  Support **7** (was 5), Operations **6** (was 5). 41 department agents in total, defined
+  as the agent modules under `backend/app/<department>/agents/`.
+- **`docs/API.md` now states the API prefix.** Every documented prefix was missing the
+  real mount point: routes live under **`/api/v1`**, not at the bare path, so the HR
+  employees route is `GET /api/v1/hr/employees`. The WebSocket feed at `/ws/{tenant_id}`
+  is the sole exception. README endpoint references corrected to match.
+- **`docs/README.md` added.** A documentation index covering product, engineering,
+  security/compliance, operations and project docs, and stating the `/api/v1` convention
+  once up front.
+- **The `hours_saved` honesty claim is now correctly scoped.** The README asserted that
+  `hours_saved` and `cost_reduction` "return null". That is true of the metering endpoints
+  only; the legacy workforce rollup still derived them from a 0.5h-per-execution heuristic.
+  The claim is now scoped to the endpoints where it holds, with the gap documented in
+  `docs/KNOWN_LIMITATIONS.md`.
+- **Removed an unsourced statistic.** The claim that "most agent pilots never reach
+  production" carried no citation and has been dropped rather than attributed after the fact.
+
+### Changed
+- **Licensing made unambiguous.** KAEOS source is Apache-2.0 and only that: no dual
+  license, no commercial tier, no proprietary grant. `NOTICE` and the README now say so
+  explicitly, with a scope table for what the grant does *not* cover (third-party benchmark
+  datasets, dependency licenses, the KAEOS name and logo). Clarified that "IP" in
+  `app/legal/` (`ip_agent.py`, `models/ip.py`, "IP/patent evaluation") is a Legal-department
+  **product feature** for tracking a tenant's own intellectual property, not a license claim
+  over KAEOS.
+- **One product tagline.** `NOTICE`, `docs/ARCHITECTURE.md` and `frontend/index.html`
+  carried three different taglines ("Cognitive Operating System for the Enterprise",
+  "Epistemic Operating System", "AI Operating System for Companies"). All now use the
+  README's: **The AI Operating System for Companies**.
+- **Optional backends labelled as optional.** Neo4j and the LangChain text-splitters are
+  imported lazily and are not installed by default; the README no longer implies they are
+  part of the running stack.
+
 ## [1.9.0] - 2026-08-03 - "Fast Lane"
 
 The performance and quality release: the governed decision pipeline gets

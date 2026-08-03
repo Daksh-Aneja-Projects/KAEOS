@@ -5,7 +5,7 @@ Back to the [README](../README.md). Related: [Features](FEATURES.md) |
 
 ## Vision
 
-KAEOS is building the Cognitive Operating System for the Enterprise.
+KAEOS is building the AI Operating System for Companies.
 
 Today's enterprises run on dozens of disconnected systems - Workday for HR, SAP for Finance,
 Jira for Projects, ServiceNow for IT, Salesforce for Sales. Each system stores data, but none

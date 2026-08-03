@@ -16,6 +16,19 @@ Each item below states the capability, its honest boundary, and anything still a
 
 **Capabilities, honest boundaries, and roadmap:**
 
+- **`hours_saved` is null on metering, still a heuristic on the legacy workforce rollup.**
+  `GET /api/v1/billing/usage` and `GET /api/v1/billing/roi` return `null` for
+  `total_hours_saved` and `total_cost_reduction`, with a `note` explaining that both need a
+  human-baseline duration and a loaded hourly rate per skill (tenant inputs KAEOS cannot
+  measure). That is the honest contract and it is the one to trust. **The older workforce
+  rollup has not been migrated to it yet:** `rollup_department_metrics`
+  (`app/core/domain_seed.py`) still derives `Department.hours_saved_total` from a flat
+  0.5h-per-completed-execution heuristic, and `app/workforce/api/analytics.py` sums that
+  column (plus `WorkforceMetrics.cost_savings_estimate`) into its response without labelling
+  it an estimate. Treat any `hours_saved` or `cost_savings` value from the workforce analytics
+  surface as a heuristic estimate, not a measurement. **Ahead:** either surface these behind
+  the same `null`-with-note contract, or make them real by taking the per-skill baseline and
+  rate as explicit tenant configuration.
 - **RBAC coverage.** The `viewer`/`operator`/`admin` roles are defined and enforced under a
   **default-deny** policy: every state-changing endpoint must carry an authorization gate
   (`require_role`, `require_service_or_role`, or the out-of-band `verify_admin_secret`) or be on a

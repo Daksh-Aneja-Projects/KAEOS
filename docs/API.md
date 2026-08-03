@@ -1,9 +1,19 @@
 # API Reference
 
-Back to the [README](../README.md). Related: [Architecture](ARCHITECTURE.md) |
-[Connectors](CONNECTORS.md) | [Security model](SECURITY_MODEL.md)
+Back to the [documentation index](README.md) and the [project README](../README.md).
+Related: [Architecture](ARCHITECTURE.md) | [Connectors](CONNECTORS.md) |
+[Security model](SECURITY_MODEL.md)
 
 All endpoints are documented at `http://localhost:8001/docs` (Swagger UI).
+
+> **Every prefix below is relative to the API prefix `/api/v1`** (set by
+> `API_PREFIX`, default `/api/v1`). So the HR employees route is really
+> `GET /api/v1/hr/employees`, and against a default local stack that is
+> `http://localhost:8001/api/v1/hr/employees`. The single exception is the
+> WebSocket feed, mounted bare at `/ws/{tenant_id}`.
+
+The surface is **316 endpoints across 58 route modules** under
+`backend/app/api/routes/`.
 
 ## Department APIs (all require `X-Tenant-ID` or JWT)
 

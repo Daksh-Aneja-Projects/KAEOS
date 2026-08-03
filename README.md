@@ -10,162 +10,302 @@ so autonomy is not granted, it is earned: the platform probes what your model
 can actually do, caps every decision's confidence at that measured ceiling, and
 routes anything below the bar (or high-consequence, always) to a human.**
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org) [![Tests](https://img.shields.io/badge/E2E_Tests-441-brightgreen.svg)](backend/tests/e2e/) [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
+[![Node](https://img.shields.io/badge/Node-22-green.svg)](https://nodejs.org)
+[![Tests](https://img.shields.io/badge/tests-900%20%28441%20e2e%20%2B%20459%20unit%29-brightgreen.svg)](docs/TESTING.md)
+[![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 <br />
 
 ![KAEOS - Enterprise Workforce dashboard](docs/screenshots/01-dashboard.png)
 
-<sub>The workforce dashboard: **safe-autonomy rate** (how much ran without a human gate), live departments,
-and skills that have *earned* autonomy. Captured from a running instance against PostgreSQL - a live
+<sub>The workforce dashboard: <b>safe-autonomy rate</b> (how much ran without a human gate), live departments,
+and skills that have <i>earned</i> autonomy. Captured from a running instance against PostgreSQL, a live
 app on a seeded demo tenant, not a mockup or a design comp.</sub>
-
-**Demo video:** coming soon.
 
 </div>
 
 ---
 
+## Table of contents
+
+- [What it is](#what-it-is)
+- [The differentiator: a measured confidence ceiling](#the-differentiator-a-measured-confidence-ceiling)
+- [The 7-gate pipeline](#the-7-gate-pipeline)
+- [What we refuse to fake](#what-we-refuse-to-fake)
+- [Quick start](#quick-start)
+- [Repository layout](#repository-layout)
+- [By the numbers](#by-the-numbers)
+- [Documentation](#documentation)
+- [Testing and CI](#testing-and-ci)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## What it is
 
-Enterprise agent deployments fail for a predictable reason: nobody can say, with
-evidence, when an agent should be allowed to act on its own. Teams either gate
-everything (and the agents save no one any time) or gate nothing (and one bad
-autonomous action ends the pilot). Industry surveys put the fallout plainly:
-most agent pilots never reach production.
+Enterprise agent deployments stall for a predictable reason: nobody can say,
+with evidence, when an agent should be allowed to act on its own. Teams either
+gate everything (and the agents save no one any time) or gate nothing (and one
+bad autonomous action ends the pilot).
 
 KAEOS starts with the **org graph**: a live model of departments, capabilities,
 agents, processes, employees, vendors, projects, customers, accounts, tickets,
 contracts, incidents and purchase orders, built from the tenant's own records.
 That is the Company Brain. On top of it run seven pre-built AI departments (HR,
-Finance, Legal, Sales, Support, Operations, Engineering & IT Ops) whose agents
-read the real work and act on it. The **Neural Map** renders all of it as one
-living force graph: department brains in sequence, their agents and tasks in
-motion above them, shared systems bridging departments, and the knowledge core
-they all feed - with a per-agent dossier (autonomy ladder, what it replaces,
-the SOP written out) one click away, and a drop-anything ingest bar that
-teaches the brain and the Copilot in the same motion.
+Finance, Legal, Sales, Support, Operations, Engineering & IT Ops) with 41 agents
+between them, reading the real work and acting on it.
 
-Everything they do passes the same 7-gate pipeline: compliance, fairness,
-confidence, human-in-the-loop, adversarial debate, execution, and a hash-chained
-provenance ledger. Teams watch live agent work in a shared queue and can approve,
-redirect or reject any of it, with per-tenant and per-department permissions and
-a full audit trail. Skills accumulate confidence from validated outcomes and lose
-it by decay; the platform's headline metric is the **safe autonomy rate**, the
-share of work completed without human intervention, computed live from real
-executions.
+The **Neural Map** renders all of it as one living force graph: department
+brains in sequence, their agents and tasks in motion above them, shared systems
+bridging departments, and the knowledge core they all feed, with a per-agent
+dossier (autonomy ladder, what it replaces, the SOP written out) one click away
+and a drop-anything ingest bar that teaches the brain and the Copilot in the
+same motion.
+
+Everything an agent does passes the same 7-gate pipeline. Teams watch live agent
+work in a shared queue and can approve, redirect or reject any of it, with
+per-tenant and per-department permissions and a full audit trail. Skills
+accumulate confidence from validated outcomes and lose it by decay; the
+platform's headline metric is the **safe autonomy rate**, the share of
+executions that ran without a human *and* completed cleanly, computed live from
+real executions (`app/services/safe_autonomy.py`).
 
 ## The differentiator: a measured confidence ceiling
 
-Bring your own model (OpenAI, Anthropic, Mistral, Groq, Cohere, Azure,
-self-hosted Ollama, or any OpenAI-compatible endpoint via LiteLLM), and KAEOS
-**measures** it. A probe battery - JSON compliance, multi-step reasoning, strict
-instruction following - produces a `tier_ceiling`: the maximum confidence any
-decision may claim on that model.
+Bring your own model (OpenAI, Anthropic, Mistral, Groq, Cohere, self-hosted
+Ollama, or any OpenAI-compatible endpoint via LiteLLM), and KAEOS **measures**
+it. A probe battery covering JSON compliance, multi-step reasoning and strict
+instruction following produces a `tier_ceiling`: the maximum confidence any
+decision may claim on that model (`app/services/model_probe.py`).
 
-Measured example - `phi4-mini` probes at a **0.70 ceiling**: it solves
-multi-step arithmetic perfectly (1.0) but fails strict instruction-following
-(0.0) and wraps JSON in prose (0.75). Put it on the reasoning tier and an
-identical high-confidence skill flips from `SUCCESS_CLEAN` to `PENDING_HITL`.
-Swap to a stronger model and autonomy returns.
+The ceiling is enforced at **Gate 3 of the agent pipeline itself**
+(`app/agents/runtime.py`), so every domain agent inherits it, not just the
+`/skills` routes. A weak model mechanically routes more of the whole platform's
+decisions to humans. If the ceiling lookup itself fails, the gate fails closed:
+a conservative failsafe cap routes decisions to a human until it recovers. Model
+choice becomes a governance dial, not a gamble.
 
-The ceiling is enforced at **Gate 3 of the agent pipeline itself** - every
-domain agent (finance, legal, sales, support, operations, engineering) inherits
-it, not just the `/skills` routes. A weak model mechanically routes more of the
-whole platform's decisions to humans. If the ceiling lookup itself fails, the
-gate fails closed: a conservative failsafe cap routes decisions to a human until
-it recovers. Model choice becomes a governance dial, not a gamble. Full detail:
+Reproduce a ceiling on your own model:
+
+```bash
+curl -X POST http://localhost:8001/api/v1/config/llm-routing/reasoning/probe -H "X-Tenant-ID: tenant_acme"
+```
+
+Full detail, including the observed `phi4-mini` result and data-residency notes:
 [docs/BYOK.md](docs/BYOK.md).
+
+## The 7-gate pipeline
+
+Implemented in [`backend/app/agents/runtime.py`](backend/app/agents/runtime.py).
+Every department agent routes through it via its `gated_runner`.
+
+| # | Gate | What it does | Terminal status on failure |
+|---|------|--------------|----------------------------|
+| 1 | **Compliance** | Evaluates the action's `compliance_tags` (EEOC, GDPR, SOX, ...). BLOCKER severity stops it; WARNINGs flow downstream into the result and provenance. | `BLOCKED_COMPLIANCE` |
+| 2 | **Fairness** | Scores bias on decisions touching people. Runs *concurrently* with Gate 1 (the two are independent), with compliance verdict ordering preserved. | `BLOCKED_FAIRNESS` |
+| 3 | **Confidence to HITL** | Caps the skill's confidence at the probed BYOK `tier_ceiling`; below-threshold and always-HITL actions pause for a human. Fails closed. | `PENDING_HITL` |
+| 4 | **Debate** | Adversarial multi-turn challenge of the proposed decision; a contested decision gets a second turn. | routed to HITL or blocked |
+| 5 | **Execution** | Runs the skill steps. Gate 5b performs governed actuation against the real target system when the skill is wired to act. | `FAILED` |
+| 6 | **Audit** | Enforces post-execution audit requirements for the action's compliance tags. | `FAILED_AUDIT` |
+| 7 | **Provenance** | Appends a hash-chained ledger record (`app/services/provenance.py`); the chain is independently verifiable and detects tampering. | chain verification failure |
+
+Stage timings for every gate are recorded per execution and exposed at
+`GET /api/v1/metrics/latency`.
 
 ## What we refuse to fake
 
 The honesty of the numbers is the product, so where a true number is not
-measurable, the platform returns nothing rather than something invented:
+measurable, the platform returns nothing rather than something invented.
 
-- **`hours_saved` and `cost_reduction` return `null`, with a note.** They
-  require a human-baseline duration and a loaded hourly rate per skill - tenant
-  inputs KAEOS cannot measure. They were previously "computed" by multiplying
-  executions by a hardcoded 0.5 hours and $50/hour. Invented numbers are worse
-  than absent ones, so they are absent.
-- **Benchmarks publish losses as well as wins.** On the real-data benchmark,
-  some domains (notably HR, Sales, and Support) land at or below the naive
-  baseline, and those results are reported transparently - not spun as wins
-  ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
+- **`hours_saved` and `cost_reduction` are `null` on the metering endpoints.**
+  `GET /api/v1/billing/usage` and `GET /api/v1/billing/roi` return `null` for both, with a
+  `note` explaining why: they require a human-baseline duration and a loaded
+  hourly rate per skill, which are tenant inputs KAEOS cannot measure. They were
+  previously "computed" by multiplying executions by a hardcoded 0.5 hours and
+  $50/hour.
+  *Scope, stated plainly:* the legacy workforce rollup
+  (`app/workforce/api/analytics.py`, fed by `rollup_department_metrics`) still
+  derives a `hours_saved_total` from that same 0.5h-per-execution heuristic.
+  Treat that field as an estimate, not a measurement. Migrating it to the same
+  `null`-with-note contract is tracked in
+  [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+- **Benchmarks publish losses as well as wins.** On the real-data benchmark some
+  domains land at or below the naive baseline, and those results are reported as
+  they came out ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
 - **A simulated evaluation can never promote a model.** If a Foundry evaluation
-  runs without a live provider, the run is flagged `simulated` and structurally
-  cannot win or be promoted - a fabricated score must never drive a model swap.
+  runs without a live provider the run is flagged `simulated` and structurally
+  cannot win or be promoted.
 - **There is no fake trainer.** The Foundry's weight fine-tuning step is
-  external/pluggable and the product says so; shipping a fake trainer would
-  violate the platform's honesty, so it is absent by design.
+  external and pluggable, and the product says so.
 
 ## Quick start
 
+Requires Docker and Docker Compose.
+
 ```bash
 git clone https://github.com/Daksh-Aneja-Projects/KAEOS.git && cd KAEOS
-cp .env.example .env    # then set DEV_MODE=true and ENVIRONMENT=development for a local trial
+cp .env.example .env
 docker compose up --build
 ```
 
-Frontend at http://localhost:5174, API docs at http://localhost:8001/docs.
-Demo data auto-seeds on startup. Full configuration (production mode, secrets,
-admin login, local Ollama): [docs/SETUP.md](docs/SETUP.md).
+For a local trial set `DEV_MODE=true` and `ENVIRONMENT=development` in `.env`
+before starting. Demo data seeds automatically on first boot
+(`app/core/seed.py`); subsequent boots detect existing data and skip.
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:5174 |
+| API + Swagger UI | http://localhost:8001/docs |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 |
+| PostgreSQL | `localhost:5432` |
+| Redis | `localhost:6379` |
+
+Production mode, secrets, admin login and running against a local Ollama:
+[docs/SETUP.md](docs/SETUP.md).
+
+## Repository layout
+
+```
+KAEOS/
+├── backend/                  Python 3.12 / FastAPI
+│   ├── app/
+│   │   ├── agents/           AgentExecutor: the 7-gate pipeline
+│   │   ├── api/routes/       56 route modules, 316 endpoints
+│   │   ├── connectors/       Connector base + CSV/REST adapters
+│   │   ├── core/             Config, auth, RLS, tenancy, seeding, telemetry
+│   │   ├── models/           Platform SQLAlchemy models
+│   │   ├── services/         76 domain services (gates, LLM router, provenance)
+│   │   ├── workforce/        Department lifecycle, deployment, analytics
+│   │   └── hr/ finance/ legal/ sales/ support/ operations/ engineering/
+│   │                         7 departments, 41 agents, each behind a gated_runner
+│   ├── alembic/versions/     29 migrations
+│   ├── benchmark/            Real-data benchmark harness
+│   └── tests/                114 files, 900 tests (441 e2e + 459 unit)
+├── frontend/                 React 19 + TypeScript + Vite + Tailwind
+│   └── src/                  99 components: 45 pages, 18 views, 34 shared
+├── deploy/helm/kaeos/        Helm chart
+├── docs/                     Documentation (see docs/README.md)
+└── docker-compose.yml        Postgres, Redis, backend, frontend, Prometheus, Grafana
+```
+
+## By the numbers
+
+Every figure below is counted from the tracked source at the current commit and
+is reproducible with the commands in [docs/TESTING.md](docs/TESTING.md).
+
+| | |
+|---|---|
+| Backend | 82,517 lines of Python |
+| Frontend | 32,394 lines of TypeScript / TSX |
+| API surface | 316 endpoints across 56 route modules |
+| Data model | 233 ORM tables across 77 model modules, 29 Alembic migrations (a created database holds 237 tables, including Alembic's own bookkeeping) |
+| Departments | 7, with 41 agents (HR 7, Finance 5, Legal 5, Sales 8, Support 7, Operations 6, Engineering 3) |
+| Integrations | 22 live connector adapters (5 core + 17 vendor) |
+| Tests | 900 (441 end-to-end, 459 unit) across 114 files |
+| UI | 99 React components: 45 pages, 18 views, 34 shared components |
 
 ## Documentation
+
+Start at the [documentation index](docs/README.md).
 
 | Topic | Where |
 |-------|-------|
 | Architecture, project structure, performance | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Features and product tour (departments, gates, missions, Foundry, screenshots) | [docs/FEATURES.md](docs/FEATURES.md) |
-| API reference (department + platform endpoints) | [docs/API.md](docs/API.md) |
-| Integrations: 22 live adapters, authority weighting, PII handling | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
-| Bring your own model: tiers, probe battery, ceiling derivation, data residency | [docs/BYOK.md](docs/BYOK.md) |
+| Features and product tour | [docs/FEATURES.md](docs/FEATURES.md) |
+| API reference | [docs/API.md](docs/API.md) |
+| Integrations: 22 adapters, authority weighting, PII handling | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
+| Bring your own model: tiers, probes, ceiling derivation | [docs/BYOK.md](docs/BYOK.md) |
 | Real-data benchmarks and methodology | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | Security model, multi-tenancy and RLS, SSO | [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) |
-| Testing: E2E suite, CI lanes, how to run | [docs/TESTING.md](docs/TESTING.md) |
-| Setup, development, deployment, environment variables | [docs/SETUP.md](docs/SETUP.md) |
-| Known limitations and roadmap (the full, unabridged list) | [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) |
-| Deployment runbook | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Compliance posture and audit evidence | [docs/COMPLIANCE_POSTURE.md](docs/COMPLIANCE_POSTURE.md) |
+| Testing: suites, CI lanes, how to run | [docs/TESTING.md](docs/TESTING.md) |
+| Setup, development, environment variables | [docs/SETUP.md](docs/SETUP.md) |
+| Deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Operations runbook | [docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md) |
+| Known limitations and roadmap | [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) |
+| Reporting a vulnerability | [SECURITY.md](SECURITY.md) |
+
+## Testing and CI
+
+```bash
+cd backend && python -m pytest tests --ignore=tests/e2e   # 459 unit tests
+cd backend && python -m pytest tests/e2e                  # 441 e2e tests
+cd frontend && npm run lint && npm run build && npm test   # lint, build, Vitest
+```
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs five lanes on every
+push and pull request:
+
+| Lane | What it does |
+|------|--------------|
+| `backend-lint` | Ruff, bug-catching rule set (`backend/ruff.toml`) |
+| `backend-test` | Unit suite on Python 3.12 |
+| `e2e` | Boots the backend, seeds, runs the non-Ollama e2e suite against PostgreSQL + pgvector |
+| `frontend-build` | ESLint, production build, Vitest |
+| `security-scan` | `pip-audit` (CVEs), `bandit` (medium+, blocking), `npm audit` (high+) |
+
+Details, including the Ollama-dependent lane: [docs/TESTING.md](docs/TESTING.md).
 
 ## Known limitations
 
-We'd rather you read this from us than find it. KAEOS is not independently
-certified (SOC 2, ISO 27001, HIPAA) - certification is a third-party audit
-software cannot self-grant, so what we ship is audit-readiness evidence
-(`GET /compliance/controls`), not a certificate. The Foundry orchestrates
-fine-tuning but does not run the weight-training step itself (external/pluggable
-by design). Prompt-injection has a real detection-and-neutralization layer wired
-into ingestion, but it is defense in depth, not a solution. Simulation surfaces
-are parameterized archetypes, labelled as such, not models learned from your
-data. The full list, kept current: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+We would rather you read this from us than find it. KAEOS is not independently
+certified (SOC 2, ISO 27001, HIPAA); certification is a third-party audit
+software cannot self-grant, so what ships is audit-readiness evidence
+(`GET /api/v1/compliance/controls`), not a certificate. The Foundry orchestrates
+fine-tuning but does not run the weight-training step. Prompt-injection has a
+real detection-and-neutralization layer wired into ingestion, but it is defense
+in depth, not a solution. Simulation surfaces are parameterized archetypes,
+labelled as such, not models learned from your data. Neo4j and the LangChain
+semantic-chunking backends are optional and imported lazily; the default
+deployment runs without them. The full list, kept current:
+[docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting pull requests.
-We follow the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. We follow
+the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). Contributions
+are inbound = outbound under Apache 2.0; there is no CLA to sign.
 
-## License & attribution
+## License
 
-Licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for the full
-text and [NOTICE](NOTICE) for required attributions. Apache 2.0 grants
-commercial use, modification, distribution, and patent rights; it requires that
-you preserve the copyright/NOTICE attributions and state significant changes.
+**KAEOS source code is licensed under the Apache License 2.0, and only that.**
+There is no dual license, no commercial license tier, and no proprietary or
+"all rights reserved" grant anywhere in this repository. See [LICENSE](LICENSE)
+for the full text and [NOTICE](NOTICE) for required attributions.
 
-**Third-party data is NOT covered by this license.** The benchmark datasets
-under `backend/data/kaggle_raw/` are gitignored and carry their own licenses
-from their respective publishers - see [NOTICE](NOTICE) and each dataset's
-Kaggle page before redistributing.
+Apache 2.0 grants commercial use, modification, distribution and patent rights.
+It requires that you preserve the copyright and NOTICE attributions and state
+significant changes.
+
+What the Apache grant does **not** cover:
+
+| Not covered | Why |
+|-------------|-----|
+| Benchmark datasets under `backend/data/kaggle_raw/` | Third-party data, gitignored and not distributed here. Each carries its own license from its publisher, recorded in [NOTICE](NOTICE) and in `DATASET_MANIFEST` (`backend/benchmark/real_data/loaders.py`). The CUAD v1 corpus is a work of The Atticus Project under CC BY 4.0. |
+| Third-party dependencies | Declared in `backend/requirements.txt` and `frontend/package.json`, each under its own license. The small number carrying weak file-level copyleft (psycopg2-binary, certifi, tqdm, lightningcss) are used unmodified, which their licenses permit inside an Apache 2.0 distribution. Itemized in [NOTICE](NOTICE). |
+| The "KAEOS" name and logo | Trademark rights are not granted by Apache 2.0 §6. |
+
+> **A note on the word "IP" in this codebase.** `backend/app/legal/agents/ip_agent.py`,
+> `backend/app/legal/models/ip.py` and the "IP/patent evaluation" feature refer to
+> a *Legal department capability* that helps a tenant track **their own**
+> intellectual property. They are product features, not a license claim on KAEOS
+> itself. KAEOS remains Apache 2.0.
 
 ---
 
 <div align="center">
 
 **Cofounders:** Daksh Aneja (Product and Engineering) and Sathya Sankarasubbu
-(Sales and Marketing). Built with **Claude** (Anthropic's AI coding tools) as
-the AI engineering assistant - across architecture, implementation, security
-hardening, and verification. Human-directed and AI-built, and deliberately
-honest about what's shipped versus roadmap
+(Sales and Marketing). Built with **Claude** (Anthropic's AI coding tools) as the
+AI engineering assistant, across architecture, implementation, security
+hardening and verification. Human-directed and AI-built, and deliberately honest
+about what is shipped versus roadmap
 ([docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)).
 
-**Built with** FastAPI / SQLAlchemy / LiteLLM / React / TypeScript / Redis / Neo4j / pgvector / Ollama
+**Built with** FastAPI · SQLAlchemy · LiteLLM · React · TypeScript · Redis · PostgreSQL + pgvector · Ollama
+<br /><sub>Neo4j and LangChain text-splitters are optional backends, imported lazily.</sub>
 
 </div>

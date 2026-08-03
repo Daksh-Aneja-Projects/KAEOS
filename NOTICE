@@ -1,7 +1,15 @@
-KAEOS — The Cognitive Operating System for the Enterprise
+KAEOS: The AI Operating System for Companies
 Copyright 2026 Daksh Aneja
 
 This product includes software developed by the KAEOS project.
+
+THE KAEOS SOURCE CODE IS LICENSED UNDER THE APACHE LICENSE 2.0 AND ONLY THAT.
+There is no dual license, no commercial license tier, and no proprietary or
+"all rights reserved" grant anywhere in this repository. Where the codebase uses
+the term "IP" (for example app/legal/agents/ip_agent.py, app/legal/models/ip.py,
+and the "IP/patent evaluation" feature), it refers to a Legal-department product
+capability for tracking a TENANT's own intellectual property. It is not a
+license claim over KAEOS itself.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 this file except in compliance with the License. You may obtain a copy of the
