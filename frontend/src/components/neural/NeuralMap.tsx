@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Brain, Database, FileUp, Search, Send, Sparkles, Waypoints, X,
+  Brain, Database, FileUp, Mic, Search, Send, Sparkles, Waypoints, X,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { api } from '../../api/client';
@@ -68,13 +68,40 @@ export function BrainIngestBar({ onLearned, compact }: { onLearned?: () => void;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; message: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [listening, setListening] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const recRef = useRef<any>(null);
 
   useEffect(() => {
     if (!note) return;
     const t = setTimeout(() => setNote(null), 6000);
     return () => clearTimeout(t);
   }, [note]);
+
+  // Voice ingest: native Web Speech API - speak a note straight into the brain.
+  const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  useEffect(() => () => recRef.current?.stop?.(), []);
+  const toggleVoice = () => {
+    if (listening) { recRef.current?.stop(); return; }
+    try {
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = navigator.language || 'en-US';
+      rec.onresult = (e: any) => {
+        const spoken = Array.from(e.results as any).slice(e.resultIndex)
+          .map((r: any) => r[0]?.transcript || '').join(' ').trim();
+        if (spoken) setText(prev => (prev ? prev + ' ' : '') + spoken);
+      };
+      rec.onend = () => setListening(false);
+      rec.onerror = () => setListening(false);
+      recRef.current = rec;
+      rec.start();
+      setListening(true);
+    } catch {
+      setNote({ ok: false, message: 'Voice input is not available in this browser' });
+    }
+  };
 
   const submit = async () => {
     if (busy || (!text.trim() && !file)) return;
@@ -135,6 +162,17 @@ export function BrainIngestBar({ onLearned, compact }: { onLearned?: () => void;
           className="p-1.5 rounded-lg transition-colors hover:opacity-75" style={{ color: colors.inkSubtle }}>
           <FileUp className="w-4 h-4" />
         </button>
+        {SpeechRec && (
+          <button onClick={toggleVoice}
+            aria-label={listening ? 'Stop voice input' : 'Speak a note into the brain'}
+            className={`p-1.5 rounded-lg transition-colors hover:opacity-75 ${listening ? 'animate-pulse' : ''}`}
+            style={{
+              color: listening ? '#fff' : colors.inkSubtle,
+              background: listening ? colors.error : 'transparent',
+            }}>
+            <Mic className="w-4 h-4" />
+          </button>
+        )}
         <button onClick={submit} disabled={busy || (!text.trim() && !file)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-all disabled:opacity-40"
           style={{ background: colors.primary }}>

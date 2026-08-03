@@ -111,10 +111,15 @@ class TestAuthRBAC:
         r3 = await client.delete(f"/auth/users/{user_id}", headers=headers)
         assert r3.status_code == 200
 
-    async def test_saml_sso_not_implemented(self, client):
-        """SAML SSO explicitly returns 501 (documented as not in v1)."""
-        r = await client.post("/auth/sso/saml", json={})
-        assert r.status_code == 501
+    async def test_saml_sp_metadata_published(self, client):
+        """Real SAML 2.0 shipped in v1.5.0: the SP publishes its metadata.
+
+        (This replaced the pre-v1.5 test that asserted POST /auth/sso/saml
+        returned 501 "not implemented" - that endpoint no longer exists.)
+        """
+        r = await client.get("/auth/sso/saml/metadata")
+        assert r.status_code == 200
+        assert "EntityDescriptor" in r.text
 
     async def test_jwt_works_for_tenant_scoped_api(self, client):
         """A JWT from login is accepted by TenantMiddleware on business routes."""

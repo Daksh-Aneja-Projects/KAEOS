@@ -11,6 +11,60 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-03 - "Fast Lane"
+
+The performance and quality release: the governed decision pipeline gets
+measured, parallelized, and short-circuited - without weakening a single gate -
+and four releases' worth of red CI goes green again.
+
+### Performance
+- **Per-gate latency instrumentation.** Every gate transition now records its
+  wall-time lap. Execution results carry `stage_timings` + `pipeline_ms`, the
+  `gate_event` WebSocket payload carries per-gate `ms`, and a rolling in-process
+  buffer keeps the last 50 executions' timings.
+- **`GET /metrics/latency`.** Where the seconds go, on demand: model-call
+  latency by tier and by model (avg/p50/p95/max from metered CostEvent rows)
+  plus per-gate wall-time for recent executions.
+- **Contested-only debate turn 2.** The debate engine arbitrates after the
+  first proposer/advocate exchange; the second exchange now runs ONLY when the
+  arbitrator lands in the contested band (0.5 <= confidence < 0.8). A decisive
+  debate resolves in 3 sequential reasoning calls instead of 5 - roughly 40%
+  off the single largest latency cost in the pipeline - while genuinely
+  contested decisions keep the full two-turn scrutiny. Turn-2 context now uses
+  the structural compactor instead of unbounded `json.dumps`.
+- **Parallel gates.** Gate 1 (compliance) and Gate 2 (fairness) run
+  concurrently when both apply - they are independent, and each can make a real
+  model call. Compliance-BLOCKER verdict ordering is preserved. Cross-domain
+  debate perspectives are likewise gathered concurrently.
+- **Frontend stale-while-revalidate.** GETs are cached for 15s in the API
+  client: navigating back to a page renders instantly from the last response
+  while a background refetch keeps it live. The TTL sits under the 20s
+  live-refresh convention (polling pages still hit the network every tick),
+  and any mutation flushes the whole cache.
+
+### Fixed
+- **CI: backend-e2e-mock lane green again** (red since the v1.5.0 SAML
+  commit, through four releases): the stale "SAML returns 501" test now
+  asserts the real SP metadata endpoint; the e2e client follows FastAPI's
+  trailing-slash 307 redirects; the MCP `list_skills` tool forwards to
+  `/skills` (no trailing slash), restoring its `structuredContent` payload.
+- **Security: `POST /neural/brain/ingest` now requires the operator role.**
+  It shipped in v1.8.0 with no role gate - a default-deny violation caught by
+  `test_default_deny` (the other reason the CI lane was red).
+
+### Added
+- **Voice ingest.** The brain ingest bar gains a native Web Speech API mic:
+  speak a note straight into the company brain (no dependency; the button
+  only renders where the browser supports it).
+- **Real HR agent personas.** The three HR agent personas were truncated
+  placeholder stubs; they are now real working charters (EEOC-safe screening,
+  I-9 deadline escalation, HIPAA-bound benefits answers) in the style of the
+  engineering pack.
+- **Explicit agent skill ownership.** Workforce deployment now links each
+  agent's core skill into `DepartmentAgent.skills`, so dossiers and
+  agent-to-task edges read explicit ownership instead of relying on the
+  skill-id token-match fallback.
+
 ## [1.8.0] - 2026-08-01 - "Neural Map"
 
 The company becomes a living map. The Departments surface gains three lenses

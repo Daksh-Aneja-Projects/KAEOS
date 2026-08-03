@@ -112,15 +112,41 @@ export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
 // requests; once one settles the entry is cleared), so live data stays live.
 const _inflightGets = new Map<string, Promise<any>>();
 
+// Stale-while-revalidate for GETs: navigating back to a page renders instantly
+// from the last response while a background refetch updates the cache. The TTL
+// sits under the 20s live-refresh convention, so polling pages always hit the
+// network on their next tick - live data stays live, only remounts get faster.
+// Any mutation flushes the whole cache: coarse, but it can never serve a read
+// the user's own write just invalidated.
+const _getCache = new Map<string, { t: number; data: any }>();
+const _SWR_TTL_MS = 15_000;
+
 export function request<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase();
-  if (method !== 'GET') return _exec<T>(path, options);
-  const key = path + (options?.headers ? '|' + JSON.stringify(options.headers) : '');
-  const existing = _inflightGets.get(key);
-  if (existing) return existing as Promise<T>;
-  const p = _exec<T>(path, options).finally(() => _inflightGets.delete(key));
-  _inflightGets.set(key, p);
-  return p;
+  if (method !== 'GET') {
+    _getCache.clear();
+    return _exec<T>(path, options);
+  }
+  // The dev tenant override changes what a path returns - key by it.
+  const key = (localStorage.getItem('kaeos-dev-tenant') || '') + '|' + path
+    + (options?.headers ? '|' + JSON.stringify(options.headers) : '');
+
+  const fetchFresh = (): Promise<T> => {
+    const existing = _inflightGets.get(key);
+    if (existing) return existing as Promise<T>;
+    const p = _exec<T>(path, options)
+      .then((data) => { _getCache.set(key, { t: Date.now(), data }); return data; })
+      .finally(() => _inflightGets.delete(key));
+    _inflightGets.set(key, p);
+    return p;
+  };
+
+  const cached = _getCache.get(key);
+  if (cached && Date.now() - cached.t < _SWR_TTL_MS) {
+    void fetchFresh().catch(() => {}); // revalidate in the background
+    return Promise.resolve(cached.data as T);
+  }
+  return fetchFresh();
 }
 
 // ─── Types ───

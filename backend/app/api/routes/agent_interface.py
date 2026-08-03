@@ -157,7 +157,9 @@ async def _call_tool(request: Request, name: str, args: dict) -> dict:
         r = await _forward(request, "GET", f"{prefix}/brain/overview")
     elif name == "list_skills":
         params = {k: v for k, v in args.items() if v is not None}
-        r = await _forward(request, "GET", f"{prefix}/skills/", params=params)
+        # No trailing slash: the route is defined as "" under the /skills
+        # prefix, so "/skills/" draws a 307 the internal client won't follow.
+        r = await _forward(request, "GET", f"{prefix}/skills", params=params)
     elif name == "execute_skill":
         skill_id = args["skill_id"]
         body = {"intent": args["intent"], "context": args.get("context") or {}}

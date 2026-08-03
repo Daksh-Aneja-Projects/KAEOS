@@ -137,7 +137,11 @@ async def client():
     if not backend_reachable():
         pytest.skip(f"KAEOS backend not running at {BASE_URL}")
 
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=TIMEOUT) as c:
+    # follow_redirects: FastAPI 307-redirects between /path and /path/ variants;
+    # a browser follows those transparently, so the suite should too - otherwise
+    # every route defined as "" breaks any test that asks for the "/" spelling.
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=TIMEOUT,
+                                 follow_redirects=True) as c:
         yield c
 
 

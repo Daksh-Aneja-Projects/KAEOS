@@ -208,8 +208,26 @@ gate or changing any decision's reasoning:
   `skill_executions (tenant_id, started_at)` and `cost_events (tenant_id, timestamp)`
   turn the safe-autonomy / time-machine / causal / regulatory / cost queries into
   covering-index seeks.
-- **It is measured, not guessed.** Per-model-tier average latency is surfaced live in
-  the Executive Cockpit (from real cost telemetry).
+- **It is measured, not guessed.** Every gate transition records its wall-time lap:
+  execution results carry `stage_timings` + `pipeline_ms`, the `gate_event` WebSocket
+  payload carries per-gate `ms`, and `GET /metrics/latency` aggregates model-call
+  latency by tier/model (avg/p50/p95/max from metered CostEvent rows) plus per-gate
+  wall-time of recent executions. Per-model-tier average latency is also surfaced
+  live in the Executive Cockpit.
+- **The debate earns its length.** The adversarial debate arbitrates after the first
+  proposer/advocate exchange and runs a second exchange ONLY when the verdict is
+  contested (arbitrator confidence in the 0.5-0.8 band). A decisive debate resolves
+  in 3 sequential reasoning calls instead of 5; a contested one keeps the full
+  two-turn scrutiny. No gate is weakened - only the repeat of an already-heard
+  argument is skipped.
+- **Independent gates run concurrently.** Compliance (Gate 1) and fairness (Gate 2)
+  are independent of each other; when both apply they run under `asyncio.gather`,
+  with compliance-BLOCKER verdict ordering preserved. Cross-domain debate
+  perspectives are gathered concurrently too.
+- **Back-navigation is instant.** The API client keeps a 15s stale-while-revalidate
+  cache for GETs: a remounted page renders from the last response while a background
+  refetch keeps it live; any mutation flushes the cache. The TTL sits under the 20s
+  live-refresh convention, so polling pages still hit the network every tick.
 
 - **One optimization was measured and then rejected.** Splitting the gate
   pipeline across a small "nano" model and the resident 7b looks like an obvious

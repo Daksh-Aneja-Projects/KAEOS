@@ -586,6 +586,10 @@ class WorkforceGenerator:
                     agent_type=agent_def["type"],
                     persona=agent_def.get("persona", ""),
                     role_in_department=agent_def.get("description", ""),
+                    # Explicit skill ownership: the dossier and the agent → task
+                    # edges read this list; leaving it empty forced a token-match
+                    # fallback on skill_id naming.
+                    skills=[skill_id_name],
                     blueprint_id=bp_id,
                     deployed_agent_id=da_id
                 )
