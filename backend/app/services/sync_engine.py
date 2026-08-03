@@ -272,6 +272,8 @@ async def ingest_webhook(connector_id: str, signature: Optional[str],
             try:
                 secret = decrypt_secrets(cred.secrets_encrypted).get("webhook_secret", "")
             except Exception:
+                # No readable secret (missing or rotated SECRET_KEY) -> treat as
+                # "no webhook secret configured" rather than failing the sync.
                 secret = ""
         tenant_id = connector.tenant_id
 

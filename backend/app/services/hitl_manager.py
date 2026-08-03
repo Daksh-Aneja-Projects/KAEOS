@@ -56,6 +56,7 @@ class HITLManager:
             from app.core.redis import redis_client
             return redis_client
         except Exception:
+            # Redis is optional; without it HITL falls back to DB-only state.
             return None
 
     async def request_human_confirmation(self, skill: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,6 +163,7 @@ class HITLManager:
             link_lines = (f"\nApprove: {links['approve']}\n"
                           f"Reject:  {links['reject']}\n")
         except Exception:
+            logger.warning("HITL approval-link build failed for exec %s", exec_id, exc_info=True)
             links, link_lines = {}, ""
         notify_fire_and_forget(
             tenant_id, "hitl.pending",

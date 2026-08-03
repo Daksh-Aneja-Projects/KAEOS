@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -23,6 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.actuation import SorObject, ActionRecord
+
+logger = logging.getLogger(__name__)
 
 _VALID_OPS = {"CREATE", "UPDATE", "DELETE"}
 
@@ -69,6 +72,7 @@ async def _record_provenance(db: AsyncSession, tenant_id: str, actor: str,
         )
         return getattr(entry, "id", None)
     except Exception:
+        logger.exception("governed SoR write failed for tenant %s action %s", tenant_id, action)
         return None
 
 

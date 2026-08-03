@@ -68,6 +68,8 @@ async def respond_to_security_event(connector_id: str, signature: Optional[str],
             try:
                 secret = decrypt_secrets(cred.secrets_encrypted).get("webhook_secret", "")
             except Exception:
+                # No readable secret (missing or rotated SECRET_KEY) -> treat as
+                # "no webhook secret configured"; signature check below is skipped.
                 secret = ""
         tenant_id = connector.tenant_id
         connector_name = connector.name
@@ -119,6 +121,8 @@ async def respond_to_security_event(connector_id: str, signature: Optional[str],
                     try:
                         stored = decrypt_secrets(cred_row.secrets_encrypted)
                     except Exception:
+                        # Undecryptable prior secrets (rotated key) -> start from
+                        # empty and re-encrypt, replacing the unreadable blob.
                         stored = {}
                     stored["webhook_secret"] = pysecrets.token_hex(32)
                     cred_row.secrets_encrypted = encrypt_secrets(stored)

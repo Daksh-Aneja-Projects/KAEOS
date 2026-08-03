@@ -100,7 +100,7 @@ async def timeline(db: AsyncSession, tenant_id: str, *, days: int = 45, limit: i
 async def state_as_of(db: AsyncSession, tenant_id: str, *, at: str, days: int = 45) -> dict:
     try:
         at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
-    except Exception:
+    except (ValueError, TypeError):
         return {"error": "invalid timestamp"}
     if at_dt.tzinfo is None:
         at_dt = at_dt.replace(tzinfo=timezone.utc)

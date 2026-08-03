@@ -129,7 +129,9 @@ def _bind_tenant_to_transaction(session, transaction, connection):
     try:
         from app.core.context import current_tenant_id
         tenant_id = current_tenant_id.get()
-    except Exception:
+    except LookupError:
+        # No tenant bound to this context (e.g. a background/maintenance session
+        # outside a request) -> skip RLS GUC setup for this connection.
         return
     if not tenant_id:
         return  # no context: RLS shows nothing (fails closed), by design

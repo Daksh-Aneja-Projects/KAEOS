@@ -81,7 +81,7 @@ def _to_text(value: Any) -> str:
     import json
     try:
         return json.dumps(plain_facts(value) if isinstance(value, dict) else value, default=str)
-    except Exception:
+    except (TypeError, ValueError):
         return str(value)
 
 

@@ -157,6 +157,8 @@ async def run_simulation(
         if isinstance(parsed, dict):
             narrative = parsed
     except Exception:
+        # Best-effort LLM enrichment: a model/parse failure degrades to an empty
+        # narrative rather than failing the endpoint.
         narrative = {}
 
     # Deterministic verdict from real scope + risk tolerance when the LLM is sparse.

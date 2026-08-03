@@ -208,7 +208,9 @@ async def mcp_endpoint(
 ):
     try:
         payload = await request.json()
-    except Exception:
+    except (ValueError, UnicodeDecodeError):
+        # Malformed / non-JSON body -> JSON-RPC parse error. Narrowed so a real
+        # bug (e.g. TypeError in downstream code) is never masked as "parse error".
         return _rpc_error(None, -32700, "Parse error: body is not valid JSON")
 
     if isinstance(payload, list):

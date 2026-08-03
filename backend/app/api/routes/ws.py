@@ -66,6 +66,8 @@ class ConnectionManager:
                 await conn.send_json(message)
                 sent += 1
             except Exception:
+                # Best-effort broadcast: a send to a client that has already gone
+                # away raises here; queue it for removal and keep fanning out.
                 dead.append(conn)
         # Clean dead connections. Mutate the actual tracked list (not a fresh
         # default) and guard membership — under concurrency a connection may

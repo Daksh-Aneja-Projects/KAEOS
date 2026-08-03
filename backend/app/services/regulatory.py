@@ -12,12 +12,15 @@ Nothing is invented: every number traces to a Skill, an execution, or a ledger r
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import Skill, SkillExecution
+
+logger = logging.getLogger(__name__)
 
 # Frameworks KAEOS reasons about, with a one-line scope for the UI.
 FRAMEWORKS = {
@@ -151,6 +154,7 @@ async def evidence_pack(db: AsyncSession, tenant_id: str, framework: str, days: 
             .where(ProvenanceLedger.tenant_id == tenant_id, ProvenanceLedger.timestamp >= since)
         )).scalar() or 0)
     except Exception:
+        logger.warning("provenance count failed for tenant %s", tenant_id, exc_info=True)
         prov_count = 0
     evidence["provenance_entries"] = prov_count
 
@@ -162,6 +166,7 @@ async def evidence_pack(db: AsyncSession, tenant_id: str, framework: str, days: 
             .where(ActionRecord.tenant_id == tenant_id, ActionRecord.created_at >= since)
         )).scalar() or 0)
     except Exception:
+        logger.warning("actuation count failed for tenant %s", tenant_id, exc_info=True)
         act_count = 0
     evidence["actions_recorded"] = act_count
 

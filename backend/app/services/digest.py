@@ -51,6 +51,7 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
                     SkillExecution.status == "PENDING_HITL")
             )).scalar() or 0
         except Exception:
+            logger.warning("digest: pending-HITL count failed for %s", tenant_id, exc_info=True)
             pending = 0
         out["pending_approvals"] = int(pending)
 
@@ -62,6 +63,7 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
                     Incident.tenant_id == tenant_id, Incident.created_at >= since)
             )).scalar() or 0
         except Exception:
+            logger.warning("digest: incident count failed for %s", tenant_id, exc_info=True)
             incidents = 0
         out["incidents"] = int(incidents)
 
@@ -73,6 +75,7 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
             )).scalar() or 0
             out["spend_usd"] = round(float(spend), 4)
         except Exception:
+            logger.warning("digest: spend rollup failed for %s", tenant_id, exc_info=True)
             out["spend_usd"] = None
 
         # Missions completed
@@ -85,6 +88,7 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
             )).all()
             out["missions"] = {str(s): int(c) for s, c in missions}
         except Exception:
+            logger.warning("digest: mission rollup failed for %s", tenant_id, exc_info=True)
             out["missions"] = {}
 
     return out

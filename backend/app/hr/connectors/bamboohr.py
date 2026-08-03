@@ -84,4 +84,5 @@ class BambooHRConnector:
             await self.get_employees()
             return True
         except Exception:
+            logger.warning("BambooHR connection test failed", exc_info=True)
             return False

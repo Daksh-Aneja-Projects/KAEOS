@@ -34,7 +34,12 @@ def _fmt(d: Dict[str, Any], keys: int = 4) -> str:
 
 
 class _RestAdapter:
-    """Shared plumbing: a GET against a vendor endpoint with adapter-defined auth."""
+    """Shared plumbing: a GET against a vendor endpoint with adapter-defined auth.
+
+    Abstract base of the template-method pattern: ``base_url``/``test_path``/
+    ``fetch_path`` raise NotImplementedError and MUST be overridden by each
+    concrete vendor adapter below. They are contract markers, not dead code.
+    """
     domain = "general"
     entity = "record"
     authority = 0.8

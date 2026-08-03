@@ -536,7 +536,8 @@ async def _reverse_mission_actions(db: AsyncSession, mission: Mission, steps) ->
     try:
         from app.models.actuation import ActionRecord
         from app.services.actuation import Actuator
-    except Exception:
+    except ImportError:
+        # Actuation module not present in this build -> nothing to compensate.
         return 0
     exec_ids = [s.execution_id for s in steps if s.execution_id]
     if not exec_ids:

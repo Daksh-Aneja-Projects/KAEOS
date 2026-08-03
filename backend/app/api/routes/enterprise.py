@@ -37,6 +37,8 @@ async def readiness(db: AsyncSession = Depends(get_db)):
         await db.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
+        # Best-effort readiness probe: ANY DB failure means "not ready". The
+        # boolean is the signal the orchestrator acts on, so we do not re-raise.
         db_ok = False
     return {
         "status": "ready" if db_ok else "not_ready",

@@ -72,7 +72,7 @@ class QuantumLedgerEngine:
             try:
                 from app.core.context import current_tenant_id
                 _tenant = current_tenant_id.get()
-            except Exception:
+            except LookupError:
                 _tenant = None
 
         entry = ProvenanceLedger(

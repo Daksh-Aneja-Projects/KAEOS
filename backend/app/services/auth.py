@@ -169,6 +169,9 @@ def decode_token(token: str) -> Optional[dict]:
             return None
         return payload
     except Exception:
+        # Any malformed/legacy token (bad base64, JSON, signature, or expiry)
+        # is treated as unauthenticated. Broad on purpose: a hostile token can
+        # fail in many ways and all of them mean "reject", not "500".
         return None
 
 

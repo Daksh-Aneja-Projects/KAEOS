@@ -80,7 +80,8 @@ def _blocking_tcp_probe(host: str, port: int, timeout: float) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except Exception:
+    except OSError:
+        # Connection refused / DNS / timeout -> host is not reachable.
         return False
 
 
@@ -116,6 +117,8 @@ async def _ollama_reachable(base_url: str) -> bool:
     try:
         reachable = await asyncio.to_thread(_blocking_tcp_probe, host, port, 1.5)
     except Exception:
+        # Best-effort reachability: any probe failure means "assume unreachable"
+        # and fall back to the cloud/fake router downstream.
         reachable = False
 
     _OLLAMA_PROBE_CACHE[base_url] = (now, reachable)
@@ -290,6 +293,7 @@ class LLMRouter:
             from app.core.config import get_settings
             return bool(get_settings().local_llm_only)
         except Exception:
+            # Settings unavailable -> assume inference is not region-pinned.
             return False
 
     # ── Provider availability detection ──────────────────────────────────
@@ -532,6 +536,8 @@ class LLMRouter:
                 )
                 cost = float(prompt_cost + completion_cost)
             except Exception:
+                # litellm has no price table for this model -> report 0 rather
+                # than fail the completion over a bookkeeping gap.
                 cost = 0.0
 
             from app.core.database import AsyncSessionLocal

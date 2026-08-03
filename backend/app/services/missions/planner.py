@@ -138,7 +138,7 @@ async def plan_mission(
     # Resolve per-department HITL from the real autonomy policy.
     try:
         from app.services.autonomy_policy import resolve_min_confidence
-    except Exception:  # pragma: no cover
+    except ImportError:  # pragma: no cover - optional policy module
         resolve_min_confidence = None
 
     mission = Mission(tenant_id=tenant_id, goal=goal, status="PLANNING",

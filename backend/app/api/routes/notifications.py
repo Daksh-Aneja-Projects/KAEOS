@@ -39,6 +39,8 @@ def _serialize(ch: NotificationChannel) -> Dict[str, Any]:
     try:
         cfg = _mask_config(decrypt_secrets(ch.config_encrypted))
     except Exception:
+        # Best-effort: an undecryptable blob (e.g. rotated SECRET_KEY) must not
+        # break the channel list. The error is surfaced to the caller below.
         cfg = {"error": "config unreadable"}
     return {
         "id": ch.id, "name": ch.name, "kind": ch.kind, "config": cfg,

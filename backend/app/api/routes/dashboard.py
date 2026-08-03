@@ -1,4 +1,6 @@
 """KAEOS — Dashboard API (L18 Observability + L13 Compliance)"""
+import logging
+
 from app.core.tenant import get_tenant_id
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,8 @@ from app.schemas.dashboard import (
     DecayAlert, AgentMetrics, ElicitationMetrics,
     ComplianceDashboardResponse, ComplianceStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard — L18 Observability"])
 
@@ -502,6 +506,7 @@ async def executive_cockpit(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
         # "default"'s spend, and no tenant could see its own.
         cost_data = await CostGovernorService.get_cost_telemetry(db, tenant_id, 24)
     except Exception:
+        logger.exception("cost telemetry unavailable for tenant %s", tenant_id)
         cost_data = None
 
     return {
