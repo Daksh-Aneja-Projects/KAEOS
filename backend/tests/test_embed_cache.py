@@ -8,29 +8,32 @@ while a novel text still calls the provider — with identical output either way
 import pytest
 
 from app.services import llm_router as R
+# The embedding-cache primitives live in llm_support (the router re-exports the
+# helpers); patch the cache state where it actually lives.
+from app.services import llm_support as S
 
 
 def test_cache_key_is_deterministic_and_model_scoped():
-    a = R._embed_key("m1", "hello")
-    assert a == R._embed_key("m1", "hello")
-    assert a != R._embed_key("m2", "hello")
-    assert a != R._embed_key("m1", "world")
+    a = S._embed_key("m1", "hello")
+    assert a == S._embed_key("m1", "hello")
+    assert a != S._embed_key("m2", "hello")
+    assert a != S._embed_key("m1", "world")
 
 
 def test_lru_eviction(monkeypatch):
-    monkeypatch.setattr(R, "_EMBED_CACHE", R._OrderedDict())
-    monkeypatch.setattr(R, "_EMBED_CACHE_MAX", 3)
+    monkeypatch.setattr(S, "_EMBED_CACHE", S._OrderedDict())
+    monkeypatch.setattr(S, "_EMBED_CACHE_MAX", 3)
     for i in range(5):
-        R._embed_cache_put(f"k{i}", [float(i)])
+        S._embed_cache_put(f"k{i}", [float(i)])
     # Only the last 3 survive.
-    assert R._embed_cache_get("k0") is None
-    assert R._embed_cache_get("k4") == [4.0]
-    assert len(R._EMBED_CACHE) == 3
+    assert S._embed_cache_get("k0") is None
+    assert S._embed_cache_get("k4") == [4.0]
+    assert len(S._EMBED_CACHE) == 3
 
 
 @pytest.mark.asyncio
 async def test_embed_serves_cache_and_skips_provider(monkeypatch):
-    monkeypatch.setattr(R, "_EMBED_CACHE", R._OrderedDict())
+    monkeypatch.setattr(S, "_EMBED_CACHE", S._OrderedDict())
     router = R.LLMRouter()
 
     calls = {"n": 0}

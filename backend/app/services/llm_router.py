@@ -11,11 +11,7 @@ responses instead of raising. This keeps the dev stack fully runnable with no
 external services. Simulated payloads are flagged with ``"simulated": True``.
 """
 from typing import Optional
-import hashlib
-import json
 import logging
-import math
-import struct
 import time
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
@@ -24,120 +20,22 @@ from app.core.context import current_execution_id, current_skill_id, current_ten
 
 logger = logging.getLogger(__name__)
 
-# Module-level cache for Ollama reachability probes (avoid repeated socket calls).
-_OLLAMA_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
-_OLLAMA_PROBE_TTL = 30.0  # seconds
-
-# Embedding cache. An embedding is a PURE function of (model, text): the same text
-# under the same model always yields the same vector, so caching returns a
-# byte-identical result while eliminating a repeat provider call. Content-only
-# (no tenant data), so cross-tenant reuse of identical text is safe. Bounded LRU.
-from collections import OrderedDict as _OrderedDict
-_EMBED_CACHE: "_OrderedDict[str, list]" = _OrderedDict()
-_EMBED_CACHE_MAX = 8192
-_EMBED_CACHE_STATS = {"hits": 0, "misses": 0}
-
-
-def _embed_key(model: str, text: str) -> str:
-    # Non-security cache key (embedding memoization), not a digest of secrets —
-    # usedforsecurity=False documents intent and clears the bandit B324 gate.
-    return hashlib.sha1(  # nosec B324
-        f"{model}\x00{text}".encode("utf-8", "replace"), usedforsecurity=False
-    ).hexdigest()
-
-
-def _embed_cache_get(key: str):
-    v = _EMBED_CACHE.get(key)
-    if v is not None:
-        _EMBED_CACHE.move_to_end(key)
-        _EMBED_CACHE_STATS["hits"] += 1
-    return v
-
-
-def _embed_cache_put(key: str, vec: list) -> None:
-    _EMBED_CACHE[key] = vec
-    _EMBED_CACHE.move_to_end(key)
-    while len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
-        _EMBED_CACHE.popitem(last=False)
-
-# Known embedding dimensions by model id (fallback: 1536).
-_EMBEDDING_DIMS = {
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072,
-    "text-embedding-ada-002": 1536,
-    "embed-english-v3.0": 1024,
-    "ollama/nomic-embed-text:latest": 768,
-    "nomic-embed-text": 768,
-}
-
-
-def _blocking_tcp_probe(host: str, port: int, timeout: float) -> bool:
-    """Blocking TCP connect — kept because it is far more reliable than an
-    asyncio open_connection on Windows, where the async path can spuriously
-    time out on a localhost connect that a blocking connect completes."""
-    import socket
-
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        # Connection refused / DNS / timeout -> host is not reachable.
-        return False
-
-
-async def _ollama_reachable(base_url: str) -> bool:
-    """Fast, cached TCP probe to check whether an Ollama server is reachable.
-
-    Uses a blocking socket connect (reliable) offloaded to a worker thread via
-    asyncio.to_thread, so the event loop is never blocked while still getting a
-    trustworthy result. A generous timeout accommodates a slow localhost stack.
-    """
-    import asyncio
-
-    now = time.time()
-    cached = _OLLAMA_PROBE_CACHE.get(base_url)
-    if cached and (now - cached[0]) < _OLLAMA_PROBE_TTL:
-        return cached[1]
-
-    host, port = "localhost", 11434
-    try:
-        stripped = base_url.split("://", 1)[-1]
-        hostport = stripped.split("/", 1)[0]
-        if ":" in hostport:
-            host, port_str = hostport.rsplit(":", 1)
-            port = int(port_str)
-        else:
-            host = hostport
-    except Exception:
-        # A malformed OLLAMA_BASE_URL falls back to the localhost:11434
-        # defaults initialized above; the reachability probe below then
-        # reports honestly whether anything is actually there.
-        pass
-
-    try:
-        reachable = await asyncio.to_thread(_blocking_tcp_probe, host, port, 1.5)
-    except Exception:
-        # Best-effort reachability: any probe failure means "assume unreachable"
-        # and fall back to the cloud/fake router downstream.
-        reachable = False
-
-    _OLLAMA_PROBE_CACHE[base_url] = (now, reachable)
-    return reachable
-
-
-class BudgetExceededError(RuntimeError):
-    """Raised when a tenant's token/cost budget hard limit blocks an LLM call."""
-
-
-class NoLLMProviderError(RuntimeError):
-    """Raised when no LLM provider is reachable and simulated output is not
-    permitted. Governance gates MUST treat this as fail-closed (deny / route to
-    human) rather than rubber-stamping a decision on a fabricated response."""
-
-
-class PIIScrubError(RuntimeError):
-    """Raised when PII scrubbing fails under a data-residency / strict-egress
-    policy. The cloud LLM call MUST be blocked rather than send unscrubbed PII."""
+# Class-independent primitives live in sibling modules to keep this file focused
+# on routing/completion. Re-exported here so existing imports such as
+# `from app.services.llm_router import BudgetExceededError` keep working.
+from app.services.llm_support import (  # noqa: F401  (re-exported for callers)
+    _ollama_reachable,
+    _embed_key,
+    _embed_cache_get,
+    _embed_cache_put,
+    _EMBED_CACHE_STATS,
+    embedding_dim,
+    pseudo_embedding,
+    BudgetExceededError,
+    NoLLMProviderError,
+    PIIScrubError,
+)
+from app.services.llm_simulation import simulated_completion
 
 
 class LLMRouter:
@@ -718,90 +616,8 @@ class LLMRouter:
     # ── Simulated (no-provider) responses ────────────────────────────────
 
     def _simulated_completion(self, prompt: str, system_prompt: Optional[str]) -> dict:
-        """Build a deterministic simulated completion whose JSON content matches
-        the shape the calling engine expects. Content is chosen by sniffing
-        keywords in the prompt so every downstream parser tolerates it.
-        """
-        p = (prompt or "").lower()
-        sys_p = (system_prompt or "").lower()
-
-        # Compliance engine expects a JSON *list* of violations. Simulated =
-        # no violations (empty list) so degraded runs are not falsely blocked.
-        if "compliance engine" in p or "violation objects" in p or "regulatory violations" in p:
-            content = "[]"
-        # Fairness assessor expects an object with overall_score.
-        elif "fairness" in p or "overall_score" in p or "protected attributes" in p:
-            content = json.dumps({
-                "overall_score": 0.95,
-                "attribute_scores": {},
-                "flagged_attributes": [],
-                "rationale": "SIMULATED: no LLM provider available; neutral pass.",
-                "simulated": True,
-            })
-        # Debate proposer.
-        elif "proposer agent" in p:
-            content = json.dumps({
-                "evidence": ["SIMULATED evidence 1", "SIMULATED evidence 2", "SIMULATED evidence 3"],
-                "conclusion": "SIMULATED: proceed (no provider).",
-                "confidence": 0.9,
-                "grounded_in": ["simulated"],
-                "simulated": True,
-            })
-        # Debate devil's advocate. (Match only the unique role header — the
-        # arbitrator prompt embeds the advocate's JSON, so do NOT match on keys
-        # like "counter_evidence".)
-        elif "devil's advocate" in p:
-            content = json.dumps({
-                "counter_evidence": [],
-                "risks": [],
-                "conclusion": "SIMULATED: no material risk found (no provider).",
-                "ungrounded_claims_found": 0,
-                "simulated": True,
-            })
-        # Debate arbitrator.
-        elif "arbitrator" in p:
-            content = json.dumps({
-                "final_confidence": 0.9,
-                "rationale": "SIMULATED: no provider available; defaulting to PROCEED.",
-                "decision": "PROCEED",
-                "weight_proposer": 0.5,
-                "weight_advocate": 0.5,
-                "simulated": True,
-            })
-        # Skill router intent classification.
-        elif "selected_skill_id" in p:
-            content = json.dumps({"selected_skill_id": "NONE", "confidence": 0.0, "simulated": True})
-        # Cross-domain perspective.
-        elif "perspective" in p and "position" in p:
-            content = json.dumps({"perspective": "SIMULATED", "position": "SIMULATED position (no provider)."})
-        elif "synthesis" in p and "recommendation" in p:
-            content = json.dumps({"synthesis": "SIMULATED synthesis (no provider).", "recommendation": "PROCEED"})
-        # Skill execution step (from skill_executor).
-        elif "execution engine" in sys_p or '"step_id"' in prompt or "execute this step" in p:
-            content = json.dumps({
-                "status": "SUCCESS",
-                "tool_called": None,
-                "tool_result": None,
-                "decision": "SIMULATED step execution (no LLM provider).",
-                "confidence": 0.9,
-                "side_effects": [],
-                "error": None,
-                "simulated": True,
-            })
-        else:
-            # Generic fallback object.
-            content = json.dumps({
-                "result": "SIMULATED response — no LLM provider configured.",
-                "simulated": True,
-            })
-
-        logger.info("[LLM] No provider available — returning SIMULATED completion.")
-        return {
-            "content": content,
-            "model": "simulated",
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "simulated": True,
-        }
+        # Deterministic degraded-mode payload; logic lives in llm_simulation.
+        return simulated_completion(prompt, system_prompt)
 
     def embedding_metadata(self) -> dict:
         """Provenance to stamp on every upserted vector.
@@ -815,26 +631,6 @@ class LLMRouter:
             "embedding_model": self.last_embedding_model,
             "simulated": bool(self.embeddings_simulated),
         }
-
-    @staticmethod
-    def _embedding_dim(model: str) -> int:
-        return _EMBEDDING_DIMS.get(model, 1536)
-
-    def _pseudo_embedding(self, text: str, dim: int) -> list[float]:
-        """Deterministic, unit-normalized pseudo-embedding seeded from a hash."""
-        seed = hashlib.sha256((text or "").encode("utf-8")).digest()
-        vals: list[float] = []
-        counter = 0
-        while len(vals) < dim:
-            block = hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
-            for i in range(0, len(block), 4):
-                if len(vals) >= dim:
-                    break
-                u = struct.unpack(">I", block[i:i + 4])[0] / 0xFFFFFFFF
-                vals.append(u * 2.0 - 1.0)  # map to [-1, 1]
-            counter += 1
-        norm = math.sqrt(sum(v * v for v in vals)) or 1.0
-        return [v / norm for v in vals]
 
     async def _resolve_embedding_model(
         self, model: str, tenant_api_keys: Optional[dict] = None
@@ -883,12 +679,12 @@ class LLMRouter:
         """
         model, api_base = await self._resolve_embedding_model(model, tenant_api_keys)
         self.last_embedding_model = model
-        dim = self._embedding_dim(model)
+        dim = embedding_dim(model)
 
         if not await self.provider_available(tenant_api_keys):
             self.embeddings_simulated = True
             logger.info(f"[LLM] No provider available — returning SIMULATED embeddings (dim={dim}).")
-            return [self._pseudo_embedding(t, dim) for t in texts]
+            return [pseudo_embedding(t, dim) for t in texts]
 
         # Serve cache hits (byte-identical) and only embed the misses. A fully
         # cached batch skips the provider call entirely.
@@ -944,11 +740,11 @@ class LLMRouter:
         except ImportError:
             logger.warning("LiteLLM not installed — returning simulated embeddings")
             self.embeddings_simulated = True
-            return [self._pseudo_embedding(t, dim) for t in texts]
+            return [pseudo_embedding(t, dim) for t in texts]
         except Exception as e:
             logger.error(f"Embedding failed: {e} — falling back to simulated embeddings")
             self.embeddings_simulated = True
-            return [self._pseudo_embedding(t, dim) for t in texts]
+            return [pseudo_embedding(t, dim) for t in texts]
 
     @staticmethod
     def _get_provider(model: str) -> str:
