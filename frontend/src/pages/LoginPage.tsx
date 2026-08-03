@@ -75,7 +75,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-[28px] font-bold tracking-tight" style={{ color: colors.ink }}>KAEOS</h1>
           <p className="text-[13px] mt-1 tracking-wide" style={{ color: colors.inkSubtle }}>
-            Knowledge-Augmented Enterprise OS
+            The AI Operating System for Companies
           </p>
         </div>
 

@@ -18,6 +18,7 @@ import {
   Clock, Activity, Shield, AlertTriangle, Cpu, TrendingUp, Waypoints
 } from 'lucide-react';
 import { DeptNetworkGraph } from '../components/neural/NeuralMap';
+import { measured, NOT_MEASURED } from '../lib/format';
 
 export default function DepartmentDetail({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -101,10 +102,16 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
             { label: 'Capabilities', value: dept.capability_count || 0, color: '#06b6d4' },
             { label: 'Processes', value: dept.process_count || 0, color: '#f59e0b' },
             { label: 'Tasks Completed', value: (dept.tasks_completed_total || 0).toLocaleString(), color: '#22c55e' },
-            { label: 'Hours Saved', value: `${dept.hours_saved_total || 0}h`, color: '#ec4899' },
+            // Null unless a human baseline is configured. `|| 0` here claimed a
+            // measured zero for something the platform cannot measure at all.
+            { label: 'Hours Saved', value: measured(dept.hours_saved_total, v => `${v}h`), color: '#ec4899',
+              title: dept.hours_saved_total == null ? dept.hours_saved_note ?? undefined : undefined },
           ].map(kpi => (
-            <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}15` }}>
-              <div className="text-[20px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
+            <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}15` }} title={(kpi as any).title}>
+              <div
+                className={kpi.value === NOT_MEASURED ? 'text-[12px] font-semibold leading-[26px]' : 'text-[20px] font-bold'}
+                style={{ color: kpi.value === NOT_MEASURED ? colors.inkSubtle : kpi.color }}
+              >{kpi.value}</div>
               <div className="text-[11px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
             </div>
           ))}

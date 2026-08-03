@@ -23,7 +23,11 @@ export interface WfDepartment {
   health_score: number;
   automation_coverage: number;
   tasks_completed_total: number;
-  hours_saved_total: number;
+  // Null unless the tenant configured a human baseline. Never render `|| 0`:
+  // that turns "not measurable" into a measured "saved nothing".
+  hours_saved_total: number | null;
+  hours_saved_basis?: 'tenant_supplied' | 'no_tenant_baseline';
+  hours_saved_note?: string | null;
   connected_systems: string[];
   compliance_frameworks: string[];
   deployed_at: string | null;
@@ -111,8 +115,12 @@ export interface WorkforceAnalytics {
   departments_active: number;
   agents_active: number;
   total_tasks_completed: number;
-  total_hours_saved: number;
-  total_cost_saved: number;
+  // Tenant-supplied or null; KAEOS does not derive these. See hours_saved_note.
+  total_hours_saved: number | null;
+  total_cost_saved: number | null;
+  hours_saved_basis?: 'tenant_supplied' | 'no_tenant_baseline';
+  hours_saved_note?: string | null;
+  loaded_hourly_rate_usd?: number;
   automation_coverage_pct: number;
   agent_utilization_pct: number;
   human_escalation_rate_pct: number;
@@ -124,7 +132,9 @@ export interface WorkforceAnalytics {
     slug: string;
     icon: string;
     tasks_completed: number;
-    hours_saved: number;
+    hours_saved: number | null;
+    cost_saved: number | null;
+    hours_saved_basis?: 'tenant_supplied' | 'no_tenant_baseline';
     automation_coverage: number;
     health_score: number;
     agent_count: number;

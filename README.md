@@ -119,18 +119,21 @@ Stage timings for every gate are recorded per execution and exposed at
 The honesty of the numbers is the product, so where a true number is not
 measurable, the platform returns nothing rather than something invented.
 
-- **`hours_saved` and `cost_reduction` are `null` on the metering endpoints.**
-  `GET /api/v1/billing/usage` and `GET /api/v1/billing/roi` return `null` for both, with a
-  `note` explaining why: they require a human-baseline duration and a loaded
-  hourly rate per skill, which are tenant inputs KAEOS cannot measure. They were
-  previously "computed" by multiplying executions by a hardcoded 0.5 hours and
-  $50/hour.
-  *Scope, stated plainly:* the legacy workforce rollup
-  (`app/workforce/api/analytics.py`, fed by `rollup_department_metrics`) still
-  derives a `hours_saved_total` from that same 0.5h-per-execution heuristic.
-  Treat that field as an estimate, not a measurement. Migrating it to the same
-  `null`-with-note contract is tracked in
-  [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+- **`hours_saved` and `cost_reduction` are `null` everywhere, not estimated.**
+  Both need a human-baseline duration and a loaded hourly rate per skill: tenant
+  inputs KAEOS cannot observe. They were once "computed" as executions × a
+  hardcoded 0.5 hours, with a hardcoded rate multiplied onto that to produce a
+  cost, two fabrications stacked into a confident ROI figure with nothing behind
+  it. Every surface now reports `null` with a note and a
+  `hours_saved_basis` flag: the billing endpoints, the workforce analytics and
+  department endpoints, and the UI, which renders "Not measured" rather than a
+  bare `0h` (a measured zero and an unmeasurable one are different claims).
+  A single shared contract (`hours_saved_payload`, `app/workforce/models/core.py`)
+  backs all of them, and `tests/test_hours_saved_honesty.py` fails the build if
+  any surface hand-rolls its own again. Migration `0030` clears the values the
+  old heuristic had already persisted, so nothing stale gets re-served as though
+  a tenant had supplied it. Configure a per-skill baseline and the real figures
+  appear.
 - **Benchmarks publish losses as well as wins.** On the real-data benchmark some
   domains land at or below the naive baseline, and those results are reported as
   they came out ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).

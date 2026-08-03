@@ -11,6 +11,39 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+- **Hours-saved and cost-saved are no longer fabricated anywhere.** The platform
+  documented a `null`-with-note contract for these figures but only honoured it on the
+  billing endpoints. `rollup_department_metrics` still derived
+  `Department.hours_saved_total` as `tasks_completed * 0.5` hours, and the workforce
+  surfaces multiplied a hardcoded loaded rate onto that to produce a cost, stacking two
+  fabrications into a confident ROI number with nothing behind it.
+  - The producer no longer derives either figure. Nothing in the codebase writes
+    `hours_saved_total`, `hours_saved_estimate` or `cost_savings_estimate`.
+  - One shared contract, `hours_saved_payload` (`app/workforce/models/core.py`), now backs
+    every reader: `/billing`, `/workforce/analytics`, `/workforce/overview`,
+    `/workforce/departments` (list and detail). Responses carry `hours_saved_basis`
+    (`tenant_supplied` / `no_tenant_baseline`) and a note. A stored `0.0` is read as
+    "no baseline configured", never as a measured zero.
+  - Cost is only ever derived from hours that are themselves real, and a tenant that
+    tracks cost directly keeps that figure even when hours are unset.
+  - **Migration `0030`** clears the values the old heuristic had already persisted.
+    Without it the new read path would have re-served fabricated numbers under
+    `hours_saved_basis: tenant_supplied`, which is worse than the original defect. The
+    downgrade is deliberately a no-op: it will not recompute them.
+  - The UI renders **"Not measured"** with the reason instead of `0h` / `$0`
+    (Workforce Analytics, Department Detail, HR Dashboard), via a new `measured()` helper
+    in `src/lib/format.ts`. A measured zero and an unmeasurable one are different claims.
+  - `tests/test_hours_saved_honesty.py` locks the contract, including a guard that fails
+    the build if any workforce module emits an hours-saved figure without the shared
+    helper, and one that fails if the producer ever re-derives the number.
+- **One product tagline in the app itself.** The login page, invite page, sidebar, browser
+  title and a benchmark prompt each carried a different name ("Epistemic OS",
+  "Knowledge-Augmented Enterprise OS", "Enterprise Workforce OS"). All now read
+  **The AI Operating System for Companies**.
+- **"Not measured" no longer overflows its KPI tile** on Workforce Analytics; the
+  unmeasured state renders small and muted so the numeric tiles stay the visual anchors.
+
 ### Documentation
 - **Every published count re-derived from the tracked source.** A full top-to-bottom
   audit found several figures had drifted as the codebase grew. Corrected: the data

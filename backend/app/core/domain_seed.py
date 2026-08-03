@@ -100,8 +100,8 @@ async def rollup_department_metrics() -> None:
     """Derive Department KPIs from real execution data.
 
     tasks_completed_total  ← skill executions attributed to the department
-    hours_saved_total      ← 0.5h per completed execution (same heuristic as
-                             the workforce overview endpoint)
+    hours_saved_total      ← NOT derived; needs a tenant-supplied human baseline
+                             (see HOURS_SAVED_NOTE in workforce/models/core.py)
     automation_coverage    ← share of ACTIVE capabilities
     Capabilities with agents get promoted PLANNED → ACTIVE so the detail pages
     reflect the deployed agents.
@@ -179,7 +179,12 @@ async def rollup_department_metrics() -> None:
             tasks = per_dept.get(d.slug, 0)
             if tasks:
                 d.tasks_completed_total = tasks
-                d.hours_saved_total = round(tasks * 0.5, 1)
+                # `hours_saved_total` is deliberately NOT derived here. It used to
+                # be `tasks * 0.5`, a number with no basis that then had a loaded
+                # hourly rate multiplied onto it downstream - two fabrications
+                # stacked. Hours-saved needs a per-skill human baseline, a tenant
+                # input KAEOS cannot measure, so the column stays untouched and
+                # the readers report null-with-note. Same rule as /billing.
             d.agent_count = dept_agents or d.agent_count
             d.capability_count = len(dept_caps) or d.capability_count
 

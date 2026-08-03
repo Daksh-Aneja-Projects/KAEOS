@@ -305,7 +305,7 @@ function Shell() {
             </div>
             <div className="flex flex-col">
               <span className="text-[16px] font-semibold tracking-tight" style={{ color: colors.ink }}>KAEOS</span>
-              <span className="text-[11px] -mt-0.5 tracking-wide uppercase" style={{ color: colors.inkSubtle }}>Enterprise Workforce OS</span>
+              <span className="text-[11px] -mt-0.5 tracking-wide uppercase" style={{ color: colors.inkSubtle }}>AI Operating System</span>
             </div>
           </NavLink>
         </div>

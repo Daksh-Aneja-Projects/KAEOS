@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { toPct, humanize } from './format';
+import { toPct, humanize, measured, NOT_MEASURED } from './format';
+
+describe('measured', () => {
+  it('formats a present value', () => {
+    expect(measured(120, v => `${v}h`)).toBe('120h');
+    expect(measured(1500, v => `$${v.toLocaleString()}`)).toBe('$1,500');
+  });
+
+  it('distinguishes a measured zero from an absent value', () => {
+    // 0 is a real measurement and must render as such...
+    expect(measured(0, v => `${v}h`)).toBe('0h');
+    // ...while null means "no basis to measure", never "saved nothing".
+    expect(measured(null, v => `${v}h`)).toBe(NOT_MEASURED);
+    expect(measured(undefined, v => `${v}h`)).toBe(NOT_MEASURED);
+  });
+});
 
 describe('toPct', () => {
   it('scales a 0-1 ratio to a percentage', () => {

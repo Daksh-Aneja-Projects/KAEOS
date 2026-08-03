@@ -80,7 +80,7 @@ async def generate_intelligence_report(tenant_id: str = Depends(get_tenant_id), 
 
     llm = LLMRouter()
     prompt = (
-        f"You are a strategic enterprise intelligence analyst for the KAEOS Epistemic OS.\n"
+        f"You are a strategic enterprise intelligence analyst for KAEOS, the AI Operating System for Companies.\n"
         f"Generate a detailed intelligence report comparing this organization.\n\n"
         f"Org data: {local_rules} rules, {local_skills} skills, {local_conf} avg confidence.\n\n"
         f"Output JSON: {{\"executive_summary\": \"...\", \"strengths\": [\"...\"], "

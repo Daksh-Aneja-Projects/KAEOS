@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.workforce.models.core import (
     Department, DepartmentStatus, Capability, CapabilityStatus,
     BusinessProcess, DepartmentAgent, WorkforceDeployment,
+    HOURS_SAVED_NOTE, hours_saved_payload,
 )
 
 router = APIRouter(prefix="/workforce", tags=["Workforce — Departments"])
@@ -64,14 +65,20 @@ async def list_departments(
                 "health_score": d.health_score,
                 "automation_coverage": d.automation_coverage,
                 "tasks_completed_total": d.tasks_completed_total,
-                "hours_saved_total": d.hours_saved_total,
+                # Null unless the tenant configured a baseline (see the
+                # response-level hours_saved_note). A 0 would read as measured.
+                "hours_saved_total": hs["hours_saved"],
+                "hours_saved_basis": hs["hours_saved_basis"],
                 "connected_systems": d.connected_systems or [],
                 "compliance_frameworks": d.compliance_frameworks or [],
                 "deployed_at": str(d.deployed_at) if d.deployed_at else None,
                 "created_at": str(d.created_at) if d.created_at else None,
             }
-            for d in departments
+            for d, hs in (
+                (d, hours_saved_payload(d.hours_saved_total)) for d in departments
+            )
         ],
+        "hours_saved_note": HOURS_SAVED_NOTE,
     }
 
 
@@ -120,6 +127,8 @@ async def get_department(
     )
     processes = proc_result.scalars().all()
 
+    hs = hours_saved_payload(dept.hours_saved_total)
+
     return {
         "id": dept.id,
         "name": dept.name,
@@ -135,7 +144,10 @@ async def get_department(
         "health_score": dept.health_score,
         "automation_coverage": dept.automation_coverage,
         "tasks_completed_total": dept.tasks_completed_total,
-        "hours_saved_total": dept.hours_saved_total,
+        # Tenant-supplied or null; KAEOS does not derive hours-saved.
+        "hours_saved_total": hs["hours_saved"],
+        "hours_saved_basis": hs["hours_saved_basis"],
+        "hours_saved_note": HOURS_SAVED_NOTE,
         "connected_systems": dept.connected_systems or [],
         "compliance_frameworks": dept.compliance_frameworks or [],
         "deployed_at": str(dept.deployed_at) if dept.deployed_at else None,
@@ -438,6 +450,8 @@ async def workforce_overview(
 
     active_depts = dept_row[0] if dept_row else 0
     total_tasks = int(dept_row[1] or 0) if dept_row else 0
+    # Tenant-supplied baseline hours, if any. Nothing in KAEOS writes this.
+    total_hours_saved = float(dept_row[2] or 0) if dept_row else 0
     avg_health = float(dept_row[3] or 0) if dept_row else 0
 
     # Fleet counts come from the SAME source the department cards render
@@ -496,9 +510,7 @@ async def workforce_overview(
         # `hours_saved` used to be tasks x 0.5 - a number with no basis. It
         # needs a per-skill human baseline and loaded hourly rate (tenant
         # inputs), so it is null rather than invented. Same rule as /billing.
-        "hours_saved": None,
-        "hours_saved_note": (
-            "Requires a human-baseline duration and loaded hourly rate per skill "
-            "(tenant inputs). Not estimated."
-        ),
+        # The note is the shared platform constant, not a local copy, so this
+        # surface cannot drift away from the others again.
+        **hours_saved_payload(total_hours_saved),
     }

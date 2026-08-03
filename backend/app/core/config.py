@@ -95,12 +95,14 @@ class Settings(BaseSettings):
         """
         return bool(self.DATA_RESIDENCY) or self.SCRUB_PII_BEFORE_LLM
 
-    # Loaded (fully-burdened) hourly labor rate used to convert hours-saved
-    # into a cost-savings estimate on the ROI dashboard. This is a documented
-    # platform default (blended knowledge-worker loaded cost); override per
-    # deployment/tenant. hours_saved is itself a heuristic (0.5h/automated task),
-    # so cost derives transparently from the same figure rather than a second
-    # unpopulated table.
+    # Loaded (fully-burdened) hourly labor rate used to convert TENANT-SUPPLIED
+    # hours-saved into a cost figure on the ROI dashboard. A documented platform
+    # default (blended knowledge-worker loaded cost); override per deployment.
+    #
+    # This rate is only ever applied to hours a tenant actually configured. It is
+    # NOT applied to a derived hours figure: hours-saved used to be a heuristic
+    # (0.5h/automated task) and multiplying this rate onto it stacked a second
+    # fabrication on the first. See HOURS_SAVED_NOTE in workforce/models/core.py.
     LOADED_HOURLY_RATE_USD: float = 85.0
 
     # Database — SQLite for local dev, PostgreSQL for production

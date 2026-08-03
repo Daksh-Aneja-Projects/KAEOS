@@ -12,7 +12,9 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy import case
 
 from app.core.database import get_db
-from app.workforce.models.core import Department, DepartmentStatus, DepartmentAgent
+from app.workforce.models.core import (
+    Department, DepartmentStatus, DepartmentAgent, hours_saved_payload,
+)
 from app.workforce.models.runtime import WorkforceMetrics
 from app.models.domain import Skill, SkillExecution
 
@@ -137,13 +139,15 @@ async def workforce_analytics(
 
     # Cost saved derives from the same live hours-saved figure via the loaded
     # hourly rate — prefer a real WorkforceMetrics cost if the time-series has
-    # been populated, otherwise compute it so the ROI card is never a stale $0
-    # while hours-saved is non-zero.
+    # Hours-saved: tenant-supplied or nothing. `Department.hours_saved_total` and
+    # `WorkforceMetrics.hours_saved_estimate` are only ever populated by a tenant
+    # that has configured a human baseline; KAEOS derives neither. Take whichever
+    # the tenant actually filled in, and let `hours_saved_payload` decide between
+    # the real figure and null-with-note. Cost is derived ONLY from real hours.
     from app.core.config import get_settings
     loaded_rate = get_settings().LOADED_HOURLY_RATE_USD
     effective_hours = max(total_hours_saved, metrics_hours_saved)
-    derived_cost = effective_hours * loaded_rate
-    effective_cost = max(metrics_cost_saved, derived_cost)
+    roi = hours_saved_payload(effective_hours, loaded_rate, metrics_cost_saved)
     metrics_automation = float(m_row[3] or 0) if m_row else 0
     metrics_utilization = float(m_row[4] or 0) if m_row else 0
     metrics_escalation = float(m_row[5] or 0) if m_row else 0
@@ -162,8 +166,12 @@ async def workforce_analytics(
         "departments_active": active_depts,
         "agents_active": active_agents,
         "total_tasks_completed": max(total_tasks, metrics_tasks),
-        "total_hours_saved": round(effective_hours, 1),
-        "total_cost_saved": round(effective_cost, 2),
+        # Null-with-note unless the tenant configured a baseline. A bare 0 here
+        # would read as "measured, saved nothing", which is a different claim.
+        "total_hours_saved": roi["hours_saved"],
+        "total_cost_saved": roi["cost_saved"],
+        "hours_saved_basis": roi["hours_saved_basis"],
+        "hours_saved_note": roi["hours_saved_note"],
         "loaded_hourly_rate_usd": loaded_rate,
         "automation_coverage_pct": round(max(avg_automation, metrics_automation) * 100, 1),
         "automation_execution_count": exec_total,
@@ -179,8 +187,7 @@ async def workforce_analytics(
                 "slug": d.slug,
                 "icon": d.icon,
                 "tasks_completed": d.tasks_completed_total,
-                "hours_saved": round(d.hours_saved_total, 1),
-                "cost_saved": round((d.hours_saved_total or 0) * loaded_rate, 2),
+                **hours_saved_payload(d.hours_saved_total, loaded_rate),
                 "automation_coverage": round(
                     (automation_by_dept.get(d.slug, d.automation_coverage or 0)) * 100, 1
                 ),

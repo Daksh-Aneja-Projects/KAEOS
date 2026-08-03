@@ -18,7 +18,7 @@ import {
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
-import { humanize } from '../lib/format';
+import { humanize, measured, NOT_MEASURED } from '../lib/format';
 
 // Small chart renderers fed only by the /hr/analytics computed payload.
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'];
@@ -179,12 +179,16 @@ export default function HRDashboard({ domain }: { domain?: string }) {
             { label: 'Agents', value: dept?.agent_count || 0, icon: Bot, color: '#8b5cf6' },
             { label: 'Capabilities', value: dept?.capability_count || 0, icon: Zap, color: '#06b6d4' },
             { label: 'Tasks Done', value: (dept?.tasks_completed_total || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e' },
-            { label: 'Hours Saved', value: `${dept?.hours_saved_total || 0}h`, icon: Clock, color: '#f59e0b' },
+            // Null unless a human baseline is configured; never render a bare 0.
+            { label: 'Hours Saved', value: measured(dept?.hours_saved_total, v => `${v}h`), icon: Clock, color: '#f59e0b' },
             { label: 'Automation', value: `${Math.round((dept?.automation_coverage || 0) * 100)}%`, icon: BarChart3, color: '#ec4899' },
           ].map(kpi => (
             <div key={kpi.label} className="p-3 rounded-xl text-center" style={{ background: kpi.color + '08', border: `1px solid ${kpi.color}12` }}>
               <kpi.icon className="w-5 h-5 mx-auto mb-1" style={{ color: kpi.color }} />
-              <div className="text-[18px] font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
+              <div
+                className={kpi.value === NOT_MEASURED ? 'text-[11px] font-semibold leading-[24px]' : 'text-[18px] font-bold'}
+                style={{ color: kpi.value === NOT_MEASURED ? colors.inkSubtle : kpi.color }}
+              >{kpi.value}</div>
               <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
             </div>
           ))}

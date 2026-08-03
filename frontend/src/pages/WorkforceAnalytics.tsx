@@ -17,6 +17,7 @@ import DomainIcon from '../components/DomainIcon';
 import LiveBadge from '../components/LiveBadge';
 import Sparkline from '../components/Sparkline';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { measured, NOT_MEASURED } from '../lib/format';
 
 export default function WorkforceAnalytics({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -69,6 +70,14 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
             <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
               Enterprise ROI - real-time metrics from all deployed departments.
             </p>
+            {data.hours_saved_note && (
+              <p className="text-[11px] mt-1.5 max-w-2xl leading-relaxed" style={{ color: colors.inkSubtle, opacity: 0.8 }}>
+                Hours and cost saved are not shown because they cannot be measured
+                from your data alone. They need the time each task took a person
+                before automation, and that person's loaded hourly cost. Set those
+                per skill and these tiles fill in.
+              </p>
+            )}
           </div>
           <LiveBadge lastSync={syncedAt} />
         </div>
@@ -80,8 +89,23 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
             // trends. There is no period-over-period series behind them, so they are
             // omitted rather than fabricated.
             { label: 'Tasks Completed', value: (data.total_tasks_completed || 0).toLocaleString(), icon: CheckCircle, color: '#22c55e', sub: '', spark: true },
-            { label: 'Hours Saved', value: `${data.total_hours_saved || 0}h`, icon: Clock, color: '#f59e0b', sub: '0.5h / automated task' },
-            { label: 'Cost Saved', value: `$${(data.total_cost_saved || 0).toLocaleString()}`, icon: DollarSign, color: '#22c55e', sub: data.loaded_hourly_rate_usd ? `@ $${data.loaded_hourly_rate_usd}/hr loaded` : '' },
+            // Hours and cost saved are null unless the tenant configured a human
+            // baseline. They used to render `|| 0`, which turned "we cannot
+            // measure this" into a confident "0h / $0". Show the reason instead.
+            {
+              label: 'Hours Saved', icon: Clock, color: '#f59e0b',
+              value: measured(data.total_hours_saved, v => `${v}h`),
+              sub: data.total_hours_saved == null
+                ? 'Needs a human baseline per skill'
+                : 'From your configured baseline',
+            },
+            {
+              label: 'Cost Saved', icon: DollarSign, color: '#22c55e',
+              value: measured(data.total_cost_saved, v => `$${v.toLocaleString()}`),
+              sub: data.total_cost_saved == null
+                ? 'Follows from hours saved'
+                : (data.loaded_hourly_rate_usd ? `@ $${data.loaded_hourly_rate_usd}/hr loaded` : ''),
+            },
             { label: 'Automation', value: `${data.automation_coverage_pct || 0}%`, icon: Zap, color: '#8b5cf6', sub: data.automation_execution_count ? `${data.automation_execution_count.toLocaleString()} governed executions` : '' },
             { label: 'Health Score', value: `${data.avg_health_score || 0}%`, icon: Heart, color: healthColor(data.avg_health_score || 0), sub: '' },
           ].map((kpi: any) => (
@@ -91,7 +115,15 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                   <kpi.icon className="w-4.5 h-4.5" style={{ color: kpi.color }} />
                 </div>
               </div>
-              <div className="text-[24px] font-bold mt-2" style={{ color: kpi.color }}>{kpi.value}</div>
+              {/* "Not measured" is copy, not a figure: at 24px bold it overran
+                  the tile. Render the unmeasured state small and muted so the
+                  numeric tiles stay the visual anchors. */}
+              <div
+                className={kpi.value === NOT_MEASURED
+                  ? 'text-[13px] font-semibold mt-2 leading-[32px] whitespace-nowrap'
+                  : 'text-[24px] font-bold mt-2'}
+                style={{ color: kpi.value === NOT_MEASURED ? colors.inkSubtle : kpi.color }}
+              >{kpi.value}</div>
               <div className="text-[11px] uppercase tracking-wider mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
               {kpi.sub && <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{kpi.sub}</div>}
               {/* Real per-day execution volume from the autonomy-trend series */}
@@ -206,25 +238,37 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                     <div>
                       <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Hours Saved</span>
-                        <span className="font-mono">{dept.hours_saved}h</span>
+                        <span className="font-mono">{measured(dept.hours_saved, v => `${v}h`)}</span>
                       </div>
-                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                        <div className="h-full rounded-full transition-all" style={{
-                          width: `${((dept.hours_saved || 0) / maxHours) * 100}%`,
-                          background: `linear-gradient(90deg, #f59e0b, #ec4899)`,
-                        }} />
+                      {/* No bar when there is nothing measured to draw: a
+                          zero-width track still implies a real zero. */}
+                      <div className="h-2.5 rounded-full overflow-hidden" style={{
+                        background: colors.hairline,
+                        opacity: dept.hours_saved == null ? 0.35 : 1,
+                      }}>
+                        {dept.hours_saved != null && (
+                          <div className="h-full rounded-full transition-all" style={{
+                            width: `${(dept.hours_saved / maxHours) * 100}%`,
+                            background: `linear-gradient(90deg, #f59e0b, #ec4899)`,
+                          }} />
+                        )}
                       </div>
                     </div>
                     <div>
                       <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Cost Saved</span>
-                        <span className="font-mono">${(dept.cost_saved || 0).toLocaleString()}</span>
+                        <span className="font-mono">{measured(dept.cost_saved, v => `$${v.toLocaleString()}`)}</span>
                       </div>
-                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                        <div className="h-full rounded-full transition-all" style={{
-                          width: `${((dept.cost_saved || 0) / maxCost) * 100}%`,
-                          background: `linear-gradient(90deg, #22c55e, #06b6d4)`,
-                        }} />
+                      <div className="h-2.5 rounded-full overflow-hidden" style={{
+                        background: colors.hairline,
+                        opacity: dept.cost_saved == null ? 0.35 : 1,
+                      }}>
+                        {dept.cost_saved != null && (
+                          <div className="h-full rounded-full transition-all" style={{
+                            width: `${(dept.cost_saved / maxCost) * 100}%`,
+                            background: `linear-gradient(90deg, #22c55e, #06b6d4)`,
+                          }} />
+                        )}
                       </div>
                     </div>
                   </div>
