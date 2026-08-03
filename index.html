@@ -344,9 +344,8 @@
       <div class="stat"><div class="num" data-count="0">0</div><div class="lbl">Invented Numbers</div></div>
     </div>
   </div>
-  <div class="scroll-cue" id="scrollCue">
-    <span>Scroll</span>
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  <div class="scroll-cue" id="scrollCue" aria-hidden="true">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
   </div>
 </header>
 
@@ -634,6 +633,7 @@ docker compose up --build</div>
   var NAMES = ["HR", "FINANCE", "LEGAL", "SALES", "SUPPORT", "OPS", "ENGINEERING"];
   var hubs = [], agents = [], pulses = [], particles = [];
   var brain = { x: 0, y: 0, r: 34 };
+  var ringCy = 0, ringRy = 0;
   var mouse = { x: -9999, y: -9999 };
 
   function layout() {
@@ -649,11 +649,12 @@ docker compose up --build</div>
     var heroBox = canvas.getBoundingClientRect();
     var box = inner.getBoundingClientRect();
     var cy = (box.top - heroBox.top + box.bottom - heroBox.top) / 2;
-    var RX = Math.min(W * 0.47, box.width / 2 + 110);
+    var RX = Math.min(W * 0.47, box.width / 2 + 150);
     var RY = Math.min(H * 0.46, box.height / 2 + 64);
+    ringCy = cy; ringRy = RY;
     brain.x = W / 2;
     /* Hub line clamps at H-96; keep the brain a clear band below it. */
-    brain.y = Math.min(H - 34, cy + RY + 104);
+    brain.y = Math.min(H - 34, cy + RY + 132);
     brain.r = Math.max(20, Math.min(32, W * 0.024));
     for (var i = 0; i < n; i++) {
       var deg = 168 - (i * (168 - 12) / (n - 1));   /* 168° → 12° */
@@ -775,7 +776,10 @@ docker compose up --build</div>
         try { ctx.letterSpacing = "2px"; } catch (e) {}
         ctx.fillStyle = hu.c;
         ctx.globalAlpha = 0.72;
-        ctx.fillText(hu.name, hu.x, hu.y + hu.r + 24);
+        /* Hubs in the lower third of the ring label ABOVE themselves so the
+           label never stacks into the brain or anything below the arc. */
+        var ly = hu.y > ringCy + ringRy * 0.55 ? hu.y - hu.r - 16 : hu.y + hu.r + 24;
+        ctx.fillText(hu.name, hu.x, ly);
         ctx.globalAlpha = 1;
         try { ctx.letterSpacing = "0px"; } catch (e) {}
       }
