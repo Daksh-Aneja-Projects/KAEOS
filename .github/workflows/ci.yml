@@ -50,7 +50,12 @@ jobs:
         # -n auto parallelizes across cores (~2.4x). Safe here: this lane is
         # per-process in-memory SQLite, so every xdist worker is fully isolated.
         # NEVER add -n auto to the e2e lane below — it shares one live backend.
-        pytest tests/ --ignore=tests/e2e -n auto
+        #
+        # Coverage floor: measured at 60% on this lane; the gate sits at 58
+        # (measured-minus-2) so coverage can only trend up. pytest-cov combines
+        # the per-worker data across xdist workers automatically.
+        pytest tests/ --ignore=tests/e2e -n auto \
+          --cov=app --cov-report=term-missing --cov-fail-under=58
 
   backend-e2e-mock:
     # Gate/pipeline logic against a LIVE backend with a deterministic fake
@@ -171,3 +176,36 @@ jobs:
       run: |
         cd frontend
         npm audit --audit-level=high
+
+  sbom:
+    # CycloneDX Software Bill of Materials for both dependency trees, published
+    # as a build artifact so every green build has a downloadable, machine-
+    # readable inventory (supply-chain provenance / vuln correlation).
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+    - name: Backend SBOM (CycloneDX, from requirements.txt)
+      run: |
+        pip install cyclonedx-bom
+        cd backend
+        cyclonedx-py requirements requirements.txt --of JSON -o ../sbom-backend.json
+    - name: Set up Node.js 22
+      uses: actions/setup-node@v7
+      with:
+        node-version: "22"
+    - name: Frontend SBOM (CycloneDX, native npm sbom)
+      run: |
+        cd frontend
+        npm ci
+        npm sbom --sbom-format cyclonedx > ../sbom-frontend.json
+    - name: Upload SBOMs
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-cyclonedx
+        path: |
+          sbom-backend.json
+          sbom-frontend.json
