@@ -46,7 +46,9 @@ PyJWT==2.13.0
 # Direct dependency: app/services/live_connectors.py uses Fernet + PBKDF2 to
 # encrypt BYOK connector credentials at rest. It used to arrive transitively via
 # python-jose[cryptography]; pin it explicitly so removing that never breaks it.
-cryptography==48.0.1
+# 50.0.0 clears CVE-2026-69247/69248/69249 (pip-audit) present in 48.x; resolves
+# cleanly with signxml 5.1.0.
+cryptography==50.0.0
 # SAML 2.0 SP (app/services/saml.py). signxml is pure Python on top of lxml +
 # cryptography, so XML-DSig verification works on Windows/macOS/Linux without
 # the xmlsec C library that python3-saml/pysaml2 require. defusedxml handles the
