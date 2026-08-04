@@ -129,10 +129,12 @@ kaeos/
 |   |   |   +-- hitl_manager.py      # HITL: DB is source of truth; Redis/memory cache carries resume payloads
 |   |   |   +-- event_bus.py         # EventBus + WebSocket broadcast
 |   |   |   +-- llm_router.py        # LiteLLM routing, per-tenant BYOK, capability ceiling
+|   |   |   +-- llm_support.py       # Probes + embedding cache + router exceptions (split from llm_router)
+|   |   |   +-- llm_simulation.py    # Deterministic degraded-mode completions (split from llm_router)
 |   |   |   +-- model_probe.py       # BYOK self-calibration battery
 |   |   |   +-- json_utils.py        # Tolerant LLM JSON parsing (use everywhere)
 |   |   |   +-- live_connectors.py   # Credentialed live sync + encryption
-|   |   |   +-- vendor_adapters.py   # vendor adapters (17 here + 5 core in live_connectors = 22 total)
+|   |   |   +-- vendor_adapters/     # 17 vendor adapters (+5 core in live_connectors = 22); package split by category: base/devops/itsm/hr_finance/collaboration/registry
 |   |   |   +-- precog_engine.py     # Zero-prompt ambient intelligence
 |   |   |   +-- enterprise_physics_engine.py
 |   |   |   +-- genome_compiler.py
@@ -174,7 +176,7 @@ kaeos/
 |   |   +-- pages/                   # 40 page components (most lazy-loaded by views/)
 |   |   +-- views/                   # 7 department view composites
 |   |   +-- hooks/                   # useWebSocket, useAuth, useTheme
-|   |   +-- api/client.ts            # Typed API client (50+ methods)
+|   |   +-- api/                     # Typed API client: client.ts barrel re-exporting http.ts + types.ts + endpoints/ (split by domain)
 |   |   +-- context/                 # AuthContext, ThemeContext
 |   +-- Dockerfile
 |   +-- package.json

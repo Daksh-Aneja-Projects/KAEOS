@@ -239,16 +239,17 @@ cd backend && python -m pytest tests/e2e                  # 441 e2e tests
 cd frontend && npm run lint && npm run build && npm test   # lint, build, Vitest
 ```
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs five lanes on every
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs six lanes on every
 push and pull request:
 
 | Lane | What it does |
 |------|--------------|
 | `backend-lint` | Ruff, bug-catching rule set (`backend/ruff.toml`) |
-| `backend-test` | Unit suite on Python 3.12 |
+| `backend-test` | Unit suite on Python 3.12, under a coverage floor (`--cov-fail-under=58`) |
 | `e2e` | Boots the backend, seeds, runs the non-Ollama e2e suite against PostgreSQL + pgvector |
 | `frontend-build` | ESLint, production build, Vitest |
 | `security-scan` | `pip-audit` (CVEs), `bandit` (medium+, blocking), `npm audit` (high+) |
+| `sbom` | CycloneDX Software Bill of Materials for both dependency trees, uploaded as a build artifact |
 
 Details, including the Ollama-dependent lane: [docs/TESTING.md](docs/TESTING.md).
 

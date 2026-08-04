@@ -11,6 +11,33 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **CI coverage floor.** The backend unit lane now runs under coverage with
+  `--cov-fail-under=58` (measured 60.64%, minus-2 headroom), so coverage can only
+  trend up. `pytest-cov==7.0.0` pinned (the line compatible with pytest 9).
+- **CycloneDX SBOMs as a build artifact.** A new `sbom` CI job emits a Software
+  Bill of Materials for both dependency trees — backend via `cyclonedx-bom`,
+  frontend via Syft (`anchore/sbom-action`, which reads `package-lock.json`
+  directly and avoids `npm sbom`'s `npm ls` strictness on optional platform deps).
+
+### Changed
+- **Every broad exception handler is now observable.** Audited all 308 `except
+  Exception` blocks; the 30 that swallowed to a silent default now either narrow
+  to the concrete exception, log via `logger.exception/warning`, or carry a
+  one-line comment where the swallow is deliberately best-effort. No handler
+  swallows an error silently.
+- **Eight files over 800 lines were split along natural seams**, every public
+  import path preserved: `llm_router.py` → `llm_support`/`llm_simulation`;
+  `vendor_adapters.py` → a by-vendor package; `neural.py` → `neural_helpers`;
+  `api/client.ts` → `http`/`types`/`endpoints` (barrel); and the
+  RealityExperience / PioneerLab / TwinGraph / ConnectorStudio views into
+  co-located parts. No source file now exceeds 800 lines.
+
+### Security
+- **cryptography `48.0.1` → `50.0.0`** to clear CVE-2026-69247/69248/69249
+  (flagged by `pip-audit`); resolves cleanly with `signxml` 5.1.0. Frontend
+  `npm audit` is clean at `--audit-level=high` (`brace-expansion` advisory fixed).
+
 ### Fixed
 - **Hours-saved and cost-saved are no longer fabricated anywhere.** The platform
   documented a `null`-with-note contract for these figures but only honoured it on the
