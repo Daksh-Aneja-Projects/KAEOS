@@ -291,6 +291,7 @@ class AgentExecutor:
         context["_gate_t_last"] = now
         try:
             from app.api.routes.ws import manager
+            from app.core.context import current_actor
             await manager.broadcast_to_tenant(context.get("tenant_id", "default"), {
                 "type": "gate_event",
                 "execution_id": context.get("execution_id"),
@@ -299,6 +300,10 @@ class AgentExecutor:
                 "state": state,
                 "detail": detail,
                 "ms": ms,
+                # These events are broadcast tenant-wide, so a viewer needs to
+                # know whether this run is theirs. None means a background job
+                # started it, not a person.
+                "actor": current_actor.get(),
             })
         except Exception as e:
             logger.debug(f"[Gate] ws ping skipped: {e}")

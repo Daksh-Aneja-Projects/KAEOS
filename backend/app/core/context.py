@@ -14,3 +14,7 @@ from contextvars import ContextVar
 current_tenant_id: ContextVar[str | None] = ContextVar("current_tenant_id", default=None)
 current_skill_id: ContextVar[str | None] = ContextVar("current_skill_id", default=None)
 current_execution_id: ContextVar[str | None] = ContextVar("current_execution_id", default=None)
+# Who triggered the work in flight, when a person did. Background jobs (the
+# scheduler, precog, the autonomy governor) leave this None, which is how a
+# live UI can tell "my action" from "something the system started on its own".
+current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)

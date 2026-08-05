@@ -106,10 +106,19 @@ export default function GateTrace({ running, result, skillLabel }: {
     if (!m || m.type !== 'gate_event' || !m.gate) return;
     // A settled trace is a record of what happened; later traffic must not edit it.
     if (!running) return;
+    // Background work (scheduler, precog, the autonomy governor) never passes
+    // through a request, so the backend leaves its actor null. Those runs are
+    // the ones that would otherwise interleave into a trace a person is
+    // reading, so drop them: a verdict shown here must belong to the action the
+    // user just took. Matching the actor to *this* viewer is deliberately not
+    // attempted - the value is a user id under JWT auth but a fixed name in
+    // DEV_MODE, so an identity comparison would silently stop resolving.
+    if (!m.actor) return;
     const id = m.execution_id ?? null;
-    // ponytail: first-event lock. A stray event arriving before this run's own
-    // first event would claim the slot; a fully correct fix needs the client to
-    // pass a correlation id the backend echoes back on every gate_event.
+    // ponytail: among human-triggered events, lock to the first execution so two
+    // rapid clicks cannot interleave. Two people acting in one tenant at the
+    // same instant can still race for the lock; closing that needs the client to
+    // learn its own server-side actor string (it cannot derive it - see above).
     if (execIdRef.current === null) execIdRef.current = id;
     else if (id !== execIdRef.current) return;
     setLiveGates(prev => ({

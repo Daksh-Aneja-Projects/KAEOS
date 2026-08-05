@@ -81,10 +81,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
         original_call_next = call_next
 
         async def call_next(req: Request):  # noqa: F811 - deliberate shadow
-            from app.core.context import current_tenant_id
+            from app.core.context import current_actor, current_tenant_id
             tenant = getattr(req.state, "tenant", None)
             if isinstance(tenant, dict) and tenant.get("tenant_id"):
                 current_tenant_id.set(tenant["tenant_id"])
+                # Same hook publishes who is acting. Requests carry a person;
+                # background jobs never pass through here, so they stay None.
+                actor = tenant.get("user_id") or tenant.get("name")
+                if actor:
+                    current_actor.set(str(actor))
             return await original_call_next(req)
 
         # Health checks, docs, and auth routes don't need auth.
