@@ -11,6 +11,33 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+- **A compliance control cited a dead file as its evidence.** Control AU-2
+  ("Hash-chained decision provenance", SOC2 CC7.3 / SOX 302+404) claimed
+  IMPLEMENTED while pointing at `governance_engine.py` - an ABAC module with no
+  hash chain, called by nothing. The chain is implemented by `quantum_ledger.py`
+  and written by the actuator; AU-2 now cites those plus its test. A new
+  `test_control_evidence_paths.py` fails the build if any control cites a path
+  that does not resolve, or if an IMPLEMENTED control cites nothing at all.
+
+### Added
+- **Responsive app shell.** Below the `md` breakpoint the sidebar becomes an
+  off-canvas drawer behind a scrim, opened from a top-bar control and dismissed
+  by the scrim or by navigating; at `md`+ the layout is unchanged. HITL approval
+  is the daily human touchpoint, so it now works from a phone. Verified at 375 /
+  768 / 852 with no horizontal overflow on the primary surfaces.
+
+### Removed
+- **Five backend engines and three frontend components that nothing referenced**
+  (`benchmark`, `impact_engine`, `learning_engine`, `governance_engine`,
+  `scorecard_engine`; `ExecutionDetailView`, `FeedbackCapture`,
+  `ConnectorCredentialsModal`). `governance_engine` was also the only fail-open
+  gate in the tree, so removing it drops a governance asterisk rather than any
+  coverage. `learning_engine` fed an injection point nothing ever injected, so
+  its scoring contribution was provably always zero; that dead branch went with
+  it. `Marketplace.tsx` was renamed to `SkillTemplates.tsx` to stop reading as a
+  duplicate of the domain-pack marketplace.
+
 ### Added
 - **CI coverage floor.** The backend unit lane now runs under coverage with
   `--cov-fail-under=58` (measured 60.64%, minus-2 headroom), so coverage can only
