@@ -12,6 +12,7 @@ import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
@@ -35,6 +36,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
+  const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
 
   // Data
   const [vendors, setVendors] = useState<any[]>([]);
@@ -90,23 +92,37 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     setLoading(false);
   };
 
-  const handleRunAPAgent = async (invoiceId: string) => {
+  const handleRunAPAgent = async (invoiceId: string, invoiceLabel?: string) => {
     setRunningAgent(invoiceId); setActionMsg('');
+    // Money moves through this path, so show the governance pipeline deciding
+    // rather than only its verdict. Label reads as an invoice, never a UUID.
+    const label = `Accounts payable 3-way match${invoiceLabel ? `, invoice ${invoiceLabel}` : ''}`;
+    setTrace({ id: invoiceId, label, result: undefined });
     try {
       const res = await api.runFinanceAPAgent(invoiceId);
+      setTrace({ id: invoiceId, label, result: res });
       setActionMsg(res?.status === 'PENDING_HITL' ? 'AP matching routed for human review.' : 'AP 3-way match complete.');
       await loadData();
-    } catch (e: any) { setActionMsg(`AP agent failed: ${e?.message || e}`); }
+    } catch (e: any) {
+      setActionMsg(`AP agent failed: ${e?.message || e}`);
+      setTrace(null);
+    }
     finally { setRunningAgent(null); }
   };
 
-  const handleRunARAgent = async (invoiceId: string) => {
+  const handleRunARAgent = async (invoiceId: string, invoiceLabel?: string) => {
     setRunningAgent(invoiceId); setActionMsg('');
+    const label = `Accounts receivable collections${invoiceLabel ? `, invoice ${invoiceLabel}` : ''}`;
+    setTrace({ id: invoiceId, label, result: undefined });
     try {
       const res = await api.runFinanceARAgent(invoiceId);
+      setTrace({ id: invoiceId, label, result: res });
       setActionMsg(res?.letter ? 'Dunning letter generated.' : 'AR agent completed.');
       await loadData();
-    } catch (e: any) { setActionMsg(`AR agent failed: ${e?.message || e}`); }
+    } catch (e: any) {
+      setActionMsg(`AR agent failed: ${e?.message || e}`);
+      setTrace(null);
+    }
     finally { setRunningAgent(null); }
   };
 
@@ -210,6 +226,15 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
           </div>
         )}
 
+        {/* Governance pipeline, live from the backend's gate events */}
+        {trace && (
+          <GateTrace
+            running={runningAgent === trace.id}
+            result={trace.result}
+            skillLabel={trace.label}
+          />
+        )}
+
         {/* Search bar */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
@@ -278,7 +303,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                           <td className="px-4 py-3">{inv.po_number || '-'}</td>
                           <td className="px-4 py-3"><Badge status={inv.three_way_match || 'PENDING'} /></td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handleRunAPAgent(inv.id)}
+                            <button onClick={() => handleRunAPAgent(inv.id, inv.number || inv.po_number)}
                               disabled={runningAgent === inv.id}
                               className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
                               style={{ background: '#ec489915', color: '#ec4899' }}>
@@ -345,7 +370,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                             ) : <span style={{ color: colors.inkTertiary }}>-</span>}
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handleRunARAgent(rec.id)}
+                            <button onClick={() => handleRunARAgent(rec.id, rec.number)}
                               disabled={runningAgent === rec.id}
                               className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
                               style={{ background: '#3b82f615', color: '#3b82f6' }}>

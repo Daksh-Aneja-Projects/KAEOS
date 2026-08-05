@@ -15,6 +15,7 @@ import CreateEntityModal from '../components/CreateEntityModal';
 import BulkActionBar from '../components/BulkActionBar';
 import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
+import GateTrace from '../components/GateTrace';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
 interface HREmployee {
@@ -96,6 +97,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
 
   // Recruiting action state (gated screening + stage advance)
   const [screeningId, setScreeningId] = useState<string | null>(null);
+  const [trace, setTrace] = useState<{ id: string; label: string; result?: any } | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
   const [provenance, setProvenance] = useState<Record<string, string>>({});
   const [actionMsg, setActionMsg] = useState<string>('');
@@ -135,8 +137,12 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   const handleScreen = async (candidateId: string) => {
     setScreeningId(candidateId);
     setActionMsg('');
+    // Screening judges a person, so the fairness gate is the whole point here.
+    // Show the pipeline running, not just its verdict.
+    setTrace({ id: candidateId, label: 'Candidate screening', result: undefined });
     try {
       const res = await api.screenHRCandidate(candidateId);
+      setTrace({ id: candidateId, label: 'Candidate screening', result: res });
       const execId = res?.provenance?.execution_id;
       if (execId) setProvenance(prev => ({ ...prev, [candidateId]: execId }));
       if (res?.screening === 'gated') {
@@ -147,6 +153,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
       await loadData();
     } catch (e: any) {
       setActionMsg(`Screening failed: ${e?.message || e}`);
+      setTrace(null);
     } finally {
       setScreeningId(null);
     }
@@ -366,6 +373,15 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
             ))
           )}
         </div>
+
+        {/* Governance pipeline, live from the backend's gate events */}
+        {trace && (
+          <GateTrace
+            running={screeningId === trace.id}
+            result={trace.result}
+            skillLabel={trace.label}
+          />
+        )}
 
         {/* Candidates Pipeline - Kanban board (columns per backend CandidateStage) */}
         <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
