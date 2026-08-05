@@ -7,7 +7,7 @@ import { Rocket, Wrench, ShoppingBag, Activity, Swords, CircuitBoard, Target } f
 const AgentFactory = lazy(() => import('../views/AgentFactory'));
 const MissionControl = lazy(() => import('../pages/MissionControl'));
 const MCPToolManager = lazy(() => import('../pages/MCPToolManager'));
-const Marketplace = lazy(() => import('../pages/Marketplace'));
+const SkillTemplates = lazy(() => import('../pages/SkillTemplates'));
 const ConflictArena = lazy(() => import('../pages/ConflictArena'));
 const OODAMonitor = lazy(() => import('../pages/OODAMonitor'));
 const InfrastructureDashboard = lazy(() => import('../pages/InfrastructureDashboard'));
@@ -55,7 +55,7 @@ export default function AgentsView({ domain }: { domain: string }) {
           {activeTab === 'ooda' && <OODAMonitor domain={domain} />}
           {activeTab === 'infrastructure' && <InfrastructureDashboard domain={domain} />}
           {activeTab === 'mcp' && <MCPToolManager />}
-          {activeTab === 'marketplace' && <Marketplace />}
+          {activeTab === 'marketplace' && <SkillTemplates />}
           {activeTab === 'conflict' && <ConflictArena />}
         </Suspense>
       </div>
