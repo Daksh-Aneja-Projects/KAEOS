@@ -21,6 +21,13 @@ All notable changes to KAEOS are documented here. This project adheres to
   that does not resolve, or if an IMPLEMENTED control cites nothing at all.
 
 ### Added
+- **The 7-gate trace is now visible in HR and Finance.** The runtime already
+  broadcast a `gate_event` per gate transition, and the live trace component
+  that renders it was mounted in five department views but not in the two where
+  the gates matter most: HR candidate screening (the fairness gate's whole
+  reason to exist) and Finance AP/AR runs (the always-HITL, money-moving class).
+  Both previously showed only a one-line verdict. Subscribes to events already
+  on the wire, so no new endpoint and no polling.
 - **Responsive app shell.** Below the `md` breakpoint the sidebar becomes an
   off-canvas drawer behind a scrim, opened from a top-bar control and dismissed
   by the scrim or by navigating; at `md`+ the layout is unchanged. HITL approval

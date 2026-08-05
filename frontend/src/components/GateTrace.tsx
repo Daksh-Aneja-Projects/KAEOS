@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2, Loader2, ShieldCheck, Scale, Gauge, Users,
   MessagesSquare, Play, FileLock2, XCircle, AlertTriangle,
@@ -83,6 +83,11 @@ export default function GateTrace({ running, result, skillLabel }: {
   const [elapsed, setElapsed] = useState(0);
   const [liveGates, setLiveGates] = useState<Record<string, GateStatus>>({});
   const { lastMessage } = useWebSocket();
+  // gate_event is broadcast to the whole tenant, so background missions and
+  // scheduled jobs land here too. Lock onto the first execution we see for this
+  // run and ignore every other one: painting another execution's verdict onto
+  // this trace would be a governance claim about the wrong action.
+  const execIdRef = useRef<string | null>(null);
 
   // Elapsed time is the only thing we time. Gate PROGRESS comes from the
   // backend: it now emits a `gate_event` as each gate resolves, so this shows
@@ -90,6 +95,7 @@ export default function GateTrace({ running, result, skillLabel }: {
   useEffect(() => {
     if (!running) { setElapsed(0); return; }
     setLiveGates({});
+    execIdRef.current = null;
     const t0 = Date.now();
     const id = setInterval(() => setElapsed((Date.now() - t0) / 1000), 250);
     return () => clearInterval(id);
@@ -98,6 +104,14 @@ export default function GateTrace({ running, result, skillLabel }: {
   useEffect(() => {
     const m: any = lastMessage;
     if (!m || m.type !== 'gate_event' || !m.gate) return;
+    // A settled trace is a record of what happened; later traffic must not edit it.
+    if (!running) return;
+    const id = m.execution_id ?? null;
+    // ponytail: first-event lock. A stray event arriving before this run's own
+    // first event would claim the slot; a fully correct fix needs the client to
+    // pass a correlation id the backend echoes back on every gate_event.
+    if (execIdRef.current === null) execIdRef.current = id;
+    else if (id !== execIdRef.current) return;
     setLiveGates(prev => ({
       ...prev,
       [m.gate]: m.state === 'passed' ? 'passed'
@@ -105,7 +119,7 @@ export default function GateTrace({ running, result, skillLabel }: {
           : m.state === 'paused' ? 'paused'
             : 'running',
     }));
-  }, [lastMessage]);
+  }, [lastMessage, running]);
 
   const resolved = resolveGates(result);
   const terminal = result?.status ? TERMINAL_COPY[result.status] : undefined;
