@@ -25,7 +25,10 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
     setSavingDomain(d);
     try {
       await api.setAutonomy(d, val);
-      setAutonomyRows(prev => prev.map(r => (r.domain === d ? { ...r, min_confidence: val, is_default: false } : r)));
+      // A human setting the dial takes it off the governor, both here and in the
+      // backend; keep the label honest without waiting for a refetch.
+      setAutonomyRows(prev => prev.map(r => (
+        r.domain === d ? { ...r, min_confidence: val, is_default: false, auto_managed: false } : r)));
     } catch (e) {
       console.error('Autonomy update failed', e);
     } finally {
@@ -293,8 +296,17 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                   <div className="w-12 text-right text-[13px] font-mono font-bold" style={{ color: colors.primary }}>
                     {(a.min_confidence * 100).toFixed(0)}%
                   </div>
-                  <div className="w-16 text-[11px]" style={{ color: colors.inkSubtle }}>
-                    {savingDomain === a.domain ? 'saving…' : a.is_default ? 'default' : 'custom'}
+                  {/* Three states, not two: a governor-tuned dial used to read
+                      "custom", which credited a machine decision to a person. */}
+                  <div className="w-28 text-[11px] truncate"
+                    style={{ color: a.auto_managed ? colors.primary : colors.inkSubtle }}
+                    title={a.auto_managed
+                      ? 'KAEOS tuned this from the measured safe-autonomy-rate. Move the slider to take it over.'
+                      : a.is_default ? 'Platform default; no policy set for this domain.'
+                        : 'Set by a person. KAEOS will not change it.'}>
+                    {savingDomain === a.domain ? 'saving…'
+                      : a.auto_managed ? 'auto-tuned'
+                        : a.is_default ? 'default' : 'set by you'}
                   </div>
                 </div>
               ))}

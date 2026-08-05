@@ -42,3 +42,32 @@ async def test_policy_overrides_default():
     # Set domain uses its policy; unset domain falls back to the default.
     assert await resolve_min_confidence("tenant_adx", "finance") == 0.95
     assert await resolve_min_confidence("tenant_adx", "hr") == get_settings().CONFIDENCE_AUTONOMOUS_EXEC
+
+
+async def test_autonomy_api_distinguishes_governor_from_human(db):
+    """The dial UI has to tell a machine decision from a person's.
+
+    /config/autonomy previously returned only is_default, so a governor-tuned
+    threshold rendered identically to one an executive chose. Reporting a
+    machine's decision as a human's is the failure mode this product exists to
+    prevent, so auto_managed is part of the contract.
+    """
+    from app.api.routes.platform_config import get_autonomy
+    from app.models.settings import AutonomyPolicy
+
+    tid = "tenant_dial_attr"
+    db.add(AutonomyPolicy(tenant_id=tid, domain="finance", min_confidence=0.91,
+                          auto_managed=True))
+    db.add(AutonomyPolicy(tenant_id=tid, domain="hr", min_confidence=0.70,
+                          auto_managed=False))
+    await db.commit()
+
+    by_domain = {i.domain: i for i in await get_autonomy(tenant_id=tid, db=db)}
+
+    assert by_domain["finance"].auto_managed is True     # governor tuned it
+    assert by_domain["finance"].is_default is False
+    assert by_domain["hr"].auto_managed is False         # a person set it
+    assert by_domain["hr"].is_default is False
+    # An untouched domain is the platform default and belongs to nobody.
+    assert by_domain["sales"].is_default is True
+    assert by_domain["sales"].auto_managed is False

@@ -173,7 +173,7 @@ export const governanceApi = {
 
   // LLM Routing / BYOK
   // Autonomy Dial — per-domain risk appetite (the confidence a domain must clear to run without a human)
-  getAutonomy: () => request<{ domain: string; min_confidence: number; is_default: boolean }[]>('/config/autonomy'),
+  getAutonomy: () => request<{ domain: string; min_confidence: number; is_default: boolean; auto_managed?: boolean }[]>('/config/autonomy'),
   setAutonomy: (domain: string, min_confidence: number) =>
     request<any>(`/config/autonomy/${domain}`, { method: 'PUT', body: JSON.stringify({ min_confidence }) }),
 

@@ -383,6 +383,10 @@ class AutonomyItem(BaseModel):
     domain: str
     min_confidence: float
     is_default: bool
+    # Who last moved this dial. Without it the UI cannot tell a threshold a human
+    # chose from one the governor tuned, and shows a machine decision as if a
+    # person had made it.
+    auto_managed: bool = False
 
 
 class AutonomyUpdate(BaseModel):
@@ -402,9 +406,14 @@ async def get_autonomy(
     rows = (await db.execute(
         select(AutonomyPolicy).where(AutonomyPolicy.tenant_id == tenant_id)
     )).scalars().all()
-    by_domain = {r.domain: r.min_confidence for r in rows}
+    by_domain = {r.domain: r for r in rows}
     return [
-        AutonomyItem(domain=d, min_confidence=by_domain.get(d, default), is_default=d not in by_domain)
+        AutonomyItem(
+            domain=d,
+            min_confidence=by_domain[d].min_confidence if d in by_domain else default,
+            is_default=d not in by_domain,
+            auto_managed=bool(by_domain[d].auto_managed) if d in by_domain else False,
+        )
         for d in _AUTONOMY_DOMAINS
     ]
 
@@ -448,4 +457,5 @@ async def set_autonomy(
         actor=tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="autonomy_policy", resource_id=d, details={"min_confidence": val},
     )
-    return AutonomyItem(domain=d, min_confidence=val, is_default=False)
+    # A human just set this, so it is no longer governor-managed (see above).
+    return AutonomyItem(domain=d, min_confidence=val, is_default=False, auto_managed=False)
