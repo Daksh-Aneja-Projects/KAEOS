@@ -8,7 +8,7 @@ import {
   Landmark, Receipt, Wallet, Scale, ShieldAlert, FileText, ShieldCheck,
   Lock, Lightbulb, BookOpen, Clock, Heart, Compass, Target, TrendingUp,
   CheckSquare, Clipboard, Wrench, Server, GitPullRequest, Siren,
-  Factory, UserPlus, Zap, FlaskConical
+  Factory, UserPlus, Zap, FlaskConical, Menu
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { api, type PendingHITLItem, type AppNotification } from './api/client';
@@ -159,9 +159,17 @@ function Shell() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [platformCollapsed, setPlatformCollapsed] = useState(true);
+  // Below `md` the sidebar is an off-canvas drawer; at `md`+ it is always-on
+  // and this flag is inert. HITL approvals are the daily touchpoint, so the
+  // shell has to survive a phone.
+  const [navOpen, setNavOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Navigating on mobile should dismiss the drawer, otherwise it covers the
+  // page the user just asked for.
+  useEffect(() => { setNavOpen(false); }, [location.pathname]);
 
   // Deep surfaces (e.g. the Hierarchy view's Conductor card) open the copilot
   // without prop-drilling through the whole tree.
@@ -296,8 +304,24 @@ function Shell() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: colors.surface1, color: colors.ink, fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      {/* Sidebar */}
-      <aside className="w-[240px] flex flex-col flex-shrink-0 border-r overflow-hidden" style={{ borderColor: colors.hairline, background: colors.canvas }}>
+      {/* Mobile drawer scrim. Desktop (md+) never renders it. */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar — off-canvas drawer below md, static column at md+ */}
+      <aside
+        className={`w-[240px] flex flex-col flex-shrink-0 border-r overflow-hidden
+          fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out
+          md:static md:z-auto md:translate-x-0
+          ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{ borderColor: colors.hairline, background: colors.canvas }}
+      >
         <div className="h-14 flex items-center px-5 border-b flex-shrink-0" style={{ borderColor: colors.hairline }}>
           <NavLink to="/" className="flex items-center gap-2.5 w-full">
             <div className="w-7 h-7 rounded flex items-center justify-center" style={{ background: colors.primary }}>
@@ -369,8 +393,18 @@ function Shell() {
       {/* Main Area */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Top Bar */}
-        <header className="h-14 flex items-center justify-between px-6 border-b flex-shrink-0 z-10" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
-          <div className="flex items-center gap-4">
+        <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b flex-shrink-0 z-10" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
+          <div className="flex items-center gap-3 md:gap-4 min-w-0">
+            {/* Drawer toggle — mobile only; the sidebar is always present at md+ */}
+            <button
+              aria-label="Open navigation"
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen(true)}
+              className="md:hidden p-1.5 rounded hover:bg-surface2 transition-colors flex-shrink-0"
+              style={{ color: colors.ink }}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             {/* Domain Selector */}
             <div className="relative">
               <div onClick={() => setDomainOpen(!domainOpen)} className="flex items-center gap-2 px-3 py-1.5 rounded border cursor-pointer hover:bg-surface2 transition-colors" style={{ borderColor: colors.hairline, background: colors.canvas }}>
@@ -387,15 +421,17 @@ function Shell() {
                 </div>
               )}
             </div>
-            {/* System Status */}
-            <div className="flex items-center gap-2 px-2 py-1 rounded" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
+            {/* System Status — secondary chrome, yields space on small screens */}
+            <div className="hidden lg:flex items-center gap-2 px-2 py-1 rounded" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-[11px] font-medium text-green-500">System Online</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Fixed-width search would overflow a phone; it is keyboard-driven
+                (⌘K) chrome, so it yields below md rather than shrinking. */}
+            <div className="relative hidden md:block">
               <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
               <input
                 ref={searchRef}
