@@ -12,6 +12,12 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Fixed
+- **Background runs no longer bleed into a human's gate trace.** Gate events are
+  broadcast tenant-wide, so the scheduler, precog and the autonomy governor could
+  interleave their gates into a trace someone was reading as the verdict on the
+  action they had just taken. Executions now carry the actor that triggered them
+  (published from the same middleware hook that publishes the tenant, so no route
+  changed), and the trace ignores anything no person started.
 - **A dial the governor tunes is now one a human can take back.** The Autonomy
   Dial listed seven hardcoded domains, but the governor derives a domain from the
   executed skill's department and creates dials for whatever it finds. Dials for
