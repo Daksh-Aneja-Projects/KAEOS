@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import List
 
@@ -379,6 +379,35 @@ async def update_federated(item: FederatedItem, tenant: dict = Depends(require_r
 _AUTONOMY_DOMAINS = ["hr", "finance", "legal", "sales", "support", "operations", "engineering"]
 
 
+async def _tenant_autonomy_domains(db: AsyncSession, tenant_id: str) -> list[str]:
+    """Every domain whose autonomy is actually governed for this tenant.
+
+    The canonical seven are not the whole story: the governor derives domains
+    from the executed skill's department, so it can create and tune a dial for
+    any department that exists (marketing, customer_support, general...). While
+    this list was hardcoded, those dials were enforced by Gate 3 but invisible in
+    the UI and rejected by the PUT below, so "human override wins" was not true
+    for them -- nobody could see the dial, let alone take it back. Deriving the
+    list from real policies and real skill departments keeps the governed set and
+    the overridable set identical.
+    """
+    from app.models.settings import AutonomyPolicy
+    from app.models.domain import Skill
+
+    policy_domains = (await db.execute(
+        select(AutonomyPolicy.domain).where(AutonomyPolicy.tenant_id == tenant_id)
+    )).scalars().all()
+    skill_domains = (await db.execute(
+        select(func.lower(Skill.department))
+        .where(Skill.tenant_id == tenant_id, Skill.department.isnot(None))
+        .distinct()
+    )).scalars().all()
+
+    seen = {d for d in (*policy_domains, *skill_domains) if d}
+    # Canonical seven first (stable, familiar order), then anything else found.
+    return _AUTONOMY_DOMAINS + sorted(seen - set(_AUTONOMY_DOMAINS))
+
+
 class AutonomyItem(BaseModel):
     domain: str
     min_confidence: float
@@ -414,7 +443,7 @@ async def get_autonomy(
             is_default=d not in by_domain,
             auto_managed=bool(by_domain[d].auto_managed) if d in by_domain else False,
         )
-        for d in _AUTONOMY_DOMAINS
+        for d in await _tenant_autonomy_domains(db, tenant_id)
     ]
 
 
@@ -429,10 +458,11 @@ async def set_autonomy(
     oversight, lower = more autonomy. Clamped to [0.5, 0.99]."""
     from app.models.settings import AutonomyPolicy
     d = domain.strip().lower()
-    if d not in _AUTONOMY_DOMAINS:
+    tenant_id = tenant["tenant_id"]
+    # Anything the governor can tune, a human must be able to take back.
+    if d not in await _tenant_autonomy_domains(db, tenant_id):
         raise HTTPException(status_code=400, detail=f"Unknown domain '{domain}'")
     val = max(0.5, min(0.99, float(body.min_confidence)))
-    tenant_id = tenant["tenant_id"]
     existing = (await db.execute(
         select(AutonomyPolicy).where(
             AutonomyPolicy.tenant_id == tenant_id, AutonomyPolicy.domain == d)
