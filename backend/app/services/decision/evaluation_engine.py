@@ -101,25 +101,12 @@ class OptionEvaluationEngine:
 
         final_score = max(0, min(100, raw_score - constraint_penalty))
         
-        # Inject Learning Feedback
-        learning_engine = context.get("learning_engine")
-        learning_modifier = 0.0
-        if learning_engine:
-            domain = context.get("domain", "HR")
-            enterprise_type_key = enterprise_type if enterprise_type != "Standard" else ent_state.get("type", "Standard")
-            learning_modifier = learning_engine.get_historical_learning_score(action, domain=domain, enterprise_type=enterprise_type_key)
-            final_score = max(0, min(100, final_score + learning_modifier))
-        
         # The ultimate "why"
         why_ranked = f"Scored {round(final_score,1)} due to strong performance in "
         best_dim = max(dims, key=dims.get)
         why_ranked += f"{best_dim.replace('_', ' ')}."
         if constraint_penalty > 0:
             why_ranked += " Heavily penalized by hard constraints."
-        if learning_modifier > 0:
-            why_ranked += f" Boosted by historical success (+{round(learning_modifier,1)})."
-        elif learning_modifier < 0:
-            why_ranked += f" Penalized by historical failure ({round(learning_modifier,1)})."
 
         return {
             **option,

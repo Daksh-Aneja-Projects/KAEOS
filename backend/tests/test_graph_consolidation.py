@@ -5,8 +5,8 @@ Proves:
   * the fake in-memory "Neo4j" provider (services/graph/neo4j_client.py) and its
     abstract interface (provider.py) are gone;
   * GraphService now delegates to the real polystore GraphStore;
-  * FitnessCalculator and ScorecardEngine compute from the REAL graph (no
-    hardcoded fixtures) and detect injected structural rot.
+  * FitnessCalculator computes from the REAL graph (no hardcoded fixtures) and
+    detects injected structural rot.
 """
 import importlib
 import os
@@ -15,7 +15,6 @@ import pytest
 
 from app.services.graph.graph_service import GraphService
 from app.services.evolution.fitness_calculator import FitnessCalculator
-from app.services.scorecard_engine import ScorecardEngine
 
 
 TENANT = "tenant_gc"
@@ -147,14 +146,5 @@ async def test_fitness_is_computed_from_real_graph_and_detects_rot():
     assert f["graph_size"]["nodes"] > 0
 
 
-async def test_scorecard_reflects_graph_risk(db):
-    g = GraphService()
-    await _clear_graph()
-    await g.register_entity("tenant_x", "init_x", "Initiative", {"title": "X"})
-    await g.register_entity("tenant_x", "risk_x", "Risk", {"title": "R", "severity": "CRITICAL"})
-    await g.link_entities("tenant_x", "risk_x", "init_x", "THREATENS")
-
-    card = await ScorecardEngine(g).calculate_enterprise_scorecard(db, "tenant_x")
-    assert card["dimensions"]["Initiative_Health"] < 1.0
-    assert card["dimensions"]["Risk_Health"] < 1.0
-    assert card["graph_size"]["nodes"] >= 2
+# ScorecardEngine was removed: it was never reachable from any route or service,
+# so this file's remaining tests cover the graph paths that actually ship.
