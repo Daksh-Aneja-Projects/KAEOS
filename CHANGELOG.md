@@ -12,6 +12,14 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Fixed
+- **A dial the governor tunes is now one a human can take back.** The Autonomy
+  Dial listed seven hardcoded domains, but the governor derives a domain from the
+  executed skill's department and creates dials for whatever it finds. Dials for
+  `marketing`, `customer_support`, `human_resources` and `general` were therefore
+  enforced by Gate 3 while being invisible in the UI and rejected by the update
+  endpoint, so "human override wins" did not hold for them. Both the listing and
+  the update now derive the domain set from real policies and real skill
+  departments, so the governed set and the overridable set are the same set.
 - **A compliance control cited a dead file as its evidence.** Control AU-2
   ("Hash-chained decision provenance", SOC2 CC7.3 / SOX 302+404) claimed
   IMPLEMENTED while pointing at `governance_engine.py` - an ABAC module with no
@@ -21,6 +29,16 @@ All notable changes to KAEOS are documented here. This project adheres to
   that does not resolve, or if an IMPLEMENTED control cites nothing at all.
 
 ### Added
+- **The autonomy governor now records every dial it moves, and the dial says who
+  moved it.** The governor adjusts each domain's confidence threshold from the
+  measured safe-autonomy-rate every six hours, but recorded nothing: a human
+  moving the dial wrote a `CONFIG_CHANGE` audit row while the machine moving it
+  wrote none, so the one actor that can widen its own authority was the one
+  leaving no trace. Each change now writes the same audit event shape, attributed
+  to `autonomy-governor`, carrying the evidence behind it (previous and new
+  threshold, direction, measured rate, override/failure fraction, sample count,
+  window, and a plain-English reason). The Settings dial reads `default` /
+  `set by you` / `auto-tuned` instead of collapsing the last two into "custom".
 - **The 7-gate trace is now visible in HR and Finance.** The runtime already
   broadcast a `gate_event` per gate transition, and the live trace component
   that renders it was mounted in five department views but not in the two where
