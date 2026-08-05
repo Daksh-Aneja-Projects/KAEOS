@@ -74,7 +74,8 @@ _CONTROLS: list[Control] = [
         "Every AI decision is written to a tamper-evident, hash-chained provenance "
         "ledger with full lineage.",
         {"SOC2": ["CC7.3"], "SOX": ["302", "404"]},
-        ("app/services/governance_engine.py",),
+        ("app/services/quantum_ledger.py", "app/services/actuation/actuator.py",
+         "tests/e2e/test_23_coverage_gaps.py"),
     ),
     Control(
         "PR-1", "Right-to-erasure (subject + tenant)", ControlStatus.IMPLEMENTED,
