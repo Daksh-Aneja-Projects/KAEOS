@@ -24,7 +24,6 @@ class OptionEvaluationEngine:
         goal_deadline_days = ent_state.get("goal_deadline_days", 90)
         enterprise_type = ent_state.get("type", "Standard")
         
-        action = option.get("action", "")
         cost = option.get("estimated_cost", 0)
         recovery_days = option.get("recovery_days_estimate", 30)
         
