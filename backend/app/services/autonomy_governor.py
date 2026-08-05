@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.models.settings import AutonomyPolicy
 
@@ -104,10 +105,44 @@ async def run_autonomy_governor(db: AsyncSession, tenant_id: str) -> dict:
             db.add(AutonomyPolicy(tenant_id=tenant_id, domain=domain,
                                   min_confidence=target, auto_managed=True))
         changes.append({"domain": domain, "from": round(current, 4), "to": target,
-                        "rate": round(rate, 4), "bad_fraction": round(bad_fraction, 4)})
+                        "rate": round(rate, 4), "bad_fraction": round(bad_fraction, 4),
+                        "samples": total})
 
     if changes:
         await db.commit()
+        # A human moving this dial writes a CONFIG_CHANGE audit row
+        # (/config/autonomy). The machine moving it wrote nothing, so the one
+        # actor that can widen its own authority was the one actor leaving no
+        # record. Same event shape as the human path, so the existing audit
+        # surfaces show both, attributed and side by side.
+        for c in changes:
+            direction = "tightened" if c["to"] > c["from"] else "relaxed"
+            try:
+                await record_security_event(
+                    tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
+                    actor="autonomy-governor", actor_role="system",
+                    resource_type="autonomy_policy", resource_id=c["domain"],
+                    details={
+                        "min_confidence": c["to"],
+                        "previous_min_confidence": c["from"],
+                        "direction": direction,
+                        "safe_autonomy_rate": c["rate"],
+                        "bad_fraction": c["bad_fraction"],
+                        "samples": c["samples"],
+                        "window_days": _WINDOW_DAYS,
+                        "reason": (
+                            f"{direction} {c['domain']} autonomy from {c['from']} to "
+                            f"{c['to']}: {c['samples']} executions in {_WINDOW_DAYS} days, "
+                            f"safe-autonomy-rate {c['rate']}, "
+                            f"override+failure fraction {c['bad_fraction']}"
+                        ),
+                    },
+                )
+            except Exception as e:
+                # The dial change is already committed and is the control; losing
+                # its audit row must not roll it back, but it must be loud.
+                logger.error("[autonomy-governor] audit write failed for domain %s: %s",
+                             c["domain"], e, exc_info=True)
         try:
             from app.services.autonomy_policy import invalidate
             for c in changes:
