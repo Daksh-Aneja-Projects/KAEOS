@@ -7,14 +7,42 @@ from app.models.domain import ProvenanceLedger, Rule
 
 router = APIRouter(prefix="/provenance", tags=["Provenance — L11 Lineage Ledger"])
 
+# The ledger is append-only and unbounded per rule; a read caps at this many
+# entries. Full history is available through the CSV export.
+_CHAIN_CAP = 500
+
 @router.get("/{rule_id}")
 async def get_provenance_chain(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """A rule's hash-chained lineage, newest-capped and tenant-scoped.
+
+    `tenant_id` was accepted here and never applied, so the chain of any rule id
+    was readable across tenants. The ledger is append-only with several writers
+    (every confidence change, gate decision and agent execution appends), so the
+    read is also capped. Fields are listed explicitly rather than returning ORM
+    rows, which auto-exposed `actor_hash` and `evidence_ids` and would ship any
+    column added later; this matches the shape its two twins already build.
+    """
     result = await db.execute(
         select(ProvenanceLedger)
-        .where(ProvenanceLedger.rule_id == rule_id)
+        .where(
+            ProvenanceLedger.rule_id == rule_id,
+            ProvenanceLedger.tenant_id == tenant_id,
+        )
         .order_by(ProvenanceLedger.timestamp.asc())
+        .limit(_CHAIN_CAP)
     )
-    return {"chain": result.scalars().all()}
+    return {"chain": [
+        {
+            "id": e.id,
+            "event_type": e.event_type,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+            "actor_role": e.actor_role,
+            "confidence_at": e.confidence_at,
+            "reasoning": e.reasoning,
+            "chain_hash": e.chain_hash,
+        }
+        for e in result.scalars().all()
+    ]}
 
 @router.get("/global/ledger")
 async def get_global_ledger(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):

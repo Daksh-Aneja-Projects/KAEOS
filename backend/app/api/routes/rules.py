@@ -241,6 +241,7 @@ async def get_provenance(rule_id: str, tenant_id: str = Depends(get_tenant_id), 
             ProvenanceLedger.tenant_id == tenant_id,
         )
         .order_by(ProvenanceLedger.timestamp.asc())
+        .limit(500)   # append-only ledger, unbounded per rule
     )
     entries = result.scalars().all()
     if not entries:
@@ -276,6 +277,9 @@ async def get_confidence_history(rule_id: str, tenant_id: str = Depends(get_tena
         select(ConfidenceHistory)
         .where(ConfidenceHistory.rule_id == rule_id)
         .order_by(ConfidenceHistory.changed_at.desc())
+        # Decay is scheduled, so this appends per rule on a timer with no human
+        # involved. Newest-first, so the cap drops the oldest.
+        .limit(500)
     )
     entries = result.scalars().all()
     return [

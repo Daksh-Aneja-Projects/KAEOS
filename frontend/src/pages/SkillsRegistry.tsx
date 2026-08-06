@@ -14,6 +14,9 @@ import { PAGE_PAD } from '../lib/layout';
 export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
   const [skills, setSkills] = useState<SkillItem[]>([]);
+  // The registry read is capped, so the count comes from the server's total
+  // rather than from the rows on screen.
+  const [totalSkills, setTotalSkills] = useState(0);
   const [totalExec, setTotalExec] = useState(0);
   const [avgSr, setAvgSr] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -36,6 +39,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
     setError(null);
     api.getSkills().then((r) => {
       setSkills(r.skills);
+      setTotalSkills(r.total);
       setTotalExec(r.total_executions);
       setAvgSr(r.avg_success_rate);
       setLoading(false);
@@ -140,7 +144,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
             <div>
               <h1 className="text-[24px] font-bold tracking-tight">Skills Registry</h1>
               <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
-                Skill Compiler - {skills.length} compiled skills · {totalExec.toLocaleString()} total executions · {(avgSr * 100).toFixed(1)}% avg success
+                Skill Compiler - {totalSkills} compiled skills · {totalExec.toLocaleString()} total executions · {(avgSr * 100).toFixed(1)}% avg success
               </p>
             </div>
           </div>

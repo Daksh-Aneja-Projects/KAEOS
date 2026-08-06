@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Advanced Capabilities"])
 
+# Caps for the list reads below. The per-skill cap matters because the events
+# are a JSON array inside each row, so output size is skills x events-per-skill.
+_LIST_CAP = 200
+_EVENTS_PER_SKILL_CAP = 50
+
 class RegulationPayload(BaseModel):
     framework_name: str
     directive_text: str
@@ -73,21 +78,28 @@ async def get_quantum_events(tenant_id: str = Depends(get_tenant_id), db: AsyncS
 
 @router.get("/regulatory-rules")
 async def get_regulatory_rules(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Fetch all automatically synthesized regulatory rules."""
-    # Scoped to the caller's tenant.
-    q = await db.execute(select(Rule).filter(Rule.tenant_id == tenant_id, Rule.workflow_id == "wf_compliance_auto"))
+    """Fetch automatically synthesized regulatory rules, newest first."""
+    # Scoped to the caller's tenant and capped: these are written by the PreCog
+    # engine with no human gate, so the table grows on its own.
+    q = await db.execute(
+        select(Rule)
+        .filter(Rule.tenant_id == tenant_id, Rule.workflow_id == "wf_compliance_auto")
+        .order_by(Rule.created_at.desc())
+        .limit(_LIST_CAP)
+    )
     rules = q.scalars().all()
     return [{"id": r.id, "statement": r.statement, "compliance_tags": r.compliance_tags, "domain": r.domain, "created_at": r.created_at} for r in rules]
 
 @router.get("/federated-exports")
 async def get_federated_exports(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Fetch all skills exported to the global swarm."""
-    # Scoped to the caller's tenant.
-    q = await db.execute(select(Skill).where(Skill.tenant_id == tenant_id))
+    """Fetch skills exported to the federated network."""
+    # Capped on both axes: the skill count AND the per-skill event list, which
+    # is a JSON array inside the row that grows on every export.
+    q = await db.execute(select(Skill).where(Skill.tenant_id == tenant_id).limit(_LIST_CAP))
     skills = q.scalars().all()
     exports = []
     for s in skills:
-        events = s.guardrails.get("federated_events", [])
+        events = (s.guardrails or {}).get("federated_events", [])[-_EVENTS_PER_SKILL_CAP:]
         for ev in events:
             exports.append({
                 "skill_id": s.skill_id,
@@ -101,13 +113,13 @@ async def get_federated_exports(tenant_id: str = Depends(get_tenant_id), db: Asy
 
 @router.get("/polymorphic-events")
 async def get_polymorphic_events(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Fetch all code generation events from the polymorphic engine."""
-    # Scoped to the caller's tenant.
-    q = await db.execute(select(Skill).where(Skill.tenant_id == tenant_id))
+    """Fetch code generation events from the polymorphic engine."""
+    # Capped on both axes, same reasoning as /federated-exports.
+    q = await db.execute(select(Skill).where(Skill.tenant_id == tenant_id).limit(_LIST_CAP))
     skills = q.scalars().all()
     poly_events = []
     for s in skills:
-        events = s.guardrails.get("polymorphic_events", [])
+        events = (s.guardrails or {}).get("polymorphic_events", [])[-_EVENTS_PER_SKILL_CAP:]
         for ev in events:
             poly_events.append({
                 "skill_id": s.skill_id,

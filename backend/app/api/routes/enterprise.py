@@ -397,6 +397,7 @@ async def get_rule_versions(rule_id: str, tenant_id: str = Depends(get_tenant_id
             ProvenanceLedger.tenant_id == tenant_id,
         )
         .order_by(ProvenanceLedger.timestamp.asc())
+        .limit(500)   # append-only ledger, unbounded per rule
     )
     entries = r.scalars().all()
     versions = []

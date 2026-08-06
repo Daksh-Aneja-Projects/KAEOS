@@ -94,30 +94,53 @@ async def genome_state(
     features = await _live_features(db, tenant_id)
     traits = GenomeCompiler().compile(features)
 
-    # Fitness timeline: weekly success-rate buckets from real execution history
-    executions = (await db.execute(
-        select(SkillExecution)
-        .where(SkillExecution.tenant_id == tenant_id)
-        .order_by(SkillExecution.started_at.asc())
-    )).scalars().all()
+    # Fitness timeline: weekly success-rate buckets from real execution history.
+    #
+    # Counted in SQL, grouped by DAY. SkillExecution is the highest-volume table
+    # in the product and each row carries context + reasoning_chain JSON, so
+    # loading every row to bucket it in Python read the whole history from the
+    # beginning on every request. A row limit is not an option here: it would
+    # silently truncate the very timeline this draws. Grouping by day bounds the
+    # result by the calendar instead of by throughput, and days fold into ISO
+    # weeks exactly. Day (not week) because ISO-week SQL is not portable across
+    # SQLite and Postgres, whereas date() is.
+    day_rows = (await db.execute(
+        select(
+            func.date(SkillExecution.started_at).label("day"),
+            func.count().label("total"),
+            func.sum(
+                case((func.upper(SkillExecution.status).like("SUCCESS%"), 1), else_=0)
+            ).label("successes"),
+        )
+        .where(
+            SkillExecution.tenant_id == tenant_id,
+            SkillExecution.started_at.isnot(None),
+        )
+        .group_by(func.date(SkillExecution.started_at))
+    )).all()
+
     timeline = []
-    if executions:
+    if day_rows:
+        # week -> [successes, total]
         buckets: Dict[str, list] = {}
-        for e in executions:
-            if not e.started_at:
+        for day, total, successes in day_rows:
+            if not day:
                 continue
-            week = e.started_at.strftime("%G-W%V")
-            buckets.setdefault(week, []).append(
-                (e.status or "").upper().startswith("SUCCESS")
-            )
-        for idx, (week, results) in enumerate(sorted(buckets.items()), start=1):
-            rate = sum(results) / len(results)
+            d = day if hasattr(day, "strftime") else datetime.fromisoformat(str(day))
+            week = d.strftime("%G-W%V")
+            agg = buckets.setdefault(week, [0, 0])
+            agg[0] += int(successes or 0)
+            agg[1] += int(total or 0)
+        for idx, (week, (successes, total)) in enumerate(sorted(buckets.items()), start=1):
+            if not total:
+                continue
+            rate = successes / total
             timeline.append({
                 "version": f"v{idx}",
                 "fitness": round(rate, 3),
                 "risk": round(1 - rate, 3),
                 "time": week,
-                "executions": len(results),
+                "executions": total,
             })
 
     return {

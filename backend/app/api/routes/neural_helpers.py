@@ -197,31 +197,53 @@ async def _brain_stats(db: AsyncSession, tenant_id: str) -> dict:
     }
 
 
-async def _build_cluster(db: AsyncSession, tenant_id: str, dept: Department) -> tuple[list[dict], list[dict]]:
+# Upper bound on task nodes pulled per department cluster.
+_CLUSTER_SKILL_CAP = 500
+
+
+async def _build_cluster(
+    db: AsyncSession,
+    tenant_id: str,
+    dept: Department,
+    all_connectors: list[Connector] | None = None,
+) -> tuple[list[dict], list[dict]]:
     """One department's cluster: hub + connectors + agents + tasks + capabilities
     + processes, with tiered edges. Shared by the single-department graph and
-    the org-wide free-flow world."""
+    the org-wide free-flow world.
+
+    `all_connectors` is the tenant's full connector list. It does not depend on
+    the department, so the org-wide world fetches it once and passes it in
+    rather than re-running an identical scan per department; the
+    single-department graph leaves it None and this loads it itself.
+    """
     agents = (await db.execute(
         select(DepartmentAgent)
         .where(DepartmentAgent.department_id == dept.id, DepartmentAgent.tenant_id == tenant_id)
         .order_by(DepartmentAgent.agent_name)
     )).scalars().all()
 
+    # Capped: duplicate task labels are collapsed below, but that happens after
+    # loading, so an accumulating registry would grow this scan without bound.
+    # A graph is not readable past a few hundred task nodes anyway.
     skills = (await db.execute(
         select(Skill)
         .where(Skill.tenant_id == tenant_id)
         .where((Skill.department == dept.slug) | (Skill.domain == dept.slug))
         .order_by(Skill.skill_id)
+        .limit(_CLUSTER_SKILL_CAP)
     )).scalars().all()
 
     # Integrations: explicit mappings and connected_systems are LINKED; beyond
     # those, tenant connectors whose category serves this department appear as
     # feeds (the video-wall top tier is only honest if it shows real systems).
-    mapped = (await db.execute(
-        select(IntegrationMapping.connector_id)
+    # One fetch of the full mapping rows serves both the linked-id set here and
+    # the connector-to-agent wiring further down; they had been two queries with
+    # the same WHERE, differing only in projection.
+    mapping_rows = (await db.execute(
+        select(IntegrationMapping)
         .where(IntegrationMapping.department_id == dept.id, IntegrationMapping.tenant_id == tenant_id)
     )).scalars().all()
-    linked_ids = set([*mapped, *(dept.connected_systems or [])])
+    linked_ids = set([*(m.connector_id for m in mapping_rows), *(dept.connected_systems or [])])
     dept_categories = {
         "hr": {"hris", "communications"},
         "finance": {"commercial"},
@@ -231,9 +253,10 @@ async def _build_cluster(db: AsyncSession, tenant_id: str, dept: Department) -> 
         "operations": {"commercial"},
         "legal": set(),
     }.get(dept.slug, set())
-    all_connectors = (await db.execute(
-        select(Connector).where(Connector.tenant_id == tenant_id)
-    )).scalars().all()
+    if all_connectors is None:
+        all_connectors = (await db.execute(
+            select(Connector).where(Connector.tenant_id == tenant_id)
+        )).scalars().all()
     connectors = [
         c for c in all_connectors
         if c.id in linked_ids or ((c.category or "") in dept_categories and c.status != "AVAILABLE")
@@ -298,10 +321,6 @@ async def _build_cluster(db: AsyncSession, tenant_id: str, dept: Department) -> 
     for a in agents:
         if a.capability_id:
             cap_agents.setdefault(a.capability_id, []).append(a.id)
-    mapping_rows = (await db.execute(
-        select(IntegrationMapping)
-        .where(IntegrationMapping.department_id == dept.id, IntegrationMapping.tenant_id == tenant_id)
-    )).scalars().all()
     wired_connectors: set[str] = set()
     for m in mapping_rows:
         for agent_id in cap_agents.get(m.capability_id or "", []):

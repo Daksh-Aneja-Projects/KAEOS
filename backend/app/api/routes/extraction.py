@@ -21,7 +21,16 @@ async def get_candidate_rules(tenant_id: str = Depends(get_tenant_id), db: Async
     # Group signals by domain — THIS tenant's signals only: mined rules carry
     # clean_payload content, so an unfiltered read here leaks another
     # customer's data into this tenant's rule candidates.
-    signals = await db.execute(select(Signal).where(Signal.tenant_id == tenant_id))
+    # Newest-first cap: Signal is the raw ingest firehose (every connector poll
+    # and webhook writes one). Unbounded, the whole table was materialized AND
+    # each domain's cluster became an LLM prompt, so the prompt grew until the
+    # context window rejected it.
+    signals = await db.execute(
+        select(Signal)
+        .where(Signal.tenant_id == tenant_id)
+        .order_by(Signal.created_at.desc())
+        .limit(500)
+    )
     signal_list = signals.scalars().all()
     
     miner = RuleMiner()

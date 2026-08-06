@@ -14,6 +14,44 @@ All notable changes to KAEOS are documented here. This project adheres to
 ### Performance
 Measured against the dev database, not estimated.
 
+- **`/neural/world` issues 36 queries instead of 49**, with byte-identical
+  output. Two of the per-department queries were removable: the department's
+  integration mappings were fetched twice with the same WHERE and different
+  projections, and the tenant's connector list, which does not depend on the
+  department at all, was re-scanned once per department. The org-wide view now
+  fetches connectors once and passes them in; the single-department graph still
+  loads them itself. The per-department skill scan is also capped, since task
+  labels are de-duplicated only after loading.
+- **Unbounded list reads are now bounded**, with the shape of each cap chosen to
+  fit what the endpoint means:
+  - `GET /skills/hitl/pending` is the hottest read in the product (the app shell
+    polls it every 30 seconds for every signed-in user on every page) and
+    PENDING_HITL is a queue, not a window, so a stalled approver grew it
+    forever. Capped newest-first, and it no longer ships each execution's full
+    `context` payload, which nothing rendered.
+  - `GET /genome/state` counted weekly buckets by loading every execution row,
+    including their JSON. It now aggregates in SQL, grouped by day and folded
+    into ISO weeks. A row limit was the wrong tool here: it would have silently
+    truncated the timeline being drawn. Verified to produce an identical timeline.
+  - `GET /skills` aggregates `total`, `total_executions` and
+    `avg_success_rate` in SQL over the whole filtered set while returning a
+    bounded page. Computing them from the page instead would have made `total`
+    mean "page size" and skewed the execution-weighted success rate.
+  - `GET /redteam/scans/recent` is bounded by a 30-day window rather than a row
+    limit, because its rows are grouped per skill and a row cap would drop whole
+    skills from the aggregate, changing the answer instead of trimming it.
+  - Caps added to the provenance chain, rule confidence history, rule versions,
+    extraction candidates (which also bounded an LLM prompt that grew with the
+    signal firehose), and the three advanced-capability lists, which fan out over
+    a JSON event array inside each row and so are now capped on both axes.
+  - `GET /reality/learning` loaded every shock outcome to display twenty of them;
+    the per-decision averages are now computed in SQL over the full history and
+    the feed reads only what it shows.
+- **`GET /provenance/{rule_id}` accepted a tenant id and never applied it**, so
+  any rule's chain was readable across tenants. It now filters on it, and returns
+  an explicit field list rather than raw ORM rows, which had been auto-exposing
+  `actor_hash` and `evidence_ids` and would ship any column added later.
+
 - **Password hashing no longer blocks the event loop.** bcrypt is deliberately
   expensive and entirely CPU-bound: `verify` measured 207 ms and `hash` 224 ms,
   and both ran directly on the single event-loop thread. Every login therefore

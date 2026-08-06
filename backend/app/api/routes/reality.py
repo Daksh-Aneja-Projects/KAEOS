@@ -91,18 +91,34 @@ async def get_learning(tenant_id: str = Depends(get_tenant_id)):
     decision's average severity becomes its weight, so repeatedly choosing an
     action against worse shocks raises its learned modifier.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, func as sqlfunc
     from app.core.database import AsyncSessionLocal
     from app.models.reality import ShockOutcome
 
     async with AsyncSessionLocal() as db:
+        # The feed shows 20; the modifiers are averages over ALL history. Those
+        # are two different reads, so they are two queries now: loading every
+        # row to display 20 of them meant the whole table grew the response.
         rows = (await db.execute(
             select(ShockOutcome)
             .where(ShockOutcome.tenant_id == tenant_id)
             .order_by(ShockOutcome.created_at.desc())
+            .limit(20)
         )).scalars().all()
+        severity_by_decision = (await db.execute(
+            select(
+                ShockOutcome.decision,
+                sqlfunc.avg(ShockOutcome.severity),
+            )
+            .where(
+                ShockOutcome.tenant_id == tenant_id,
+                ShockOutcome.decision.isnot(None),
+                ShockOutcome.severity.isnot(None),
+            )
+            .group_by(ShockOutcome.decision)
+        )).all()
 
-    recent = list(reversed(rows[:20]))
+    recent = list(reversed(rows))
     outcomes = [
         {"shock_type": r.shock_type, "target": r.target, "severity": r.severity,
          "decision": r.decision, "options_evaluated": r.options_evaluated,
@@ -110,14 +126,12 @@ async def get_learning(tenant_id: str = Depends(get_tenant_id)):
         for r in recent
     ]
 
-    # Learned weights per decision, from real recorded severity.
-    buckets: dict[str, list[float]] = {}
-    for r in rows:
-        if r.decision and r.severity is not None:
-            buckets.setdefault(r.decision, []).append(r.severity)
+    # Learned weights per decision, averaged in SQL over the full history (not
+    # just the 20 rows the feed shows).
     modifiers = {
-        decision: round(sum(sevs) / len(sevs) / 20.0, 2)   # severity 0-100 → 0-5 scale
-        for decision, sevs in buckets.items()
+        decision: round(float(avg_sev) / 20.0, 2)   # severity 0-100 → 0-5 scale
+        for decision, avg_sev in severity_by_decision
+        if decision and avg_sev is not None
     }
 
     return {

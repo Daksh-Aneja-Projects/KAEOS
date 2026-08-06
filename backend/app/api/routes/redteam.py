@@ -1,5 +1,6 @@
 """KAEOS — Red Team API (L12 Adversarial Harness) — DB-Backed"""
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 import time
 import uuid
 
@@ -12,6 +13,9 @@ from app.core.database import get_db
 from app.models.domain import Skill, RedTeamScanResult
 from app.services.redteam import RedTeamHarness
 
+# What "recent" means for the scan feed.
+_RECENT_SCAN_DAYS = 30
+
 router = APIRouter(prefix="/redteam", tags=["RedTeam — L12 Adversarial Harness"])
 
 
@@ -20,9 +24,18 @@ async def get_recent_scans(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     """Get recent scan results from DB, aggregated per skill. Tenant-scoped to the caller."""
     # Single query over all of the tenant's scan rows, newest first; grouped in
     # Python below (previously one query per distinct skill_id — an N+1).
+    # Bounded by a time window, deliberately NOT by a row limit: the rows are
+    # grouped per skill below, so a row cap would silently drop whole skills
+    # from the aggregate -- changing the answer rather than trimming it. A
+    # window keeps every skill scanned in the period, which is what "recent"
+    # means. Scans re-run per skill per harness run, so this grows fast.
+    since = datetime.now(timezone.utc) - timedelta(days=_RECENT_SCAN_DAYS)
     result = await db.execute(
         select(RedTeamScanResult)
-        .where(RedTeamScanResult.tenant_id == tenant_id)
+        .where(
+            RedTeamScanResult.tenant_id == tenant_id,
+            RedTeamScanResult.scanned_at >= since,
+        )
         .order_by(RedTeamScanResult.scanned_at.desc())
     )
     by_skill: "defaultdict[str, list]" = defaultdict(list)

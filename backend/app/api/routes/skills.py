@@ -37,32 +37,47 @@ async def list_skills(
     department: str | None = None,
     status: str | None = None,
     min_confidence: float = 0.0,
+    limit: int = Query(200, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     polystore: PolystoreEngine = Depends(get_polystore_engine),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """List all skills in the registry with filtering (tenant-scoped)."""
-    q = select(Skill).where(
+    """List skills in the registry with filtering (tenant-scoped).
+
+    The three summary numbers are aggregated in SQL over the WHOLE filtered set,
+    while only `limit` rows are returned. That split is the point: computing them
+    from the returned rows instead would make `total` mean "page size" and skew
+    the execution-weighted success rate toward whatever happened to be on the
+    page, which is a silent wrong answer rather than a visible truncation.
+    """
+    conds = [
         Skill.confidence >= min_confidence,
         Skill.tenant_id == tenant_id,
-    )
+    ]
     if department:
-        q = q.where(Skill.department == department)
+        conds.append(Skill.department == department)
     if status:
-        q = q.where(Skill.status == status)
-    q = q.order_by(Skill.confidence.desc())
+        conds.append(Skill.status == status)
 
-    result = await db.execute(q)
-    skills = result.scalars().all()
+    total, total_exec, weighted = (await db.execute(
+        select(
+            sqlfunc.count(Skill.id),
+            sqlfunc.coalesce(sqlfunc.sum(Skill.execution_count), 0),
+            sqlfunc.coalesce(sqlfunc.sum(Skill.success_rate * Skill.execution_count), 0.0),
+        ).where(*conds)
+    )).one()
+    total_exec = int(total_exec or 0)
+    avg_sr = (float(weighted) / total_exec) if total_exec > 0 else 0.0
 
-    total_exec = sum(s.execution_count for s in skills)
-    avg_sr = (
-        sum(s.success_rate * s.execution_count for s in skills) / total_exec
-        if total_exec > 0 else 0.0
-    )
+    skills = (await db.execute(
+        select(Skill)
+        .where(*conds)
+        .order_by(Skill.confidence.desc())
+        .limit(limit)
+    )).scalars().all()
 
     return SkillRegistryResponse(
-        total=len(skills),
+        total=int(total or 0),
         total_executions=total_exec,
         avg_success_rate=round(avg_sr, 3),
         skills=[SkillSummary.model_validate(s.__dict__) for s in skills],
@@ -263,6 +278,11 @@ async def get_executions(
         for e in execs
     ]
 
+# Newest-first cap on the approval queue read. Deep history belongs in the
+# ledger views, not in a badge poll.
+_PENDING_HITL_CAP = 200
+
+
 @router.get("/hitl/pending")
 async def get_pending_hitl(
     tenant_id: str = Depends(get_tenant_id),
@@ -272,6 +292,12 @@ async def get_pending_hitl(
 
     Had no tenant dependency: it returned every tenant's approval queue,
     including each execution's `context` payload.
+
+    Bounded and slimmed, because this is the hottest read in the product: the
+    app shell polls it every 30 seconds for every signed-in user on every page.
+    PENDING_HITL is a queue, not a window, so a stalled approver or a weekend
+    grows it monotonically. `context` is the full stored request payload and no
+    surface renders it (the queue shows `reasoning_chain`), so it is not sent.
     """
     result = await db.execute(
         select(SkillExecution)
@@ -281,6 +307,7 @@ async def get_pending_hitl(
             SkillExecution.status == "PENDING_HITL",
         )
         .order_by(SkillExecution.started_at.desc())
+        .limit(_PENDING_HITL_CAP)
     )
     execs = result.scalars().all()
     return [
@@ -290,7 +317,6 @@ async def get_pending_hitl(
             "status": e.status,
             "route_type": e.route_type,
             "task_intent": e.task_intent,
-            "context": e.context,
             "started_at": e.started_at.isoformat() if e.started_at else None,
             "reasoning_chain": e.reasoning_chain,
         }

@@ -437,7 +437,6 @@ export interface PendingHITLItem {
   status: string;
   route_type?: string;
   task_intent: string;
-  context: any;
   started_at: string;
   reasoning_chain: any[];
 }
