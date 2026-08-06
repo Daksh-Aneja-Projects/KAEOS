@@ -186,7 +186,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Operational Indicators */}
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: 'Cash Balance', value: finStats ? `$${(finStats.total_cash_position / 1000).toFixed(0)}k` : '-', icon: Wallet, color: '#22c55e', sub: finStats?.total_vendors != null ? `${finStats.total_vendors} vendors on file` : '' },
             { label: 'Accounts Payable', value: finStats ? `$${(finStats.accounts_payable?.total_outstanding / 1000).toFixed(0)}k` : '-', icon: Receipt, color: '#ec4899', sub: finStats?.accounts_payable?.open_invoices != null ? `${finStats.accounts_payable.open_invoices} open invoice${finStats.accounts_payable.open_invoices === 1 ? '' : 's'}` : '' },
@@ -214,7 +214,7 @@ export default function FinanceDashboard() {
           const overdueKpi = (finAnalytics.kpis || []).find((k: any) => k.key === 'overdue');
           const complianceKpi = (finAnalytics.kpis || []).find((k: any) => k.key === 'compliance');
           return (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {aging && (
                 <div style={card}>
                   <div className="flex items-center justify-between mb-3">
@@ -258,7 +258,7 @@ export default function FinanceDashboard() {
         })()}
 
         {/* Sub-modules navigation */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex items-center gap-3 p-4 rounded-xl text-left transition-all hover:shadow-sm group"
@@ -276,7 +276,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Bottom Section: Left (Capabilities/Agents) | Right (Balance details) */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
             {(dept?.capabilities || []).length > 0 && (

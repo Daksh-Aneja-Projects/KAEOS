@@ -165,7 +165,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                     Credentials are encrypted at rest and never returned by the API
                   </span>
                 </div>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {Object.entries(catalog.by_domain).sort().map(([domain, ids]: [string, any]) => (
                     <div key={domain} className="p-2.5 rounded-lg" style={{ background: colors.surface2 }}>
                       <div className="text-[11px] font-bold uppercase tracking-wide mb-1.5 capitalize"
@@ -213,7 +213,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading connectors...
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map(c => (
                   <div key={c.id} style={card(colors.surface1)}
                     className="hover:shadow-lg cursor-pointer group"
@@ -371,7 +371,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
             {/* Sync Mode */}
             <div style={card(colors.surface1)}>
               <h3 className="text-[13px] font-semibold mb-3">Sync Mode</h3>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { id: 'realtime', label: 'Real-Time', desc: 'Kafka streaming', icon: Zap, color: '#22c55e' },
                   { id: 'scheduled', label: 'Scheduled Batch', desc: 'Cron-based', icon: Clock, color: '#f59e0b' },
@@ -392,7 +392,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
             {/* Entity Selection */}
             <div style={card(colors.surface1)}>
               <h3 className="text-[13px] font-semibold mb-3">Entity Types to Sync</h3>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {['Employee', 'OrgUnit', 'Role', 'Policy', 'Contract', 'Asset'].map(ent => (
                   <label key={ent} className="flex items-center gap-2 p-2 rounded border cursor-pointer text-[12px]"
                     style={{ borderColor: colors.hairline }}>
@@ -448,7 +448,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
             {/* Freshness Heatmap - real entity data from health endpoint */}
             <div style={card(colors.surface1)}>
               <h3 className="text-[13px] font-semibold mb-3">Entity Freshness Heatmap</h3>
-              <div className="grid grid-cols-6 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                 {(() => {
                   const allEntities = Object.values(healthData).flatMap((h: any) => h?.entity_freshness || []);
                   if (allEntities.length === 0) return <span className="text-[11px] col-span-6 text-center py-4" style={{ color: colors.inkSubtle }}>No entity freshness data yet. Connectors must sync first.</span>;

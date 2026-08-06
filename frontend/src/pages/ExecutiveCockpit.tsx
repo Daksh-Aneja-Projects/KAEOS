@@ -98,7 +98,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
       </div>
 
       {/* Row 1: System Health Score + KPIs - ALL from health API */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Health Score */}
         <div style={{ ...card, gridColumn: 'span 1' }} className="flex flex-col items-center justify-center">
           <span className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>System Health</span>
@@ -140,7 +140,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
       </div>
 
       {/* Row 2: Agent Feed + Pioneer Intelligence + Cost */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Active Agent Feed - from api.getActivityFeed() */}
         <div style={card} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
@@ -336,7 +336,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
       </div>
 
       {/* Row 3: Debate Queue + Org Readiness + Confidence Distribution */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Debate Queue - FROM cockpit API, NOT HARDCODED */}
         <div style={card}>
           <div className="flex items-center justify-between mb-3">
@@ -539,7 +539,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
             const em = health.elicitation_metrics as any;
             return (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {[
                     { label: 'Questions Sent', value: em.questions_sent_7d ?? 0 },
                     { label: 'Response Rate', value: em.response_rate != null ? `${(em.response_rate * 100).toFixed(0)}%` : '-' },

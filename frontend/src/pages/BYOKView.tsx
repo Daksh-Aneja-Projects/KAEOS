@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UploadCloud, Link, FileText, Database, ShieldCheck, Zap } from 'lucide-react';
+import { UploadCloud, Link, FileText, Database, ShieldCheck, Zap, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 
@@ -11,6 +11,7 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
   const [fileName, setFileName] = useState('');
   const [ingesting, setIngesting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -28,6 +29,7 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
     if (!content) return;  // require real content for every mode, including file
     setIngesting(true);
     setSuccess(false);
+    setError('');
     try {
       await api.ingestSignal({
         signal_type: 'BYOK_INGESTION',
@@ -41,8 +43,8 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
       setTitle('');
       setFileName('');
       setTimeout(() => setSuccess(false), 3000);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e?.message || 'Ingestion failed. Please check the input and try again.');
     }
     setIngesting(false);
   };
@@ -174,6 +176,12 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
           <div className="mt-4 p-4 rounded-xl flex items-center gap-3 bg-emerald-50 border border-emerald-100 text-emerald-700">
             <ShieldCheck className="w-5 h-5 text-emerald-500" />
             <span className="font-medium">Knowledge successfully ingested, scrubbed, and vectorized!</span>
+          </div>
+        )}
+        {error && (
+          <div className="mt-4 p-4 rounded-xl flex items-center gap-3 bg-red-50 border border-red-100 text-red-700">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <span className="font-medium">{error}</span>
           </div>
         )}
       </div>

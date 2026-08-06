@@ -234,7 +234,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Success Rate', value: `${(successRate * 100).toFixed(1)}%`, icon: CheckCircle2, color: colors.success, trend: successRate > 0.9 ? '+' : '-' },
           { label: 'Active Rules', value: totalRules, icon: Brain, color: colors.primary },
@@ -286,7 +286,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
         </p>
         {outcomeImpact && outcomeImpact.total > 0 ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {[
                 { label: 'Good', value: outcomeImpact.distribution?.good ?? 0, color: '#22c55e' },
                 { label: 'Neutral', value: outcomeImpact.distribution?.neutral ?? 0, color: '#8b5cf6' },

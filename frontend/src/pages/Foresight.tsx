@@ -167,7 +167,7 @@ const Foresight = () => {
           </div>
 
           {/* The three factors, shown so the score is never a black box */}
-          <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
            {[
             { label: 'Likelihood', value: pct(s.likelihood), hint: `${s.evidence?.signal_matches ?? 0} signal matches, ${s.evidence?.prior_shocks ?? 0} prior shocks` },
             { label: 'Blast radius', value: pct(s.blast_radius), hint: `${s.entities_in_cascade} entities in cascade` },

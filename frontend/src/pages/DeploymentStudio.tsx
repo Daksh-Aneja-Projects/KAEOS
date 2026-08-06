@@ -253,7 +253,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
                 <ArrowLeft className="w-3 h-3" /> Back
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Pack Summary */}
               <div style={card}>
                 <DomainIcon hint={selectedPack.slug || selectedPack.icon} fallbackHint={selectedPack.name} size={44} />

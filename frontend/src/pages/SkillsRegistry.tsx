@@ -288,7 +288,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                     </div>
 
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-4 gap-3 rounded-xl p-3" style={{ background: colors.canvas }}>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 rounded-xl p-3" style={{ background: colors.canvas }}>
                       <div className="text-center">
                         <div className="text-[12px]" style={{ color: colors.inkSubtle }}>Executions</div>
                         <div className="text-[13px] font-bold mt-0.5 tabular-nums" style={{ color: colors.ink }}>{s.execution_count.toLocaleString()}</div>

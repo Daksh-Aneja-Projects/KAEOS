@@ -271,7 +271,7 @@ export function ConnectorHealthCards({ connectors, healthData, setHealthData, co
   const errorColor = (pct: number) => pct < 1 ? '#22c55e' : pct < 5 ? '#f59e0b' : '#ef4444';
 
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {connectors.map((c: any) => {
         const h = healthData[c.id];
         return (

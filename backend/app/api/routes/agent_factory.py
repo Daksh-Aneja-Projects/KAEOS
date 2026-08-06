@@ -43,16 +43,13 @@ async def create_blueprint(
 ):
     """Generate an agent blueprint from a natural language prompt."""
     tenant_id = tenant["tenant_id"]
-    try:
-        result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, req.created_by)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="agent_blueprint", resource_id=(result or {}).get("id") if isinstance(result, dict) else None,
-        )
-        return {"status": "blueprint_ready", "blueprint": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, req.created_by)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="agent_blueprint", resource_id=(result or {}).get("id") if isinstance(result, dict) else None,
+    )
+    return {"status": "blueprint_ready", "blueprint": result}
 
 
 @router.get("/agents/blueprints")

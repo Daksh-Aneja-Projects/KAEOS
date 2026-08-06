@@ -175,7 +175,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
 
       {/* Live DORA posture */}
       {dashboard && (
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {stats.map(({ label, value, icon: Icon, color }) => (
             <div key={label} style={card} className="p-3.5">
               <div className="flex items-center justify-between mb-1">

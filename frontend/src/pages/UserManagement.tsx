@@ -33,6 +33,7 @@ export default function UserManagement() {
   const [editingDept, setEditingDept] = useState<string | null>(null);
   // "Scope applies from next login" hint shown after a department change.
   const [deptNotice, setDeptNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Create form
   const [newEmail, setNewEmail] = useState('');
@@ -100,12 +101,20 @@ export default function UserManagement() {
       await api.authUpdateRole(userId, role);
       setEditingRole(null);
       fetchUsers();
-    } catch (err) { console.error('[UserManagement] role update failed:', err); }
+    } catch (err: any) {
+      setEditingRole(null);
+      showActionError(err?.message || 'Role update failed. Please retry.');
+    }
   };
 
   const showDeptNotice = (note?: string) => {
     setDeptNotice(note || "Scope applies from the user's next login.");
     window.setTimeout(() => setDeptNotice(null), 8000);
+  };
+
+  const showActionError = (msg: string) => {
+    setActionError(msg);
+    window.setTimeout(() => setActionError(null), 8000);
   };
 
   const handleDepartmentChange = async (userId: string, department: string | null) => {
@@ -114,9 +123,9 @@ export default function UserManagement() {
       setEditingDept(null);
       showDeptNotice(res?.note);
       fetchUsers();
-    } catch (err) {
-      console.error('[UserManagement] department update failed:', err);
+    } catch (err: any) {
       setEditingDept(null);
+      showActionError(err?.message || 'Department update failed. Please retry.');
     }
   };
 
@@ -277,6 +286,13 @@ export default function UserManagement() {
           style={{ background: colors.primary + '12', color: colors.primary, border: `1px solid ${colors.primary}30` }}>
           <Info className="w-3.5 h-3.5 shrink-0" />
           <span>{deptNotice}</span>
+        </div>
+      )}
+      {actionError && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px]"
+          style={{ background: '#ef444412', color: '#ef4444', border: '1px solid #ef444430' }}>
+          <XCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{actionError}</span>
         </div>
       )}
 

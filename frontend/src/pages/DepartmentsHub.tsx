@@ -164,7 +164,7 @@ export default function DepartmentsHub() {
                   <p className="text-[12px] mt-3 line-clamp-2" style={{ color: colors.inkSubtle }}>
                     {d.description || `AI-powered ${d.name} department.`}
                   </p>
-                  <div className="grid grid-cols-4 gap-2 mt-4 pt-3 border-t" style={{ borderColor: colors.hairline }}>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4 pt-3 border-t" style={{ borderColor: colors.hairline }}>
                     {[
                       { icon: Users, label: 'Staff', value: d.employee_count ?? 0 },
                       { icon: Bot, label: 'Agents', value: d.agent_count ?? 0 },

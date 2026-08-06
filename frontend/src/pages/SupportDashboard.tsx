@@ -120,7 +120,7 @@ export default function SupportDashboard() {
         </div>
 
         {/* Operational Indicators */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total Tickets', value: supStats?.total_tickets ?? 0, icon: MessageSquare, color: '#ec4899' },
             { label: 'Open Incidents', value: supStats?.open_tickets ?? 0, icon: LifeBuoy, color: '#ef4444' },
@@ -140,7 +140,7 @@ export default function SupportDashboard() {
         </div>
 
         {/* Sub-modules navigation */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex items-center gap-3 p-4 rounded-xl text-left transition-all hover:shadow-sm group border"
@@ -157,7 +157,7 @@ export default function SupportDashboard() {
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
             {(dept?.capabilities || []).length > 0 && (

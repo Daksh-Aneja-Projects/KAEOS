@@ -253,7 +253,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {/* ═══ ACCOUNTS PAYABLE ═══ */}
             {tab === 'ap' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
                     { label: 'Vendors', value: vendors.length, icon: Landmark, color: '#3b82f6' },
                     { label: 'Open Invoices', value: invoices.filter(i => !['PAID','CANCELLED'].includes(i.status)).length, icon: Receipt, color: '#ec4899' },
@@ -328,7 +328,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {/* ═══ ACCOUNTS RECEIVABLE ═══ */}
             {tab === 'ar' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
                     { label: 'Customers', value: customers.length, icon: Landmark, color: '#3b82f6' },
                     { label: 'Open Receivables', value: receivables.filter(r => !['PAID','CANCELLED'].includes(r.status)).length, icon: Receipt, color: '#ec4899' },
@@ -404,7 +404,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                         </div>
                         <Badge status={b.status} />
                       </div>
-                      <div className="grid grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                           <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Planned</p>
                           <p className="text-[16px] font-bold font-mono">{fmt(b.planned)}</p>
@@ -467,7 +467,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {/* ═══ EXPENSE REPORTS ═══ */}
             {tab === 'expenses' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[
                     { label: 'Total Reports', value: expenseReports.length, color: '#22c55e' },
                     { label: 'Pending Approval', value: expenseReports.filter(r => r.status === 'PENDING_APPROVAL').length, color: '#f59e0b' },
@@ -569,7 +569,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {/* ═══ AUDIT & SOX ═══ */}
             {tab === 'audit' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[
                     { label: 'Open Findings', value: auditFindings.filter(f => ['OPEN','IN_PROGRESS'].includes(f.status)).length, color: '#ef4444' },
                     { label: 'SOX Controls', value: soxControls.length, color: '#8b5cf6' },

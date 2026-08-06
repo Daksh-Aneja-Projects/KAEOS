@@ -83,7 +83,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {[
             // Deltas were hardcoded ("+12%", "+8.2%", "+15%") and presented as real
             // trends. There is no period-over-period series behind them, so they are
@@ -138,7 +138,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
         </div>
 
         {/* Operational Metrics */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div style={card}>
             <h3 className="text-[13px] font-semibold mb-3 flex items-center gap-2">
               <Users className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Agent Fleet
@@ -222,7 +222,7 @@ export default function WorkforceAnalytics({ domain }: { domain?: string }) {
                     </div>
                   </div>
                   {/* Task / hours / cost bars - all real per-department fields */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div>
                       <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: colors.inkSubtle }}>
                         <span>Tasks Completed</span>

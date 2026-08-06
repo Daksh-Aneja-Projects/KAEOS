@@ -234,7 +234,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
     return (
       <div className="space-y-4">
         {/* KPI Row */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard label="Total Headcount" value={employees.length} icon={Users} />
           <MetricCard label="Active" value={employees.filter(e => (e.status || '').toUpperCase() === 'ACTIVE').length} icon={CheckCircle2} accent={colors.success} />
           <MetricCard label="Onboarding" value={employees.filter(e => (e.status || '').toUpperCase() === 'ONBOARDING').length} icon={UserPlus} accent={colors.info} />
@@ -334,7 +334,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
     return (
       <div className="space-y-4">
         {/* KPI Row */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard label="Open Requisitions" value={requisitions.filter(r => r.status === 'OPEN').length} icon={Briefcase} />
           <MetricCard label="Active Candidates" value={candidates.filter(c => !['HIRED', 'REJECTED', 'WITHDRAWN'].includes(c.stage)).length} icon={UserPlus} accent={colors.info} />
           <MetricCard label="Avg AI Score" value={candidates.length > 0 ? Math.round(candidates.reduce((a, c) => a + (c.ai_score || 0), 0) / Math.max(candidates.length, 1)) : '-'} icon={Star} accent={colors.warning} />
@@ -484,7 +484,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   // ── TIME & ATTENDANCE TAB ──
   const renderTimeTab = () => (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard label="Total Requests" value={timeOff.length} icon={Calendar} />
         <MetricCard label="Pending" value={timeOff.filter(t => t.status === 'REQUESTED').length} icon={Clock} accent={colors.warning} />
         <MetricCard label="Approved" value={timeOff.filter(t => t.status === 'APPROVED').length} icon={CheckCircle2} accent={colors.success} />
@@ -555,7 +555,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard label="Total Reviews" value={reviews.length} icon={Star} />
           <MetricCard label="Completed" value={reviews.filter(r => r.status === 'COMPLETED').length} icon={CheckCircle2} accent={colors.success} />
           <MetricCard label="In Progress" value={reviews.filter(r => ['DRAFT', 'PENDING_EMPLOYEE', 'PENDING_MANAGER'].includes(r.status)).length} icon={Clock} accent={colors.warning} />

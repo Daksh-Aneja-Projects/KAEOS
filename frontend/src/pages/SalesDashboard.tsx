@@ -119,7 +119,7 @@ export default function SalesDashboard() {
         </div>
 
         {/* Operational Indicators */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Active Pipeline', value: salesStats ? `$${(salesStats.pipeline_total / 1000).toFixed(0)}k` : '-', icon: TrendingUp, color: '#3b82f6' },
             { label: 'Deals Won YTD', value: salesStats ? `$${(salesStats.total_won / 1000).toFixed(0)}k` : '-', icon: Award, color: '#22c55e' },
@@ -139,7 +139,7 @@ export default function SalesDashboard() {
         </div>
 
         {/* Sub-modules navigation */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex items-center gap-3 p-4 rounded-xl text-left transition-all hover:shadow-sm group border"
@@ -156,7 +156,7 @@ export default function SalesDashboard() {
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
             {(dept?.capabilities || []).length > 0 && (

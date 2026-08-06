@@ -191,7 +191,7 @@ export function buildWhatIfImpact(data: any, change: string, domain: string, twi
 // ─── Read-out panels ───
 export function StatsStrip({ tiles, colors, card }: { tiles: any[]; colors: any; card: any }) {
   return (
-    <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 lg:grid-cols-6 gap-3">
       {tiles.map(t => (
         <div key={t.label} className="rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3" style={card}>
           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: t.color + '18' }}>

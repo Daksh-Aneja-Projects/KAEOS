@@ -310,7 +310,7 @@ export default function ElicitationHub() {
                         <div className="text-[12px]" style={{ color: colors.inkSubtle }}>{c.role} · {c.department}</div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-[12px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-[12px]">
                       <div><span className="block" style={{ color: colors.inkSubtle }}>Score</span><span className="font-bold" style={{ color: colors.success }}>{c.reputation_score.toFixed(2)}</span></div>
                       <div><span className="block" style={{ color: colors.inkSubtle }}>Contribs</span><span className="font-bold" style={{ color: colors.ink }}>{c.total_contributions}</span></div>
                       <div><span className="block" style={{ color: colors.inkSubtle }}>Rate</span><span className="font-bold" style={{ color: colors.ink }}>{Math.round(c.response_rate * 100)}%</span></div>

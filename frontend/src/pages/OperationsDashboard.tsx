@@ -121,7 +121,7 @@ export default function OperationsDashboard() {
         </div>
 
         {/* Operational Indicators */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Active Projects', value: opsStats?.active_projects ?? 0, icon: CheckSquare, color: '#10b981' },
             { label: 'Warning tasks', value: opsStats?.blocked_tasks ?? 0, icon: ShieldAlert, color: '#ef4444' },
@@ -141,7 +141,7 @@ export default function OperationsDashboard() {
         </div>
 
         {/* Sub-modules navigation */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex flex-col items-center p-4 rounded-xl text-center transition-all hover:shadow-sm group border"
@@ -155,7 +155,7 @@ export default function OperationsDashboard() {
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
             {(dept?.capabilities || []).length > 0 && (

@@ -173,7 +173,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: 'Employees', value: (dept?.employee_count || hrStats?.total_employees || 0).toLocaleString(), icon: Users, color: colors.primary },
             { label: 'Agents', value: dept?.agent_count || 0, icon: Bot, color: '#8b5cf6' },
@@ -195,7 +195,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
         </div>
 
         {/* Quick Navigation */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex items-center gap-3 p-4 rounded-xl text-left transition-all hover:shadow-md group"
@@ -216,7 +216,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
         {(dept?.capabilities || []).length > 0 && (
           <div style={card}>
             <h3 className="text-[15px] font-semibold mb-4">HR Capabilities</h3>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {dept.capabilities.map((cap: any) => (
                 <div key={cap.id} className="p-4 rounded-xl" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="flex items-center justify-between mb-2">

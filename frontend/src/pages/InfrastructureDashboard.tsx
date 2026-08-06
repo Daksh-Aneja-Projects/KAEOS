@@ -180,7 +180,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
             </div>
 
             {/* Tier Overview */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {['FAST', 'STANDARD', 'DEEP', 'VERTICAL'].map(tier => {
                 const count = models.filter(m => m.tier === tier).length;
                 const labels: Record<string, string> = { FAST: '<$0.004/task', STANDARD: '<$0.02/task', DEEP: '<$0.04/task', VERTICAL: '<$0.01/task' };
@@ -325,7 +325,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                 Token budgets, real-time telemetry, and cost attribution per model/agent/workflow
               </p>
             </div>
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               {[
                 { label: 'Total Tokens (24h)', value: costData?.total_tokens != null ? costData.total_tokens.toLocaleString() : '-', color: colors.primary },
                 { label: 'LLM Calls (24h)', value: costData?.total_events != null ? costData.total_events.toLocaleString() : '-', color: '#3b82f6' },

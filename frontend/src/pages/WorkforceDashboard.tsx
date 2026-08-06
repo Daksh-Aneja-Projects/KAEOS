@@ -157,7 +157,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                 One number dominates: the share of real work that completed
                 with no human gate. Five equal tiles emphasised nothing, and
                 two of them (hours saved, automation) were fabricated. */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="p-5 rounded-xl relative overflow-hidden" style={{
                 background: colors.surface1,
                 border: `1px solid ${autonomyRate === null ? colors.hairline : autonomyColor + '55'}`,
@@ -357,7 +357,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
             {/* Departments Grid */}
             <div>
               <h2 className="text-[16px] font-semibold mb-3">Active Departments</h2>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {departments.map(dept => (
                   <div key={dept.id} onClick={() => navigate(`/departments/${dept.slug || dept.id}`)}
                     className="cursor-pointer transition-all hover:shadow-lg group" style={card}>
@@ -384,7 +384,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     <p className="text-[11px] mb-3 line-clamp-2" style={{ color: colors.inkSubtle }}>
                       {dept.description || `Digital ${dept.name} department serving ${dept.employee_count || 0} employees`}
                     </p>
-                    <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center">
                       {[
                         // Short labels: 'Capabilities'/'Processes' collided in
                         // a 4-column card grid and rendered as one word.

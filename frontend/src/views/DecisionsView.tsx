@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna } from 'lucide-react';
+import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu } from 'lucide-react';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
 const ExecutiveCockpit = lazy(() => import('../pages/ExecutiveCockpit'));
@@ -12,8 +12,8 @@ const ActionsLedger = lazy(() => import('../pages/ActionsLedger'));
 const RedTeamDashboard = lazy(() => import('../pages/RedTeamDashboard'));
 const TrustGovernance = lazy(() => import('./TrustGovernance'));
 // The genome + fitness studios read /genome/state and /evolution/state. They
-// lost their mount in an earlier refactor; they belong next to the evolution
-// timeline, which is the other view of how the org changes over time.
+// sit next to the evolution timeline, the other view of how the org changes
+// over time.
 const GenomeStudio = lazy(() => import('../components/GenomeStudio'));
 const EvolutionStudio = lazy(() => import('../components/EvolutionStudio'));
 
@@ -26,6 +26,8 @@ export default function DecisionsView({ domain }: { domain: string }) {
     { id: 'live', label: 'Execution Monitor', icon: Activity },
     { id: 'hitl', label: 'HITL Queue', icon: Users },
     { id: 'performance', label: 'Feedback & Evolution', icon: TrendingUp },
+    { id: 'genome', label: 'Enterprise Genome', icon: Dna },
+    { id: 'fitness', label: 'Evolution Studio', icon: Cpu },
     { id: 'compliance', label: 'Compliance', icon: Shield },
     { id: 'provenance', label: 'Provenance Ledger', icon: FileText },
     { id: 'actions', label: 'Actions Ledger', icon: Zap },
@@ -66,6 +68,8 @@ export default function DecisionsView({ domain }: { domain: string }) {
           {activeTab === 'live' && <CommandCenter domain={domain} />}
           {activeTab === 'hitl' && <HITLQueue domain={domain} />}
           {activeTab === 'performance' && <EvolutionTimeline domain={domain} />}
+          {activeTab === 'genome' && <GenomeStudio />}
+          {activeTab === 'fitness' && <EvolutionStudio />}
           {activeTab === 'compliance' && <ComplianceDashboard />}
           {activeTab === 'provenance' && <ProvenanceLedger />}
           {activeTab === 'actions' && <ActionsLedger />}

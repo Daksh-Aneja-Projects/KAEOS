@@ -78,7 +78,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
             const gaps = coverage.filter(f => f.coverage !== 'COVERED').length;
             return (
               <>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {[
                     { label: 'Compliance Score', val: score !== null ? `${score}%` : '-', accent: colors.success },
                     { label: 'Rules Audited', val: rulesAudited || compliance.total_audit_events || '-', accent: colors.info },

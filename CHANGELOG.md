@@ -12,6 +12,20 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Fixed
+- **Internal error strings no longer reach API clients.** Four routes
+  (`agent_factory`, `federated`, `polymorphic`, `advanced`) caught every
+  exception and returned its text in a 500 body, leaking file paths and stack
+  context. They now let the failure reach the new catch-all, which logs the
+  full traceback server-side and returns only a request id.
+- **Department dashboards no longer overflow on a phone.** Every stat and KPI
+  grid used a fixed `grid-cols-3/4/5/6` with no breakpoint, so the columns ran
+  off-screen below tablet width. All 64 across the pages and views now stack
+  down a responsive ladder (1 or 2 up on mobile, full width on desktop).
+  Verified at 375px with no horizontal scroll on the Finance dashboard.
+- **A failed role, department or knowledge change now says so.** Bring-Your-Own-
+  Knowledge ingestion and the User Management role/department mutations caught
+  their errors into `console.error` and showed the user nothing, so a failure
+  read as a silent no-op. Each now surfaces a visible error notice.
 - **Background runs no longer bleed into a human's gate trace.** Gate events are
   broadcast tenant-wide, so the scheduler, precog and the autonomy governor could
   interleave their gates into a trace someone was reading as the verdict on the
@@ -35,6 +49,19 @@ All notable changes to KAEOS are documented here. This project adheres to
   that does not resolve, or if an IMPLEMENTED control cites nothing at all.
 
 ### Added
+- **A single catch-all for uncaught exceptions.** The API had no handler beyond
+  FastAPI's default, so an unhandled error returned an inconsistent bare 500.
+  One handler now logs the full traceback and returns a stable envelope
+  (`{"error": {"code, message, request_id}}`) carrying the request id, so
+  support can correlate a user's 500 with the server log without the user
+  seeing internals. Deliberate `HTTPException`s and validation errors keep their
+  existing contract, which the frontend and e2e suite depend on.
+- **The Enterprise Genome and Evolution Studio views are reachable again.** Both
+  read live backend state (`/genome/state`, `/evolution/state`) but had lost
+  their mount in an earlier refactor and rendered nowhere. They now sit as tabs
+  in the Decisions view beside the evolution timeline. Verified live: genome
+  traits and a six-snapshot fitness timeline; current-vs-simulated fitness with
+  an eight-dimension matrix.
 - **The autonomy governor now records every dial it moves, and the dial says who
   moved it.** The governor adjusts each domain's confidence threshold from the
   measured safe-autonomy-rate every six hours, but recorded nothing: a human
@@ -79,6 +106,21 @@ All notable changes to KAEOS are documented here. This project adheres to
   directly and avoids `npm sbom`'s `npm ls` strictness on optional platform deps).
 
 ### Changed
+- **The `/10x` API is now `/advanced`.** The advanced-capabilities router
+  (regulatory auto-patch, provenance ledger, federated and polymorphic activity,
+  pre-cognition, enterprise-physics simulation) was mounted under `/10x` with a
+  tag reading "KAEOS 10X", marketing branding in a governance product's API. It
+  is now `/advanced` with a plain "Advanced Capabilities" tag. `/10x` stays
+  mounted as a deprecated alias so existing integrations and the e2e suite keep
+  working; the route module was renamed `kaeos10x.py` to `advanced.py`.
+- **The regulatory auto-patch ledger actor is now named for what it is.** The
+  provenance ledger recorded the actor of an auto-generated compliance patch as
+  `SYSTEM_L24`, an internal level number, persisted into the audit record. It is
+  now `regulatory-autopatch`.
+- **The Skill Templates tab id matches its label.** In the Agents view the tab
+  labelled "Skill Templates" carried the internal id `marketplace`, a copy-paste
+  artifact that read as a duplicate of the domain-pack marketplace. It is now
+  `skill-templates`.
 - **Every broad exception handler is now observable.** Audited all 308 `except
   Exception` blocks; the 30 that swallowed to a silent default now either narrow
   to the concrete exception, log via `logger.exception/warning`, or carry a

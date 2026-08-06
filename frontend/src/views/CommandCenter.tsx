@@ -94,7 +94,7 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
       )}
 
       {/* Metric Cards Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Overall KB Score', value: health?.overall_score ?? '-', suffix: '/ 100', trend: health?.score_trend, icon: TrendingUp, accent: colors.primary },
           { label: 'Total Rules', value: health?.total_rules ?? '-', icon: ShieldCheck, accent: colors.info },
@@ -120,7 +120,7 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
       </div>
 
       {/* Two Column: Activity Feed + Agent Performance */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Activity Feed - 2 cols */}
         <div className="col-span-2 rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
           <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: colors.hairline }}>

@@ -1,4 +1,12 @@
-"""KAEOS 10X — Regulatory & Quantum APIs"""
+"""Advanced capabilities: regulatory auto-patch, provenance ledger, federated
+and polymorphic activity, pre-cognition and enterprise-physics simulation.
+
+Mounted at ``/advanced`` (canonical) and ``/10x`` (deprecated alias kept for
+backward compatibility; see app/main.py). The prefix is set at mount time, not
+here, so the same router can serve both paths.
+"""
+import logging
+
 from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +16,9 @@ from app.core.database import get_db
 from app.services.regulatory_engine import RegulatoryEngine, RegulatoryUpdate
 from app.services.quantum_ledger import QuantumLedgerEngine
 
-router = APIRouter(prefix="/10x", tags=["KAEOS 10X — Advanced Capabilities"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["Advanced Capabilities"])
 
 class RegulationPayload(BaseModel):
     framework_name: str
@@ -30,20 +40,19 @@ async def ingest_regulation(payload: RegulationPayload, tenant: dict = Depends(r
         # Write the synthesized rules under the caller's tenant, not a global "default".
         result = await RegulatoryEngine.ingest_new_regulation(db, update, tenant_id=tenant_id)
         
-        # Also log this massive event in the Quantum Ledger
+        # Record the auto-patch in the hash-chained provenance ledger.
         await QuantumLedgerEngine.record_quantum_event(
             db=db,
             event_type="REGULATORY_AUTO_PATCH",
-            actor="SYSTEM_L24",
-            reasoning=f"Autonomously ingested and complied with {update.framework_name}",
+            actor="regulatory-autopatch",
+            reasoning=f"Ingested and synthesized controls for {update.framework_name}",
             payload=result
         )
-        
+
         return result
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Regulation ingestion failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Regulation ingestion failed")
+        raise HTTPException(status_code=500, detail="Regulation ingestion failed")
 
 from sqlalchemy import select
 from app.models.domain import ProvenanceLedger, Rule, Skill

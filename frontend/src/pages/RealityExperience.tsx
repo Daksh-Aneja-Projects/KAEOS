@@ -558,7 +558,7 @@ export default function RealityExperience() {
 
                     <div>
                       <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: colors.inkSubtle }}>Blast radius</div>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {[
                           { label: 'Rules affected', value: br.affected_rules ?? 0 },
                           { label: 'Skills affected', value: br.affected_skills ?? 0 },

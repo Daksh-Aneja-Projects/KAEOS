@@ -37,7 +37,7 @@ from app.api.routes import (
     rules, skills, dashboard, elicitation,
     extraction, provenance, redteam, benchmark, topology,
     connectors, conflicts, marketplace, security, pipeline,
-    predictive, polymorphic, federated, kaeos10x,
+    predictive, polymorphic, federated, advanced,
     platform_config, enterprise, agent_factory, pioneer,
     infrastructure, auth, brain, departments, hitl, ws, executive, chat,
     privacy, compliance, neural,
@@ -256,6 +256,12 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
+# Catch-all so an uncaught exception returns a stable, non-leaky envelope with
+# the request id instead of a bare 500 that can echo internal detail. Purposeful
+# HTTPExceptions and validation errors keep FastAPI's existing contract.
+from app.core.errors import install_error_handlers
+install_error_handlers(app)
+
 # Instrument Prometheus Metrics (optional). /metrics leaks per-endpoint traffic
 # and is scraped over an internal network, not the public internet — only expose
 # it when EXPOSE_METRICS is explicitly set. Instrumentation (the counters) still
@@ -334,7 +340,11 @@ app.include_router(pipeline.router,        prefix=PREFIX)
 app.include_router(predictive.router,      prefix=PREFIX)
 app.include_router(polymorphic.router,     prefix=PREFIX)
 app.include_router(federated.router,       prefix=PREFIX)
-app.include_router(kaeos10x.router,    prefix=PREFIX)
+# Advanced capabilities. Canonical path is /advanced; /10x is a deprecated alias
+# kept so existing integrations and the e2e suite keep working. Same router, two
+# mounts. Remove the /10x line once no client depends on it.
+app.include_router(advanced.router, prefix=f"{PREFIX}/advanced")
+app.include_router(advanced.router, prefix=f"{PREFIX}/10x")
 app.include_router(platform_config.router, prefix=PREFIX)
 app.include_router(privacy.router,         prefix=PREFIX)
 app.include_router(compliance.router,      prefix=PREFIX)

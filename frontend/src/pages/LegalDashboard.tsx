@@ -121,7 +121,7 @@ export default function LegalDashboard() {
         </div>
 
         {/* Operational Indicators */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total Matters', value: legStats?.total_matters ?? 0, icon: Scale, color: '#6366f1' },
             { label: 'Active Contracts', value: legStats?.active_contracts ?? 0, icon: FileText, color: '#10b981' },
@@ -141,7 +141,7 @@ export default function LegalDashboard() {
         </div>
 
         {/* Sub-modules navigation */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {quickLinks.map(link => (
             <button key={link.label} onClick={() => navigate(link.path)}
               className="flex flex-col items-center p-4 rounded-xl text-center transition-all hover:shadow-sm group border"
@@ -155,7 +155,7 @@ export default function LegalDashboard() {
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="col-span-2 space-y-6">
             {/* Capabilities */}
             {(dept?.capabilities || []).length > 0 && (

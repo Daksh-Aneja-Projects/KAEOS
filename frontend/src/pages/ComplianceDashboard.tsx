@@ -290,7 +290,7 @@ const ComplianceDashboard = () => {
        <span className="text-[11px]" style={{ color: colors.inkSubtle }}>implemented technical controls mapped to SOC 2 / ISO 27001 / GDPR / SOX. Evidence for a third-party audit, not a certificate.</span>
       </div>
       <div className="p-5 space-y-4">
-       <div className="grid grid-cols-3 gap-3">
+       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {([['implemented', 'Implemented', colors.success], ['operational', 'Operational', colors.warning], ['external', 'External', colors.inkSubtle]] as const).map(([k, label, c]) => (
          <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
           <div className="text-[22px] font-bold tabular-nums" style={{ color: c }}>{controls.summary?.[k] ?? 0}</div>

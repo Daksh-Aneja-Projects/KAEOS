@@ -22,7 +22,7 @@ export default function AgentsView({ domain }: { domain: string }) {
     { id: 'ooda', label: 'OODA Monitor', icon: Activity },
     { id: 'infrastructure', label: 'Infrastructure', icon: CircuitBoard },
     { id: 'mcp', label: 'MCP Tools', icon: Wrench },
-    { id: 'marketplace', label: 'Skill Templates', icon: ShoppingBag },
+    { id: 'skill-templates', label: 'Skill Templates', icon: ShoppingBag },
     { id: 'conflict', label: 'Conflict Arena', icon: Swords }
   ];
 
@@ -55,7 +55,7 @@ export default function AgentsView({ domain }: { domain: string }) {
           {activeTab === 'ooda' && <OODAMonitor domain={domain} />}
           {activeTab === 'infrastructure' && <InfrastructureDashboard domain={domain} />}
           {activeTab === 'mcp' && <MCPToolManager />}
-          {activeTab === 'marketplace' && <SkillTemplates />}
+          {activeTab === 'skill-templates' && <SkillTemplates />}
           {activeTab === 'conflict' && <ConflictArena />}
         </Suspense>
       </div>

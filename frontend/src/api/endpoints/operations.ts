@@ -216,20 +216,20 @@ export const operationsApi = {
     request<{ report: Record<string, any>; org_snapshot: { total_rules: number; total_skills: number; avg_confidence: number } }>(
       '/benchmark/intelligence-report'),
 
-  // ─── 10X engines (kaeos10x.py) ───
+  // ─── Advanced capabilities (advanced.py) ───
   ingestRegulation: (body: { framework_name: string; directive_text: string; urgency: string }) =>
     request<{ status: string; framework?: string; new_rules_synthesized?: number; rule_statements?: string[]; error?: string }>(
-      '/10x/ingest-regulation', { method: 'POST', body: JSON.stringify(body) }),
-  getQuantumEvents: () => request<any[]>('/10x/quantum-events'),
-  getRegulatoryRules: () => request<any[]>('/10x/regulatory-rules'),
-  getFederatedExports: () => request<any[]>('/10x/federated-exports'),
-  getPolymorphicEvents: () => request<any[]>('/10x/polymorphic-events'),
+      '/advanced/ingest-regulation', { method: 'POST', body: JSON.stringify(body) }),
+  getQuantumEvents: () => request<any[]>('/advanced/quantum-events'),
+  getRegulatoryRules: () => request<any[]>('/advanced/regulatory-rules'),
+  getFederatedExports: () => request<any[]>('/advanced/federated-exports'),
+  getPolymorphicEvents: () => request<any[]>('/advanced/polymorphic-events'),
   forcePrecogCycle: () =>
     request<{ status: 'IDLE' | 'PROCESSED'; message?: string; signal?: string }>(
-      '/10x/precog/force-cycle', { method: 'POST' }),
+      '/advanced/precog/force-cycle', { method: 'POST' }),
   simulatePhysicsShock: (shockType: string) =>
     request<{ status: string; shock_type: string; nodes_affected: number; ripple_effect: any[] }>(
-      '/10x/physics/simulate', { method: 'POST', body: JSON.stringify({ shock_type: shockType }) }),
+      '/advanced/physics/simulate', { method: 'POST', body: JSON.stringify({ shock_type: shockType }) }),
 
   // ─── Data pipeline (pipeline.py) ───
   getPipelineConnectors: () => request<{ connectors: { slug: string; name: string; category: string; auth_type: string; status: string }[] }>(

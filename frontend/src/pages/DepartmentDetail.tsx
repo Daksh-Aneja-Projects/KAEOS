@@ -95,7 +95,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
         </div>
 
         {/* KPI Row */}
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: 'Employees Served', value: (dept.employee_count || 0).toLocaleString(), color: colors.primary },
             { label: 'Agents Active', value: dept.agent_count || 0, color: '#8b5cf6' },
@@ -145,7 +145,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
 
         {/* Capabilities Tab */}
         {activeTab === 'capabilities' && (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {(dept.capabilities || []).length === 0 ? (
               <div className="col-span-3"><BrainEmpty title="No capabilities defined yet" action="Deploy from a domain pack to activate capabilities" /></div>
             ) : (dept.capabilities || []).map((cap: any) => (
@@ -160,7 +160,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                   </span>
                 </div>
                 <p className="text-[11px] mb-3 line-clamp-2" style={{ color: colors.inkSubtle }}>{cap.description}</p>
-                <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-center">
                   <div>
                     <div className="text-[14px] font-bold">{Math.round((cap.automation_pct || 0) * 100)}%</div>
                     <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Automated</div>
