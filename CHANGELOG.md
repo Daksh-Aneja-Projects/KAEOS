@@ -11,6 +11,58 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Security
+Eight trust-boundary defects, each a request-supplied value reaching a
+filesystem path, an outbound host, an LLM prompt or a governance ledger without
+being constrained first. New `tests/test_trust_boundary.py` pins all of them.
+
+- **A pipeline run could read any file the process could, and post it off-box.**
+  `POST /pipeline/run` passes `connector_config` straight to the CSV connector,
+  which called `open()` on the caller's `file_path` with no confinement, while
+  the pipeline's webhook destination will POST whatever is extracted to a
+  caller-supplied URL. One operator-role request could therefore ship `.env`
+  (signing key, admin secret, database URL) to an arbitrary endpoint. The
+  connector now resolves `file_path` under a fixed input directory, rejecting
+  absolute paths and `..` escapes, exactly as `LocalFileDestination` already did
+  on the write side.
+- **Governance ledgers recorded a client-supplied actor.** `approver_identity()`
+  exists and states the rule outright: the recorded approver must come from the
+  authenticated principal, never a request field. Four paths ignored it, the
+  worst being the fairness override, where the record of *who cleared a bias
+  block* was whatever string the caller typed. Blueprint creation, blueprint
+  approval, the fairness override and schema-mapping confirmation now all derive
+  the actor from the authenticated principal, and the fields are gone from the
+  schemas so they cannot be reintroduced.
+- **Three audit reads and one report crossed the tenant boundary.**
+  `GET /rules/{id}/provenance`, `/rules/{id}/history` and
+  `/rules/{id}/versions` filtered on the rule id alone, returning another
+  tenant's reasoning, confidence deltas and chain hashes; `GET
+  /reports/compliance` counted rules and audit rows install-wide, so one
+  customer's SOX/GDPR/HIPAA posture was computed from everyone's data. All four
+  are now scoped in the query rather than relying on Postgres RLS, which does
+  not protect the SQLite path. `confidence_history` has no tenant column, so it
+  is scoped through its parent rule.
+- **One tenant could confirm another's schema mapping.** `confirm_mapping`
+  selected on the mapping id with no tenant filter while its sibling
+  `get_mappings` scoped correctly. Since ingestion trusts a confirmed mapping's
+  `target_entity`/`target_field` to route records, this could redirect another
+  tenant's incoming data. Now tenant-scoped.
+- **The copilot's prompt-injection guard could be skipped by relabelling a
+  turn.** The client submits the whole transcript and `neutralize()` ran only
+  when `role == "user"`, but `role` was an unconstrained string, so a turn
+  labelled `system` passed through unneutralised and rendered directly above
+  `ASSISTANT:`. Every turn is now neutralised and `role` is constrained to
+  `user`/`assistant`.
+- **A synthesized tool name could escape its directory.** `missing_integration`
+  became a filename under the dynamic MCP tool directory and was interpolated
+  into the code-generation prompt; it is now constrained to a bare module name.
+- **Three request-supplied URLs reached `httpx` unchecked** (connector config,
+  event-bus webhooks, pipeline webhook destination), making the cloud metadata
+  endpoint reachable, and on the connector sync path the response was returned
+  to the tenant as Signal rows. A single shared guard now rejects non-HTTP
+  schemes and the metadata address everywhere, and private or loopback targets
+  outside `DEV_MODE`, so local development and the test suite still work.
+
 ### Fixed
 - **Internal error strings no longer reach API clients.** Four routes
   (`agent_factory`, `federated`, `polymorphic`, `advanced`) caught every
@@ -106,6 +158,9 @@ All notable changes to KAEOS are documented here. This project adheres to
   directly and avoids `npm sbom`'s `npm ls` strictness on optional platform deps).
 
 ### Changed
+- **The last "KAEOS 10X" branding is gone from the API surface.** The federated,
+  polymorphic and predictive routers still carried `KAEOS 10X` OpenAPI tags and
+  module docstrings; they now read as what they do.
 - **The `/10x` API is now `/advanced`.** The advanced-capabilities router
   (regulatory auto-patch, provenance ledger, federated and polymorphic activity,
   pre-cognition, enterprise-physics simulation) was mounted under `/10x` with a

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin import is_admin, verify_admin_secret
 from app.core.database import MaintenanceSessionLocal, get_db
-from app.core.tenant import get_tenant_id, require_role, require_service_or_role
+from app.core.tenant import get_tenant_id, require_role, require_service_or_role, approver_identity
 
 # Internal service / agent-mesh mutations: require a service token or operator role
 # (viewers can no longer reach them). DEV_MODE bypasses for local/e2e.
@@ -395,9 +395,12 @@ async def get_schema_mappings(
 @router.post("/infrastructure/schema-mappings/{mapping_id}/confirm")
 async def confirm_mapping(mapping_id: str, data: dict, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """N4 — Confirms or corrects a schema mapping. Requires operator role (persists a confirmed mapping; previously had no auth gate, relying on RLS alone)."""
+    # confirmed_by is the authenticated principal, not a body field, and the
+    # lookup is tenant-scoped so one tenant cannot confirm another's mapping.
     return await OnboardingEngineService.confirm_mapping(
         db, mapping_id,
-        confirmed_by=data.get("confirmed_by", "admin"),
+        tenant_id=tenant["tenant_id"],
+        confirmed_by=approver_identity(tenant),
         target_entity=data.get("target_entity"),
         target_field=data.get("target_field")
     )

@@ -3,9 +3,11 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 
+# Who performed an action is never taken from the request body. It is derived
+# from the authenticated principal via `app.core.tenant.approver_identity`,
+# because a ledger entry naming a client-supplied actor is not attributable.
 class BlueprintCreateRequest(BaseModel):
     prompt: str = Field(..., description="Natural language description of the agent")
-    created_by: Optional[str] = None
 
 
 class BlueprintRefineRequest(BaseModel):
@@ -15,7 +17,7 @@ class BlueprintRefineRequest(BaseModel):
 
 
 class BlueprintApproveRequest(BaseModel):
-    approved_by: Optional[str] = None
+    """No approver field: see the note above."""
 
 
 class DeployRequest(BaseModel):
@@ -27,7 +29,6 @@ class MarkReadRequest(BaseModel):
 
 
 class FairnessOverrideRequest(BaseModel):
-    override_by: str
     justification: str
 
 

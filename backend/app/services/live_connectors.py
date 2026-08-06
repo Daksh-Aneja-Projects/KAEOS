@@ -410,6 +410,15 @@ class LiveConnectorService:
         missing = [k for k in REQUIRED_CONFIG[provider] if not config.get(k)]
         if missing:
             return f"Missing required config for {provider}: {', '.join(missing)}"
+        # Any config value that is a URL becomes an outbound request target, and
+        # on the sync path the response comes back to the tenant as Signal rows.
+        # One check here covers every adapter.
+        from app.core.outbound import check_outbound_url
+        for key, value in config.items():
+            if key.endswith("_url") and isinstance(value, str) and value:
+                reason = check_outbound_url(value)
+                if reason:
+                    return f"Invalid {key}: {reason}"
         return None
 
     @staticmethod

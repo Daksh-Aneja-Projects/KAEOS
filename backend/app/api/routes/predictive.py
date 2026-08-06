@@ -1,4 +1,4 @@
-"""KAEOS 10X — Predictive Operations API"""
+"""Predictive operations: latent intent detection and forward-looking ops."""
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.models.domain import Signal, SkillExecution
 from app.services.predictive_ops import PredictiveOpsEngine
 
-router = APIRouter(prefix="/predictive", tags=["KAEOS 10X — Predictive Ops"])
+router = APIRouter(prefix="/predictive", tags=["Predictive Ops"])
 
 @router.post("/analyze-signal/{signal_id}")
 async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):

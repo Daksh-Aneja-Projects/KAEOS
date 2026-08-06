@@ -228,11 +228,18 @@ async def validate_rule(
 
 
 @router.get("/{rule_id}/provenance")
-async def get_provenance(rule_id: str, db: AsyncSession = Depends(get_db)):
-    """Get the full provenance lineage chain for a rule (L11 Ledger)."""
+async def get_provenance(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Get the full provenance lineage chain for a rule (L11 Ledger).
+
+    Tenant-scoped in the query, not left to RLS: this is the governance audit
+    trail, and an endpoint that is only safe on Postgres is still wrong.
+    """
     result = await db.execute(
         select(ProvenanceLedger)
-        .where(ProvenanceLedger.rule_id == rule_id)
+        .where(
+            ProvenanceLedger.rule_id == rule_id,
+            ProvenanceLedger.tenant_id == tenant_id,
+        )
         .order_by(ProvenanceLedger.timestamp.asc())
     )
     entries = result.scalars().all()
@@ -253,8 +260,18 @@ async def get_provenance(rule_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{rule_id}/history")
-async def get_confidence_history(rule_id: str, db: AsyncSession = Depends(get_db)):
-    """Get confidence change history for a rule (L6 audit trail)."""
+async def get_confidence_history(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Get confidence change history for a rule (L6 audit trail).
+
+    `confidence_history` carries no tenant_id of its own, so the scope comes
+    from its parent rule: a rule the caller's tenant does not own yields
+    nothing rather than another tenant's confidence deltas.
+    """
+    owns = await db.execute(
+        select(Rule.id).where(Rule.id == rule_id, Rule.tenant_id == tenant_id)
+    )
+    if owns.scalar_one_or_none() is None:
+        raise HTTPException(404, "Rule not found")
     result = await db.execute(
         select(ConfidenceHistory)
         .where(ConfidenceHistory.rule_id == rule_id)

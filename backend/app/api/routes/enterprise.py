@@ -105,7 +105,13 @@ class WebhookCreate(BaseModel):
 @router.post("/webhooks")
 async def create_webhook(body: WebhookCreate, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     from app.services.event_bus import event_bus, EventType
+    from app.core.outbound import check_outbound_url
     tenant_id = tenant["tenant_id"]
+    # A webhook is a standing outbound subscription, so validate the target
+    # before it is persisted rather than at delivery time.
+    reason = check_outbound_url(body.endpoint)
+    if reason:
+        raise HTTPException(400, f"Invalid endpoint: {reason}")
     events = []
     for e in body.events:
         try:
@@ -383,10 +389,13 @@ async def import_rules(body: BulkRuleImport, tenant: dict = Depends(require_role
 # RULE VERSIONING (Git-like)
 # ═══════════════════════════════════════════
 @router.get("/rules/{rule_id}/versions")
-async def get_rule_versions(rule_id: str, db: AsyncSession = Depends(get_db)):
-    """Get version history of a rule via provenance chain."""
+async def get_rule_versions(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Get version history of a rule via provenance chain (tenant-scoped)."""
     r = await db.execute(
-        select(ProvenanceLedger).where(ProvenanceLedger.rule_id == rule_id)
+        select(ProvenanceLedger).where(
+            ProvenanceLedger.rule_id == rule_id,
+            ProvenanceLedger.tenant_id == tenant_id,
+        )
         .order_by(ProvenanceLedger.timestamp.asc())
     )
     entries = r.scalars().all()
@@ -557,8 +566,12 @@ async def generate_health_report(
     }
 
 @router.get("/reports/compliance")
-async def generate_compliance_report(db: AsyncSession = Depends(get_db)):
-    """Generate compliance posture report."""
+async def generate_compliance_report(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Generate compliance posture report for the caller's tenant.
+
+    Previously counted install-wide, so one customer's SOX/GDPR/HIPAA coverage
+    numbers were computed from every tenant's rules and audit rows.
+    """
     frameworks = ["SOX", "GDPR", "HIPAA", "PCI", "CCPA"]
     coverage = []
     for fw in frameworks:
@@ -566,12 +579,17 @@ async def generate_compliance_report(db: AsyncSession = Depends(get_db)):
         # Postgres has no `json LIKE text` operator (SQLite coerces silently).
         from sqlalchemy import String, cast
         r = await db.execute(
-            select(sqlfunc.count(Rule.id)).where(cast(Rule.compliance_tags, String).contains(fw))
+            select(sqlfunc.count(Rule.id)).where(
+                cast(Rule.compliance_tags, String).contains(fw),
+                Rule.tenant_id == tenant_id,
+            )
         )
         count = r.scalar() or 0
         coverage.append({"framework": fw, "rule_count": count, "coverage": "COVERED" if count > 0 else "GAP"})
 
-    r = await db.execute(select(sqlfunc.count(SecurityAuditLog.id)))
+    r = await db.execute(
+        select(sqlfunc.count(SecurityAuditLog.id)).where(SecurityAuditLog.tenant_id == tenant_id)
+    )
     audit_count = r.scalar() or 0
 
     return {

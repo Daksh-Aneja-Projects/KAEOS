@@ -1,19 +1,22 @@
-"""KAEOS 10X — Polymorphic Operations API"""
+"""Polymorphic operations: synthesize a bridging tool for a missing integration."""
 import hashlib
 
 from app.core.tenant import require_role
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.services.polymorphic_engine import PolymorphicEngine
 
-router = APIRouter(prefix="/polymorphic", tags=["KAEOS 10X — Polymorphic Engine"])
+router = APIRouter(prefix="/polymorphic", tags=["Polymorphic Engine"])
 
 class SynthesisRequest(BaseModel):
     skill_id: str
-    missing_integration: str
+    # Becomes a filename under the dynamic MCP tool directory and is also
+    # interpolated into the code-generation prompt, so it is constrained to a
+    # bare module name: no path separators, no traversal, no prompt steering.
+    missing_integration: str = Field(..., pattern=r"^[a-z0-9_]{1,64}$")
 
 @router.post("/synthesize")
 async def synthesize_tool(request: SynthesisRequest, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):

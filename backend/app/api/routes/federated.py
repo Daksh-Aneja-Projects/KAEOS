@@ -1,4 +1,4 @@
-"""KAEOS 10X — Federated Operations API"""
+"""Federated operations: export skills to the global swarm."""
 from app.core.tenant import require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.services.federated_engine import FederatedEngine
 
-router = APIRouter(prefix="/federated", tags=["KAEOS 10X — Federated Engine"])
+router = APIRouter(prefix="/federated", tags=["Federated Engine"])
 
 @router.post("/export-skill/{skill_id}")
 async def export_skill_to_swarm(skill_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):

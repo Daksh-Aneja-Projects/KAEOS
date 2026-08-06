@@ -26,21 +26,53 @@ class CSVConnector(BaseConnector):
         text_fields: list[str] — fields to concatenate as text_content
     """
 
+    INPUT_BASE = "./data/input"
+
+    def _resolve_input_path(self) -> str:
+        """Confine reads inside INPUT_BASE.
+
+        `file_path` arrives straight from the API request body
+        (`PipelineRunRequest.connector_config`), so an absolute path or a `..`
+        segment would let a caller read any file the process can — and the
+        pipeline's webhook destination would then POST the contents off-box.
+        This mirrors `LocalFileDestination._resolve_output_dir`, which already
+        confines the write side; the read side had no equivalent.
+        """
+        base = os.path.abspath(self.INPUT_BASE)
+        requested = str(self.config.get("file_path") or "")
+        if not requested:
+            return ""
+        if os.path.isabs(requested):
+            raise ValueError("file_path must be a relative path (it is resolved under the pipeline input directory)")
+        candidate = os.path.abspath(os.path.join(base, requested))
+        if candidate != base and not candidate.startswith(base + os.sep):
+            raise ValueError("file_path may not escape the pipeline input directory")
+        return candidate
+
     async def authenticate(self) -> bool:
-        file_path = self.config.get("file_path", "")
+        try:
+            file_path = self._resolve_input_path()
+        except ValueError as e:
+            logger.warning("[CSVConnector] rejected file_path: %s", e)
+            return False
         if not file_path:
             return False
         return os.path.exists(file_path)
 
     async def health_check(self) -> dict:
-        file_path = self.config.get("file_path", "")
-        if os.path.exists(file_path):
+        try:
+            file_path = self._resolve_input_path()
+        except ValueError as e:
+            return {"status": "unhealthy", "message": str(e)}
+        if file_path and os.path.exists(file_path):
             size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
             return {"status": "healthy", "message": f"File accessible, size: {size} bytes"}
-        return {"status": "unhealthy", "message": f"File not found: {file_path}"}
+        # Echo the requested value, not the resolved absolute path, so the
+        # message never discloses where the input directory lives on disk.
+        return {"status": "unhealthy", "message": f"File not found: {self.config.get('file_path', '')}"}
 
     async def fetch_schema(self) -> SourceSchema:
-        file_path = self.config.get("file_path", "")
+        file_path = self._resolve_input_path()
         delimiter = self.config.get("delimiter", ",")
         encoding = self.config.get("encoding", "utf-8")
 
@@ -56,7 +88,7 @@ class CSVConnector(BaseConnector):
         return SourceSchema(tables=tables)
 
     async def fetch_delta(self, cursor: Optional[SyncCursor] = None) -> RecordBatch:
-        file_path = self.config.get("file_path", "")
+        file_path = self._resolve_input_path()
         delimiter = self.config.get("delimiter", ",")
         encoding = self.config.get("encoding", "utf-8")
         batch_size = self.config.get("batch_size", 1000)

@@ -283,13 +283,22 @@ class OnboardingEngineService:
     async def confirm_mapping(
         db: AsyncSession,
         mapping_id: str,
+        tenant_id: str,
         confirmed_by: str,
         target_entity: str = None,
         target_field: str = None
     ) -> dict:
-        """Admin confirms or corrects a schema mapping."""
+        """Admin confirms or corrects a schema mapping.
+
+        Scoped to the caller's tenant: the ingestion layer trusts
+        target_entity/target_field to route incoming records, so confirming
+        another tenant's mapping would redirect their data.
+        """
         result = await db.execute(
-            select(SchemaMapping).where(SchemaMapping.id == mapping_id)
+            select(SchemaMapping).where(
+                SchemaMapping.id == mapping_id,
+                SchemaMapping.tenant_id == tenant_id,
+            )
         )
         mapping = result.scalar_one_or_none()
         if not mapping:

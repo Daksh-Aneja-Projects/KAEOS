@@ -106,7 +106,16 @@ class WebhookDestination(BaseDestination):
     """Push pipeline output to a webhook URL via HTTP POST."""
 
     async def connect(self) -> bool:
-        return bool(self.config.get("url"))
+        url = self.config.get("url")
+        if not url:
+            return False
+        # The pipeline's destination URL comes from the request body, so a bad
+        # target is rejected before any record is sent to it.
+        from app.core.outbound import check_outbound_url
+        reason = check_outbound_url(url)
+        if reason:
+            raise ValueError(f"Invalid destination url: {reason}")
+        return True
 
     async def write(self, records: list[dict], metadata: Optional[dict] = None) -> WriteResult:
         import httpx

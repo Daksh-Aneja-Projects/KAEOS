@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import select, desc
 
 from app.core.database import AsyncSessionLocal
-from app.core.tenant import get_tenant_id, require_role   # ← replaces TENANT = "default"
+from app.core.tenant import get_tenant_id, require_role, approver_identity   # ← replaces TENANT = "default"
 from app.core.audit import record_security_event
 from app.models.agent_factory import (
     AgentBlueprint, DeployedAgent, DebateTranscript,
@@ -43,7 +43,7 @@ async def create_blueprint(
 ):
     """Generate an agent blueprint from a natural language prompt."""
     tenant_id = tenant["tenant_id"]
-    result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, req.created_by)
+    result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, approver_identity(tenant))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
         actor=tenant.get("name"), actor_role=tenant.get("role"),
@@ -122,7 +122,7 @@ async def approve_blueprint(
     """Approve a blueprint for compilation."""
     tenant_id = tenant["tenant_id"]
     try:
-        result = await blueprint_gen.approve_blueprint(blueprint_id, tenant_id, req.approved_by)
+        result = await blueprint_gen.approve_blueprint(blueprint_id, tenant_id, approver_identity(tenant))
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
             actor=tenant.get("name"), actor_role=tenant.get("role"),
@@ -402,8 +402,10 @@ async def override_fairness(
 ):
     tenant_id = tenant["tenant_id"]
     try:
+        # The overrider is the authenticated admin, never a body field: this row
+        # is the record of who cleared a bias block.
         result = await fairness_eng.override_block(
-            log_id, tenant_id, req.override_by, req.justification
+            log_id, tenant_id, approver_identity(tenant), req.justification
         )
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",

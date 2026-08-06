@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 
 from app.core.tenant import get_tenant_id
 from app.services import prompt_guard
@@ -30,7 +30,9 @@ SYSTEM_PROMPT = (
 
 
 class ChatMessage(BaseModel):
-    role: str
+    # The client submits the whole transcript, so an unconstrained role let a
+    # caller label a turn "system" and have it rendered above ASSISTANT:.
+    role: Literal["user", "assistant"]
     content: str
 
 
@@ -98,15 +100,15 @@ def _build_prompt(messages: List[ChatMessage], hits: list[dict]) -> str:
 
     parts.append("Conversation so far:")
     for m in messages[-_MAX_HISTORY_TURNS:]:
-        content = m.content
-        if m.role == "user":
-            cleaned, scan = prompt_guard.neutralize(content)
-            if scan.detected:
-                logger.warning(
-                    "[Chat] injection patterns in user turn (risk=%s categories=%s); neutralized.",
-                    scan.risk.value, scan.categories,
-                )
-                content = cleaned
+        # Every turn is neutralised, not just the ones labelled "user". The
+        # whole transcript is client-supplied, so gating on the role meant the
+        # guard could be skipped by relabelling the turn.
+        content, scan = prompt_guard.neutralize(m.content)
+        if scan.detected:
+            logger.warning(
+                "[Chat] injection patterns in %s turn (risk=%s categories=%s); neutralized.",
+                m.role, scan.risk.value, scan.categories,
+            )
         parts.append(f"{m.role.upper()}: {content}")
     parts.append("ASSISTANT:")
     return "\n".join(parts)
