@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * KAEOS Foresight — the autonomous, prescriptive reality lane.
@@ -34,6 +36,16 @@ const Foresight = () => {
  const [error, setError] = useState<string | null>(null);
  const [commissioning, setCommissioning] = useState<string | null>(null);
  const [commissioned, setCommissioned] = useState<Record<string, string>>({});
+
+ const LANES = ['radar', 'trajectory'] as const;
+ // ArrowLeft/ArrowRight move between lanes, as a tablist is expected to.
+ const onLaneKey = (e: React.KeyboardEvent) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  e.preventDefault();
+  const next = LANES[(LANES.indexOf(lane) + (e.key === 'ArrowRight' ? 1 : LANES.length - 1)) % LANES.length];
+  setLane(next);
+  document.getElementById(`foresight-lane-${next}`)?.focus();
+ };
 
  const load = () => {
   setError(null);
@@ -71,7 +83,7 @@ const Foresight = () => {
  const scenarios = radar?.scenarios || [];
 
  return (
-  <div className="p-6 space-y-6">
+  <div className={`${PAGE_PAD} space-y-6`}>
    {/* Header */}
    <div className="flex items-start justify-between flex-wrap gap-4">
     <div>
@@ -83,10 +95,13 @@ const Foresight = () => {
       Autonomous and prescriptive: KAEOS proposes what to worry about, you decide what to do
      </p>
     </div>
-    <div className="flex gap-2">
-     {(['radar', 'trajectory'] as const).map(k => (
+    <div className="flex gap-2" role="tablist" aria-label="Foresight lanes" onKeyDown={onLaneKey}>
+     {LANES.map(k => (
       <button
        key={k}
+       id={`foresight-lane-${k}`}
+       role="tab"
+       aria-selected={lane === k}
        onClick={() => setLane(k)}
        className="px-4 py-2 text-[12px] font-semibold rounded-lg transition-colors"
        style={{
@@ -258,7 +273,7 @@ const Foresight = () => {
          <div className="space-y-2">
           {(bucket?.missions || []).slice(0, 4).map((m: any) => (
            <div key={m.id} className="text-[11px] truncate" style={{ color: colors.inkSubtle }} title={m.goal}>
-            <span className="font-semibold" style={{ color: colors.ink }}>{m.status}</span> {m.goal}
+            <span className="font-semibold" style={{ color: colors.ink }}>{humanize(m.status)}</span> {m.goal}
            </div>
           ))}
           {(bucket?.missions || []).length === 0 && (
@@ -283,10 +298,10 @@ const Foresight = () => {
         {traj.human_decision_points.map((d: any, i: number) => (
          <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg" style={{ border: `1px solid ${colors.hairline}` }}>
           <span className="text-[12px] truncate" style={{ color: colors.ink }}>
-           {d.kind === 'mission_step' ? `${d.name} (mission step ${d.seq})` : (d.skill || 'Pending approval')}
+           {d.kind === 'mission_step' ? `${d.name} (mission step ${d.seq})` : (humanize(d.skill) || 'Pending approval')}
           </span>
           <span className="text-[11px] px-2 py-0.5 rounded whitespace-nowrap" style={{ background: `${colors.warning}20`, color: colors.warning }}>
-           {d.kind === 'mission_step' ? d.department || 'mission' : 'HITL'}
+           {d.kind === 'mission_step' ? humanize(d.department) || 'Mission' : 'Needs a human'}
           </span>
          </div>
         ))}

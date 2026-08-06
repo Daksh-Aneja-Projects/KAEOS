@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
@@ -136,9 +137,19 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
+  // ArrowLeft/ArrowRight move between tabs, as a tablist is expected to.
+  const onTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const i = TABS.findIndex(t => t.key === tab);
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].key;
+    setTab(next);
+    document.getElementById(`support-tab-${next}`)?.focus();
+  };
+
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight flex items-center gap-2">
@@ -153,7 +164,8 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
               style={{ background: colors.primary }}>
               <PlusIcon className="w-3.5 h-3.5" /> New Ticket
             </button>
-            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}
+              aria-label="Refresh support data" title="Refresh">
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -167,9 +179,11 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}
+          role="tablist" aria-label="Support sections" onKeyDown={onTabKey}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
+            <button key={t.key} id={`support-tab-${t.key}`} role="tab" aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
               style={{ background: tab === t.key ? colors.canvas : 'transparent', color: tab === t.key ? t.color : colors.inkSubtle, boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
               <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -338,7 +352,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
             {kbArticles.filter(a => !searchQ || a.title?.toLowerCase().includes(searchQ.toLowerCase())).map((a: any) => (
                       <tr key={a.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                         <td className="px-4 py-3 font-medium">{a.title}</td>
-                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{a.category || '-'}</td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(a.category) || '-'}</td>
                         <td className="px-4 py-3"><Badge status={a.status} /></td>
                         <td className="px-4 py-3 font-mono">{(a.views || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">

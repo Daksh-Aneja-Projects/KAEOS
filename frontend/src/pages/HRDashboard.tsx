@@ -19,6 +19,7 @@ import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize, measured, NOT_MEASURED } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 // Small chart renderers fed only by the /hr/analytics computed payload.
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'];
@@ -106,7 +107,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
   if (!dept && !hrStats) {
     return (
       <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-        <div className="max-w-7xl mx-auto p-6">
+        <div className={`${PAGE_PAD}`}>
           <div className="flex flex-col items-center justify-center py-20 gap-6" style={card}>
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: '#22c55e15' }}>
               <Briefcase className="w-10 h-10" style={{ color: '#22c55e' }} />
@@ -138,7 +139,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">

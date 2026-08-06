@@ -18,7 +18,8 @@ import {
   Clock, Activity, Shield, AlertTriangle, Cpu, TrendingUp, Waypoints
 } from 'lucide-react';
 import { DeptNetworkGraph } from '../components/neural/NeuralMap';
-import { measured, NOT_MEASURED } from '../lib/format';
+import { humanize, measured, NOT_MEASURED } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function DepartmentDetail({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -56,9 +57,18 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
     { id: 'processes' as const, label: 'Processes', icon: Activity, count: dept.processes?.length || 0 },
   ];
 
+  // Left/right arrows move between tabs, as a tablist is expected to.
+  const moveTab = (e: React.KeyboardEvent, i: number) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    setActiveTab(next.id);
+    document.getElementById(`dept-tab-${next.id}`)?.focus();
+  };
+
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Back + Header */}
         <div>
           <button onClick={() => navigate('/')} className="flex items-center gap-1.5 text-[12px] mb-3 transition-colors hover:opacity-80" style={{ color: colors.inkSubtle }}>
@@ -74,7 +84,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 </p>
                 <div className="flex items-center gap-3 mt-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(dept.status) + '20', color: statusColor(dept.status) }}>
-                    {dept.status}
+                    {humanize(dept.status)}
                   </span>
                   {dept.compliance_frameworks?.map((f: string) => (
                     <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
@@ -118,9 +128,13 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1 border-b" style={{ borderColor: colors.hairline }}>
-          {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+        <div className="flex items-center gap-1 border-b" role="tablist" aria-label="Department sections" style={{ borderColor: colors.hairline }}>
+          {tabs.map((tab, i) => (
+            <button key={tab.id} id={`dept-tab-${tab.id}`} role="tab"
+              aria-selected={activeTab === tab.id}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => setActiveTab(tab.id)}
+              onKeyDown={e => moveTab(e, i)}
               className="flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all border-b-2"
               style={{
                 borderColor: activeTab === tab.id ? colors.primary : 'transparent',
@@ -156,7 +170,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                     <h3 className="text-[14px] font-semibold">{cap.name}</h3>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(cap.status) + '20', color: statusColor(cap.status) }}>
-                    {cap.status}
+                    {humanize(cap.status)}
                   </span>
                 </div>
                 <p className="text-[11px] mb-3 line-clamp-2" style={{ color: colors.inkSubtle }}>{cap.description}</p>
@@ -192,8 +206,8 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold">{agent.agent_name}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>{agent.agent_type}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(agent.status) + '20', color: statusColor(agent.status) }}>{agent.status}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: colors.primary + '15', color: colors.primary }}>{humanize(agent.agent_type)}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(agent.status) + '20', color: statusColor(agent.status) }}>{humanize(agent.status)}</span>
                   </div>
                   <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{agent.role_in_department || 'General agent'}</div>
                 </div>
@@ -239,8 +253,8 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                   <div className="font-medium">{proc.name}</div>
                   <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{proc.description?.slice(0, 50)}</div>
                 </div>
-                <div><span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(proc.status) + '20', color: statusColor(proc.status) }}>{proc.status}</span></div>
-                <div className="text-[11px] capitalize" style={{ color: colors.inkSubtle }}>{proc.trigger_type?.toLowerCase() || 'manual'}</div>
+                <div><span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: statusColor(proc.status) + '20', color: statusColor(proc.status) }}>{humanize(proc.status)}</span></div>
+                <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(proc.trigger_type) || 'Manual'}</div>
                 <div className="text-center font-mono">{proc.execution_count || 0}</div>
                 <div className="text-center font-mono" style={{ color: (proc.success_rate || 0) > 0.9 ? '#22c55e' : '#f59e0b' }}>
                   {((proc.success_rate || 0) * 100).toFixed(1)}%

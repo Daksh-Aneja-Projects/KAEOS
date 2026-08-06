@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import { UserX, Clock, Webhook, Loader2, Trash2, Plus, DollarSign } from 'lucide-react';
 
 /**
@@ -33,8 +34,13 @@ const DataGovernanceSettings: React.FC = () => {
     setEraseBusy(true); setEraseMsg('');
     try {
       const body = eraseKey.includes('@') ? { email: eraseKey.trim() } : { employee_id: eraseKey.trim() };
-      const r = await api.privacyErasure(body);
-      setEraseMsg(`Erasure complete: ${JSON.stringify(r.receipt || r)}`.slice(0, 200));
+      const r = (await api.privacyErasure(body)) || {};
+      const tables = Object.keys(r.tables || {}).length;
+      setEraseMsg(
+        `Erasure complete. ${r.total_rows_anonymised ?? 0} record(s) anonymised across ${tables} table(s), `
+        + `${r.blobs_deleted ?? 0} stored file(s) deleted and ${r.embeddings_deleted ?? 0} embedding(s) purged. `
+        + (r.note || '')
+      );
       setEraseKey('');
     } catch (e: any) { setEraseMsg(e?.message || 'Erasure failed'); }
     finally { setEraseBusy(false); }
@@ -104,8 +110,8 @@ const DataGovernanceSettings: React.FC = () => {
           <div className="space-y-2">
             {retention.policies.map((p: any, i: number) => (
               <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px]" style={{ background: colors.surface2, color: colors.ink }}>
-                <span>{p.data_class}</span>
-                <span style={{ color: colors.inkSubtle }}>{p.enabled ? `${p.retain_days}d` : 'disabled'}</span>
+                <span>{humanize(p.data_class)}</span>
+                <span style={{ color: colors.inkSubtle }}>{p.enabled ? `Kept for ${p.retain_days} days` : 'Not enforced'}</span>
               </div>
             ))}
           </div>
@@ -124,9 +130,10 @@ const DataGovernanceSettings: React.FC = () => {
               <div key={w.id} className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px]" style={{ background: colors.surface2 }}>
                 <div style={{ color: colors.ink }}>
                   <span className="font-medium">{w.name}</span>
-                  <span className="ml-2" style={{ color: colors.inkSubtle }}>{w.endpoint} · {(w.events || []).join(', ')} · {w.delivery_count ?? 0} sent</span>
+                  <span className="ml-2" style={{ color: colors.inkSubtle }}>{w.endpoint} · {(w.events || []).map((e: string) => humanize(e)).join(', ')} · {w.delivery_count ?? 0} sent</span>
                 </div>
-                <button onClick={() => api.deleteWebhook(w.id).then(load)} className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => api.deleteWebhook(w.id).then(load)} className="p-1.5 rounded" style={{ color: colors.error }}
+                  aria-label={`Delete webhook ${w.name}`} title="Delete webhook"><Trash2 className="w-4 h-4" /></button>
               </div>
             ))}
           </div>

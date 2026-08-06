@@ -9,6 +9,7 @@ import DomainIcon from '../components/DomainIcon';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * Mission Control — goal-level autonomous orchestration. A plain-language goal is
@@ -121,7 +122,7 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6">
+      <div className={`${PAGE_PAD}`}>
         {/* Header */}
         <div className="flex items-start gap-3 mb-5">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
@@ -178,7 +179,7 @@ export default function MissionControl({ domain = 'All Domains' }: { domain?: st
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{m.goal}</div>
                     <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
-                      {(m.departments || []).join(' · ') || 'no departments'}
+                      {(m.departments || []).map(humanize).join(' · ') || 'No departments yet'}
                     </div>
                   </div>
                   <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded shrink-0"

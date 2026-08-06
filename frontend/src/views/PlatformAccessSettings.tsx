@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
 import {
   Activity, Webhook, KeyRound, Plus, Trash2, Loader2, Copy, Check, ShieldAlert,
 } from 'lucide-react';
@@ -132,7 +133,7 @@ const PlatformAccessSettings: React.FC = () => {
                     {(h.events || []).length} events · {h.delivery_count ?? 0} sent{h.failure_count ? ` · ${h.failure_count} failed` : ''}
                   </span>
                 </div>
-                <button onClick={() => deleteHook(h.id)} className="p-1.5 rounded shrink-0" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => deleteHook(h.id)} aria-label={`Delete webhook ${h.name || h.endpoint}`} className="p-1.5 rounded shrink-0" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
               </div>
             ))}
           </div>
@@ -178,7 +179,7 @@ const PlatformAccessSettings: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               <code className="flex-1 font-mono text-[12px] p-2 rounded break-all" style={{ background: colors.surface2, color: colors.ink }}>{freshKey}</code>
-              <button onClick={copyKey} className="p-2 rounded-lg shrink-0" style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
+              <button onClick={copyKey} aria-label={copied ? 'API key copied' : 'Copy API key'} className="p-2 rounded-lg shrink-0" style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
                 {copied ? <Check className="w-4 h-4" style={{ color: colors.success }} /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
@@ -192,11 +193,11 @@ const PlatformAccessSettings: React.FC = () => {
                 <div className="text-[13px]" style={{ color: colors.ink }}>
                   <span className="font-medium">{k.name || 'unnamed'}</span>
                   <span className="ml-2 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>{k.key_id}…</span>
-                  <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded" style={{ background: colors.primary + '1f', color: colors.primary }}>{k.role}</span>
+                  <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded" style={{ background: colors.primary + '1f', color: colors.primary }}>{humanize(k.role)}</span>
                   {!k.active && <span className="ml-2 text-[11px]" style={{ color: colors.error }}>revoked</span>}
                 </div>
                 {k.active && (
-                  <button onClick={() => revokeKey(k.key_id)} className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => revokeKey(k.key_id)} aria-label={`Revoke API key ${k.name || k.key_id}`} className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
                 )}
               </div>
             ))}

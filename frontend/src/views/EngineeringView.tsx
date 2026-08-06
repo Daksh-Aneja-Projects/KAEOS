@@ -14,6 +14,8 @@ import CreateEntityModal from '../components/CreateEntityModal';
 import BulkActionBar from '../components/BulkActionBar';
 import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
 
@@ -145,8 +147,8 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   ] : [];
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-end justify-between">
+    <div className={`${PAGE_PAD} space-y-5`}>
+      <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-[22px] font-bold flex items-center gap-2" style={{ color: colors.ink }}>
             <Code2 className="w-6 h-6" style={{ color: colors.primary }} />
@@ -189,10 +191,21 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface2 }}>
-        {valid.map((t) => (
+      <div className="flex gap-1 p-1 rounded-lg w-fit max-w-full overflow-x-auto" role="tablist" aria-label="Engineering sections" style={{ background: colors.surface2 }}>
+        {valid.map((t, i) => (
           <button key={t} onClick={() => setTab(t)}
-            className="px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-colors"
+            id={`eng-tab-${t}`}
+            role="tab"
+            aria-selected={tab === t}
+            tabIndex={tab === t ? 0 : -1}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next = valid[(i + (e.key === 'ArrowRight' ? 1 : -1) + valid.length) % valid.length];
+              setTab(next);
+              document.getElementById(`eng-tab-${next}`)?.focus();
+            }}
+            className="px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-colors shrink-0 whitespace-nowrap"
             style={{
               background: tab === t ? colors.surface1 : 'transparent',
               color: tab === t ? colors.ink : colors.inkSubtle,
@@ -241,8 +254,8 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                     <div className="font-medium">{s.name}</div>
                     <div className="text-[11px]" style={{ color: colors.inkTertiary }}>{s.description}</div>
                   </td>
-                  <td className="px-4 py-3"><Badge text={s.tier} color={s.tier === 'TIER_1' ? '#ef4444' : s.tier === 'TIER_2' ? '#f59e0b' : '#6b7280'} /></td>
-                  <td className="px-4 py-3"><Badge text={s.health} color={healthColor(s.health)} /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(s.tier)} color={s.tier === 'TIER_1' ? '#ef4444' : s.tier === 'TIER_2' ? '#f59e0b' : '#6b7280'} /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(s.health)} color={healthColor(s.health)} /></td>
                   <td className="px-4 py-3">{s.owning_squad || '-'}</td>
                   <td className="px-4 py-3 font-mono">{s.slo_target != null ? `${s.slo_target}%` : '-'}</td>
                   <td className="px-4 py-3 font-mono"
@@ -292,7 +305,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                       <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>{p.ai_summary}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3"><Badge text={p.status} color="#6366f1" /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(p.status)} color="#6366f1" /></td>
                   <td className="px-4 py-3 font-mono text-[11px]">
                     <span style={{ color: '#22c55e' }}>+{p.additions}</span>{' '}
                     <span style={{ color: '#ef4444' }}>-{p.deletions}</span>
@@ -305,14 +318,14 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-0.5">
-                      {p.touches_auth && <Badge text="AUTH" color="#ef4444" />}
-                      {p.touches_migrations && <Badge text="MIGRATION" color="#f59e0b" />}
+                      {p.touches_auth && <Badge text="Touches auth" color="#ef4444" />}
+                      {p.touches_migrations && <Badge text="Has migration" color="#f59e0b" />}
                       {p.test_coverage_delta != null && p.test_coverage_delta < 0 && (
-                        <Badge text={`COV ${p.test_coverage_delta}`} color="#f59e0b" />
+                        <Badge text={`Coverage ${p.test_coverage_delta}%`} color="#f59e0b" />
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3"><Badge text={p.ai_risk_level} color={riskColor(p.ai_risk_level)} /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(p.ai_risk_level)} color={riskColor(p.ai_risk_level)} /></td>
                   <td className="px-4 py-3">
                     <AgentButton id={p.id} label="Review" onRun={() => runAgent('Code review', p.id, api.runCodeReviewAgent)} />
                   </td>
@@ -338,15 +351,15 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               {deployments.map((d) => (
                 <tr key={d.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                   <td className="px-4 py-3 font-mono font-medium">{d.version}</td>
-                  <td className="px-4 py-3">{d.environment}</td>
+                  <td className="px-4 py-3">{humanize(d.environment)}</td>
                   <td className="px-4 py-3">
-                    <Badge text={d.status} color={
+                    <Badge text={humanize(d.status)} color={
                       d.status === 'SUCCEEDED' ? '#22c55e'
                         : d.status === 'PENDING_APPROVAL' ? '#f59e0b' : '#ef4444'
                     } />
                   </td>
                   <td className="px-4 py-3 text-[11px]">{d.deployed_by || '-'}</td>
-                  <td className="px-4 py-3"><Badge text={d.ai_risk_level} color={riskColor(d.ai_risk_level)} /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(d.ai_risk_level)} color={riskColor(d.ai_risk_level)} /></td>
                   <td className="px-4 py-3 font-mono font-bold"
                     style={{ color: riskColor(d.ai_risk_level) }}>
                     {d.ai_risk_score != null ? `${d.ai_risk_score}` : '-'}
@@ -397,8 +410,8 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   </td>
                   <td className="px-4 py-3 font-mono">{i.number}</td>
                   <td className="px-4 py-3 font-medium">{i.title}</td>
-                  <td className="px-4 py-3"><Badge text={i.severity} color={sevColor(i.severity)} /></td>
-                  <td className="px-4 py-3"><Badge text={i.status} color="#6366f1" /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(i.severity)} color={sevColor(i.severity)} /></td>
+                  <td className="px-4 py-3"><Badge text={humanize(i.status)} color="#6366f1" /></td>
                   <td className="px-4 py-3 text-[11px]">
                     {i.customer_impacting
                       ? <span style={{ color: '#ef4444' }}>{(i.affected_users ?? 0).toLocaleString()} users</span>
@@ -437,7 +450,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               <div className="flex items-center gap-2 mb-2">
                 <FileText className="w-4 h-4" style={{ color: colors.primary }} />
                 <span className="text-[13px] font-bold" style={{ color: colors.ink }}>{pm.summary}</span>
-                {pm.published && <Badge text="PUBLISHED" color="#22c55e" />}
+                {pm.published && <Badge text="Published" color="#22c55e" />}
               </div>
               <div className="text-[12px] mb-2" style={{ color: colors.inkSubtle }}>
                 <span className="font-semibold" style={{ color: colors.ink }}>Root cause: </span>{pm.root_cause}

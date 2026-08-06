@@ -5,6 +5,7 @@ import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCh
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 const TIER_COLOR: Record<string, string> = { HIGH: '#ef4444', LIMITED: '#f59e0b', MINIMAL: '#22c55e' };
 
@@ -112,7 +113,7 @@ const ComplianceDashboard = () => {
 
  return (
   <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-   <div className="max-w-7xl mx-auto p-6 space-y-5">
+   <div className={`${PAGE_PAD} space-y-5`}>
     {/* Header */}
     <div className="flex items-start justify-between gap-4 flex-wrap">
      <div className="flex items-start gap-3">
@@ -164,7 +165,7 @@ const ComplianceDashboard = () => {
           {statusIcon(fw.status)}
           <h3 className="text-[16px] font-semibold truncate" style={{ color: colors.ink }}>{fw.framework}</h3>
          </div>
-         <span className="px-2 py-0.5 rounded text-[11px] font-medium shrink-0" style={statusBadgeStyle(fw.status)}>{fw.status.replace('_', ' ')}</span>
+         <span className="px-2 py-0.5 rounded text-[11px] font-medium shrink-0" style={statusBadgeStyle(fw.status)}>{humanize(fw.status)}</span>
         </div>
         <div className="space-y-3">
          <div>
@@ -316,7 +317,7 @@ const ComplianceDashboard = () => {
           <div className="min-w-0 flex-1">
            <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[13px] font-semibold" style={{ color: colors.ink }}>{c.name}</span>
-            <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: colors.surface2, color: colors.inkSubtle }}>{c.status}</span>
+            <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(c.status)}</span>
            </div>
            <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{c.description}</div>
            <div className="text-[11px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">

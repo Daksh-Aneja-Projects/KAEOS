@@ -7,6 +7,8 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
+import { PAGE_PAD } from '../lib/layout';
+import { humanize } from '../lib/format';
 
 // The backend onboarding state machine (app/services/onboarding_engine.py).
 // Order + human labels + the icon shown in the ladder.
@@ -103,7 +105,7 @@ export default function ClientOnboarding() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -148,7 +150,8 @@ export default function ClientOnboarding() {
               className="w-full pl-3 pr-10 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-1"
               style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}
             />
-            <button onClick={() => setShowSecret(s => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
+            <button onClick={() => setShowSecret(s => !s)} aria-label={showSecret ? 'Hide the admin secret' : 'Show the admin secret'}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
               {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
@@ -227,7 +230,7 @@ function TenantList({ colors, tenants, loading, hasSecret, advancing, onAdvance,
               <div className="flex items-center gap-3">
                 <span className="text-[11px] px-2.5 py-1 rounded-full font-medium"
                   style={{ background: done ? 'rgba(39,166,68,0.12)' : colors.primary + '15', color: done ? colors.success : colors.primary }}>
-                  {STAGES[idx]?.label || t.current_stage}
+                  {STAGES[idx]?.label || humanize(t.current_stage)}
                 </span>
                 {!done && (
                   <button onClick={() => onAdvance(t.tenant_id)} disabled={advancing === t.tenant_id}
@@ -401,7 +404,8 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
               <div className="relative flex-1">
                 <input className={input} style={inputStyle} value={password} type={showPw ? 'text' : 'password'}
                   onChange={e => setPassword(e.target.value)} />
-                <button onClick={() => setShowPw(s => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
+                <button onClick={() => setShowPw(s => !s)} aria-label={showPw ? 'Hide the temporary password' : 'Show the temporary password'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
                   {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -470,7 +474,8 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
                   <div className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkTertiary }}>{k}</div>
                   <div className="text-[13px] font-mono mt-0.5 truncate" style={{ color: colors.ink }}>{v}</div>
                 </div>
-                <button onClick={() => copy(k as string, v as string)} className="shrink-0 ml-3 p-1.5 rounded hover:opacity-70" style={{ color: colors.inkSubtle }}>
+                <button onClick={() => copy(k as string, v as string)} aria-label={`Copy ${k}`}
+                  className="shrink-0 ml-3 p-1.5 rounded hover:opacity-70" style={{ color: colors.inkSubtle }}>
                   {copied === k ? <Check className="w-4 h-4" style={{ color: colors.success }} /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>

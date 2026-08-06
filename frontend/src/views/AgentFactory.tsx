@@ -4,6 +4,10 @@ import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import DeployConfigModal from '../components/DeployConfigModal';
 import type { DeployConfig } from '../components/DeployConfigModal';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
+
+const TABS = ['create', 'blueprints', 'deployed'] as const;
 
 // Shapes returned by the /agents endpoints. The backend is loosely typed, so
 // these capture only the fields the UI reads (extra fields allowed via index).
@@ -113,11 +117,20 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
       PAUSED: { bg: 'rgba(245,166,35,0.12)', text: colors.warning },
     };
     const c = map[s] || map.DRAFT;
-    return <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: c.bg, color: c.text }}>{s}</span>;
+    return <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: c.bg, color: c.text }}>{humanize(s)}</span>;
+  };
+
+  // Left/right arrows move between tabs, as a tablist is expected to.
+  const moveTab = (e: React.KeyboardEvent, i: number) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    setTab(next);
+    document.getElementById(`agent-factory-tab-${next}`)?.focus();
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Agent Factory</h1>
@@ -147,9 +160,14 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        {(['create', 'blueprints', 'deployed'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
+      <div className="flex gap-1 p-1 rounded-lg w-fit" role="tablist" aria-label="Agent Factory sections"
+        style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        {TABS.map((t, i) => (
+          <button key={t} id={`agent-factory-tab-${t}`} role="tab"
+            aria-selected={tab === t}
+            tabIndex={tab === t ? 0 : -1}
+            onClick={() => setTab(t)}
+            onKeyDown={e => moveTab(e, i)}
             className="px-4 py-1.5 rounded-md text-[13px] font-medium transition-all"
             style={{ background: tab === t ? colors.primary : 'transparent', color: tab === t ? '#fff' : colors.inkSubtle }}>
             {t === 'create' ? 'Create Agent' : t === 'blueprints' ? `Blueprints (${blueprints.length})` : `Deployed (${deployed.length})`}
@@ -174,6 +192,7 @@ const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' })
               onFocus={e => (e.target.style.borderColor = colors.primary)}
               onBlur={e => (e.target.style.borderColor = colors.hairline)} />
             <button onClick={handleCreate} disabled={creating || !prompt.trim()}
+              aria-label="Generate blueprint from this description"
               className="absolute bottom-3 right-3 w-9 h-9 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
               style={{ background: colors.primary, color: '#fff' }}>
               {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

@@ -10,6 +10,7 @@ import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import GateTrace from '../components/GateTrace';
@@ -164,9 +165,18 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const activeTab = TABS.find(t => t.key === tab)!;
   const fmt = (v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
 
+  // Left/right arrows move between tabs, as a tablist is expected to.
+  const moveTab = (e: React.KeyboardEvent, i: number) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    setTab(next.key);
+    document.getElementById(`finance-tab-${next.key}`)?.focus();
+  };
+
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -182,7 +192,8 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
               style={{ background: colors.primary }}>
               <PlusIcon className="w-3.5 h-3.5" /> New Expense Report
             </button>
-            <button onClick={loadData} className="p-2 rounded-lg hover:bg-opacity-10 transition-colors"
+            <button onClick={loadData} aria-label="Refresh finance data"
+              className="p-2 rounded-lg hover:bg-opacity-10 transition-colors"
               style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -200,9 +211,13 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
+        <div className="flex gap-1 p-1 rounded-xl" role="tablist" aria-label="Finance sections" style={{ background: colors.surface1 }}>
+          {TABS.map((t, i) => (
+            <button key={t.key} id={`finance-tab-${t.key}`} role="tab"
+              aria-selected={tab === t.key}
+              tabIndex={tab === t.key ? 0 : -1}
+              onClick={() => setTab(t.key)}
+              onKeyDown={e => moveTab(e, i)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
               style={{
                 background: tab === t.key ? colors.canvas : 'transparent',
@@ -443,7 +458,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                       {forecasts.map((f: any) => (
                         <tr key={f.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                           <td className="px-4 py-3 font-medium">{f.name}</td>
-                          <td className="px-4 py-3">{f.type}</td>
+                          <td className="px-4 py-3">{humanize(f.type)}</td>
                           <td className="px-4 py-3"><Badge status={f.scenario || 'BASE'} /></td>
                           <td className="px-4 py-3 font-mono font-bold">{fmt(f.total)}</td>
                           <td className="px-4 py-3">
@@ -536,7 +551,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     <tbody>
                       {taxFilings.map((f: any) => (
                         <tr key={f.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          <td className="px-4 py-3 font-medium">{f.type}</td>
+                          <td className="px-4 py-3 font-medium">{humanize(f.type)}</td>
                           <td className="px-4 py-3">{f.jurisdiction}</td>
                           <td className="px-4 py-3">{f.period}</td>
                           <td className="px-4 py-3"><Badge status={f.status} /></td>
@@ -556,7 +571,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     <div key={r.id} className="rounded-xl p-4 flex items-center justify-between" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                       <div>
                         <p className="text-[13px] font-semibold">{r.name}</p>
-                        <p className="text-[11px]" style={{ color: colors.inkSubtle }}>{r.type} | {r.jurisdiction}</p>
+                        <p className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(r.type)} | {r.jurisdiction}</p>
                       </div>
                       <span className="text-[16px] font-bold font-mono" style={{ color: '#f59e0b' }}>{(r.rate * 100).toFixed(1)}%</span>
                     </div>
@@ -598,7 +613,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                           <td className="px-4 py-3">{f.title}</td>
                           <td className="px-4 py-3"><Badge status={f.severity} /></td>
                           <td className="px-4 py-3"><Badge status={f.status} /></td>
-                          <td className="px-4 py-3">{f.area}</td>
+                          <td className="px-4 py-3">{humanize(f.area)}</td>
                           <td className="px-4 py-3 font-mono">${f.impact?.toLocaleString()}</td>
                           <td className="px-4 py-3">{f.owner || '-'}</td>
                           <td className="px-4 py-3">{f.ai_detected ? <Bot className="w-4 h-4" style={{ color: '#8b5cf6' }} /> : '-'}</td>
@@ -623,8 +638,8 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                         <tr key={c.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                           <td className="px-4 py-3 font-medium font-mono">{c.code}</td>
                           <td className="px-4 py-3">{c.name}</td>
-                          <td className="px-4 py-3">{c.type}</td>
-                          <td className="px-4 py-3">{c.frequency}</td>
+                          <td className="px-4 py-3">{humanize(c.type)}</td>
+                          <td className="px-4 py-3">{humanize(c.frequency)}</td>
                           <td className="px-4 py-3"><Badge status={c.status} /></td>
                           <td className="px-4 py-3"><Badge status={c.risk_level} /></td>
                           <td className="px-4 py-3">
@@ -668,8 +683,8 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     return (
                       <div key={g.type} className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                         <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          <span className="text-[12px] font-semibold capitalize" style={{ color: colors.ink }}>
-                            {g.type.toLowerCase()} accounts
+                          <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>
+                            {humanize(g.type)} accounts
                           </span>
                           <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{g.rows.length}</span>
                           <span className="ml-auto text-[12px] font-mono font-semibold" style={{ color: colors.ink }}>

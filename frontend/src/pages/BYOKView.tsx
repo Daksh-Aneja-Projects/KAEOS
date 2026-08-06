@@ -2,10 +2,19 @@ import React, { useState } from 'react';
 import { UploadCloud, Link, FileText, Database, ShieldCheck, Zap, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
+import { PAGE_PAD } from '../lib/layout';
+
+type IngestTab = 'file' | 'url' | 'raw';
+
+const INGEST_TABS: { id: IngestTab; label: string; icon: typeof UploadCloud }[] = [
+  { id: 'file', label: 'Upload Documents', icon: UploadCloud },
+  { id: 'url', label: 'Scrape URL', icon: Link },
+  { id: 'raw', label: 'Raw Text', icon: FileText },
+];
 
 export default function BYOKView({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<'file' | 'url' | 'raw'>('file');
+  const [tab, setTab] = useState<IngestTab>('file');
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
   const [fileName, setFileName] = useState('');
@@ -50,7 +59,7 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className={`${PAGE_PAD} space-y-8`}>
       <header className="pb-6 border-b" style={{ borderColor: colors.hairline }}>
         <h1 className="text-3xl font-bold tracking-tight" style={{ color: colors.ink }}>
           Bring Your Own Knowledge (BYOK)
@@ -60,16 +69,24 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
         </p>
       </header>
 
-      <div className="flex gap-2">
-        {[
-          { id: 'file', label: 'Upload Documents', icon: UploadCloud },
-          { id: 'url', label: 'Scrape URL', icon: Link },
-          { id: 'raw', label: 'Raw Text', icon: FileText }
-        ].map(t => (
+      <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Knowledge source">
+        {INGEST_TABS.map((t, i) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id as any)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all"
+            id={`byok-tab-${t.id}`}
+            role="tab"
+            aria-selected={tab === t.id}
+            tabIndex={tab === t.id ? 0 : -1}
+            onKeyDown={e => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const step = e.key === 'ArrowRight' ? 1 : -1;
+              const next = INGEST_TABS[(i + step + INGEST_TABS.length) % INGEST_TABS.length];
+              setTab(next.id);
+              document.getElementById(`byok-tab-${next.id}`)?.focus();
+            }}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all shrink-0 whitespace-nowrap"
             style={{
               background: tab === t.id ? `${colors.primary}15` : colors.surface1,
               color: tab === t.id ? colors.primary : colors.inkSubtle,

@@ -4,6 +4,8 @@ import { api, downloadFile } from '../api/client';
 import { Link2, Hash, Download, ShieldCheck, ShieldAlert, Loader2, XCircle } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 const ProvenanceLedger = () => {
  const { colors } = useTheme();
@@ -62,7 +64,7 @@ const ProvenanceLedger = () => {
 
  return (
   <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-   <div className="max-w-7xl mx-auto p-6 space-y-5">
+   <div className={`${PAGE_PAD} space-y-5`}>
     {/* Header */}
     <div className="flex items-start gap-3">
      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
@@ -105,9 +107,9 @@ const ProvenanceLedger = () => {
          return (
          <div key={e.id || i} className="grid grid-cols-[110px_1fr_100px_70px_1fr_170px_130px] gap-4 px-6 py-4 transition-colors items-center"
            style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-          <span className="px-2 py-0.5 rounded text-[11px] font-medium inline-block w-fit" style={eventStyle(e.event_type)}>{e.event_type}</span>
+          <span className="px-2 py-0.5 rounded text-[11px] font-medium inline-block w-fit" style={eventStyle(e.event_type)}>{humanize(e.event_type)}</span>
           <span className="text-[13px] truncate" style={{ color: colors.inkMuted }}>{e.rule_statement || '-'}</span>
-          <span className="text-[12px]" style={{ color: colors.inkSubtle }}>{e.actor_role}</span>
+          <span className="text-[12px]" style={{ color: colors.inkSubtle }}>{humanize(e.actor_role)}</span>
           <span className="text-[13px] font-mono tabular-nums" style={{ color: colors.ink }}>{e.confidence_at?.toFixed(2)}</span>
           <span className="text-[12px] truncate" style={{ color: colors.inkSubtle }}>{e.reasoning}</span>
           <span className="text-[12px] font-mono truncate flex items-center gap-1" style={{ color: colors.inkMuted }}><Hash className="w-3 h-3 shrink-0" />{e.chain_hash?.slice(0, 16)}…</span>

@@ -9,6 +9,7 @@ import {
   KeyRound, Send, Inbox, ArrowUpFromLine, Copy
 } from 'lucide-react';
 import { humanize } from '../lib/format';
+import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { SyncOperations, ConnectorHealthCards, ConnectorFeedPanel } from './ConnectorStudio.panels';
 
 type Screen = 'library' | 'mapper' | 'sync' | 'monitor';
@@ -104,10 +105,22 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
   return (
     <div className="h-full flex flex-col" style={{ background: colors.canvas, color: colors.ink }}>
       {/* Screen Tabs */}
-      <div className="flex items-center gap-1 px-6 py-2 border-b" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
-        {screens.map(s => (
+      <div className={`flex items-center gap-1 ${PAGE_PAD_X} py-2 border-b overflow-x-auto`} role="tablist" aria-label="Connector studio screens"
+        style={{ borderColor: colors.hairline, background: colors.surface1 }}>
+        {screens.map((s, i) => (
           <button key={s.id} onClick={() => setScreen(s.id)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium transition-all"
+            id={`connector-tab-${s.id}`}
+            role="tab"
+            aria-selected={screen === s.id}
+            tabIndex={screen === s.id ? 0 : -1}
+            onKeyDown={e => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next = screens[(i + (e.key === 'ArrowRight' ? 1 : -1) + screens.length) % screens.length];
+              setScreen(next.id);
+              document.getElementById(`connector-tab-${next.id}`)?.focus();
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium transition-all shrink-0 whitespace-nowrap"
             style={{
               background: screen === s.id ? colors.primary + '18' : 'transparent',
               color: screen === s.id ? colors.primary : colors.inkSubtle,
@@ -125,7 +138,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className={`flex-1 overflow-y-auto ${PAGE_PAD}`}>
         {/* Screen 1: Source Library */}
         {screen === 'library' && (
           <div className="space-y-5">
@@ -168,9 +181,9 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {Object.entries(catalog.by_domain).sort().map(([domain, ids]: [string, any]) => (
                     <div key={domain} className="p-2.5 rounded-lg" style={{ background: colors.surface2 }}>
-                      <div className="text-[11px] font-bold uppercase tracking-wide mb-1.5 capitalize"
+                      <div className="text-[11px] font-bold uppercase tracking-wide mb-1.5"
                         style={{ color: colors.inkTertiary }}>
-                        {domain} · {ids.length}
+                        {humanize(domain)} · {ids.length}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {ids.map((id: string) => {
@@ -196,13 +209,13 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
             <div className="flex items-center gap-2 flex-wrap">
               {categories.map(cat => (
                 <button key={cat} onClick={() => setFilterCat(cat)}
-                  className="px-3 py-1 rounded-full text-[11px] font-medium transition-all capitalize"
+                  className="px-3 py-1 rounded-full text-[11px] font-medium transition-all"
                   style={{
                     background: filterCat === cat ? colors.primary + '20' : colors.surface1,
                     color: filterCat === cat ? colors.primary : colors.inkSubtle,
                     border: `1px solid ${filterCat === cat ? colors.primary + '40' : colors.hairline}`
                   }}>
-                  {cat}
+                  {humanize(cat)}
                 </button>
               ))}
             </div>
@@ -226,7 +239,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                         </div>
                         <div>
                           <div className="text-[14px] font-semibold">{c.name}</div>
-                          <div className="text-[11px] capitalize" style={{ color: colors.inkSubtle }}>{c.category} • {c.connector_type}</div>
+                          <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(c.category)} • {humanize(c.connector_type)}</div>
                         </div>
                       </div>
                       {statusIcon(c.status)}
@@ -319,7 +332,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                     {m.is_pii ? (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold"
                         style={{ background: '#ef444420', color: '#ef4444' }}>
-                        <Lock className="w-2.5 h-2.5" /> {m.pii_category || 'PII'}
+                        <Lock className="w-2.5 h-2.5" /> {humanize(m.pii_category) || 'PII'}
                       </span>
                     ) : <span className="text-[11px]" style={{ color: colors.inkSubtle }}>-</span>}
                   </div>
@@ -458,7 +471,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                     return (
                       <div key={ent.entity_type} className="p-3 rounded-lg text-center" style={{ background: color + '15' }}>
                         <div className="text-[20px] font-bold" style={{ color }}>{ent.freshness_pct.toFixed(0)}%</div>
-                        <div className="text-[11px] font-medium mt-1">{ent.entity_type}</div>
+                        <div className="text-[11px] font-medium mt-1">{humanize(ent.entity_type)}</div>
                       </div>
                     );
                   });

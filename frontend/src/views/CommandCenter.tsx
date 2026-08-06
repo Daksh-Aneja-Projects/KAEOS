@@ -3,6 +3,7 @@ import { Activity, Zap, ShieldCheck, Clock, AlertTriangle, CheckCircle2, XCircle
 import { api } from '../api/client';
 import type { KBHealth } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { PAGE_PAD } from '../lib/layout';
 
 interface FeedEvent {
   id: string; event_type: string; title: string; description?: string;
@@ -68,7 +69,7 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

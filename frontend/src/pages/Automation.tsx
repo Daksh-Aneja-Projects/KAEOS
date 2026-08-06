@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * Automation rules (Sprint 8): declarative "when an entity sits in a state
@@ -93,7 +94,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
   const inputStyle = { background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink } as React.CSSProperties;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6" style={{ color: colors.ink }}>
+    <div className={`${PAGE_PAD} space-y-6`} style={{ color: colors.ink }}>
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-[24px] font-bold tracking-tight flex items-center gap-2">
@@ -110,7 +111,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
             style={{ background: colors.primary }}>
             {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Run all now
           </button>
-          <button onClick={loadRules} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+          <button onClick={loadRules} aria-label="Refresh automation rules" className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -189,12 +190,12 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
                 <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                   <td className="px-4 py-3 font-medium">{r.name}</td>
                   <td className="px-4 py-3 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
-                    {humanize(r.entity_type)} in {r.trigger_state} &gt; {r.dwell_hours}h
+                    {humanize(r.entity_type)} in {humanize(r.trigger_state)} &gt; {r.dwell_hours}h
                   </td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-1"><Bot className="w-3 h-3" style={{ color: colors.primary }} />
-                      {r.action_type === 'transition' ? `→ ${r.action_to_state}`
-                        : r.action_type === 'assign' ? `assign → ${r.action_assignee}` : 'escalate'}
+                      {r.action_type === 'transition' ? `Move to ${humanize(r.action_to_state)}`
+                        : r.action_type === 'assign' ? `Assign to ${r.action_assignee}` : 'Escalate'}
                     </span>
                   </td>
                   <td className="px-4 py-3 font-mono">{r.times_fired}</td>
@@ -206,7 +207,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
                     </button>
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => remove(r)} style={{ color: colors.inkTertiary }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => remove(r)} aria-label={`Delete rule ${r.name}`} style={{ color: colors.inkTertiary }}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

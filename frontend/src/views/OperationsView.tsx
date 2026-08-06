@@ -8,6 +8,7 @@ import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
@@ -46,6 +47,18 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const bulk = useBulkSelect(procurements, workflows['purchase_request'], p => p.status);
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Left/right arrows move between tabs, the way a tablist is expected to behave.
+  const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const els = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const i = els.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = els[(i + (e.key === 'ArrowRight' ? 1 : -1) + els.length) % els.length];
+    next.focus();
+    next.click();
+  };
 
   useEffect(() => { loadData(); }, []);
 
@@ -120,7 +133,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight flex items-center gap-2">
@@ -135,7 +148,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
               style={{ background: colors.primary }}>
               <PlusIcon className="w-3.5 h-3.5" /> New Purchase Request
             </button>
-            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+            <button onClick={loadData} aria-label="Refresh operations data" className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -150,9 +163,15 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
             onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
-        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: colors.surface1 }}>
+        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: colors.surface1 }}
+          role="tablist" aria-label="Operations sections" onKeyDown={onTabKey}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
+              id={`ops-tab-${t.key}`}
+              role="tab"
+              aria-selected={tab === t.key}
+              aria-controls="ops-tab-panel"
+              tabIndex={tab === t.key ? 0 : -1}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all whitespace-nowrap"
               style={{ background: tab === t.key ? colors.canvas : 'transparent', color: tab === t.key ? t.color : colors.inkSubtle, boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
               <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -184,7 +203,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
         {loading ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>
         ) : (
-          <>
+          <div id="ops-tab-panel" role="tabpanel" aria-labelledby={`ops-tab-${tab}`}>
             {/* PROJECTS */}
             {tab === 'projects' && (
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
@@ -402,7 +421,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
 
             {/* ANALYTICS */}
             {tab === 'analytics' && <DomainAnalytics domain="operations" />}
-          </>
+          </div>
         )}
       </div>
     </div>

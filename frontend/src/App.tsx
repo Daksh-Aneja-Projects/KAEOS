@@ -14,6 +14,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { api, type PendingHITLItem, type AppNotification } from './api/client';
 import { canSeeDepartment, DEPARTMENT_LABELS } from './lib/departments';
 import { humanize } from './lib/format';
+import { PAGE_PAD_X } from './lib/layout';
 import KaeosLogo from './components/KaeosLogo';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ThemeAdapter from './components/ThemeAdapter';
@@ -120,6 +121,11 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/users', label: 'User Management', icon: Shield, adminOnly: true },
   { path: '/platform/settings', label: 'Settings', icon: SettingsIcon },
 ];
+
+// A nav link renders a 3px active border and then px-3, so its icon sits 15px
+// from the nav container's content edge. Section labels use the same inset so
+// the sidebar reads as one column instead of two ragged ones.
+const SIDEBAR_LABEL_INSET = 'pl-[15px] pr-3';
 
 function SidebarNavLink({ item, colors }: { item: NavItem; colors: Record<string, string> }) {
   // `end` on every link: NavLink prefix-matches by default, so on
@@ -335,8 +341,12 @@ function Shell() {
         </div>
 
         <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
+          {/* Section labels are inset by SIDEBAR_LABEL_INSET so they line up with
+              the nav item ICONS below them, not with the nav item's outer edge.
+              A nav link carries a 3px active border plus px-3, so its icon sits
+              15px in; a label at px-1 sat 11px to the left of every icon. */}
           {/* WORKFORCE Section */}
-          <div className="px-1 pt-2 pb-1">
+          <div className={`${SIDEBAR_LABEL_INSET} pt-2 pb-1.5`}>
             <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: colors.primary }}>Workforce</span>
           </div>
           {workforceNav.map(n => (
@@ -349,7 +359,7 @@ function Shell() {
               sidebar/top-bar duplication that used to exist. When inside a
               department, the "Departments" item above stays highlighted. */}
           {activeDepartment && (
-            <div className="px-2 pt-4 pb-1 flex items-center gap-1.5">
+            <div className={`${SIDEBAR_LABEL_INSET} pt-5 pb-1.5 flex items-center gap-1.5`}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: activeDepartment.color }} />
               <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: activeDepartment.color }}>
                 {activeDepartment.label}
@@ -358,7 +368,7 @@ function Shell() {
           )}
 
           {/* PLATFORM Section */}
-          <div className="px-1 pt-4 pb-1">
+          <div className={`${SIDEBAR_LABEL_INSET} pt-5 pb-1.5`}>
             <button aria-label="Toggle platform section" onClick={() => setPlatformCollapsed(!platformCollapsed)}
               className="flex items-center gap-1 w-full text-left">
               <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: colors.inkSubtle }}>Platform</span>
@@ -393,7 +403,7 @@ function Shell() {
       {/* Main Area */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Top Bar */}
-        <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b flex-shrink-0 z-10" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
+        <header className={`h-14 flex items-center justify-between ${PAGE_PAD_X} border-b flex-shrink-0 z-10`} style={{ borderColor: colors.hairline, background: colors.surface1 }}>
           <div className="flex items-center gap-3 md:gap-4 min-w-0">
             {/* Drawer toggle — mobile only; the sidebar is always present at md+ */}
             <button

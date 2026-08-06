@@ -191,7 +191,7 @@ export function buildWhatIfImpact(data: any, change: string, domain: string, twi
 // ─── Read-out panels ───
 export function StatsStrip({ tiles, colors, card }: { tiles: any[]; colors: any; card: any }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
       {tiles.map(t => (
         <div key={t.label} className="rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3" style={card}>
           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: t.color + '18' }}>
@@ -231,10 +231,10 @@ export function LearningState({ learningStats, colors, card }: { learningStats: 
               {(learningStats.historical_outcomes || []).slice().reverse().map((o: any, i: number) => (
                 <div key={i} className="p-2 border rounded font-mono text-[11px] space-y-0.5" style={{ borderColor: colors.hairline, background: colors.canvas }}>
                   <div className="flex justify-between">
-                    <span className="font-bold">{o.shock_type}</span>
+                    <span className="font-bold">{humanize(o.shock_type)}</span>
                     <span className={o.severity > 60 ? 'text-red-500' : 'text-amber-500'}>sev {o.severity?.toFixed(0)}</span>
                   </div>
-                  <div style={{ color: colors.inkTertiary }} className="truncate">{o.target} → {o.decision}</div>
+                  <div style={{ color: colors.inkTertiary }} className="truncate">{o.target} → {humanize(o.decision)}</div>
                 </div>
               ))}
               {!(learningStats.historical_outcomes || []).length && (

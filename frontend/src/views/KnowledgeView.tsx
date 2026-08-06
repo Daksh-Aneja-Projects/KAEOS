@@ -1,6 +1,7 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { BookOpen, Workflow, Network, FileSearch, Users, UploadCloud, GitFork } from 'lucide-react';
+import { PAGE_PAD_X } from '../lib/layout';
 
 // Connector management lives in ONE place — the top-level "Integrations" sidebar
 // item (ConnectorStudio). It is not duplicated as Knowledge tabs (the old
@@ -27,15 +28,31 @@ export default function KnowledgeView({ domain }: { domain: string }) {
     { id: 'elicitation', label: 'Elicitation Hub', icon: Users }
   ];
 
+  // ArrowLeft / ArrowRight move between tabs, then focus follows selection.
+  const onTabKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = tabs[(tabs.findIndex(t => t.id === activeTab) + step + tabs.length) % tabs.length];
+    setActiveTab(next.id);
+    document.getElementById(`knowledge-tab-${next.id}`)?.focus();
+  };
+
   return (
     <div className="h-full flex flex-col" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="flex items-center gap-6 px-8 border-b overflow-x-auto no-scrollbar" style={{ borderColor: colors.hairline, background: colors.surface1, minHeight: '48px' }}>
+      <div className={`flex items-center gap-6 ${PAGE_PAD_X} border-b overflow-x-auto no-scrollbar`}
+        role="tablist" aria-label="Knowledge sections" onKeyDown={onTabKeyDown}
+        style={{ borderColor: colors.hairline, background: colors.surface1, minHeight: '48px' }}>
         {tabs.map(tab => (
           <button
             key={tab.id}
+            id={`knowledge-tab-${tab.id}`}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
             className="text-[13px] h-full flex items-center gap-2 relative transition-colors whitespace-nowrap"
-            style={{ 
+            style={{
               color: activeTab === tab.id ? colors.ink : colors.inkSubtle,
               fontWeight: activeTab === tab.id ? 600 : 400
             }}

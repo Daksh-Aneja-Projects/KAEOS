@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import {
   RefreshCw, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
   MessageSquare, Brain, Zap, ChevronRight, ArrowUpRight, ArrowDownRight,
@@ -213,7 +215,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
     return `${Math.floor(d / 86400000)}d ago`;
   };
 
-  if (loading) return <div className="p-8 animate-pulse" style={{ color: colors.inkTertiary }}>Loading Evolution Timeline…</div>;
+  if (loading) return <div className={`${PAGE_PAD} animate-pulse`} style={{ color: colors.inkTertiary }}>Loading Evolution Timeline…</div>;
   if (error) return <BrainError message={error} onRetry={() => setReloadKey(k => k + 1)} />;
 
   const successRate = health?.agent_metrics?.success_rate || 0;
@@ -221,7 +223,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
   const totalSkills = health?.total_skills || 0;
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       {/* Header */}
       <div>
         <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>
@@ -324,12 +326,12 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
               {decisions.slice(0, 6).map((d: any) => (
                 <div key={d.execution_id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{d.skill_id || d.task_intent || d.execution_id}</div>
-                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{d.status}</div>
+                    <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{humanize(d.skill_id) || d.task_intent || d.execution_id}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(d.status)}</div>
                   </div>
                   {d._recorded ? (
                     <span className="text-[11px] font-semibold" style={{ color: d._recorded === 'GOOD' ? '#22c55e' : d._recorded === 'BAD' ? '#ef4444' : '#8b5cf6' }}>
-                      {d._recorded} recorded
+                      {humanize(d._recorded)} recorded
                     </span>
                   ) : (
                     <div className="flex gap-1.5">
@@ -340,7 +342,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
                             onClick={() => recordOutcomeFor(d.execution_id, o)}
                             className="px-2 py-1 rounded text-[11px] font-semibold transition-opacity"
                             style={{ background: c + '18', color: c, opacity: recordingId === d.execution_id ? 0.5 : 1 }}>
-                            {o}
+                            {humanize(o)}
                           </button>
                         );
                       })}
@@ -398,7 +400,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
                     <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{timeAgo(ev.timestamp)}</span>
                     {ev.source && (
                       <span className="text-[11px] px-1.5 py-0.5 rounded"
-                        style={{ background: colors.surface3, color: colors.inkTertiary }}>{ev.source}</span>
+                        style={{ background: colors.surface3, color: colors.inkTertiary }}>{humanize(ev.source)}</span>
                     )}
                   </div>
                 </div>

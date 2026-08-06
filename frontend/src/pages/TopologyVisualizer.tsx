@@ -7,6 +7,8 @@ import { Network, MousePointer2, Maximize2, Flame, X, GitBranch } from 'lucide-r
 import type { GraphData } from '../api/client';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * Epistemic Topology - a live, physics-simulated knowledge graph of the
@@ -205,7 +207,7 @@ export default function TopologyVisualizer() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5 h-full flex flex-col">
+      <div className={`${PAGE_PAD} space-y-5 h-full flex flex-col`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap shrink-0">
           <div className="flex items-start gap-3">
@@ -283,12 +285,13 @@ export default function TopologyVisualizer() {
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: nodeColor(sel.group) }} />
                   <h3 className="text-[14px] font-semibold truncate" style={{ color: colors.ink }}>{sel.label}</h3>
                 </div>
-                <button onClick={() => setSelected(null)} style={{ color: colors.inkSubtle }}><X className="w-4 h-4" /></button>
+                <button onClick={() => setSelected(null)} aria-label="Close node details" title="Close node details"
+                  style={{ color: colors.inkSubtle }}><X className="w-4 h-4" /></button>
               </div>
               <div className="space-y-2.5 text-[12px]">
-                <Row label="Type" value={sel.group} colors={colors} cap />
-                {sel.department && <Row label="Department" value={sel.department} colors={colors} cap />}
-                {sel.domain && <Row label="Domain" value={sel.domain} colors={colors} />}
+                <Row label="Type" value={humanize(sel.group)} colors={colors} />
+                {sel.department && <Row label="Department" value={humanize(sel.department)} colors={colors} />}
+                {sel.domain && <Row label="Domain" value={humanize(sel.domain)} colors={colors} />}
                 {sel.confidence !== undefined && (
                   <div>
                     <div className="text-[11px] mb-1" style={{ color: colors.inkSubtle }}>Confidence</div>
@@ -369,11 +372,11 @@ export default function TopologyVisualizer() {
   );
 }
 
-function Row({ label, value, colors, cap }: { label: string; value: string; colors: Record<string, string>; cap?: boolean }) {
+function Row({ label, value, colors }: { label: string; value: string; colors: Record<string, string> }) {
   return (
     <div className="flex items-center justify-between">
       <span style={{ color: colors.inkSubtle }}>{label}</span>
-      <span className={cap ? 'capitalize' : ''} style={{ color: colors.ink }}>{value}</span>
+      <span style={{ color: colors.ink }}>{value}</span>
     </div>
   );
 }

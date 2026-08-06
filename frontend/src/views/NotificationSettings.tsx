@@ -250,9 +250,9 @@ const NotificationSettings: React.FC = () => {
               <p className="text-[11px] mb-2" style={{ color: colors.inkTertiary }}>Leave all unchecked to receive every event.</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {events.map(ev => (
-                  <label key={ev} className="flex items-center gap-1.5 text-[12px] font-mono cursor-pointer" style={{ color: colors.ink }}>
+                  <label key={ev} className="flex items-center gap-1.5 text-[12px] cursor-pointer" style={{ color: colors.ink }} title={ev}>
                     <input type="checkbox" checked={formEvents.includes(ev)} onChange={() => toggleFormEvent(ev)} style={{ accentColor: colors.primary }} />
-                    {ev}
+                    {humanize(ev)}
                   </label>
                 ))}
               </div>
@@ -300,7 +300,7 @@ const NotificationSettings: React.FC = () => {
                       <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>all events</span>
                     ) : (
                       c.events.map(ev => (
-                        <span key={ev} className="text-[11px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{ev}</span>
+                        <span key={ev} className="text-[11px] px-1.5 py-0.5 rounded" title={ev} style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>{humanize(ev)}</span>
                       ))
                     )}
                   </div>
@@ -325,7 +325,8 @@ const NotificationSettings: React.FC = () => {
                         Confirm delete
                       </button>
                     ) : (
-                      <button onClick={() => setConfirmDelete(c.id)} className="p-1.5 rounded" style={{ color: colors.error }} title="Delete channel">
+                      <button onClick={() => setConfirmDelete(c.id)} className="p-1.5 rounded" style={{ color: colors.error }}
+                        aria-label={`Delete channel ${c.name}`} title="Delete channel">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -443,7 +444,7 @@ const NotificationSettings: React.FC = () => {
                   {missions.map(([state, n]) => (
                     <span key={state} className="text-[11px] px-2 py-0.5 rounded-full"
                       style={{ background: colors.surface1, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
-                      {n} {state.replace(/_/g, ' ').toLowerCase()}
+                      {n} {humanize(state)}
                     </span>
                   ))}
                 </div>
@@ -466,7 +467,7 @@ const NotificationSettings: React.FC = () => {
         )}
         {deliveries.map(d => (
           <div key={d.id} className="px-5 py-2.5 border-b last:border-0 flex items-center gap-3" style={{ borderColor: colors.hairline }}>
-            <span className="text-[11px] px-2 py-0.5 rounded font-mono flex-shrink-0" style={{ background: colors.surface2, color: colors.inkSubtle }}>{d.event}</span>
+            <span className="text-[11px] px-2 py-0.5 rounded flex-shrink-0" title={d.event} style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(d.event)}</span>
             <span className="text-[13px] flex-1 min-w-0 truncate" style={{ color: colors.ink }}>{d.subject}</span>
             <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
               title={d.error || undefined}
@@ -474,7 +475,7 @@ const NotificationSettings: React.FC = () => {
                 background: d.status === 'SENT' ? colors.success + '1f' : colors.error + '1f',
                 color: d.status === 'SENT' ? colors.success : colors.error,
               }}>
-              {d.status}
+              {humanize(d.status)}
             </span>
             {d.status !== 'SENT' && d.error && (
               <span className="text-[11px] max-w-[240px] truncate flex-shrink-0" title={d.error} style={{ color: colors.error }}>{d.error}</span>

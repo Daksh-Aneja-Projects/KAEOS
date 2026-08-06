@@ -3,6 +3,8 @@ import { api, downloadFile } from '../api/client';
 import { Zap, Undo2, ShieldCheck, AlertTriangle, RefreshCw, Download, Wrench, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * The Actions Ledger — what KAEOS actually DID to a system of record (governed,
@@ -97,7 +99,7 @@ const ActionsLedger = () => {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
@@ -188,12 +190,12 @@ const ActionsLedger = () => {
                 {actions.map((a: any) => (
                   <div key={a.id} className="grid grid-cols-[100px_1fr_1fr_110px_120px_140px] gap-4 px-6 py-4 transition-colors items-center"
                     style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                    <span className="px-2 py-0.5 rounded text-[11px] font-medium inline-block w-fit" style={opStyle(a.operation)}>{a.operation}</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-medium inline-block w-fit" style={opStyle(a.operation)}>{humanize(a.operation)}</span>
                     <span className="text-[13px] truncate" style={{ color: colors.inkMuted }}>
-                      <span className="font-mono">{a.system}</span> · {a.object_type}:{a.external_id}
+                      {humanize(a.system)} · {humanize(a.object_type)} <span className="font-mono">{a.external_id}</span>
                     </span>
                     <span className="text-[12px] truncate" style={{ color: colors.inkSubtle }}>{a.actor || 'system'}</span>
-                    <span className="text-[12px] font-semibold" style={statusStyle(a.status)}>{a.status}</span>
+                    <span className="text-[12px] font-semibold" style={statusStyle(a.status)}>{humanize(a.status)}</span>
                     <span className="text-[12px]" style={{ color: colors.inkSubtle }}>
                       {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
                     </span>

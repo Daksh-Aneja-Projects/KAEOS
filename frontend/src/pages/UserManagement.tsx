@@ -7,6 +7,8 @@ import {
   Loader2, Users, Crown, BarChart3, ChevronDown, Info, Download
 } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from '../lib/departments';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 interface UserRecord {
   id: string;
@@ -150,14 +152,14 @@ export default function UserManagement() {
         <div className="text-center p-8">
           <Shield className="w-12 h-12 mx-auto mb-3" style={{ color: colors.inkSubtle }} />
           <h2 className="text-[16px] font-semibold" style={{ color: colors.ink }}>Access Restricted</h2>
-          <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Only ADMIN users can manage accounts.</p>
+          <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Only administrators can manage accounts.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto" style={{ color: colors.ink }}>
+    <div className={`${PAGE_PAD} space-y-5`} style={{ color: colors.ink }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -274,7 +276,7 @@ export default function UserManagement() {
           <div key={r.role} className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
             style={{ background: roleColor(r.role) + '10', border: `1px solid ${roleColor(r.role)}20` }}>
             {React.createElement(roleIcon(r.role), { className: 'w-3.5 h-3.5', style: { color: roleColor(r.role) } })}
-            <span className="text-[11px] font-semibold" style={{ color: roleColor(r.role) }}>{r.role}</span>
+            <span className="text-[11px] font-semibold" style={{ color: roleColor(r.role) }}>{humanize(r.role)}</span>
             <span className="text-[11px]" style={{ color: colors.inkSubtle }}>{r.desc}</span>
           </div>
         ))}
@@ -334,7 +336,7 @@ export default function UserManagement() {
                   </div>
                   <div className="min-w-0">
                     <div className="font-medium truncate" title={u.display_name}>{u.display_name}</div>
-                    {u.is_demo && <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>DEMO</span>}
+                    {u.is_demo && <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: colors.primary + '15', color: colors.primary }}>Demo account</span>}
                   </div>
                 </div>
                 <div className="col-span-3 text-[12px] truncate pr-2" title={u.email} style={{ color: colors.inkSubtle }}>{u.email}</div>
@@ -344,15 +346,15 @@ export default function UserManagement() {
                       onBlur={() => setEditingRole(null)} autoFocus
                       className="px-2 py-1 rounded border text-[11px]"
                       style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}>
-                      <option value="ADMIN">ADMIN</option>
-                      <option value="ANALYST">ANALYST</option>
-                      <option value="VIEWER">VIEWER</option>
+                      <option value="ADMIN">Admin</option>
+                      <option value="ANALYST">Analyst</option>
+                      <option value="VIEWER">Viewer</option>
                     </select>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold cursor-pointer"
                       onClick={() => !u.is_demo && setEditingRole(u.id)}
                       style={{ background: roleColor(u.role) + '15', color: roleColor(u.role) }}>
-                      <RIcon className="w-3 h-3" /> {u.role}
+                      <RIcon className="w-3 h-3" /> {humanize(u.role)}
                     </span>
                   )}
                 </div>
@@ -392,7 +394,8 @@ export default function UserManagement() {
                   {!u.is_demo && u.id !== currentUser?.id && (
                     <button onClick={() => handleDeactivate(u.id)}
                       className="p-1.5 rounded hover:bg-surface2 transition-colors"
-                      style={{ color: '#ef4444' }} title="Deactivate">
+                      style={{ color: '#ef4444' }}
+                      aria-label={`Deactivate ${u.display_name}`} title="Deactivate">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}

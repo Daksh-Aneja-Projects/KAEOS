@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import {
   BookOpen, Search, ChevronDown, ChevronRight, Shield, Clock, CheckCircle,
   Plus, Upload, Download, Loader2, BadgeCheck, Copy, History, FlaskConical,
@@ -120,7 +121,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
         compliance_tags: form.compliance_tags.split(',').map(t => t.trim()).filter(Boolean),
       };
       const r = await api.createRule(body);
-      setBanner({ ok: true, text: `Rule created at ${r.confidence_tier?.replace(/_/g, ' ').toLowerCase()} confidence. It stays non-executable until a human validates it.` });
+      setBanner({ ok: true, text: `Rule created at ${humanize(r.confidence_tier)} confidence. It stays non-executable until a human validates it.` });
       setShowCreate(false);
       setForm({ statement: '', domain: 'general', trigger: '{}', action: '{}', half_life_days: 180, compliance_tags: '' });
       load();
@@ -185,7 +186,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
 
   const validateRule = (id: string) => runRowAction(`${id}-validate`, async () => {
     const r = await api.validateRule(id);
-    setBanner({ ok: true, text: `Validation recorded. Confidence is now ${r.confidence_scalar.toFixed(2)} (${r.confidence_tier?.replace(/_/g, ' ').toLowerCase()}).` });
+    setBanner({ ok: true, text: `Validation recorded. Confidence is now ${r.confidence_scalar.toFixed(2)} (${humanize(r.confidence_tier)}).` });
     load();
   });
 
@@ -224,7 +225,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -260,12 +261,12 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
               <button
                 key={d}
                 onClick={() => setLocalDomain(d)}
-                className="px-4 py-1.5 rounded-full text-[13px] font-semibold capitalize transition-all hover:opacity-90"
+                className="px-4 py-1.5 rounded-full text-[13px] font-semibold transition-all hover:opacity-90"
                 style={active
                   ? { background: colors.primary, color: '#fff' }
                   : { background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}
               >
-                {d}
+                {humanize(d)}
               </button>
             );
           })}
@@ -414,7 +415,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                           <td className="px-6 py-4">
                             <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{r.statement}</span>
                           </td>
-                          <td className="px-6 py-4 text-[13px] capitalize" style={{ color: colors.inkMuted }}>{r.domain}</td>
+                          <td className="px-6 py-4 text-[13px]" style={{ color: colors.inkMuted }}>{humanize(r.domain)}</td>
                           <td className="px-6 py-4">
                             <span className="text-[13px] font-bold font-mono tabular-nums" style={{ color: colors.ink }}>{r.confidence_scalar.toFixed(2)}</span>
                           </td>
@@ -564,7 +565,7 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
                                           <span className="font-mono w-8 shrink-0" style={{ color: colors.inkTertiary }}>v{v.version}</span>
                                           <span className="px-2 py-0.5 rounded text-[11px] font-semibold shrink-0"
                                             style={{ background: colors.primary + '18', color: colors.primary }}>
-                                            {v.event_type?.replace(/_/g, ' ').toLowerCase()}
+                                            {humanize(v.event_type)}
                                           </span>
                                           <span className="truncate flex-1" style={{ color: colors.inkMuted }}>{v.reasoning || 'No note recorded'}</span>
                                           <span className="font-mono tabular-nums shrink-0" style={{ color: colors.inkSubtle }}>{v.confidence_at?.toFixed(2)}</span>

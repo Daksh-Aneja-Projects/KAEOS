@@ -91,7 +91,7 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
     return colors.inkSubtle;
   };
   // Never show a raw SKIPPED_NO_CREDENTIALS to a human.
-  const statusLabel = (s: string) => (s || 'unknown').replace(/_/g, ' ').toLowerCase();
+  const statusLabel = (s: string) => humanize(s || 'unknown');
 
   const pending = (outbound || []).filter(o => o.status === 'PENDING').length;
 
@@ -167,7 +167,7 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
               <ArrowUpFromLine className="w-4 h-4" style={{ color: '#f59e0b' }} />
               <h3 className="text-[13px] font-semibold">Waiting to go out</h3>
               <span className="ml-auto flex items-center gap-2">
-                <button onClick={loadQueues} className="p-1 rounded" style={{ color: colors.inkSubtle }} title="Refresh">
+                <button onClick={loadQueues} aria-label="Refresh the sync queues" className="p-1 rounded" style={{ color: colors.inkSubtle }} title="Refresh">
                   <RefreshCw className="w-3.5 h-3.5" />
                 </button>
                 <button onClick={dispatch} disabled={dispatching || pending === 0}
@@ -197,7 +197,7 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
                     {statusLabel(o.status)}
                   </span>
                   <span className="font-medium truncate" style={{ color: colors.ink }}>
-                    {(o.op || 'change').toLowerCase()} {humanize(o.entity_type || 'record')}
+                    {humanize(o.op || 'change')} {humanize(o.entity_type || 'record')}
                   </span>
                   <span className="truncate" style={{ color: colors.inkSubtle }}>via {o.provider || 'unknown provider'}</span>
                   {(o.attempts ?? 0) > 1 && (
@@ -336,10 +336,10 @@ export function ConnectorFeedPanel({ connectors, colors, card }: any) {
                 {evt.created_at ? new Date(evt.created_at).toLocaleTimeString() : '-'}
               </span>
               <span className="px-1.5 py-0.5 rounded text-[11px] font-bold" style={{ background: typeColor(evt.signal_type) + '20', color: typeColor(evt.signal_type) }}>
-                {evt.signal_type}
+                {humanize(evt.signal_type)}
               </span>
               <span style={{ color: colors.inkSubtle }}>
-                {evt.summary || `${evt.source_type}: ${evt.source_entity}`}
+                {evt.summary || `${humanize(evt.source_type)}: ${evt.source_entity}`}
                 {evt.pii_present && <span className="ml-1 text-[11px] font-bold" style={{ color: '#ef4444' }}>PII</span>}
               </span>
             </div>

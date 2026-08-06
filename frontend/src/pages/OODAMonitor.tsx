@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { STREAM_INTERVALS } from '../services/realtime';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 interface OODAEvent {
   id: string;
@@ -75,7 +76,7 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
   if (error) return <BrainError message={error} onRetry={() => window.location.reload()} />;
 
   return (
-    <div className="p-6 space-y-5" style={{ background: colors.canvas, color: colors.ink }}>
+    <div className={`${PAGE_PAD} space-y-5`} style={{ background: colors.canvas, color: colors.ink }}>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-[18px] font-semibold tracking-tight">OODA Control Loop Monitor</h2>
@@ -94,6 +95,8 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
           return (
             <React.Fragment key={p.id}>
               <button onClick={() => setSelectedPhase(selectedPhase === p.id ? null : p.id)}
+                aria-pressed={selectedPhase === p.id}
+                aria-label={`${p.label} phase, ${count} events. Filters the timeline.`}
                 className="flex-1 relative rounded-xl p-4 transition-all border"
                 style={{
                   background: active ? p.color + '10' : colors.surface1,

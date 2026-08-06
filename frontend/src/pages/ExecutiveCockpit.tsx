@@ -6,6 +6,7 @@ import { usePolling } from '../hooks/usePolling';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { CountUp } from '../components/CountUp';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
 import { STREAM_INTERVALS } from '../services/realtime';
 import {
@@ -87,7 +88,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   }
 
   return (
-    <div className="p-6 space-y-5" style={{ background: colors.canvas, color: colors.ink }}>
+    <div className={`${PAGE_PAD} space-y-5`} style={{ background: colors.canvas, color: colors.ink }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -306,7 +307,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                     <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Model tiers (calls · avg latency)</div>
                     {tiers.map(([name, v]) => (
                       <div key={name} className="flex items-center gap-2">
-                        <span className="text-[11px] w-20 truncate capitalize" style={{ color: colors.ink }}>{name}</span>
+                        <span className="text-[11px] w-20 truncate" style={{ color: colors.ink }}>{humanize(name)}</span>
                         <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                           <div className="h-full rounded-full" style={{ width: `${((v?.tokens ?? 0) / maxTok) * 100}%`, background: tierColor[name] || colors.primary }} />
                         </div>
@@ -399,7 +400,7 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
                 const trendCol = cov?.trend === 'up' ? '#22c55e' : cov?.trend === 'down' ? '#ef4444' : colors.inkSubtle;
                 return (
                   <div key={bu.bu} className="flex items-center gap-3">
-                    <span className="text-[11px] w-20 truncate capitalize" title={bu.bu}>{bu.bu}</span>
+                    <span className="text-[11px] w-20 truncate" title={humanize(bu.bu)}>{humanize(bu.bu)}</span>
                     <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                       <div className="h-full rounded-full transition-all" style={{ width: `${buScore}%`, background: color }} />
                     </div>

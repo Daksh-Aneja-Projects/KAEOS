@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
@@ -262,12 +263,12 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
               }}>All</button>
             {statuses.map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
-                className="px-3 py-1.5 rounded-full text-[11px] font-medium transition-all capitalize"
+                className="px-3 py-1.5 rounded-full text-[11px] font-medium transition-all"
                 style={{
                   background: statusFilter === s ? colors.primary : colors.surface1,
                   color: statusFilter === s ? '#fff' : colors.inkSubtle,
                   border: `1px solid ${statusFilter === s ? colors.primary : colors.hairline}`
-                }}>{s.toLowerCase()}</button>
+                }}>{humanize(s)}</button>
             ))}
           </div>
         </div>
@@ -403,7 +404,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                     <div className="flex items-center justify-between px-2 py-1.5 mb-2 rounded-md"
                       style={{ background: colors.surface2 }}>
                       <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: statusColor(stage) }}>
-                        {stageLabels[stage] || stage}
+                        {stageLabels[stage] || humanize(stage)}
                       </span>
                       <span className="text-[11px] font-mono" style={{ color: colors.inkSubtle }}>{inStage.length}</span>
                     </div>
@@ -619,9 +620,9 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       {/* Header */}
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Workforce</h1>
           <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>Employee directory, recruiting pipeline, time tracking, and performance management</p>
@@ -654,10 +655,22 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
       </div>
 
       {/* Tab Selector */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        {TABS.map(({ id, label, icon: Icon }) => (
+      <div className="flex gap-1 p-1 rounded-lg w-fit max-w-full overflow-x-auto" role="tablist" aria-label="Workforce sections"
+        style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        {TABS.map(({ id, label, icon: Icon }, i) => (
           <button key={id} onClick={() => setTab(id)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-medium transition-all"
+            id={`hr-tab-${id}`}
+            role="tab"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
+            onKeyDown={e => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length];
+              setTab(next.id);
+              document.getElementById(`hr-tab-${next.id}`)?.focus();
+            }}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-medium transition-all shrink-0 whitespace-nowrap"
             style={{
               background: tab === id ? colors.primary : 'transparent',
               color: tab === id ? '#fff' : colors.inkSubtle

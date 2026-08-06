@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { Activity, Target, Zap, ArrowRight, ArrowUpRight, ArrowDownRight, Layers, Box, Cpu, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
 import { request } from '../api/client';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function EvolutionStudio() {
   const { colors } = useTheme();
@@ -35,7 +36,7 @@ export default function EvolutionStudio() {
   const scoreColor = (score: number) => score >= 0.8 ? '#22c55e' : score >= 0.6 ? '#f59e0b' : '#ef4444';
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={`${PAGE_PAD} space-y-6`}>
       
       {/* Header */}
       <div className="flex items-center justify-between">

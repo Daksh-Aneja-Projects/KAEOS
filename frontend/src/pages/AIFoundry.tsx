@@ -8,6 +8,8 @@ import { useTheme } from '../context/ThemeContext';
 import { api, type FoundryStats } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
 import { BrainLoading, BrainError, LiveIndicator } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 // The v2 roadmap. Honest status: Phase 1 shipped, Phase 2 is live, 3-5 planned.
 const ROADMAP = [
@@ -182,7 +184,7 @@ export default function AIFoundry() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -305,7 +307,7 @@ export default function AIFoundry() {
               </div>
               <div className="space-y-3">
                 {labels.map(([label, count]) => {
-                  const meta = LABEL_META[label] || { color: colors.inkSubtle, title: label, blurb: '' };
+                  const meta = LABEL_META[label] || { color: colors.inkSubtle, title: humanize(label), blurb: '' };
                   return (
                     <div key={label}>
                       <div className="flex items-center justify-between mb-1">
@@ -331,7 +333,7 @@ export default function AIFoundry() {
                   {sources.map(([src, count]) => (
                     <div key={src} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
                       {src === 'mined' ? <Database className="w-3.5 h-3.5" style={{ color: colors.inkSubtle }} /> : <UserCheck className="w-3.5 h-3.5" style={{ color: '#8b5cf6' }} />}
-                      <span className="text-[12px]" style={{ color: colors.inkMuted }}>{SOURCE_LABEL[src] || src}</span>
+                      <span className="text-[12px]" style={{ color: colors.inkMuted }}>{SOURCE_LABEL[src] || humanize(src)}</span>
                       <span className="text-[12px] font-semibold tabular-nums" style={{ color: colors.ink }}>{count.toLocaleString()}</span>
                     </div>
                   ))}
@@ -352,7 +354,7 @@ export default function AIFoundry() {
                       <DomainIcon hint={domain} size={26} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <span className="text-[12px] font-medium capitalize truncate" style={{ color: colors.ink }}>{domain}</span>
+                          <span className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{humanize(domain)}</span>
                           <span className="text-[11px] tabular-nums" style={{ color: colors.inkSubtle }}>{count.toLocaleString()}</span>
                         </div>
                         <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: colors.surface3 }}>
@@ -444,7 +446,7 @@ export default function AIFoundry() {
               <select value={tier} onChange={e => setTier(e.target.value)}
                 className="text-[12px] rounded-lg px-2.5 py-2 outline-none"
                 style={{ background: colors.inputBg, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
-                {['reasoning', 'classification', 'fast'].map(t => <option key={t} value={t}>{t}</option>)}
+                {['reasoning', 'classification', 'fast'].map(t => <option key={t} value={t}>{humanize(t)}</option>)}
               </select>
             </div>
             <div className="flex-1 min-w-[220px]">
@@ -481,14 +483,14 @@ export default function AIFoundry() {
                     style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                     <span className="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0"
                       style={{ background: (r.win ? '#27a644' : '#6b7280') + '22', color: r.win ? '#27a644' : '#6b7280' }}>
-                      {r.win ? 'WIN' : r.status || 'RUN'}
+                      {r.win ? 'Win' : humanize(r.status) || 'Run'}
                     </span>
                     <div className="flex-1 min-w-[180px]">
                       <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>
                         {r.candidate_model} <span style={{ color: colors.inkTertiary }}>vs</span> {r.baseline_model}
                       </div>
                       <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
-                        {r.tier} · baseline {r.baseline_score ?? '-'} · candidate {r.candidate_score ?? '-'}
+                        {humanize(r.tier)} · baseline {r.baseline_score ?? '-'} · candidate {r.candidate_score ?? '-'}
                         {r.score_delta != null && ` · delta ${r.score_delta}`}
                         {r.eval_size ? ` · n=${r.eval_size}` : ''}
                       </div>
@@ -496,11 +498,11 @@ export default function AIFoundry() {
                     {r.simulated && (
                       <span className="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0"
                         style={{ background: '#f59e0b22', color: '#f59e0b' }} title="No live provider ran; cannot be promoted">
-                        SIMULATED
+                        Simulated
                       </span>
                     )}
                     {decided ? (
-                      <span className="text-[11px] font-semibold shrink-0" style={{ color: colors.inkSubtle }}>{r.decision}</span>
+                      <span className="text-[11px] font-semibold shrink-0" style={{ color: colors.inkSubtle }}>{humanize(r.decision)}</span>
                     ) : (
                       <div className="flex gap-1.5 shrink-0">
                         <button onClick={() => decideRun(r.id, 'promote')} disabled={!promotable || actingOn === r.id}
@@ -528,8 +530,8 @@ export default function AIFoundry() {
               <div className="space-y-1.5">
                 {ftJobs.map((j: any) => (
                   <div key={j.id} className="flex items-center gap-3 text-[11px]" style={{ color: colors.inkSubtle }}>
-                    <span className="font-semibold" style={{ color: colors.ink }}>{j.status}</span>
-                    <span>{j.tier}</span>
+                    <span className="font-semibold" style={{ color: colors.ink }}>{humanize(j.status)}</span>
+                    <span>{humanize(j.tier)}</span>
                     {j.result_model && <span className="truncate">{j.result_model}</span>}
                     {j.error && <span style={{ color: '#e5534b' }} className="truncate">{j.error}</span>}
                   </div>

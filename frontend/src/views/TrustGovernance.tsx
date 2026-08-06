@@ -2,15 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Shield, Scale, Link2, MessageSquare, CheckCircle2, XCircle } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-
-const timeAgo = (iso: string) => {
-  if (!iso) return '';
-   
-  const d = Date.now() - new Date(iso).getTime();
-  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
-  if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
-  return `${Math.floor(d / 86400000)}d ago`;
-};
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
+// One shared relative clock, rather than a second local one that rendered
+// "0m ago" for a fresh entry and "NaNd ago" for an unparseable timestamp.
+import { timeAgo } from '../lib/time';
 
 const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ defaultTab, only }) => {
   const { colors } = useTheme();
@@ -31,6 +27,18 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
   const [debates, setDebates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Left/right arrows move between tabs, the way a tablist is expected to behave.
+  const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const els = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const i = els.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = els[(i + (e.key === 'ArrowRight' ? 1 : -1) + els.length) % els.length];
+    next.focus();
+    next.click();
+  };
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -49,18 +57,20 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
   }, []);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       <div>
         <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Trust & Governance</h1>
         <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>Compliance, provenance audit trail, fairness scoring, and debate transcripts</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex gap-1 p-1 rounded-lg w-fit" role="tablist" aria-label="Trust and governance sections" onKeyDown={onTabKey}
+        style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         {([['compliance', 'Compliance', Scale], ['provenance', 'Provenance', Link2], ['fairness', 'Fairness', Shield], ['debates', 'Debates', MessageSquare]] as const)
           .filter(([id]) => !only || only.includes(id))
           .map(([id, label, Icon]) => (
           <button key={id} onClick={() => setTab(id as any)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all"
+            id={`trust-tab-${id}`} role="tab" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
             style={{ background: tab === id ? colors.primary : 'transparent', color: tab === id ? '#fff' : colors.inkSubtle }}>
             <Icon className="w-3.5 h-3.5" />{label}
           </button>
@@ -104,7 +114,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                                 background: f.coverage === 'COVERED' ? 'rgba(39,166,68,0.12)' : 'rgba(245,158,11,0.12)',
                                 color: f.coverage === 'COVERED' ? colors.success : colors.warning,
                               }}>
-                              {f.coverage}
+                              {humanize(f.coverage)}
                             </span>
                           </div>
                         </div>
@@ -133,8 +143,8 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                 <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: colors.primary }} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{entry.event_type}</span>
-                    <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{entry.actor_role}</span>
+                    <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{humanize(entry.event_type)}</span>
+                    <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{humanize(entry.actor_role)}</span>
                   </div>
                   <p className="text-[12px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{entry.reasoning || entry.rule_statement}</p>
                   <p className="text-[11px] mt-1 font-mono" style={{ color: colors.inkTertiary }}>{entry.chain_hash?.slice(0, 16)}…</p>
@@ -167,7 +177,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                     style={{ background: log.passed ? 'rgba(64,192,87,0.12)' : 'rgba(229,83,75,0.12)', color: log.passed ? colors.success : colors.error }}>
-                    {log.passed ? 'PASSED' : 'BLOCKED'}
+                    {log.passed ? 'Passed' : 'Blocked'}
                   </span>
                 </div>
                 <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{timeAgo(log.created_at)}</span>
@@ -181,7 +191,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
                 <div className="flex gap-1.5 mt-2 items-center">
                   <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Flagged:</span>
                   {log.flagged_attributes.map((a: string) => (
-                    <span key={a} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{a}</span>
+                    <span key={a} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>{humanize(a)}</span>
                   ))}
                 </div>
               )}
@@ -201,10 +211,10 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
           {debates.map((d: any, i: number) => (
             <div key={i} className="px-5 py-4 border-b" style={{ borderColor: colors.hairline }}>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-medium" style={{ color: colors.ink }}>Exec: {d.execution_id?.slice(0, 12)}</span>
+                <span className="text-[13px] font-medium" style={{ color: colors.ink }}>Execution {d.execution_id?.slice(0, 12)}</span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                   style={{ background: d.arbitrator_decision?.decision === 'PROCEED' ? 'rgba(39,166,68,0.12)' : 'rgba(229,83,75,0.12)', color: d.arbitrator_decision?.decision === 'PROCEED' ? colors.success : colors.error }}>
-                  {d.arbitrator_decision?.decision || 'PENDING'}
+                  {humanize(d.arbitrator_decision?.decision) || 'Pending'}
                 </span>
               </div>
               {d.arbitrator_decision?.rationale && <p className="text-[12px]" style={{ color: colors.inkSubtle }}>{d.arbitrator_decision.rationale}</p>}

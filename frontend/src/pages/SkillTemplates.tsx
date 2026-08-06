@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { Store, Star, Download, Shield, Plus, X } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 const Marketplace = () => {
  const { colors } = useTheme();
@@ -56,7 +58,7 @@ const Marketplace = () => {
 
  return (
   <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-   <div className="max-w-7xl mx-auto p-6 space-y-5">
+   <div className={`${PAGE_PAD} space-y-5`}>
     {/* Header */}
     <div className="flex items-start justify-between gap-4 flex-wrap">
      <div className="flex items-start gap-3">
@@ -87,11 +89,11 @@ const Marketplace = () => {
      </button>
      {categories.map(c => (
       <button key={c} onClick={() => setFilter(c)}
-        className="px-3 py-1.5 rounded-lg text-[12px] font-medium capitalize transition-all"
+        className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
         style={filter === c
           ? { background: colors.primary + '1f', color: colors.primary, border: `1px solid ${colors.primary}40` }
           : { background: colors.surface2, color: colors.inkSubtle, border: `1px solid ${colors.hairline}` }}>
-       {c}
+       {humanize(c)}
       </button>
      ))}
     </div>
@@ -140,7 +142,7 @@ const Marketplace = () => {
       <div className="rounded-2xl p-6 w-full max-w-md" style={{ background: colors.surface1, border: `1px solid ${colors.hairlineStrong}` }}>
        <div className="flex justify-between items-center mb-4">
         <h2 className="text-[18px] font-semibold" style={{ color: colors.ink }}>Publish New Template</h2>
-        <button onClick={() => setIsModalOpen(false)} className="transition-opacity hover:opacity-70" style={{ color: colors.inkSubtle }}><X className="w-5 h-5" /></button>
+        <button onClick={() => setIsModalOpen(false)} aria-label="Close publish template dialog" className="transition-opacity hover:opacity-70" style={{ color: colors.inkSubtle }}><X className="w-5 h-5" /></button>
        </div>
        <form onSubmit={handleSubmit} className="space-y-4">
         <div>

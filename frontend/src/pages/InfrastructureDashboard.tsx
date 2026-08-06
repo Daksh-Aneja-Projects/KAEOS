@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { BrainError } from '../components/BrainStates';
 import { CountUp } from '../components/CountUp';
 import { humanize } from '../lib/format';
+import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import {
   Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
@@ -132,11 +133,24 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
 
   const card = { background: colors.surface1, borderRadius: '12px', border: `1px solid ${colors.hairline}`, padding: '20px' };
 
+  // ArrowLeft / ArrowRight move between tabs, then focus follows selection.
+  const onTabKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = tabs[(tabs.findIndex(t => t.id === tab) + step + tabs.length) % tabs.length];
+    setTab(next.id);
+    document.getElementById(`infra-tab-${next.id}`)?.focus();
+  };
+
   return (
     <div className="h-full flex flex-col" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="flex items-center gap-1 px-6 py-2 border-b" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
+      <div className={`flex items-center gap-1 ${PAGE_PAD_X} py-2 border-b`}
+        role="tablist" aria-label="Infrastructure sections" onKeyDown={onTabKeyDown}
+        style={{ borderColor: colors.hairline, background: colors.surface1 }}>
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
+          <button key={t.id} id={`infra-tab-${t.id}`} onClick={() => setTab(t.id)}
+            role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium transition-all"
             style={{
               background: tab === t.id ? colors.primary + '18' : 'transparent',
@@ -148,7 +162,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className={`flex-1 overflow-y-auto ${PAGE_PAD}`}>
         {loading && (
           <div className="flex items-center justify-center h-40">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.inkSubtle }} />
@@ -305,9 +319,9 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   <div className="text-center font-mono text-[11px]">{m.max_context_window != null ? `${(m.max_context_window / 1024).toFixed(0)}k` : '-'}</div>
                   <div className="text-center">
                     {m.is_canary ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>CANARY</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>Canary</span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>ACTIVE</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>Active</span>
                     )}
                   </div>
                 </div>
@@ -357,7 +371,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                     const c = reqTierColor[tier.toLowerCase()] || colors.primary;
                     return (
                       <div key={tier} className="flex items-center gap-3">
-                        <span className="text-[11px] font-mono w-24 truncate capitalize" title={tier} style={{ color: c }}>{tier}</span>
+                        <span className="text-[11px] font-mono w-24 truncate" title={humanize(tier)} style={{ color: c }}>{humanize(tier)}</span>
                         <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
                           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: c }} />
                         </div>

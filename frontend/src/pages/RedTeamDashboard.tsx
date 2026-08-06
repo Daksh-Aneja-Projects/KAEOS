@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { Shield, AlertTriangle, CheckCircle, XCircle, Play } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 const RedTeamDashboard = () => {
  const { colors } = useTheme();
@@ -46,7 +48,7 @@ const RedTeamDashboard = () => {
 
  return (
   <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-   <div className="max-w-7xl mx-auto p-6 space-y-5">
+   <div className={`${PAGE_PAD} space-y-5`}>
     {/* Header */}
     <div className="flex items-start justify-between gap-4 flex-wrap pb-5" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
      <div className="flex items-start gap-3">
@@ -89,12 +91,12 @@ const RedTeamDashboard = () => {
          <div className="flex items-center gap-3">
           {statusIcon(scan.status)}
           <div>
-           <h3 className="font-semibold" style={{ color: colors.ink }}>{scan.skill_id}</h3>
-           <span className="text-xs" style={{ color: colors.inkSubtle }}>{scan.department} · {scan.scan_count} tests · Last: {scan.last_scan ? new Date(scan.last_scan).toLocaleString() : 'Never'}</span>
+           <h3 className="font-semibold" style={{ color: colors.ink }} title={scan.skill_id}>{humanize(scan.skill_id)}</h3>
+           <span className="text-xs" style={{ color: colors.inkSubtle }}>{humanize(scan.department)} · {scan.scan_count} tests · Last: {scan.last_scan ? new Date(scan.last_scan).toLocaleString() : 'Never'}</span>
           </div>
          </div>
          <div className="flex items-center gap-3">
-          {scan.vulnerabilities > 0 && <span className="text-xs px-2 py-0.5 rounded" style={{ color: colors.error, background: colors.error + '1a', border: `1px solid ${colors.error}33` }}>{scan.vulnerabilities} vulns</span>}
+          {scan.vulnerabilities > 0 && <span className="text-xs px-2 py-0.5 rounded" style={{ color: colors.error, background: colors.error + '1a', border: `1px solid ${colors.error}33` }}>{scan.vulnerabilities} vulnerabilit{scan.vulnerabilities === 1 ? 'y' : 'ies'}</span>}
           <button onClick={() => handleScan(scan.skill_id)} disabled={scanning === scan.skill_id}
            className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
            style={{ background: colors.primary, color: '#fff' }}
@@ -106,7 +108,7 @@ const RedTeamDashboard = () => {
           const c = statusColor(d.status);
           return (
            <div key={i} className="px-3 py-1.5 rounded-xl text-xs" style={{ background: c + '14', border: `1px solid ${c}33`, color: c }}>
-            {d.scan_type} · {d.status} {d.vulnerabilities > 0 && `(${d.vulnerabilities})`}
+            {humanize(d.scan_type)} · {humanize(d.status)} {d.vulnerabilities > 0 && `(${d.vulnerabilities})`}
            </div>
           );
          })}

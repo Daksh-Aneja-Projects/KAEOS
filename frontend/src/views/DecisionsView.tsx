@@ -1,6 +1,7 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu } from 'lucide-react';
+import { PAGE_PAD_X } from '../lib/layout';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
 const ExecutiveCockpit = lazy(() => import('../pages/ExecutiveCockpit'));
@@ -21,6 +22,18 @@ export default function DecisionsView({ domain }: { domain: string }) {
   const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState('cockpit');
 
+  // Left/right arrows move between tabs, the way a tablist is expected to behave.
+  const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const els = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const i = els.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = els[(i + (e.key === 'ArrowRight' ? 1 : -1) + els.length) % els.length];
+    next.focus();
+    next.click();
+  };
+
   const tabs = [
     { id: 'cockpit', label: 'Executive Cockpit', icon: Gauge },
     { id: 'live', label: 'Execution Monitor', icon: Activity },
@@ -37,10 +50,21 @@ export default function DecisionsView({ domain }: { domain: string }) {
 
   return (
     <div className="h-full flex flex-col" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="flex items-center gap-6 px-8 border-b overflow-x-auto no-scrollbar" style={{ borderColor: colors.hairline, background: colors.surface1, minHeight: '48px' }}>
+      <div className={`flex items-center ${PAGE_PAD_X} border-b overflow-x-auto no-scrollbar`}
+        style={{ borderColor: colors.hairline, background: colors.surface1, minHeight: '48px' }}>
+        {/* The live-feed badge is not a tab, so it sits outside the tablist;
+            self-stretch keeps the tabs full height so the active underline
+            still lands on the bottom border. */}
+        <div className="flex items-center gap-6 self-stretch"
+          role="tablist" aria-label="Decisions sections" onKeyDown={onTabKey}>
         {tabs.map(tab => (
           <button
             key={tab.id}
+            id={`decisions-tab-${tab.id}`}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls="decisions-tab-panel"
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
             className="text-[13px] h-full flex items-center gap-2 relative transition-colors whitespace-nowrap"
             style={{ 
@@ -55,6 +79,7 @@ export default function DecisionsView({ domain }: { domain: string }) {
             )}
           </button>
         ))}
+        </div>
         {activeTab === 'live' && (
           <div className="ml-auto flex items-center gap-2 text-[11px] font-bold text-green-500 bg-green-500/10 px-2.5 py-1 rounded-full uppercase tracking-wider whitespace-nowrap">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live Feed
@@ -62,7 +87,8 @@ export default function DecisionsView({ domain }: { domain: string }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto"
+        id="decisions-tab-panel" role="tabpanel" aria-labelledby={`decisions-tab-${activeTab}`}>
         <Suspense fallback={<div className="p-8 text-inkSubtle animate-pulse text-[13px]">Loading Decisions Module...</div>}>
           {activeTab === 'cockpit' && <ExecutiveCockpit domain={domain} />}
           {activeTab === 'live' && <CommandCenter domain={domain} />}

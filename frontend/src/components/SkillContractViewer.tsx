@@ -6,6 +6,7 @@ import {
   Clock, Link2, Eye, Sparkles
 } from 'lucide-react';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 interface Props {
   skill: SkillItem;
@@ -63,7 +64,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
   const confVector = skill.confidence_vector || {};
 
   return (
-    <div className="p-6 max-w-[1100px] mx-auto space-y-5">
+    <div className={`${PAGE_PAD} space-y-5`}>
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <button onClick={onClose} className="flex items-center gap-1.5 text-[13px] font-medium"
         style={{ color: colors.primary }}>

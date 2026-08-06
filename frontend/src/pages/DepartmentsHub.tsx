@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
 import { toPct, humanize } from '../lib/format';
+import { PAGE_PAD_X } from '../lib/layout';
 import { canSeeDepartment } from '../lib/departments';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { BrainError } from '../components/BrainStates';
@@ -62,9 +63,19 @@ export default function DepartmentsHub() {
     { id: 'hierarchy', label: 'Hierarchy', icon: GitFork },
   ];
 
+  // ArrowLeft / ArrowRight move between views, then focus follows selection.
+  const onViewKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = VIEWS[(VIEWS.findIndex(v => v.id === view) + step + VIEWS.length) % VIEWS.length];
+    setView(next.id);
+    document.getElementById(`depts-view-${next.id}`)?.focus();
+  };
+
   return (
     <div className="h-full flex flex-col min-h-0" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="w-full max-w-7xl mx-auto px-6 pt-6 pb-4 shrink-0">
+      <div className={`${PAGE_PAD_X} pt-6 pb-4 shrink-0`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -87,9 +98,10 @@ export default function DepartmentsHub() {
             {/* View switcher */}
             <div className="flex items-center p-0.5 rounded-lg"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}
-              role="tablist" aria-label="Departments view">
+              role="tablist" aria-label="Departments view" onKeyDown={onViewKeyDown}>
               {VIEWS.map(v => (
-                <button key={v.id} onClick={() => setView(v.id)} role="tab" aria-selected={view === v.id}
+                <button key={v.id} id={`depts-view-${v.id}`} onClick={() => setView(v.id)}
+                  role="tab" aria-selected={view === v.id} tabIndex={view === v.id ? 0 : -1}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold transition-all"
                   style={view === v.id
                     ? { background: colors.primary, color: '#fff' }
@@ -107,7 +119,7 @@ export default function DepartmentsHub() {
         </div>
       </div>
 
-      <div className={view === 'neural' ? 'flex-1 min-h-0 w-full' : 'flex-1 min-h-0 w-full max-w-7xl mx-auto px-6 pb-6'}>
+      <div className={view === 'neural' ? 'flex-1 min-h-0 w-full' : `flex-1 min-h-0 ${PAGE_PAD_X} pb-6`}>
         {view === 'neural' ? (
           <NeuralMapView onOpenDept={(slug) => navigate(`/departments/${slug}`)} />
         ) : view === 'hierarchy' ? (

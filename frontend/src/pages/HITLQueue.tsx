@@ -5,6 +5,8 @@ import type { PendingHITLItem } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 interface ReasoningStep { step: number | string; action: string; confidence?: number }
 
@@ -77,7 +79,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -147,9 +149,9 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                       )}
                       <span className="text-[12px] font-mono" style={{ color: colors.inkSubtle }}>{item.id.split('-')[0]}</span>
                     </div>
-                    <h3 className="text-[18px] font-bold" style={{ color: colors.ink }}>{item.task_intent}</h3>
+                    <h3 className="text-[18px] font-bold" style={{ color: colors.ink }}>{humanize(item.task_intent)}</h3>
                     <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>
-                      Skill: <span className="font-mono px-1 rounded" style={{ background: colors.surface2, color: colors.inkMuted }}>{item.skill_id_name}</span>
+                      Skill: <span className="px-1 rounded" style={{ background: colors.surface2, color: colors.inkMuted }}>{humanize(item.skill_id_name)}</span>
                       {item.route_type === 'GATED_AGENT' && (
                         <span className="ml-2" style={{ color: colors.primary }}>approving resumes the paused execution</span>
                       )}
@@ -180,7 +182,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                         </div>
                         <span className="flex-1 min-w-0 break-words" style={{ color: colors.inkMuted }}>{step.action}</span>
                         {step.confidence != null && (
-                          <span className="font-mono text-[11px] ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>CONF: {step.confidence.toFixed(2)}</span>
+                          <span className="text-[11px] ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>Confidence {step.confidence.toFixed(2)}</span>
                         )}
                       </div>
                     ))}

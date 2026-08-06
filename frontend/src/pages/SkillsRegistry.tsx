@@ -9,6 +9,7 @@ import {
   Zap, FileCode2, Hammer, MessageCircleQuestion, Share2, Loader2, AlertTriangle,
 } from 'lucide-react';
 import { toPct, humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: string }) {
   const { colors } = useTheme();
@@ -128,7 +129,7 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -255,13 +256,13 @@ export default function SkillsRegistry({ domain = 'All Domains' }: { domain?: st
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-[15px] font-bold" style={{ color: colors.ink }}>{humanize(s.skill_id)}</h3>
-                        <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{s.department} · v{s.version}</p>
+                        <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{humanize(s.department)} · v{s.version}</p>
                       </div>
                       <span className="px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide"
                         style={s.status === 'ACTIVE'
                           ? { background: colors.success + '1f', color: colors.success, border: `1px solid ${colors.success}3d` }
                           : { background: colors.warning + '1f', color: colors.warning, border: `1px solid ${colors.warning}3d` }}>
-                        {s.status}
+                        {humanize(s.status)}
                       </span>
                     </div>
 

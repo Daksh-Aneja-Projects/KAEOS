@@ -8,10 +8,23 @@ import { Lock } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
+
+const SETTINGS_TABS = [
+  { id: 'llm', label: 'LLM Routing', icon: Cpu },
+  { id: 'integrations', label: 'Integrations', icon: Plug },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
+  { id: 'security', label: 'Security', icon: Shield },
+  { id: 'governance', label: 'Data & Privacy', icon: Lock },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'platform', label: 'Platform', icon: Globe2 },
+] as const;
+
+type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
 const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   const { colors, theme, toggle } = useTheme();
-  const [tab, setTab] = useState<'llm' | 'integrations' | 'calendar' | 'platform' | 'security' | 'governance' | 'notifications'>('llm');
+  const [tab, setTab] = useState<SettingsTab>('llm');
   const [llmConfig, setLlmConfig] = useState<any>(null);
   const [connectors, setConnectors] = useState<any[]>([]);
   const [calEvents, setCalEvents] = useState<any[]>([]);
@@ -71,17 +84,30 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
     })();
   }, []);
 
+  // Arrow keys move between tabs, as a tablist is expected to.
+  const onTabKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const i = SETTINGS_TABS.findIndex(t => t.id === tab);
+    const next = SETTINGS_TABS[(i + (e.key === 'ArrowRight' ? 1 : SETTINGS_TABS.length - 1)) % SETTINGS_TABS.length].id;
+    setTab(next);
+    document.getElementById(`settings-tab-${next}`)?.focus();
+  };
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className={`${PAGE_PAD} space-y-6`}>
       <div>
         <h1 className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: '-0.6px', color: colors.ink }}>Settings</h1>
         <p className="text-[13px] mt-0.5" style={{ color: colors.inkSubtle }}>LLM routing, integrations, enterprise calendar, and platform config</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        {([['llm', 'LLM Routing', Cpu], ['integrations', 'Integrations', Plug], ['calendar', 'Calendar', Calendar], ['security', 'Security', Shield], ['governance', 'Data & Privacy', Lock], ['notifications', 'Notifications', Bell], ['platform', 'Platform', Globe2]] as const).map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setTab(id as any)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap"
+      <div role="tablist" aria-label="Settings sections" onKeyDown={onTabKeyDown}
+        className="flex flex-wrap gap-1 p-1 rounded-lg w-fit" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setTab(id)}
+            id={`settings-tab-${id}`} role="tab" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap"
             style={{ background: tab === id ? colors.primary : 'transparent', color: tab === id ? '#fff' : colors.inkSubtle }}>
             <Icon className="w-3.5 h-3.5" />{label}
           </button>
@@ -109,7 +135,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                   TIER_3_FAST: { label: 'Fast', desc: 'Intent routing, formatting, simple operations', color: '#22c55e' },
                   TIER_EMBEDDING: { label: 'Embeddings', desc: 'Vector search and retrieval', color: '#f59e0b' },
                 };
-                const meta = tierMeta[cfg.layer] || { label: cfg.layer, desc: '', color: colors.primary };
+                const meta = tierMeta[cfg.layer] || { label: humanize(cfg.layer), desc: '', color: colors.primary };
                 const keyConfigured = !!cfg.key_configured;
                 const profile = cfg.capability_profile || {};
                 const ceiling = profile.tier_ceiling;
@@ -123,7 +149,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                       </div>
                       <div className="w-40 flex-shrink-0">
                         <div className="text-[13px] font-semibold" style={{ color: colors.ink }}>{meta.label}</div>
-                        <div className="text-[11px] font-mono" style={{ color: colors.inkTertiary }}>{cfg.layer}</div>
+                        <div className="text-[11px]" style={{ color: colors.inkTertiary }}>{humanize(cfg.layer)}</div>
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-mono truncate block" title={cfg.model_name} style={{ color: colors.ink }}>{cfg.model_name}</span>
@@ -131,7 +157,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                       </div>
                       <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
                         style={{ background: 'rgba(94,106,210,0.12)', color: colors.primary }}>
-                        {cfg.provider}
+                        {humanize(cfg.provider)}
                       </span>
                       <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 flex items-center gap-1"
                         style={{
@@ -211,13 +237,13 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
                   <Plug className="w-4 h-4" style={{ color: c.status === 'ACTIVE' ? colors.success : colors.inkTertiary }} />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[13px] font-medium truncate block" title={c.name || c.connector_type} style={{ color: colors.ink }}>{c.name || c.connector_type}</span>
-                  <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{c.connector_type}</p>
+                  <span className="text-[13px] font-medium truncate block" title={c.name || c.connector_type} style={{ color: colors.ink }}>{c.name || humanize(c.connector_type)}</span>
+                  <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{humanize(c.connector_type)}</p>
                 </div>
               </div>
               <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ml-3"
                 style={{ background: c.status === 'ACTIVE' ? 'rgba(39,166,68,0.12)' : 'rgba(138,143,152,0.12)', color: c.status === 'ACTIVE' ? colors.success : colors.inkSubtle }}>
-                {c.status}
+                {humanize(c.status)}
               </span>
             </div>
           ))}
@@ -236,7 +262,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
               <Calendar className="w-4 h-4 flex-shrink-0" style={{ color: ev.is_blocking ? colors.error : colors.info }} />
               <div className="flex-1 min-w-0">
                 <span className="text-[13px] font-medium truncate block" title={ev.event_name} style={{ color: colors.ink }}>{ev.event_name}</span>
-                <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{ev.department} · {ev.event_type}</p>
+                <p className="text-[11px] truncate" style={{ color: colors.inkTertiary }}>{humanize(ev.department)} · {humanize(ev.event_type)}</p>
               </div>
               {ev.is_blocking && <span className="text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(229,83,75,0.12)', color: colors.error }}>Blocking</span>}
             </div>
@@ -281,7 +307,7 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
             <div className="space-y-3">
               {autonomy.map(a => (
                 <div key={a.domain} className="flex items-center gap-4">
-                  <div className="w-28 text-[13px] font-medium capitalize truncate" title={a.domain} style={{ color: colors.ink }}>{a.domain}</div>
+                  <div className="w-28 text-[13px] font-medium truncate" title={a.domain} style={{ color: colors.ink }}>{humanize(a.domain)}</div>
                   <input
                     type="range" min={0.5} max={0.99} step={0.01} value={a.min_confidence}
                     onChange={e => {

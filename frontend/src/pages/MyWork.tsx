@@ -9,6 +9,7 @@ import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
 import { timeAgo } from '../lib/time';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * Workspace home (Sprints 6 & 10): everything assigned to the caller across
@@ -75,12 +76,12 @@ const MyWork: React.FC<{ domain?: string }> = () => {
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>;
   }
   if (error) {
-    return <div className="p-6"><BrainError message={error} onRetry={() => { setLoading(true); load(); }} /></div>;
+    return <div className={PAGE_PAD}><BrainError message={error} onRetry={() => { setLoading(true); load(); }} /></div>;
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6" style={{ color: colors.ink }}>
-      <div className="flex items-end justify-between">
+    <div className={`${PAGE_PAD} space-y-6`} style={{ color: colors.ink }}>
+      <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-[24px] font-bold tracking-tight flex items-center gap-2">
             <Briefcase className="w-6 h-6" style={{ color: colors.primary }} /> My Work
@@ -91,7 +92,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
         </div>
         <div className="flex items-center gap-3">
           <LiveBadge lastSync={lastSync} />
-          <button onClick={load} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+          <button onClick={load} aria-label="Refresh my work" className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -116,8 +117,8 @@ const MyWork: React.FC<{ domain?: string }> = () => {
                 <span className="font-medium truncate flex-1 min-w-0" title={it.title || it.entity_id}>{it.title || it.entity_id}</span>
                 <span className="whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{humanize(it.entity_type)}</span>
                 {it.state && (
-                  <span className="font-mono text-[11px] px-1.5 py-0.5 rounded shrink-0"
-                    style={{ background: colors.surface2, color: colors.inkSubtle }}>{it.state}</span>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded shrink-0"
+                    style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(it.state)}</span>
                 )}
                 <span className="ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{timeAgo(it.at)}</span>
               </div>
@@ -176,7 +177,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
                 style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
                 <span className="text-[11px] font-bold uppercase" style={{ color: colors.primary }}>{s.domain}</span>
                 <span style={{ color: colors.ink }}>{s.name}</span>
-                <button onClick={() => removeSegment(s.id)} style={{ color: colors.inkTertiary }}>
+                <button onClick={() => removeSegment(s.id)} aria-label={`Delete saved view ${s.name}`} style={{ color: colors.inkTertiary }}>
                   <Trash2 className="w-3 h-3" />
                 </button>
               </div>

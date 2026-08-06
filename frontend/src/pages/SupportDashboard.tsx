@@ -15,6 +15,7 @@ import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function SupportDashboard() {
   const { colors } = useTheme();
@@ -53,7 +54,7 @@ export default function SupportDashboard() {
   if (!dept && !supStats) {
     return (
       <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-        <div className="max-w-7xl mx-auto p-6">
+        <div className={`${PAGE_PAD}`}>
           <div className="flex flex-col items-center justify-center py-20 gap-6" style={card}>
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: '#ec489915' }}>
               <LifeBuoy className="w-10 h-10" style={{ color: '#ec4899' }} />
@@ -85,7 +86,7 @@ export default function SupportDashboard() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -202,7 +203,7 @@ export default function SupportDashboard() {
                       <div className="text-[11px] truncate" title={agent.role_in_department} style={{ color: colors.inkSubtle }}>{agent.role_in_department}</div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-500/10 text-green-500 flex-shrink-0 whitespace-nowrap ml-2">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : agent.status}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-500/10 text-green-500 flex-shrink-0 whitespace-nowrap ml-2">{agent.status === 'ACTIVE' || !agent.status ? 'Active' : humanize(agent.status)}</span>
                 </div>
               ))}
             </div>

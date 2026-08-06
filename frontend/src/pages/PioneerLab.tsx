@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { humanize, toPct } from '../lib/format';
+import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { BrainEmpty, BrainError, BrainLoading } from '../components/BrainStates';
 
 /**
@@ -29,6 +30,18 @@ import type { Lane } from './PioneerLab.parts';
 const PioneerLab = () => {
  const { colors } = useTheme();
  const [lane, setLane] = useState<Lane>('intelligence');
+
+ // Left/right arrows move between lanes, the way a tablist is expected to behave.
+ const onLaneKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const els = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const i = els.indexOf(document.activeElement as HTMLButtonElement);
+  if (i < 0) return;
+  e.preventDefault();
+  const next = els[(i + (e.key === 'ArrowRight' ? 1 : -1) + els.length) % els.length];
+  next.focus();
+  next.click();
+ };
 
  const card: React.CSSProperties = {
   background: colors.surface1,
@@ -172,7 +185,7 @@ const PioneerLab = () => {
 
  return (
   <div className="h-full flex flex-col">
-   <div className="p-6 pb-0">
+   <div className={`${PAGE_PAD_X} pt-6`}>
     <div className="flex items-start justify-between flex-wrap gap-4">
      <div>
       <h1 className="text-[22px] font-bold tracking-tight flex items-center gap-2" style={{ color: colors.ink }}>
@@ -183,10 +196,15 @@ const PioneerLab = () => {
        Hands-on console for the advanced engines: feed signals, probe the org, simulate change, benchmark the enterprise
       </p>
      </div>
-     <div className="flex gap-2 flex-wrap">
+     <div className="flex gap-2 flex-wrap" role="tablist" aria-label="Pioneer Lab lanes" onKeyDown={onLaneKey}>
       {LANES.map(l => (
        <button
         key={l.key}
+        id={`lab-tab-${l.key}`}
+        role="tab"
+        aria-selected={lane === l.key}
+        aria-controls="lab-lane-panel"
+        tabIndex={lane === l.key ? 0 : -1}
         onClick={() => setLane(l.key)}
         className="px-3 py-2 text-[12px] font-semibold rounded-lg transition-colors flex items-center gap-1.5"
         style={{
@@ -203,7 +221,8 @@ const PioneerLab = () => {
     </div>
    </div>
 
-   <div className="flex-1 overflow-y-auto p-6 space-y-6">
+   <div className={`flex-1 overflow-y-auto ${PAGE_PAD} space-y-6`}
+    id="lab-lane-panel" role="tabpanel" aria-labelledby={`lab-tab-${lane}`}>
     {lane === 'intelligence' && (
      <>
       <ErrorBanner message={intelError} />

@@ -4,6 +4,8 @@ import { GitFork, RefreshCw, Info } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import DomainIcon from '../components/DomainIcon';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 /**
  * Causal Discovery — an interactive directed graph of the causal links KAEOS
@@ -57,7 +59,7 @@ const CausalDiscovery = () => {
         @keyframes causalDash { to { stroke-dashoffset: -24; } }
         .causal-edge { stroke-dasharray: 6 6; animation: causalDash 1.2s linear infinite; }
       `}</style>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}99)` }}>
@@ -148,17 +150,17 @@ const CausalDiscovery = () => {
             {/* Ranked causal links list */}
             <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
               <div className="px-5 py-3 border-b text-[13px] font-medium" style={{ borderColor: colors.hairline }}>
-                Inferred links ({links.length}) · {data.method}
+                Inferred links ({links.length}) · {humanize(data.method)}
               </div>
               {links.length === 0 && <div className="p-5 text-center text-[12px]" style={{ color: colors.inkTertiary }}>No links above threshold.</div>}
               {links.map((l, i) => (
                 <div key={i} className="flex items-center gap-3 px-5 py-2.5 border-b" style={{ borderColor: colors.hairline, background: hoverEdge === i ? colors.surface2 : 'transparent' }}
                   onMouseEnter={() => setHoverEdge(i)} onMouseLeave={() => setHoverEdge(null)}>
                   <DomainIcon hint={l.source} size={18} />
-                  <span className="text-[12px] font-medium" style={{ color: colors.ink }}>{l.source}</span>
+                  <span className="text-[12px] font-medium" style={{ color: colors.ink }}>{humanize(l.source)}</span>
                   <span className="text-[13px]" style={{ color: edgeColor(l) }}>{l.kind === 'leads' ? '→' : '↔'}</span>
                   <DomainIcon hint={l.target} size={18} />
-                  <span className="text-[12px] font-medium" style={{ color: colors.ink }}>{l.target}</span>
+                  <span className="text-[12px] font-medium" style={{ color: colors.ink }}>{humanize(l.target)}</span>
                   <span className="text-[11px] px-2 py-0.5 rounded-full ml-2" style={{ background: edgeColor(l) + '22', color: edgeColor(l) }}>
                     {l.kind === 'leads' ? `leads by ${l.lag_days}d` : 'co-occurs'}
                   </span>

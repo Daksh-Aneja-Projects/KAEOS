@@ -8,6 +8,7 @@ import {
 import TimeMachinePanel from '../components/TimeMachinePanel';
 import WargamePanel from '../components/WargamePanel';
 import { humanize } from '../lib/format';
+import { PAGE_PAD_X } from '../lib/layout';
 
 import { request } from '../api/client';
 import {
@@ -351,7 +352,7 @@ export default function RealityExperience() {
   return (
     <div className="flex flex-col h-full w-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: colors.hairline, background: colors.surface1 }}>
+      <div className={`flex items-center justify-between ${PAGE_PAD_X} py-4 border-b`} style={{ borderColor: colors.hairline, background: colors.surface1 }}>
         <div className="flex items-center gap-3">
           <Eye className="w-6 h-6" style={{ color: colors.primary }} />
           <div>
@@ -377,20 +378,22 @@ export default function RealityExperience() {
       </div>
 
       {twinError && (
-        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm"
-          style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
-          {twinError}
+        <div className={`${PAGE_PAD_X} mt-4`}>
+          <div className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm"
+            style={{ background: colors.error + '12', border: `1px solid ${colors.error}33`, color: colors.error }}>
+            {twinError}
+          </div>
         </div>
       )}
 
       {/* Enterprise stat strip - full width so no label wraps */}
-      <div className="px-6 pt-6">
+      <div className={`${PAGE_PAD_X} pt-6`}>
         <StatsStrip tiles={statTiles} colors={colors} card={card} />
       </div>
 
       {/* ── HERO: the living enterprise twin. Full-bleed and tall - this is the IP.
           Simulation controls sit to its left so a shock visibly pulses the graph. */}
-      <div className="grid grid-cols-12 gap-6 px-6 pt-6">
+      <div className={`grid grid-cols-12 gap-6 ${PAGE_PAD_X} pt-6`}>
         <div className="col-span-3 flex flex-col gap-6 overflow-y-auto pr-1" style={{ height: 640 }}>
           {simControls}
           <LearningState learningStats={learningStats} colors={colors} card={card} />
@@ -435,7 +438,8 @@ export default function RealityExperience() {
             <div className="absolute right-6 top-14 bottom-6 w-64 p-4 border rounded-xl shadow-xl overflow-y-auto z-10" style={{ background: colors.surface1, borderColor: colors.hairline }}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-bold text-sm truncate">{selectedNode.name}</h3>
-                <button onClick={() => setSelectedNode(null)} className="p-1 rounded hover:bg-red-500/20" style={{ color: colors.inkSubtle }}>
+                <button onClick={() => setSelectedNode(null)} aria-label="Close node details"
+                  className="p-1 rounded hover:bg-red-500/20" style={{ color: colors.inkSubtle }}>
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -471,7 +475,7 @@ export default function RealityExperience() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 p-6">
+      <div className={`grid grid-cols-12 gap-6 ${PAGE_PAD_X} py-6`}>
         {/* Left: Scenario/What-If results + Decisions */}
         <div className="col-span-8 flex flex-col gap-6">
           {mode === 'shock' && scenarios.length > 0 && (
@@ -695,7 +699,7 @@ export default function RealityExperience() {
             {decision ? (
               <div className="relative pl-4 border-l space-y-4 text-xs font-mono" style={{ borderColor: colors.primary }}>
                 {[
-                  ['Source Event', SHOCK_TYPES.find(s => s.value === shockType)?.label || shockType],
+                  ['Source Event', SHOCK_TYPES.find(s => s.value === shockType)?.label || humanize(shockType)],
                   ['Twin State Capture', `${twinNodes.length} nodes · live snapshot`],
                   ['Impact Engine', `Severity ${decision.impact?.severity?.toFixed(1)} · ${decision.impact?.impacted_nodes?.length ?? 0} nodes hit`],
                   ['Option Engine', `Generated ${(decision.options_evaluated || []).length} candidates`],
@@ -743,7 +747,7 @@ export default function RealityExperience() {
 
       {/* ── Reality Feed: a full-width event stream so it reads as a live ticker
           across the whole dashboard, not a cramped side rail. */}
-      <div className="px-6 pb-6">
+      <div className={`${PAGE_PAD_X} pb-6`}>
         <div className="rounded-xl border shadow-sm p-4" style={card}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold uppercase flex items-center gap-2" style={{ color: colors.inkSubtle }}>

@@ -14,6 +14,8 @@ import {
   CheckCircle, ArrowRight, Filter, TrendingUp, Loader2, Trash2, XCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function DomainPackMarketplace({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -105,7 +107,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -133,13 +135,13 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
             <Filter className="w-4 h-4" style={{ color: colors.inkSubtle }} />
             {categories.map(cat => (
               <button key={cat} onClick={() => setFilterCat(cat)}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-medium capitalize transition-all"
+                className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
                 style={{
                   background: filterCat === cat ? colors.primary + '15' : colors.surface1,
                   color: filterCat === cat ? colors.primary : colors.inkSubtle,
                   border: `1px solid ${filterCat === cat ? colors.primary + '30' : colors.hairline}`,
                 }}>
-                {cat}
+                {humanize(cat)}
               </button>
             ))}
           </div>
@@ -162,7 +164,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
         {filteredPacks.length === 0 ? (
           <BrainEmpty title="No packs match your search" action="Try a different search term or category" />
         ) : (
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {filteredPacks.map(pack => {
               const installed = isInstalled(pack.id);
               return (
@@ -182,7 +184,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[11px] font-mono px-2 py-0.5 rounded-full" style={{ background: colors.primary + '10', color: colors.primary }}>v{pack.version}</span>
                           <span className="text-[11px]" style={{ color: colors.inkSubtle }}>by {pack.author}</span>
-                          <span className="text-[11px] capitalize px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle }}>{pack.category}</span>
+                          <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: colors.surface1, color: colors.inkSubtle }}>{humanize(pack.category)}</span>
                         </div>
                       </div>
                     </div>
@@ -268,7 +270,7 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                           {(pack.capabilities || []).map((cap: any, i: number) => (
                             <div key={i} className="flex items-center gap-2 text-[12px]">
                               <Zap className="w-3 h-3 flex-shrink-0" style={{ color: '#f59e0b' }} />
-                              {typeof cap === 'string' ? cap : cap.name}
+                              {typeof cap === 'string' ? humanize(cap) : (cap.name || humanize(cap.slug))}
                             </div>
                           ))}
                         </div>
@@ -279,8 +281,8 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                           <h4 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>Required Integrations</h4>
                           <div className="flex items-center gap-2 flex-wrap">
                             {pack.required_integrations.map((ri: any, i: number) => (
-                              <span key={i} className="px-2 py-1 rounded text-[11px] capitalize" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
-                                {ri.category} ({(ri.examples || []).join(', ')})
+                              <span key={i} className="px-2 py-1 rounded text-[11px]" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                                {humanize(ri.category)} ({(ri.examples || []).join(', ')})
                               </span>
                             ))}
                           </div>

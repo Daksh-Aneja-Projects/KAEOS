@@ -15,6 +15,8 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import DomainIcon from '../components/DomainIcon';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import {
   Package, Plug, Eye, Rocket, CheckCircle, ArrowRight, ArrowLeft,
   Shield, Bot, Zap, AlertTriangle, Loader2, Users
@@ -106,7 +108,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div>
           <h1 className="text-[24px] font-bold tracking-tight">Deploy Department</h1>
@@ -212,7 +214,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
                         <div key={i} className="flex items-center gap-3 p-3 rounded-lg border" style={{ borderColor: colors.hairline }}>
                           <Plug className="w-4 h-4" style={{ color: connected ? '#22c55e' : '#f59e0b' }} />
                           <div className="flex-1">
-                            <div className="text-[12px] font-medium capitalize">{req.category}</div>
+                            <div className="text-[12px] font-medium">{humanize(req.category)}</div>
                             <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{(req.examples || []).join(', ')}</div>
                           </div>
                           {connected ? (
@@ -307,7 +309,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
               {/* Progress bar */}
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[12px] font-medium">{deployStatus?.current_step || 'Initializing...'}</span>
+                  <span className="text-[12px] font-medium">{humanize(deployStatus?.current_step) || 'Getting started'}</span>
                   <span className="text-[12px] font-mono" style={{ color: colors.primary }}>{(deployStatus?.progress_pct || 0).toFixed(0)}%</span>
                 </div>
                 <div className="h-3 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
@@ -327,7 +329,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
                   </span>
                 ) : (
                   <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold" style={{ background: colors.primary + '20', color: colors.primary }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> {deployStatus?.status || 'INIT'}
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> {humanize(deployStatus?.status) || 'Starting'}
                   </span>
                 )}
               </div>
@@ -340,7 +342,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
                     ) : (
                       <Loader2 className="w-3 h-3 flex-shrink-0 animate-spin" style={{ color: colors.primary }} />
                     )}
-                    <span style={{ color: s.status === 'COMPLETED' ? colors.ink : colors.inkSubtle }}>{s.step}</span>
+                    <span style={{ color: s.status === 'COMPLETED' ? colors.ink : colors.inkSubtle }}>{humanize(s.step)}</span>
                     {s.completed_at && <span className="font-mono text-[11px]" style={{ color: colors.inkSubtle }}>{new Date(s.completed_at).toLocaleTimeString()}</span>}
                   </div>
                 ))}
@@ -350,7 +352,7 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
                 <div className="mt-3 space-y-1">
                   {deployStatus.error_log.map((err: any, i: number) => (
                     <div key={i} className="text-[11px] px-3 py-1.5 rounded" style={{ background: '#ef444410', color: '#ef4444' }}>
-                      [{err.step}] {err.error}
+                      {humanize(err.step)}: {err.error}
                     </div>
                   ))}
                 </div>

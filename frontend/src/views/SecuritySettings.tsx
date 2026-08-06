@@ -133,7 +133,8 @@ const SecuritySettings: React.FC = () => {
                     {c.email_domain || 'no domain'} · {c.protocol === 'SAML' ? (c.idp_x509_cert_set ? 'cert set' : 'no cert') : (c.client_secret_set ? 'secret set' : 'no secret')} · {c.is_enabled ? 'enabled' : 'disabled'}
                   </span>
                 </div>
-                <button onClick={() => deleteConnection(c.id)} className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => deleteConnection(c.id)} aria-label={`Delete the ${c.provider_label || c.protocol} sign-in connection`}
+                  className="p-1.5 rounded" style={{ color: colors.error }}><Trash2 className="w-4 h-4" /></button>
               </div>
             ))}
           </div>

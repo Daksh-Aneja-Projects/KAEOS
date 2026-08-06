@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -168,9 +169,18 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
 
+  // Left/right arrows move between tabs, as a tablist is expected to.
+  const moveTab = (e: React.KeyboardEvent, i: number) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    setTab(next.key);
+    document.getElementById(`sales-tab-${next.key}`)?.focus();
+  };
+
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight flex items-center gap-2">
@@ -185,7 +195,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
               style={{ background: colors.primary }}>
               <PlusIcon className="w-3.5 h-3.5" /> New Deal
             </button>
-            <button onClick={loadData} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+            <button onClick={loadData} aria-label="Refresh sales data" className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -200,9 +210,13 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: colors.surface1 }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
+        <div className="flex gap-1 p-1 rounded-xl" role="tablist" aria-label="Sales sections" style={{ background: colors.surface1 }}>
+          {TABS.map((t, i) => (
+            <button key={t.key} id={`sales-tab-${t.key}`} role="tab"
+              aria-selected={tab === t.key}
+              tabIndex={tab === t.key ? 0 : -1}
+              onClick={() => setTab(t.key)}
+              onKeyDown={e => moveTab(e, i)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
               style={{ background: tab === t.key ? colors.canvas : 'transparent', color: tab === t.key ? t.color : colors.inkSubtle, boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
               <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -361,7 +375,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3 font-medium">{l.name}</td>
                         <td className="px-4 py-3">{l.company}</td>
                         <td className="px-4 py-3"><Badge status={l.status} /></td>
-                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{l.source || '-'}</td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(l.source) || '-'}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
                             {[1,2,3,4,5].map(s => (
@@ -447,7 +461,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                     {accounts.filter(a => !searchQ || a.name?.toLowerCase().includes(searchQ.toLowerCase())).map((a) => (
                       <tr key={a.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                         <td className="px-4 py-3 font-medium">{a.name}</td>
-                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{a.industry || '-'}</td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(a.industry) || '-'}</td>
                         <td className="px-4 py-3"><Badge status={a.health} /></td>
                         <td className="px-4 py-3 font-mono font-semibold">${(a.arr || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">{a.owner || '-'}</td>

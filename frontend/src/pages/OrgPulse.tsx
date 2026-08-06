@@ -10,6 +10,7 @@ import LiveBadge from '../components/LiveBadge';
 import { CountUp } from '../components/CountUp';
 import { BrainError } from '../components/BrainStates';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import { timeAgo } from '../lib/time';
 
 /**
@@ -264,7 +265,7 @@ const SignalsSection: React.FC<{ signals: any; colors: any; reload: () => void }
           <select value={severity} onChange={e => setSeverity(e.target.value)}
             className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
             style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
-            {['info', 'warning', 'critical'].map(s => <option key={s} value={s}>{s}</option>)}
+            {['info', 'warning', 'critical'].map(s => <option key={s} value={s}>{humanize(s)}</option>)}
           </select>
           <input value={title} onChange={e => setTitle(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && ingest()}
@@ -386,7 +387,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
   const orgHealth = pulse?.org_health ?? null;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6" style={{ color: colors.ink }}>
+    <div className={`${PAGE_PAD} space-y-6`} style={{ color: colors.ink }}>
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-[24px] font-bold tracking-tight flex items-center gap-2">
@@ -399,7 +400,8 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
         </div>
         <div className="flex items-center gap-3">
           <LiveBadge lastSync={lastSync} />
-          <button onClick={load} className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
+          <button onClick={load} aria-label="Refresh Org Pulse" title="Refresh Org Pulse"
+            className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -481,7 +483,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                   <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-wide mr-1.5" style={{ color }}>
-                      {ins.domain}
+                      {humanize(ins.domain)}
                     </span>
                     <span style={{ color: colors.ink }}>{ins.message}</span>
                   </div>
@@ -507,7 +509,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                 style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                 <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                   style={{ background: `${colors.primary}15`, color: colors.primary }}>
-                  {e.domain}
+                  {humanize(e.domain)}
                 </span>
                 <span style={{ color: colors.inkSubtle }}>{humanize(e.entity_type)}</span>
                 <span style={{ color: colors.ink }}>
@@ -570,7 +572,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                     title={`Open ${b.domain} department`}>
                     <td className="px-3 py-2">
                       <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
-                        style={{ background: `${colors.primary}15`, color: colors.primary }}>{b.domain}</span>
+                        style={{ background: `${colors.primary}15`, color: colors.primary }}>{humanize(b.domain)}</span>
                     </td>
                     <td className="px-3 py-2 font-medium max-w-[240px]">
                       <span className="block truncate" title={b.title}>

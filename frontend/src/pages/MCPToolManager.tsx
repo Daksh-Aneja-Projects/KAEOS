@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import type { MCPToolItem } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 // The API never returns a stored key (only `key_configured`), so the editable
 // row carries a LOCAL api_key field: blank means "leave the stored key as is".
@@ -83,7 +85,7 @@ export default function MCPToolManager() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-3">
@@ -117,14 +119,17 @@ export default function MCPToolManager() {
               <div key={tool.tool_id} className="p-6" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, borderRadius: '14px' }}>
                 <div className="flex items-start justify-between mb-6 gap-3">
                   <div>
-                    <h3 className="text-[15px] font-bold font-mono px-2 py-1 rounded inline-block"
-                      style={{ background: colors.surface2, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
-                      {tool.tool_id}
-                    </h3>
+                    <h3 className="text-[15px] font-bold">{humanize(tool.tool_id)}</h3>
+                    <p className="text-[11px] font-mono mt-0.5" style={{ color: colors.inkSubtle }}>{tool.tool_id}</p>
                     <div className="flex items-center gap-4 mt-3">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <div className="w-10 h-6 rounded-full transition-colors flex items-center px-1"
+                             role="switch"
+                             tabIndex={0}
+                             aria-checked={tool.is_active}
+                             aria-label={`${humanize(tool.tool_id)} enabled`}
                              style={{ background: tool.is_active ? colors.success : colors.surface3 }}
+                             onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleUpdate(tool.tool_id, 'is_active', !tool.is_active); } }}
                              onClick={() => handleUpdate(tool.tool_id, 'is_active', !tool.is_active)}>
                           <div className={`w-4 h-4 rounded-full transition-transform ${tool.is_active ? 'translate-x-4' : 'translate-x-0'}`} style={{ background: '#fff' }} />
                         </div>

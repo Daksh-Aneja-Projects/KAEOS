@@ -5,6 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 import { MessagesSquare, Send, Award, CheckCircle, Clock, User, TrendingUp, Sparkles, Loader2, XCircle, AlertTriangle } from 'lucide-react';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function ElicitationHub() {
   const { colors } = useTheme();
@@ -94,7 +95,7 @@ export default function ElicitationHub() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-5">
+      <div className={`${PAGE_PAD} space-y-5`}>
         {/* Header */}
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
@@ -219,7 +220,7 @@ export default function ElicitationHub() {
                         style={highPriority
                           ? { background: colors.error + '1f', color: colors.error, border: `1px solid ${colors.error}3d` }
                           : { background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
-                        {q.priority}
+                        {humanize(q.priority)}
                       </span>
                       <span className="text-[12px] ml-auto flex items-center gap-1" style={{ color: colors.inkSubtle }}>
                         <User className="w-3 h-3" /> {q.employee_name} · {q.department}
@@ -235,7 +236,7 @@ export default function ElicitationHub() {
                     </div>
 
                     <div className="text-[12px] mb-4" style={{ color: colors.inkSubtle }}>
-                      Context: <span className="font-medium" style={{ color: colors.primary }}>{q.context_ref}</span> · via {q.delivery_channel}
+                      Context: <span className="font-medium" style={{ color: colors.primary }}>{q.context_ref}</span> · via {humanize(q.delivery_channel)}
                     </div>
 
                     {answering === q.id ? (
@@ -282,7 +283,7 @@ export default function ElicitationHub() {
                   <div key={q.id} className="opacity-70" style={{ ...card, padding: '16px', borderColor: colors.success + '40' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle className="w-4 h-4" style={{ color: colors.success }} />
-                      <span className="text-[12px] font-semibold" style={{ color: colors.success }}>ANSWERED</span>
+                      <span className="text-[12px] font-semibold" style={{ color: colors.success }}>Answered</span>
                       <span className="text-[12px] ml-auto" style={{ color: colors.inkSubtle }}>{q.employee_name}</span>
                     </div>
                     <p className="text-[13px]" style={{ color: colors.inkSubtle }}>{q.question_text}</p>
@@ -317,7 +318,7 @@ export default function ElicitationHub() {
                     </div>
                     {c.badge && (
                       <span className="mt-2 inline-block px-2 py-0.5 text-[11px] font-bold rounded"
-                        style={{ background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}30` }}>{c.badge}</span>
+                        style={{ background: colors.warning + '18', color: colors.warning, border: `1px solid ${colors.warning}30` }}>{humanize(c.badge)}</span>
                     )}
                   </div>
                 );

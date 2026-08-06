@@ -3,6 +3,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Database, TrendingUp, Award, Loader2 } from 'lucide-react';
 import { request } from '../api/client';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 
 export default function GenomeStudio() {
   const { colors } = useTheme();
@@ -43,7 +44,7 @@ export default function GenomeStudio() {
   const timeline = genomeState.timeline || [];
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={`${PAGE_PAD} space-y-6`}>
 
       {/* Header */}
       <div className="flex items-center justify-between">

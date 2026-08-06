@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
+import { PAGE_PAD } from '../lib/layout';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
   Building2, Users, Clock, Zap, BarChart3, ArrowRight, Rocket,
@@ -101,7 +102,7 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className={`${PAGE_PAD} space-y-6`}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
