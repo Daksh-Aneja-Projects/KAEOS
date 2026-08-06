@@ -30,6 +30,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -55,8 +56,15 @@ _KDF_SALT = b"kaeos.byok.fernet.v2"   # fixed app salt for a deterministic KDF
 _KDF_ITERATIONS = 200_000
 
 
+@lru_cache(maxsize=1)
 def _fernet() -> Fernet:
     """Derive the at-rest encryption key via PBKDF2-HMAC-SHA256.
+
+    Cached: the salt and iteration count are module constants and the secret
+    comes from the (already cached) settings, so the derived key is invariant
+    for the process lifetime. Re-deriving cost 200k PBKDF2 iterations (~36 ms of
+    event-loop CPU) on every encrypt/decrypt, and LLMRouter.for_tenant() calls
+    this once per configured tier, several times per governed decision.
 
     Key separation: prefers a DEDICATED ``CONNECTOR_ENCRYPTION_KEY`` so the
     at-rest data key is independent of the JWT-signing ``SECRET_KEY`` (a leak of

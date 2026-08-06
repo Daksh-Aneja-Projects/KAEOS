@@ -32,7 +32,7 @@ async def test_create_lists_and_gets_user(db):
     # Persisted, SSO-only (unusable local password).
     u = (await db.execute(select(User).where(User.id == uid))).scalar_one()
     from app.services.auth import _verify_password
-    assert not _verify_password("", u.hashed_password)
+    assert not await _verify_password("", u.hashed_password)
 
     # List with the userName filter Okta/Azure send.
     lst = await scim.scim_list_users(_req('userName eq "alice@corp.com"'), tenant=ADMIN, db=db)

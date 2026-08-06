@@ -71,14 +71,18 @@ class Rule(Base):
     last_decay_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    guardrails = relationship("RuleGuardrail", back_populates="rule", lazy="selectin")
+    # Not eager-loaded: nothing reads these as ORM attributes (the API builds
+    # both from explicit queries), and lazy="selectin" made every select(Rule)
+    # fire three queries instead of one across ~68 call sites. provenance is an
+    # append-only ledger, so eager-loading it grew without bound. Under async
+    # SQLAlchemy a future reader gets a loud MissingGreenlet, not a silent cost.
+    guardrails = relationship("RuleGuardrail", back_populates="rule")
     # Explicit view-only join: ProvenanceLedger.rule_id is a polymorphic
     # subject id (no FK), so SQLAlchemy cannot infer the join.
     provenance_entries = relationship(
         "ProvenanceLedger",
         primaryjoin="Rule.id == foreign(ProvenanceLedger.rule_id)",
         viewonly=True,
-        lazy="selectin",
     )
     workflow = relationship("Workflow", back_populates="rules")
 
@@ -246,7 +250,9 @@ class Skill(Base):
     compiled_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    executions = relationship("SkillExecution", back_populates="skill", lazy="selectin")
+    # Not eager-loaded: see the note on Rule.guardrails. This one also hydrated
+    # every execution's context and reasoning_chain JSON on each select(Skill).
+    executions = relationship("SkillExecution", back_populates="skill")
 
 
 class SkillExecution(Base):

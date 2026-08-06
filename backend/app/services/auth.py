@@ -2,6 +2,7 @@
 KAEOS — Authentication Service
 JWT token management, password hashing, user CRUD with RBAC enforcement.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -45,22 +46,32 @@ except ImportError:
     logger.warning("[Auth] passlib[bcrypt] not installed — falling back to SHA-256 (NOT production-safe)")
 
 
-def _hash_password(password: str) -> str:
-    """Hash password with bcrypt (preferred) or SHA-256 fallback."""
+async def _hash_password(password: str) -> str:
+    """Hash password with bcrypt (preferred) or SHA-256 fallback.
+
+    bcrypt is deliberately expensive (~220 ms here), and it is pure CPU. Run on
+    the event loop it stalls every other in-flight request in the process --
+    gate pipelines, WebSocket pings, LLM calls -- so concurrent logins serialize.
+    Offloaded to a worker thread per the project rule: never block the loop.
+    """
     if _HAS_BCRYPT:
-        return _pwd_ctx.hash(password)
+        return await asyncio.to_thread(_pwd_ctx.hash, password)
     # Legacy fallback
     salt = secrets.token_hex(16)
     hashed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
     return f"{salt}:{hashed}"
 
 
-def _verify_password(password: str, hashed: str) -> bool:
-    """Verify password — supports bcrypt and legacy SHA-256 hashes."""
+async def _verify_password(password: str, hashed: str) -> bool:
+    """Verify password — supports bcrypt and legacy SHA-256 hashes.
+
+    Offloaded for the same reason as _hash_password: bcrypt verify measured
+    ~207 ms of blocking CPU.
+    """
     try:
         # bcrypt hashes start with $2b$
         if _HAS_BCRYPT and hashed.startswith("$2"):
-            return _pwd_ctx.verify(password, hashed)
+            return await asyncio.to_thread(_pwd_ctx.verify, password, hashed)
         # Legacy SHA-256 format: salt:hash
         salt, stored_hash = hashed.split(":")
         computed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
@@ -235,7 +246,7 @@ class AuthService:
             select(User).where(User.email == email)
         )).scalar_one_or_none()
         if existing:
-            existing.hashed_password = _hash_password(password)
+            existing.hashed_password = await _hash_password(password)
             existing.role = UserRole.ADMIN
             existing.tenant_id = settings.ADMIN_TENANT
             existing.display_name = settings.ADMIN_DISPLAY_NAME
@@ -247,7 +258,7 @@ class AuthService:
             admin = User(
                 email=email,
                 display_name=settings.ADMIN_DISPLAY_NAME,
-                hashed_password=_hash_password(password),
+                hashed_password=await _hash_password(password),
                 role=UserRole.ADMIN,
                 tenant_id=settings.ADMIN_TENANT,
                 is_active=True,
@@ -301,7 +312,7 @@ class AuthService:
             select(User).where(User.email == email, User.is_active == True)
         )
         user = result.scalar_one_or_none()
-        if not user or not _verify_password(password, user.hashed_password):
+        if not user or not await _verify_password(password, user.hashed_password):
             AuthService._record_failure(email)
             await record_security_event(
                 tenant_id=(user.tenant_id if user else _tenant_for_audit),
@@ -396,7 +407,7 @@ class AuthService:
         user = User(
             email=email,
             display_name=display_name,
-            hashed_password=_hash_password(password),
+            hashed_password=await _hash_password(password),
             role=role,
             tenant_id=tenant_id,
             created_by=created_by,
@@ -522,7 +533,7 @@ class AuthService:
 
         user = User(
             email=email, display_name=display_name or email,
-            hashed_password=_hash_password(secrets.token_urlsafe(32)),  # unusable until accepted
+            hashed_password=await _hash_password(secrets.token_urlsafe(32)),  # unusable until accepted
             role=role, tenant_id=tenant_id, created_by=created_by, is_active=False,
             department=department,
         )
@@ -558,7 +569,7 @@ class AuthService:
         user = (await db.execute(select(User).where(User.id == claims["user_id"]))).scalar_one_or_none()
         if not user:
             return {"error": "user_not_found"}
-        user.hashed_password = _hash_password(password)
+        user.hashed_password = await _hash_password(password)
         user.is_active = True
         await db.commit()
         logger.info(f"[Auth] Invite accepted: {user.email}")

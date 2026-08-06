@@ -234,7 +234,7 @@ async def provision_and_login(db: AsyncSession, tenant_id: str, claims: dict,
         user = User(
             email=email,
             display_name=display_name,
-            hashed_password=_hash_password(secrets.token_urlsafe(32)),
+            hashed_password=await _hash_password(secrets.token_urlsafe(32)),
             role=_role_from(default_role),
             tenant_id=tenant_id,
             is_active=True,

@@ -116,7 +116,7 @@ async def test_provision_creates_user_and_mints_session(db):
     from sqlalchemy import select
     user = (await db.execute(select(User).where(User.email == "newhire@corp.com"))).scalar_one()
     from app.services.auth import _verify_password
-    assert not _verify_password("", user.hashed_password)
+    assert not await _verify_password("", user.hashed_password)
 
 
 async def test_provision_reuses_existing_user(db):

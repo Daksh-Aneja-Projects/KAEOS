@@ -11,6 +11,33 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Performance
+Measured against the dev database, not estimated.
+
+- **Password hashing no longer blocks the event loop.** bcrypt is deliberately
+  expensive and entirely CPU-bound: `verify` measured 207 ms and `hash` 224 ms,
+  and both ran directly on the single event-loop thread. Every login therefore
+  stalled every other in-flight request in the process, including gate
+  pipelines, WebSocket traffic and running LLM calls, so concurrent logins
+  serialized. Both helpers are now async and offloaded with `asyncio.to_thread`,
+  the pattern already used elsewhere in the tree. Eight concurrent logins now
+  complete in 0.44 s wall clock against roughly 1.66 s serialized.
+- **The at-rest encryption key is derived once per process, not per call.**
+  `_fernet()` ran a 200,000-iteration PBKDF2 derivation (~36 ms, on the loop) on
+  every encrypt and decrypt, although its salt and iteration count are module
+  constants and its secret comes from the already-cached settings, so the result
+  was invariant. `LLMRouter.for_tenant()` calls it once per configured tier and
+  runs several times per governed decision, which cost a BYOK tenant close to a
+  second of blocked loop per decision, none of it inference. Now `lru_cache`d.
+- **Three relationships were eagerly loaded and never read.** `Rule.guardrails`,
+  `Rule.provenance_entries` and `Skill.executions` carried `lazy="selectin"`,
+  so every `select(Rule)` issued three queries and every `select(Skill)` two,
+  across roughly 68 call sites; `Skill.executions` also hydrated each
+  execution's `context` and `reasoning_chain` JSON, and `provenance_entries`
+  eagerly loaded an append-only ledger that grows without bound. Confirmed by
+  search that no code reads any of the three as an ORM attribute. Both selects
+  now issue exactly one query.
+
 ### Security
 Eight trust-boundary defects, each a request-supplied value reaching a
 filesystem path, an outbound host, an LLM prompt or a governance ledger without

@@ -88,7 +88,7 @@ async def scim_create_user(body: dict, response: Response,
     from app.services.auth import _hash_password
     user = User(
         email=email, display_name=_display_of(body, email),
-        hashed_password=_hash_password(secrets.token_urlsafe(32)),  # SSO-only, unusable local pw
+        hashed_password=await _hash_password(secrets.token_urlsafe(32)),  # SSO-only, unusable local pw
         role=UserRole.VIEWER, tenant_id=tenant_id,
         is_active=bool(body.get("active", True)),
     )
