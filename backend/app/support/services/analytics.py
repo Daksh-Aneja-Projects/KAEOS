@@ -5,7 +5,7 @@ live from ticket timestamps (never from cached counters).
 """
 from datetime import timezone
 
-from sqlalchemy import func as sqlfunc, select
+from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.support.models.tickets import Ticket, TicketStatus
@@ -24,7 +24,9 @@ def _hours_between(start, end) -> float:
     return max((end - start).total_seconds() / 3600.0, 0.0)
 
 
-async def support_analytics(db: AsyncSession, tenant_id: str) -> dict:
+async def support_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+    """`charts=False` skips the series queries that feed no KPI and no insight,
+    for callers (the org pulse) that only read kpis + insights."""
     status_q = await db.execute(
         select(Ticket.status, sqlfunc.count())
         .where(Ticket.tenant_id == tenant_id)
@@ -32,13 +34,16 @@ async def support_analytics(db: AsyncSession, tenant_id: str) -> dict:
     )
     status_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in status_q.all()}
 
-    prio_q = await db.execute(
-        select(Ticket.priority, sqlfunc.count())
-        .where(Ticket.tenant_id == tenant_id, Ticket.status.in_(_OPEN))
-        .group_by(Ticket.priority)
-    )
-    prio_counts = [{"label": (p.value if hasattr(p, "value") else str(p)), "value": int(c)}
-                   for p, c in prio_q.all()]
+    # Open backlog by priority — chart-only.
+    prio_counts: list[dict] = []
+    if charts:
+        prio_q = await db.execute(
+            select(Ticket.priority, sqlfunc.count())
+            .where(Ticket.tenant_id == tenant_id, Ticket.status.in_(_OPEN))
+            .group_by(Ticket.priority)
+        )
+        prio_counts = [{"label": (p.value if hasattr(p, "value") else str(p)), "value": int(c)}
+                       for p, c in prio_q.all()]
 
     backlog = sum(status_counts.get(s.value, 0) for s in _OPEN)
     total = sum(status_counts.values())
@@ -57,20 +62,16 @@ async def support_analytics(db: AsyncSession, tenant_id: str) -> dict:
     avg_resolution = sum(res_hours) / len(res_hours) if res_hours else None
     avg_first_response = sum(fr_hours) / len(fr_hours) if fr_hours else None
 
-    unassigned_q = await db.execute(
-        select(sqlfunc.count())
-        .where(Ticket.tenant_id == tenant_id,
-               Ticket.status.in_(_OPEN),
-               Ticket.assigned_agent_id.is_(None))
+    # Unassigned and urgent are both counted over the same open backlog, so one
+    # pass with two conditional sums replaces two scans of those rows.
+    open_q = await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.sum(
+                   case((Ticket.assigned_agent_id.is_(None), 1), else_=0)), 0),
+               sqlfunc.coalesce(sqlfunc.sum(
+                   case((Ticket.priority == "URGENT", 1), else_=0)), 0))
+        .where(Ticket.tenant_id == tenant_id, Ticket.status.in_(_OPEN))
     )
-    unassigned = int(unassigned_q.scalar() or 0)
-
-    urgent_open_q = await db.execute(
-        select(sqlfunc.count())
-        .where(Ticket.tenant_id == tenant_id, Ticket.status.in_(_OPEN),
-               Ticket.priority == "URGENT")
-    )
-    urgent_open = int(urgent_open_q.scalar() or 0)
+    unassigned, urgent_open = [int(v or 0) for v in open_q.one()]
 
     insights = []
     if urgent_open:
@@ -99,6 +100,6 @@ async def support_analytics(db: AsyncSession, tenant_id: str) -> dict:
             {"key": "status_mix", "title": "Tickets by Status", "type": "donut",
              "items": [{"label": k, "value": v} for k, v in status_counts.items()]},
             {"key": "open_priority", "title": "Open Backlog by Priority", "type": "bar", "items": prio_counts},
-        ],
+        ] if charts else [],
         "insights": insights,
     }

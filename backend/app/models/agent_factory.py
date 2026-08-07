@@ -153,7 +153,9 @@ class AgentBlueprint(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
-    deployed_agents = relationship("DeployedAgent", back_populates="blueprint", lazy="selectin")
+    # Lazy on purpose: nothing serializes a blueprint's agents, so lazy="selectin"
+    # was buying a second query (and every agent row) on every blueprint read.
+    deployed_agents = relationship("DeployedAgent", back_populates="blueprint")
 
 
 class DeployedAgent(Base):

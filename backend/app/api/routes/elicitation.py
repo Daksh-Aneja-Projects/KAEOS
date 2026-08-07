@@ -13,7 +13,7 @@ from app.models.domain import (
 )
 from app.schemas.elicitation import (
     QuestionResponse, AnswerSubmit, EmployeeContribution,
-    ElicitationDashboardResponse,
+    ElicitationDashboardResponse, AnsweredQuestionSummary,
 )
 from app.services.confidence import ConfidenceEngine
 
@@ -51,33 +51,22 @@ async def elicitation_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asy
             answered_at=eq.answered_at,
         ))
 
-    # Recent answers
+    # Recent answers — summary only (see AnsweredQuestionSummary)
     answered_q = await db.execute(
-        select(ElicitationQuestion, Employee)
+        select(ElicitationQuestion.id, ElicitationQuestion.question_text, Employee.display_name)
         .join(Employee, ElicitationQuestion.employee_id == Employee.id)
         .where(ElicitationQuestion.tenant_id == tenant_id, ElicitationQuestion.status == "ANSWERED")
         .order_by(ElicitationQuestion.answered_at.desc())
         .limit(20)
     )
-    recent = []
-    for eq, emp in answered_q.all():
-        recent.append(QuestionResponse(
-            id=eq.id,
-            employee_id=eq.employee_id,
-            employee_name=emp.display_name or "Unknown",
-            department=emp.department or "Unknown",
-            question_text=eq.question_text,
-            question_type=eq.question_type or "GAP_FILL",
-            context_ref=eq.context_ref,
-            priority=eq.priority or "NORMAL",
-            status=eq.status,
-            delivery_channel=eq.delivery_channel or "slack",
-            specificity=eq.specificity or 0.0,
-            groundedness=eq.groundedness or 0.0,
-            answerability=eq.answerability or 0.0,
-            created_at=eq.created_at,
-            answered_at=eq.answered_at,
-        ))
+    recent = [
+        AnsweredQuestionSummary(
+            id=qid,
+            employee_name=display_name or "Unknown",
+            question_text=question_text,
+        )
+        for qid, question_text, display_name in answered_q.all()
+    ]
 
     # Top contributors
     contribs_q = await db.execute(

@@ -58,9 +58,12 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
         # Incidents raised in the window
         try:
             from app.engineering.models.incidents import Incident
+            # Incident's clock is `detected_at`, not `created_at`. Same silent
+            # failure as the spend rollup below: the AttributeError was caught
+            # and the digest reported zero incidents rather than an error.
             incidents = (await db.execute(
                 select(func.count()).select_from(Incident).where(
-                    Incident.tenant_id == tenant_id, Incident.created_at >= since)
+                    Incident.tenant_id == tenant_id, Incident.detected_at >= since)
             )).scalar() or 0
         except Exception:
             logger.warning("digest: incident count failed for %s", tenant_id, exc_info=True)
@@ -70,8 +73,12 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
         # Model spend
         try:
             spend = (await db.execute(
+                # CostEvent's column is `timestamp`, not `created_at`. This read
+                # raised AttributeError into the handler below on every call, so
+                # the digest's model spend was always null rather than wrong,
+                # which is why it went unnoticed.
                 select(func.coalesce(func.sum(CostEvent.cost_usd), 0)).where(
-                    CostEvent.tenant_id == tenant_id, CostEvent.created_at >= since)
+                    CostEvent.tenant_id == tenant_id, CostEvent.timestamp >= since)
             )).scalar() or 0
             out["spend_usd"] = round(float(spend), 4)
         except Exception:

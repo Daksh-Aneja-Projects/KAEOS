@@ -14,6 +14,51 @@ All notable changes to KAEOS are documented here. This project adheres to
 ### Performance
 Measured against the dev database, not estimated.
 
+**Sweeping the whole read surface (222 GET endpoints) takes 1.9 s where it took
+104.7 s.** Profiled in-process before and after, same database, same tenant.
+Total SQL statements across the sweep fell from 668 to 541. Nothing was traded
+away for it: every payload below is byte-identical to what it was, and where a
+field was dropped it was one no surface rendered.
+
+- **Analyses are cached against their inputs, not against a clock.** The three
+  slowest reads spent 105 s of a 105 s sweep turning a handful of numbers into
+  an LLM-written analysis. They now go through a content-addressed cache: the
+  key is a fingerprint of every input the result depends on, so a change in the
+  org changes the key and the analysis is regenerated. A stale answer is not
+  possible, only a miss. Repeat requests: 105.4 s to 0.018 s, responses
+  byte-identical.
+- **The expensive analyses are computed before anyone asks for them.** A
+  leader-guarded scheduled job warms the two benchmark analyses every 30
+  minutes, calling the same builders the endpoints call, so the first user
+  request is already warm: 75 s of waiting became 0.049 s. A pass where the org
+  numbers have not moved costs nothing, because the cache already answers.
+- **`/neural/world` issues 13 queries where it issued 46**, by fetching each
+  entity type once across all departments instead of once per department.
+  Verified identical: 138 nodes and 181 edges, same hash.
+- **`/org/pulse` 50 to 33 and `/org/digest` 54 to 36.** Most of the saving was
+  work whose results were discarded: the seven domain analytics services each
+  computed chart series that these two endpoints never return. They now say so.
+  The rest were pairs of queries scanning the same rows twice, merged into one
+  pass with conditional aggregates, and two SLA sweeps over tables whose models
+  carry no timestamp column, so they could only ever return nothing.
+- **The SLA sweep filters in SQL.** It read up to 2000 rows per workflow table
+  per pulse and discarded the non-breaching ones in Python; it now selects only
+  breaching rows, and only the columns the breach record is built from.
+- **Oversized payloads trimmed to what the UI reads**, verified by grepping the
+  frontend and by the compiler: `/agents/blueprints` ships 61 KB instead of
+  92 KB, having stopped sending four heavy JSON columns that only the detail
+  route renders.
+
+### Fixed
+- **Two rollups in the executive digest had never worked.** `CostEvent` has no
+  `created_at` column (it is `timestamp`) and `Incident` has none either (it is
+  `detected_at`), so both queries raised `AttributeError` into a handler that
+  logged and moved on. The digest therefore reported model spend as "not
+  metered" and incidents as zero, in every digest ever sent, rather than
+  reporting an error. Both now return real figures. A sweep across all 204
+  mapped model classes confirms no other query references a column its model
+  does not have.
+
 - **`GET /extraction/candidates` went from 67 s to 25 s** against the real local
   model, returning the same seven mined rules. Three causes, in order of impact:
   - It made one rule-mining call per domain **sequentially**, so the request

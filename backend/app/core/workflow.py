@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, JSON, String, select
+from sqlalchemy import Column, DateTime, JSON, String, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -308,9 +308,12 @@ async def apply_bulk_transition(
             "failed": len(results) - succeeded, "results": results}
 
 
+_TITLE_ATTRS = ("subject", "title", "name", "invoice_number", "report_number",
+                "incident_number", "po_number", "item_description")
+
+
 def _entity_title(obj: Any) -> str:
-    for attr in ("subject", "title", "name", "invoice_number", "report_number",
-                 "incident_number", "po_number", "item_description"):
+    for attr in _TITLE_ATTRS:
         v = getattr(obj, attr, None)
         if v:
             return str(v)
@@ -329,11 +332,40 @@ async def find_stale_entities(
     if not spec.sla_hours:
         return []
     now = datetime.now(timezone.utc)
+    # Only the columns the breach record is built from — never the whole row.
+    # This sweep runs once per registered workflow on every /org/pulse, and
+    # hydrating full ORM entities to compute a count was the bulk of its cost.
+    table_cols = spec.model.__table__.columns
+    names = dict.fromkeys(
+        n for n in ("id", spec.status_attr, "updated_at", "created_at", *_TITLE_ATTRS)
+        if n in table_cols
+    )
+    age_cols = [getattr(spec.model, n) for n in ("updated_at", "created_at") if n in names]
+    if not age_cols:
+        # Model carries no age column, so the row loop below would skip every
+        # row it read. Don't scan the table to rediscover that (Incident and
+        # Deployment are both in this state today).
+        return []
+    age = func.coalesce(*age_cols) if len(age_cols) > 1 else age_cols[0]
+    # One cutoff per SLA state, evaluated in SQL: only rows ACTUALLY past their
+    # SLA come back, instead of every row of every workflow table on every
+    # pulse. `age_hours > max_hours` is exactly `stamp < now - max_hours`.
+    status_col = getattr(spec.model, spec.status_attr)
+    stale = [
+        and_(status_col == _coerce_state(spec, state), age < now - timedelta(hours=hours))
+        for state, hours in spec.sla_hours.items()
+        if state in spec.states  # unknown state never matched a row before either
+    ]
+    if not stale:
+        return []
     q = await db.execute(
-        select(spec.model).where(spec.model.tenant_id == tenant_id).limit(2000)
+        select(*(getattr(spec.model, n) for n in names))
+        .where(spec.model.tenant_id == tenant_id, or_(*stale))
+        .order_by(age.asc())  # oldest first, so the cap keeps the worst offenders
+        .limit(2000)
     )
     breaches = []
-    for obj in q.scalars().all():
+    for obj in q.all():
         state = _current_state(obj, spec)
         max_hours = spec.sla_hours.get(state)
         if max_hours is None:

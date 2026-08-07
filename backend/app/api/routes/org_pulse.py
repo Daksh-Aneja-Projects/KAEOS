@@ -64,7 +64,9 @@ async def org_pulse(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
     all_insights = []
     for name, fn in _DOMAIN_ANALYTICS:
         try:
-            data = await fn(db, tenant_id)
+            # charts=False: the pulse reads only kpis + insights, so the
+            # chart-series queries were work done purely to be discarded.
+            data = await fn(db, tenant_id, charts=False)
         except Exception:
             logger.exception("org_pulse: %s analytics failed", name)
             domains.append({"domain": name, "health": None, "kpis": [], "error": True})

@@ -688,15 +688,16 @@ async def list_workforces(
     )
     agents = r.scalars().all()
 
-    # Fetch associated blueprints for department info
+    # Department only — selecting the entity hauled every blueprint's DAG and
+    # decomposition JSON across the wire to read one string column.
     bp_ids = [a.blueprint_id for a in agents if a.blueprint_id]
     bp_map = {}
     if bp_ids:
         bp_result = await db.execute(
-            select(AgentBlueprint).where(AgentBlueprint.id.in_(bp_ids))
+            select(AgentBlueprint.id, AgentBlueprint.department)
+            .where(AgentBlueprint.id.in_(bp_ids))
         )
-        for bp in bp_result.scalars().all():
-            bp_map[bp.id] = bp
+        bp_map = dict(bp_result.all())
 
     return {
         "total": len(agents),
@@ -706,7 +707,7 @@ async def list_workforces(
                 "agent_name": a.agent_name,
                 "agent_type": a.agent_type.value if a.agent_type else None,
                 "status": a.status.value if a.status else None,
-                "department": bp_map.get(a.blueprint_id, None) and getattr(bp_map.get(a.blueprint_id), 'department', None),
+                "department": bp_map.get(a.blueprint_id),
                 "blueprint_id": a.blueprint_id,
                 "execution_count": a.execution_count or 0,
                 "success_count": a.success_count or 0,

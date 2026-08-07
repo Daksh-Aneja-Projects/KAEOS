@@ -56,18 +56,45 @@ async def create_blueprint(
 async def list_blueprints(
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """List all agent blueprints for this tenant."""
+    """List all agent blueprints for this tenant.
+
+    Card fields only. The list renders name/status/description and the pipeline
+    node count; the four heavy JSON columns (intent_decomposition, guardrails,
+    source_skill_ids/source_rule_ids, mcp_tools_required) are read on the detail
+    route alone, and shipping 50 of them cost ~28 KB nothing rendered. Selecting
+    columns instead of entities also keeps them out of the row payload.
+    """
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(AgentBlueprint)
+            select(
+                AgentBlueprint.id, AgentBlueprint.name, AgentBlueprint.description,
+                AgentBlueprint.domain, AgentBlueprint.department, AgentBlueprint.status,
+                AgentBlueprint.blueprint_graph, AgentBlueprint.compliance_tags,
+                AgentBlueprint.confidence_floor, AgentBlueprint.created_by,
+                AgentBlueprint.approved_by, AgentBlueprint.created_at,
+                AgentBlueprint.approved_at,
+            )
             .where(AgentBlueprint.tenant_id == tenant_id)   # ← was: == TENANT
             .order_by(desc(AgentBlueprint.created_at))
             .limit(50)
         )
-        blueprints = result.scalars().all()
+        blueprints = result.all()
         return {
             "total": len(blueprints),
-            "blueprints": [blueprint_gen._serialize(bp) for bp in blueprints],
+            "blueprints": [
+                {
+                    "id": bp.id, "name": bp.name, "description": bp.description,
+                    "domain": bp.domain, "department": bp.department,
+                    "status": bp.status.value if bp.status else None,
+                    "blueprint_graph": bp.blueprint_graph,
+                    "compliance_tags": bp.compliance_tags,
+                    "confidence_floor": bp.confidence_floor,
+                    "created_by": bp.created_by, "approved_by": bp.approved_by,
+                    "created_at": bp.created_at.isoformat() if bp.created_at else None,
+                    "approved_at": bp.approved_at.isoformat() if bp.approved_at else None,
+                }
+                for bp in blueprints
+            ],
         }
 
 

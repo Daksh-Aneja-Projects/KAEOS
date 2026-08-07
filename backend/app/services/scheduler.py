@@ -298,6 +298,48 @@ async def run_outbound_sync_dispatch():
         logger.error(f"[Scheduler] outbound sync dispatch failed: {e}")
 
 
+# How many tenants one warming pass will generate reports for. The work is real
+# model inference, so an unbounded sweep on a large install would be a
+# self-inflicted load spike; the rest are warmed on the next pass, or on demand.
+_WARM_TENANT_LIMIT = 5
+
+
+async def run_benchmark_warmup():
+    """Pre-compute the two expensive benchmark analyses so nobody waits for them.
+
+    Both are cached against the org's rule count, skill count and average
+    confidence, so this only does real work when a tenant's numbers have
+    actually moved since the last pass; otherwise the cache already holds the
+    answer and the call returns immediately. That is what makes running this on
+    a cadence cheap rather than wasteful.
+
+    It calls the same builders the endpoints call, deliberately: a warmer with
+    its own copy of the prompt would compute a different fingerprint and warm a
+    key no request ever reads. Leader-guarded, so one replica does the inference.
+    """
+    if not _is_leader():
+        return
+    try:
+        from app.api.routes.benchmark import build_cross_org_benchmark, build_intelligence_report
+        from app.models.domain import Skill
+
+        async with MaintenanceSessionLocal() as db:
+            tenant_ids = [
+                t for t in (await db.execute(select(Skill.tenant_id).distinct())).scalars().all() if t
+            ][:_WARM_TENANT_LIMIT]
+            for tid in tenant_ids:
+                try:
+                    await build_cross_org_benchmark(db, tid)
+                    await build_intelligence_report(db, tid)
+                except Exception:
+                    # One tenant's model failure must not stop the others.
+                    logger.warning("[Scheduler] Benchmark warmup failed for %s", tid, exc_info=True)
+            if tenant_ids:
+                logger.info("[Scheduler] Benchmark cache warm for %d tenant(s)", len(tenant_ids))
+    except Exception as e:
+        logger.error(f"[Scheduler] Benchmark warmup failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -357,6 +399,14 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_drift_detection_job, 'interval', hours=1,
         id='drift_detection_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Keep the two expensive benchmark analyses warm so opening the lane is
+    # instant instead of a ~30s wait. A pass is nearly free when the org numbers
+    # have not moved, because the cache already answers. max_instances=1 so a
+    # slow pass never overlaps itself and doubles the model load.
+    scheduler.add_job(
+        run_benchmark_warmup, 'interval', minutes=30,
+        id='benchmark_warmup_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # L2 fine-tune bridge: poll external jobs to completion + auto-eval (5 min).
     scheduler.add_job(

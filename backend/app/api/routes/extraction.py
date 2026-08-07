@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
+from app.core.result_cache import get_or_compute
 from app.models.domain import Signal, Rule
 from app.services.extraction import ContradictionDetector, RuleMiner
 from pydantic import BaseModel
@@ -62,26 +63,41 @@ async def get_candidate_rules(tenant_id: str = Depends(get_tenant_id), db: Async
     # talks to the model), so gather is safe; the same is NOT true of the
     # db.execute fan-outs elsewhere in this codebase.
     minable = [(dom, cluster) for dom, cluster in sorted(clusters.items()) if len(cluster) >= 3]
-    sem = asyncio.Semaphore(_MINING_CONCURRENCY)
 
-    async def _mine(cluster) -> dict | None:
-        async with sem:
-            return await miner.extract_rule([{"clean_payload": s.clean_payload} for s in cluster])
+    async def _mine_all() -> list[dict]:
+        sem = asyncio.Semaphore(_MINING_CONCURRENCY)
 
-    results = await asyncio.gather(
-        *(_mine(cluster) for _dom, cluster in minable),
-        return_exceptions=True,
+        async def _mine(cluster) -> dict | None:
+            async with sem:
+                return await miner.extract_rule([{"clean_payload": s.clean_payload} for s in cluster])
+
+        results = await asyncio.gather(
+            *(_mine(cluster) for _dom, cluster in minable),
+            return_exceptions=True,
+        )
+        out: list[dict] = []
+        for (dom, _cluster), rule_dict in zip(minable, results):
+            if isinstance(rule_dict, Exception):
+                logger.warning("Rule mining failed for domain %s: %s", dom, rule_dict)
+                continue
+            if rule_dict:
+                rule_dict["domain"] = dom
+                rule_dict["id"] = f"cand_{dom}_{len(out)}"
+                out.append(rule_dict)
+        return out
+
+    # Cached against the signals actually mined. The fingerprint is every
+    # signal id that reaches a prompt, so ingesting a new signal changes it and
+    # the rules are re-mined; nothing else can make this answer go stale. Only
+    # the ids are hashed, never payload content.
+    parts = [[dom, sorted(s.id for s in cluster[: miner.MAX_PROMPT_SIGNALS])] for dom, cluster in minable]
+    candidates, _cached = await get_or_compute(
+        "extraction_candidates",
+        tenant_id,
+        parts,
+        _mine_all,
+        should_cache=lambda v: bool(v),   # a total mining failure retries next time
     )
-
-    candidates = []
-    for (dom, cluster), rule_dict in zip(minable, results):
-        if isinstance(rule_dict, Exception):
-            logger.warning("Rule mining failed for domain %s: %s", dom, rule_dict)
-            continue
-        if rule_dict:
-            rule_dict["domain"] = dom
-            rule_dict["id"] = f"cand_{dom}_{len(candidates)}"
-            candidates.append(rule_dict)
 
     return {"candidates": candidates}
 

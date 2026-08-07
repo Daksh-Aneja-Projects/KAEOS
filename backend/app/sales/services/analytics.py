@@ -3,7 +3,7 @@ KAEOS Sales — Analytics Service
 Pipeline funnel (count + value), weighted pipeline, win rate, average deal
 size and top accounts by ARR, computed live from tenant rows.
 """
-from sqlalchemy import func as sqlfunc, select
+from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.sales.models.accounts import Account
@@ -15,7 +15,9 @@ _OPEN_STAGES = [OpportunityStage.PROSPECTING, OpportunityStage.QUALIFICATION,
                 OpportunityStage.PROPOSAL, OpportunityStage.NEGOTIATION]
 
 
-async def sales_analytics(db: AsyncSession, tenant_id: str) -> dict:
+async def sales_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+    """`charts=False` skips the series queries that feed no KPI and no insight,
+    for callers (the org pulse) that read only kpis + insights."""
     stage_q = await db.execute(
         select(Opportunity.stage, sqlfunc.count(),
                sqlfunc.coalesce(sqlfunc.sum(Opportunity.amount), 0))
@@ -39,30 +41,30 @@ async def sales_analytics(db: AsyncSession, tenant_id: str) -> dict:
     open_pipeline = sum(by_stage.get(s, (0, 0))[1] for s in _STAGE_ORDER[:4])
     open_count = sum(by_stage.get(s, (0, 0))[0] for s in _STAGE_ORDER[:4])
 
-    # Probability-weighted pipeline over open deals.
-    weighted_q = await db.execute(
+    # Probability-weighted pipeline and the stalled count read exactly the same
+    # open-stage rows, so they come out of one pass instead of two.
+    open_q = await db.execute(
         select(sqlfunc.coalesce(
-            sqlfunc.sum(Opportunity.amount * Opportunity.probability / 100.0), 0))
+                   sqlfunc.sum(Opportunity.amount * Opportunity.probability / 100.0), 0),
+               sqlfunc.coalesce(sqlfunc.sum(
+                   case((Opportunity.ai_stalled_flag.isnot(None), 1), else_=0)), 0))
         .where(Opportunity.tenant_id == tenant_id,
                Opportunity.stage.in_(_OPEN_STAGES))
     )
-    weighted_pipeline = float(weighted_q.scalar() or 0)
+    weighted_raw, stalled_raw = open_q.one()
+    weighted_pipeline = float(weighted_raw or 0)
+    stalled = int(stalled_raw or 0)
 
-    stalled_q = await db.execute(
-        select(sqlfunc.count())
-        .where(Opportunity.tenant_id == tenant_id,
-               Opportunity.stage.in_(_OPEN_STAGES),
-               Opportunity.ai_stalled_flag.isnot(None))
-    )
-    stalled = int(stalled_q.scalar() or 0)
-
-    acct_q = await db.execute(
-        select(Account.name, Account.annual_recurring_revenue)
-        .where(Account.tenant_id == tenant_id)
-        .order_by(Account.annual_recurring_revenue.desc())
-        .limit(5)
-    )
-    top_accounts = [{"label": n, "value": float(v or 0)} for n, v in acct_q.all()]
+    # Top accounts by ARR — chart-only.
+    top_accounts: list[dict] = []
+    if charts:
+        acct_q = await db.execute(
+            select(Account.name, Account.annual_recurring_revenue)
+            .where(Account.tenant_id == tenant_id)
+            .order_by(Account.annual_recurring_revenue.desc())
+            .limit(5)
+        )
+        top_accounts = [{"label": n, "value": float(v or 0)} for n, v in acct_q.all()]
 
     insights = []
     if stalled:
@@ -92,6 +94,6 @@ async def sales_analytics(db: AsyncSession, tenant_id: str) -> dict:
             {"key": "funnel_count", "title": "Pipeline Funnel (deals)", "type": "funnel", "items": funnel_counts},
             {"key": "funnel_value", "title": "Pipeline Funnel (value $)", "type": "bar", "items": funnel_value},
             {"key": "top_accounts", "title": "Top Accounts by ARR", "type": "bar", "items": top_accounts},
-        ],
+        ] if charts else [],
         "insights": insights,
     }

@@ -3,7 +3,7 @@ KAEOS Engineering — Analytics Service
 Incident MTTA/MTTR, severity mix, deployment success rate and PR flow,
 computed live from tenant rows.
 """
-from sqlalchemy import func as sqlfunc, select
+from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engineering.models.delivery import Deployment, PRStatus, PullRequest
@@ -13,27 +13,32 @@ _OPEN_INCIDENTS = [IncidentStatus.DETECTED, IncidentStatus.TRIAGED,
                    IncidentStatus.MITIGATING, IncidentStatus.MONITORING]
 
 
-async def engineering_analytics(db: AsyncSession, tenant_id: str) -> dict:
-    sev_q = await db.execute(
-        select(Incident.severity, sqlfunc.count())
-        .where(Incident.tenant_id == tenant_id)
-        .group_by(Incident.severity)
-    )
-    by_severity = [{"label": (s.value if hasattr(s, "value") else str(s)), "value": int(c)}
-                   for s, c in sev_q.all()]
+async def engineering_analytics(db: AsyncSession, tenant_id: str,
+                                charts: bool = True) -> dict:
+    """`charts=False` skips the series queries that feed no KPI and no insight,
+    for callers (the org pulse) that read only kpis + insights."""
+    # Incidents by severity — chart-only.
+    by_severity: list[dict] = []
+    if charts:
+        sev_q = await db.execute(
+            select(Incident.severity, sqlfunc.count())
+            .where(Incident.tenant_id == tenant_id)
+            .group_by(Incident.severity)
+        )
+        by_severity = [{"label": (s.value if hasattr(s, "value") else str(s)), "value": int(c)}
+                       for s, c in sev_q.all()]
 
-    open_q = await db.execute(
-        select(sqlfunc.count())
-        .where(Incident.tenant_id == tenant_id, Incident.status.in_(_OPEN_INCIDENTS))
-    )
-    open_incidents = int(open_q.scalar() or 0)
-
-    mtta_q = await db.execute(
+    # Open count and the MTTA/MTTR averages all read the tenant's incidents;
+    # one pass with a conditional sum replaces two scans of the same rows.
+    inc_q = await db.execute(
         select(sqlfunc.avg(Incident.time_to_acknowledge_mins),
-               sqlfunc.avg(Incident.time_to_resolve_mins))
+               sqlfunc.avg(Incident.time_to_resolve_mins),
+               sqlfunc.coalesce(sqlfunc.sum(
+                   case((Incident.status.in_(_OPEN_INCIDENTS), 1), else_=0)), 0))
         .where(Incident.tenant_id == tenant_id)
     )
-    mtta, mttr = mtta_q.one()
+    mtta, mttr, open_raw = inc_q.one()
+    open_incidents = int(open_raw or 0)
 
     dep_q = await db.execute(
         select(Deployment.status, sqlfunc.count())
@@ -44,21 +49,24 @@ async def engineering_analytics(db: AsyncSession, tenant_id: str) -> dict:
     dep_done = dep_counts.get("SUCCEEDED", 0) + dep_counts.get("FAILED", 0) + dep_counts.get("ROLLED_BACK", 0)
     deploy_success = (dep_counts.get("SUCCEEDED", 0) / dep_done * 100) if dep_done else None
 
+    # The risky-PR count is the same GROUP BY, carried as an extra conditional
+    # sum per status, so it no longer needs a second scan of the table.
     pr_q = await db.execute(
-        select(PullRequest.status, sqlfunc.count())
+        select(PullRequest.status, sqlfunc.count(),
+               sqlfunc.coalesce(sqlfunc.sum(case((
+                   (PullRequest.touches_auth == True)                     # noqa: E712
+                   | (PullRequest.touches_migrations == True), 1), else_=0)), 0))  # noqa: E712
         .where(PullRequest.tenant_id == tenant_id)
         .group_by(PullRequest.status)
     )
-    pr_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in pr_q.all()}
+    pr_counts, risky_counts = {}, {}
+    for s, c, risky in pr_q.all():
+        key = s.value if hasattr(s, "value") else str(s)
+        pr_counts[key] = int(c)
+        risky_counts[key] = int(risky or 0)
     open_prs = sum(pr_counts.get(s, 0) for s in ["OPEN", "IN_REVIEW", "CHANGES_REQUESTED", "APPROVED"])
-
-    risky_pr_q = await db.execute(
-        select(sqlfunc.count())
-        .where(PullRequest.tenant_id == tenant_id,
-               PullRequest.status.in_([PRStatus.OPEN, PRStatus.IN_REVIEW]),
-               (PullRequest.touches_auth == True) | (PullRequest.touches_migrations == True))  # noqa: E712
-    )
-    risky_open_prs = int(risky_pr_q.scalar() or 0)
+    risky_open_prs = sum(risky_counts.get(s.value, 0)
+                         for s in [PRStatus.OPEN, PRStatus.IN_REVIEW])
 
     pending_deploys = dep_counts.get("PENDING_APPROVAL", 0)
 
@@ -94,6 +102,6 @@ async def engineering_analytics(db: AsyncSession, tenant_id: str) -> dict:
              "items": [{"label": k, "value": v} for k, v in dep_counts.items()]},
             {"key": "prs", "title": "Pull Requests by Status", "type": "bar",
              "items": [{"label": k, "value": v} for k, v in pr_counts.items()]},
-        ],
+        ] if charts else [],
         "insights": insights,
     }

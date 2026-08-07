@@ -23,14 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.models.auth import User, UserRole
-from app.models.domain import Connector, Rule, Signal, Skill, SkillExecution
+from app.models.domain import Rule, Signal, Skill, SkillExecution
 from app.models.agent_factory import DeployedAgent
 from app.models.infrastructure import AgentMessage
 from app.workforce.models.core import (
     Department, DepartmentAgent, DepartmentStatus,
 )
 from app.api.routes.neural_helpers import (
-    _brain_stats, _build_cluster, _derive_level, _human, _ladder, _match_skills, _policy_min_confidence, _replaces_text, _resolve_department, _skill_exec_stats, _sop_steps, _task_label,
+    _brain_stats, _build_cluster, _build_world_clusters, _derive_level, _human, _ladder, _match_skills, _policy_min_confidence, _replaces_text, _resolve_department, _skill_exec_stats, _sop_steps, _task_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,18 +157,14 @@ async def neural_world(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
         select(Department).where(Department.tenant_id == tenant_id).order_by(Department.created_at)
     )).scalars().all()
 
-    # The connector list is tenant-wide, not per-department: fetch it once here
-    # instead of re-running the identical scan inside every cluster build.
-    all_connectors = (await db.execute(
-        select(Connector).where(Connector.tenant_id == tenant_id)
-    )).scalars().all()
-
     nodes_by_id: dict[str, dict] = {}
     edges: list[dict] = []
     hub_ids: list[str] = []
     agents_by_dept: dict[str, list[dict]] = {}
-    for dept in departments:
-        n, e = await _build_cluster(db, tenant_id, dept, all_connectors=all_connectors)
+    # Every cluster's rows are fetched in one query per entity type across all
+    # departments (connectors included, which are tenant-wide anyway), instead
+    # of five queries per department.
+    for dept, n, e in await _build_world_clusters(db, tenant_id, departments):
         for node in n:
             nodes_by_id.setdefault(node["id"], node)
             if node["type"] == "agent":

@@ -100,7 +100,8 @@ export interface ContributorItem {
 
 export interface ElicitationDashboard {
   pending_questions: QuestionItem[];
-  recent_answers: QuestionItem[];
+  /** The API sends only these three for answered questions, not a full QuestionItem. */
+  recent_answers: Pick<QuestionItem, 'id' | 'employee_name' | 'question_text'>[];
   contributors: ContributorItem[];
   stats: Record<string, number>;
 }

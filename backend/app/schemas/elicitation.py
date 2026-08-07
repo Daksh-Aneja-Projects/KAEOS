@@ -24,6 +24,16 @@ class QuestionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AnsweredQuestionSummary(BaseModel):
+    """"Recently harvested" strip: it shows who answered and what was asked.
+    The full QuestionResponse shipped 12 more fields no surface rendered."""
+    id: str
+    employee_name: str
+    question_text: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AnswerSubmit(BaseModel):
     question_id: str
     answer_text: str
@@ -44,6 +54,6 @@ class EmployeeContribution(BaseModel):
 
 class ElicitationDashboardResponse(BaseModel):
     pending_questions: List[QuestionResponse]
-    recent_answers: List[QuestionResponse]
+    recent_answers: List[AnsweredQuestionSummary]
     contributors: List[EmployeeContribution]
     stats: Dict[str, Any]

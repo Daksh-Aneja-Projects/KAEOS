@@ -187,17 +187,20 @@ def _serialize_notification(e) -> dict:
 
 
 async def _notification_counts(db: AsyncSession, tenant_id: str) -> dict:
-    from sqlalchemy import func as sqlfunc
+    """Both counts in one tenant scan. Two count() queries over the same rows
+    scanned the table twice for numbers a single pass already has."""
+    from sqlalchemy import and_, case, func as sqlfunc
     from app.models.agent_factory import ActivityFeedEvent
-    unread = (await db.execute(
-        select(sqlfunc.count()).select_from(ActivityFeedEvent).where(
-            ActivityFeedEvent.tenant_id == tenant_id,
-            ActivityFeedEvent.is_read == False))).scalar() or 0  # noqa: E712
-    action = (await db.execute(
-        select(sqlfunc.count()).select_from(ActivityFeedEvent).where(
-            ActivityFeedEvent.tenant_id == tenant_id,
-            ActivityFeedEvent.requires_action == True,           # noqa: E712
-            ActivityFeedEvent.action_taken == False))).scalar() or 0  # noqa: E712
+    unread, action = (await db.execute(
+        select(
+            sqlfunc.coalesce(sqlfunc.sum(case(
+                (ActivityFeedEvent.is_read == False, 1), else_=0)), 0),   # noqa: E712
+            sqlfunc.coalesce(sqlfunc.sum(case(
+                (and_(ActivityFeedEvent.requires_action == True,          # noqa: E712
+                      ActivityFeedEvent.action_taken == False), 1),       # noqa: E712
+                else_=0)), 0),
+        ).select_from(ActivityFeedEvent).where(
+            ActivityFeedEvent.tenant_id == tenant_id))).one()
     return {"unread": int(unread), "action_required": int(action)}
 
 

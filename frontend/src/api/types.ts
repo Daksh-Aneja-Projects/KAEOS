@@ -165,9 +165,16 @@ export interface ContributorItem {
   badge: string | null;
 }
 
+/** "Recently harvested" strip: who answered, and what was asked. */
+export interface AnsweredQuestionSummary {
+  id: string;
+  employee_name: string;
+  question_text: string;
+}
+
 export interface ElicitationDashboard {
   pending_questions: QuestionItem[];
-  recent_answers: QuestionItem[];
+  recent_answers: AnsweredQuestionSummary[];
   contributors: ContributorItem[];
   stats: Record<string, number>;
 }

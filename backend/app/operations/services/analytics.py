@@ -14,7 +14,10 @@ from app.operations.models.resources import Resource, ResourceAllocation
 _FUNNEL = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ORDERED", "RECEIVED"]
 
 
-async def operations_analytics(db: AsyncSession, tenant_id: str) -> dict:
+async def operations_analytics(db: AsyncSession, tenant_id: str,
+                               charts: bool = True) -> dict:
+    """`charts=False` skips the series queries that feed no KPI and no insight,
+    for callers (the org pulse) that only read kpis + insights."""
     po_q = await db.execute(
         select(PurchaseOrder.status, sqlfunc.count(),
                sqlfunc.coalesce(sqlfunc.sum(PurchaseOrder.total_amount), 0))
@@ -53,12 +56,15 @@ async def operations_analytics(db: AsyncSession, tenant_id: str) -> dict:
     )
     avg_utilization = util_q.scalar()
 
-    res_q = await db.execute(
-        select(Resource.resource_type, sqlfunc.count())
-        .where(Resource.tenant_id == tenant_id)
-        .group_by(Resource.resource_type)
-    )
-    resources_by_type = [{"label": t, "value": int(c)} for t, c in res_q.all()]
+    # Resources by type — chart-only.
+    resources_by_type: list[dict] = []
+    if charts:
+        res_q = await db.execute(
+            select(Resource.resource_type, sqlfunc.count())
+            .where(Resource.tenant_id == tenant_id)
+            .group_by(Resource.resource_type)
+        )
+        resources_by_type = [{"label": t, "value": int(c)} for t, c in res_q.all()]
 
     insights = []
     if pending_requests:
@@ -86,6 +92,6 @@ async def operations_analytics(db: AsyncSession, tenant_id: str) -> dict:
         "charts": [
             {"key": "po_funnel", "title": "PO Pipeline", "type": "funnel", "items": funnel},
             {"key": "resources", "title": "Resources by Type", "type": "donut", "items": resources_by_type},
-        ],
+        ] if charts else [],
         "insights": insights,
     }

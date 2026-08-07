@@ -100,6 +100,25 @@ async def test_world_is_one_connected_graph(async_client: AsyncClient, db):
 
 
 @pytest.mark.asyncio
+async def test_world_clusters_match_per_department_build(db):
+    """The world fetches every cluster's rows in one query per entity type. That
+    is only allowed to be a speed change, so each batched cluster must equal what
+    the per-department builder produces on its own."""
+    from sqlalchemy import select
+    from app.api.routes.neural_helpers import _build_cluster, _build_world_clusters
+    from app.workforce.models.core import Department
+
+    await _seed(db)
+    depts = (await db.execute(
+        select(Department).where(Department.tenant_id == T).order_by(Department.created_at)
+    )).scalars().all()
+    batched = await _build_world_clusters(db, T, depts)
+    assert [d.id for d, _, _ in batched] == [d.id for d in depts]
+    for dept, nodes, edges in batched:
+        assert (nodes, edges) == await _build_cluster(db, T, dept)
+
+
+@pytest.mark.asyncio
 async def test_brain_ingest_note(async_client: AsyncClient, db):
     r = await async_client.post(
         "/api/v1/neural/brain/ingest",

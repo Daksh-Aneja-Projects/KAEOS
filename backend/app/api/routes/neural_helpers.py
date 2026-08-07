@@ -144,15 +144,17 @@ async def _resolve_department(db: AsyncSession, ref: str, tenant_id: str) -> Opt
 
 async def _brain_stats(db: AsyncSession, tenant_id: str) -> dict:
     """Live knowledge-core stats: what the brain holds and how it clusters."""
-    async def _count(q):
-        return (await db.execute(q)).scalar() or 0
+    # Four independent COUNTs on four tables: one SELECT of four scalar
+    # subqueries instead of four round trips. Same predicates, same numbers.
+    def _n(model):
+        return select(sqlfunc.count(model.id)).where(model.tenant_id == tenant_id)
 
-    rules = await _count(select(sqlfunc.count(Rule.id)).where(
-        Rule.tenant_id == tenant_id, Rule.is_archived == False))  # noqa: E712
-    skills = await _count(select(sqlfunc.count(Skill.id)).where(Skill.tenant_id == tenant_id))
-    signals = await _count(select(sqlfunc.count(Signal.id)).where(Signal.tenant_id == tenant_id))
-    executions = await _count(select(sqlfunc.count(SkillExecution.id)).where(
-        SkillExecution.tenant_id == tenant_id))
+    rules, skills, signals, executions = (await db.execute(select(
+        _n(Rule).where(Rule.is_archived == False).scalar_subquery(),  # noqa: E712
+        _n(Skill).scalar_subquery(),
+        _n(Signal).scalar_subquery(),
+        _n(SkillExecution).scalar_subquery(),
+    ))).one()
 
     graph_nodes, graph_edges = 0, 0
     try:
@@ -205,16 +207,11 @@ async def _build_cluster(
     db: AsyncSession,
     tenant_id: str,
     dept: Department,
-    all_connectors: list[Connector] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """One department's cluster: hub + connectors + agents + tasks + capabilities
-    + processes, with tiered edges. Shared by the single-department graph and
-    the org-wide free-flow world.
-
-    `all_connectors` is the tenant's full connector list. It does not depend on
-    the department, so the org-wide world fetches it once and passes it in
-    rather than re-running an identical scan per department; the
-    single-department graph leaves it None and this loads it itself.
+    + processes, with tiered edges. This is the single-department path; the
+    org-wide world uses ``_build_world_clusters``, which fetches the same rows
+    for every department at once and hands them to the same builder.
     """
     agents = (await db.execute(
         select(DepartmentAgent)
@@ -236,32 +233,16 @@ async def _build_cluster(
     # Integrations: explicit mappings and connected_systems are LINKED; beyond
     # those, tenant connectors whose category serves this department appear as
     # feeds (the video-wall top tier is only honest if it shows real systems).
-    # One fetch of the full mapping rows serves both the linked-id set here and
-    # the connector-to-agent wiring further down; they had been two queries with
+    # One fetch of the full mapping rows serves both the linked-id set and the
+    # connector-to-agent wiring in the builder; they had been two queries with
     # the same WHERE, differing only in projection.
     mapping_rows = (await db.execute(
         select(IntegrationMapping)
         .where(IntegrationMapping.department_id == dept.id, IntegrationMapping.tenant_id == tenant_id)
     )).scalars().all()
-    linked_ids = set([*(m.connector_id for m in mapping_rows), *(dept.connected_systems or [])])
-    dept_categories = {
-        "hr": {"hris", "communications"},
-        "finance": {"commercial"},
-        "sales": {"crm", "commercial"},
-        "support": {"support", "communications"},
-        "engineering": {"engineering"},
-        "operations": {"commercial"},
-        "legal": set(),
-    }.get(dept.slug, set())
-    if all_connectors is None:
-        all_connectors = (await db.execute(
-            select(Connector).where(Connector.tenant_id == tenant_id)
-        )).scalars().all()
-    connectors = [
-        c for c in all_connectors
-        if c.id in linked_ids or ((c.category or "") in dept_categories and c.status != "AVAILABLE")
-    ]
-
+    all_connectors = (await db.execute(
+        select(Connector).where(Connector.tenant_id == tenant_id)
+    )).scalars().all()
     capabilities = (await db.execute(
         select(Capability)
         .where(Capability.department_id == dept.id, Capability.tenant_id == tenant_id)
@@ -272,6 +253,107 @@ async def _build_cluster(
         .where(BusinessProcess.department_id == dept.id, BusinessProcess.tenant_id == tenant_id)
         .order_by(BusinessProcess.name)
     )).scalars().all()
+    return _cluster_graph(dept, agents, skills, mapping_rows, all_connectors, capabilities, processes)
+
+
+async def _build_world_clusters(
+    db: AsyncSession,
+    tenant_id: str,
+    departments: list[Department],
+) -> list[tuple[Department, list[dict], list[dict]]]:
+    """Every department's cluster, with ONE query per entity type instead of one
+    per department: the per-department WHERE becomes an IN over all department
+    ids and the rows are bucketed in Python. Row order inside each bucket is the
+    order the department-scoped query returned, so the graph is byte-identical.
+    """
+    dept_ids = [d.id for d in departments]
+    slugs = [d.slug for d in departments]
+
+    def _bucket(rows) -> dict[str, list]:
+        out: dict[str, list] = {}
+        for r in rows:
+            out.setdefault(r.department_id, []).append(r)
+        return out
+
+    agents = _bucket((await db.execute(
+        select(DepartmentAgent)
+        .where(DepartmentAgent.department_id.in_(dept_ids), DepartmentAgent.tenant_id == tenant_id)
+        .order_by(DepartmentAgent.agent_name)
+    )).scalars().all())
+    mappings = _bucket((await db.execute(
+        select(IntegrationMapping)
+        .where(IntegrationMapping.department_id.in_(dept_ids), IntegrationMapping.tenant_id == tenant_id)
+    )).scalars().all())
+    capabilities = _bucket((await db.execute(
+        select(Capability)
+        .where(Capability.department_id.in_(dept_ids), Capability.tenant_id == tenant_id)
+        .order_by(Capability.name)
+    )).scalars().all())
+    processes = _bucket((await db.execute(
+        select(BusinessProcess)
+        .where(BusinessProcess.department_id.in_(dept_ids), BusinessProcess.tenant_id == tenant_id)
+        .order_by(BusinessProcess.name)
+    )).scalars().all())
+    # A skill can serve two departments (department=hr, domain=finance), so it
+    # is matched per department below rather than bucketed once.
+    # ponytail: the per-cluster cap becomes a whole-tenant cap of cap x depts -
+    # same rows loaded in the worst case. Past that ceiling a busy department
+    # could crowd out a quiet one; go back to per-department LIMITs if a tenant
+    # ever ships more than _CLUSTER_SKILL_CAP skills per department.
+    all_skills = (await db.execute(
+        select(Skill)
+        .where(Skill.tenant_id == tenant_id)
+        .where(Skill.department.in_(slugs) | Skill.domain.in_(slugs))
+        .order_by(Skill.skill_id)
+        .limit(_CLUSTER_SKILL_CAP * max(len(departments), 1))
+    )).scalars().all()
+    all_connectors = (await db.execute(
+        select(Connector).where(Connector.tenant_id == tenant_id)
+    )).scalars().all()
+
+    return [
+        (
+            d,
+            *_cluster_graph(
+                d,
+                agents.get(d.id, []),
+                [s for s in all_skills if d.slug in (s.department, s.domain)][:_CLUSTER_SKILL_CAP],
+                mappings.get(d.id, []),
+                all_connectors,
+                capabilities.get(d.id, []),
+                processes.get(d.id, []),
+            ),
+        )
+        for d in departments
+    ]
+
+
+def _cluster_graph(
+    dept: Department,
+    agents: list[DepartmentAgent],
+    skills: list[Skill],
+    mapping_rows: list[IntegrationMapping],
+    all_connectors: list[Connector],
+    capabilities: list[Capability],
+    processes: list[BusinessProcess],
+) -> tuple[list[dict], list[dict]]:
+    """Pure node/edge assembly for one department, given its already-fetched
+    rows. No DB access, so both the single-department graph and the org-wide
+    world produce identical clusters from differently-shaped fetches."""
+    linked_ids = set([*(m.connector_id for m in mapping_rows), *(dept.connected_systems or [])])
+    dept_categories = {
+        "hr": {"hris", "communications"},
+        "finance": {"commercial"},
+        "sales": {"crm", "commercial"},
+        "support": {"support", "communications"},
+        "engineering": {"engineering"},
+        "operations": {"commercial"},
+        "legal": set(),
+    }.get(dept.slug, set())
+    connectors = [
+        c for c in all_connectors
+        if c.id in linked_ids or ((c.category or "") in dept_categories and c.status != "AVAILABLE")
+    ]
 
     nodes: list[dict] = [
         {

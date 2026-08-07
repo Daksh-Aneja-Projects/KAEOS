@@ -14,7 +14,9 @@ _FUNNEL_ORDER = ["APPLIED", "AI_SCREENING", "RECRUITER_SCREEN", "HM_INTERVIEW",
                  "PANEL_INTERVIEW", "OFFER_PREP", "OFFER_EXTENDED", "HIRED"]
 
 
-async def hr_analytics(db: AsyncSession, tenant_id: str) -> dict:
+async def hr_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+    """`charts=False` skips the series queries that feed no KPI and no insight,
+    for callers (the org pulse) that read only kpis + insights."""
     # Headcount by employment status.
     emp_q = await db.execute(
         select(HREmployee.status, sqlfunc.count())
@@ -25,15 +27,17 @@ async def hr_analytics(db: AsyncSession, tenant_id: str) -> dict:
     active = status_counts.get("ACTIVE", 0)
     total_emp = sum(status_counts.values())
 
-    # Headcount by location (top 6).
-    loc_q = await db.execute(
-        select(sqlfunc.coalesce(HREmployee.location, "Unspecified"), sqlfunc.count())
-        .where(HREmployee.tenant_id == tenant_id)
-        .group_by(HREmployee.location)
-        .order_by(sqlfunc.count().desc())
-        .limit(6)
-    )
-    by_location = [{"label": l, "value": int(c)} for l, c in loc_q.all()]
+    # Headcount by location (top 6) — chart-only.
+    by_location: list[dict] = []
+    if charts:
+        loc_q = await db.execute(
+            select(sqlfunc.coalesce(HREmployee.location, "Unspecified"), sqlfunc.count())
+            .where(HREmployee.tenant_id == tenant_id)
+            .group_by(HREmployee.location)
+            .order_by(sqlfunc.count().desc())
+            .limit(6)
+        )
+        by_location = [{"label": l, "value": int(c)} for l, c in loc_q.all()]
 
     # Recruiting funnel.
     cand_q = await db.execute(
@@ -94,6 +98,6 @@ async def hr_analytics(db: AsyncSession, tenant_id: str) -> dict:
             {"key": "emp_status", "title": "Headcount by Status", "type": "donut",
              "items": [{"label": k, "value": v} for k, v in status_counts.items()]},
             {"key": "by_location", "title": "Headcount by Location", "type": "bar", "items": by_location},
-        ],
+        ] if charts else [],
         "insights": insights,
     }
