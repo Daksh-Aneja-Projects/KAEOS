@@ -78,6 +78,33 @@ async def get_or_compute(
     return value, False
 
 
+async def peek(namespace: str, tenant_id: str, parts: Sequence[Any]) -> Optional[Any]:
+    """Return a cached value for these inputs, or None. Never computes.
+
+    For callers that cannot express their work as a single ``producer``, such as
+    a streaming endpoint that has to emit deltas while it builds the result.
+    """
+    try:
+        bus = await get_cache_bus()
+        hit = await bus.get(make_key(namespace, tenant_id, parts))
+        return json.loads(hit) if hit is not None else None
+    except Exception:
+        logger.warning("[ResultCache] peek failed for %s", namespace, exc_info=True)
+        return None
+
+
+async def put(
+    namespace: str, tenant_id: str, parts: Sequence[Any], value: Any,
+    ttl: int = DEFAULT_TTL_SECONDS,
+) -> None:
+    """Store a value under these inputs. Pairs with ``peek``. Never raises."""
+    try:
+        bus = await get_cache_bus()
+        await bus.set(make_key(namespace, tenant_id, parts), json.dumps(value, default=str), ttl=ttl)
+    except Exception:
+        logger.warning("[ResultCache] put failed for %s", namespace, exc_info=True)
+
+
 async def _demo() -> None:
     """Self-check: a hit skips the producer, and changed inputs never hit."""
     calls = {"n": 0}
@@ -105,6 +132,16 @@ async def _demo() -> None:
     for _ in range(2):
         await get_or_compute("demo", "t1", [9], produce, should_cache=lambda v: False)
     assert calls["n"] == before + 2, "unstorable results must recompute"
+
+    # peek/put share the fingerprint with get_or_compute, so a value stored by
+    # the streaming path is found by the non-streaming one and vice versa.
+    assert await peek("demo", "t1", [7, 7]) is None
+    await put("demo", "t1", [7, 7], {"v": 1})
+    assert await peek("demo", "t1", [7, 7]) == {"v": 1}
+    assert await peek("demo", "t1", [7, 8]) is None, "changed inputs must not hit"
+    assert await peek("demo", "t2", [7, 7]) is None, "tenants must not share"
+    hit, was_cached = await get_or_compute("demo", "t1", [7, 7], produce)
+    assert was_cached and hit == {"v": 1}, "put must be visible to get_or_compute"
     print("result_cache._demo OK")
 
 

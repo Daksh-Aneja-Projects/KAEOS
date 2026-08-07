@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from fastapi import APIRouter, Depends
@@ -155,22 +154,17 @@ async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_
 
             # 2. Call LLM with the full conversation and stream tokens.
             try:
-                response = await router_svc.complete(
+                # Real token streaming. This used to await the COMPLETE answer
+                # and then replay it word by word on a 30ms timer, so the reader
+                # waited for the whole generation and then waited again for the
+                # typewriter. Deltas now reach the browser as the model writes
+                # them, which is where the copilot's responsiveness actually is.
+                async for delta in router_svc.stream_complete(
                     prompt=_build_prompt(request.messages, hits),
                     model_tier="fast",
                     system_prompt=SYSTEM_PROMPT,
-                )
-                # response can be str or dict depending on LLMRouter impl
-                if isinstance(response, dict):
-                    text = response.get("content", response.get("text", str(response)))
-                else:
-                    text = str(response)
-
-                # Stream word by word for typewriter effect
-                for word in text.split(" "):
-                    token_event = {"type": "token", "text": word + " "}
-                    yield f"data: {json.dumps(token_event)}\n\n"
-                    await asyncio.sleep(0.03)
+                ):
+                    yield f"data: {json.dumps({'type': 'token', 'text': delta})}\n\n"
 
             except Exception as llm_err:
                 logger.warning(f"[Chat] LLM call failed: {llm_err}. Reporting honestly.")
@@ -180,9 +174,7 @@ async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_
                     "place. Please try again shortly, or open the relevant page "
                     "directly to see live data."
                 )
-                for word in fallback.split(" "):
-                    yield f"data: {json.dumps({'type': 'token', 'text': word + ' '})}\n\n"
-                    await asyncio.sleep(0.03)
+                yield f"data: {json.dumps({'type': 'token', 'text': fallback})}\n\n"
 
         except Exception as e:
             logger.error(f"[Chat] Streaming error: {e}")

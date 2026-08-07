@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { API_BASE } from '../api/http';
+import { readEventStream } from '../lib/sse';
 import {
  FlaskConical, Satellite, Users, Gauge, Zap, ScrollText,
  AlertTriangle, CheckCircle, TrendingUp,
@@ -137,6 +139,8 @@ const PioneerLab = () => {
  const [benchmark, setBenchmark] = useState<any>(null);
  const [benchState, setBenchState] = useState<'loading' | 'ready' | 'error'>('loading');
  const [report, setReport] = useState<any>(null);
+ // Raw text as the model writes it, shown only while a report is generating.
+ const [reportDraft, setReportDraft] = useState('');
  const [reportBusy, setReportBusy] = useState(false);
  const [benchError, setBenchError] = useState<string | null>(null);
 
@@ -148,12 +152,34 @@ const PioneerLab = () => {
    .catch(() => setBenchState('error'));
  }, [lane, benchmark]);
 
+ // The report is tens of seconds of real writing on the local model. Rather
+ // than hold a spinner for all of it, read it as it is written: the first words
+ // arrive in well under a second. A cached report skips the stream entirely and
+ // arrives whole on the first event.
  const runReport = async () => {
-  setReportBusy(true); setBenchError(null);
+  setReportBusy(true); setBenchError(null); setReportDraft('');
   try {
-   setReport(await api.getIntelligenceReport());
+   const token = localStorage.getItem('kaeos-token');
+   const resp = await fetch(`${API_BASE}/benchmark/intelligence-report/stream`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+   });
+   if (!resp.ok) throw new Error(`The report engine returned ${resp.status}`);
+
+   let failed = '';
+   await readEventStream(resp, (ev) => {
+    if (ev.type === 'token') {
+     setReportDraft(prev => prev + (ev.text || ''));
+    } else if (ev.type === 'done') {
+     setReport({ report: ev.report, org_snapshot: ev.org_snapshot });
+     setReportDraft('');
+    } else if (ev.type === 'error') {
+     failed = ev.message || 'The report engine is unavailable right now';
+    }
+   });
+   if (failed) throw new Error(failed);
   } catch (e: any) {
    setBenchError(e?.message || 'The report engine is unavailable right now');
+   setReportDraft('');
   } finally {
    setReportBusy(false);
   }
@@ -700,8 +726,23 @@ const PioneerLab = () => {
          </div>
          {!report && !reportBusy && (
           <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
-           A model-written maturity assessment built from your real rule and skill counts. Takes a minute on the local model.
+           A model-written maturity assessment built from your real rule and skill counts. It appears here as it is written.
           </p>
+         )}
+         {reportBusy && (
+          <div className="space-y-1.5">
+           <p className="text-[11px] uppercase tracking-wider" style={{ color: colors.inkSubtle }}>
+            {reportDraft ? 'Writing the report' : 'Asking the model'}
+           </p>
+           {reportDraft && (
+            <pre
+             className="text-[11px] leading-relaxed whitespace-pre-wrap break-words max-h-56 overflow-y-auto rounded p-3"
+             style={{ color: colors.inkMuted, background: colors.surface2, border: `1px solid ${colors.hairline}` }}
+            >
+             {reportDraft}
+            </pre>
+           )}
+          </div>
          )}
          {report && (
           <div className="space-y-3">

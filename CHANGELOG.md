@@ -11,6 +11,35 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **The intelligence report is delivered as it is written.** Caching removed the
+  wait on every request after the first, but somebody still pays it the first
+  time an org's numbers change, and half a minute of spinner is the part that
+  reads as broken. `GET /benchmark/intelligence-report/stream` sends the report
+  over SSE as the model writes it. Measured on the local model with a
+  report-shaped prompt: first content at 0.39 s against 26.2 s for the whole
+  generation. It shares the blocking endpoint's cache and fingerprint, so a
+  cached report arrives whole and instantly on the first event, and a freshly
+  streamed one is stored for the blocking endpoint to reuse. The existing
+  non-streaming route is unchanged and remains the contract for API clients.
+- **`LLMRouter.stream_complete()`**, which mirrors `complete()`'s orchestration
+  rather than calling past it: the budget gate still runs before a model is
+  chosen, the degraded tier still applies, the data-residency filter still
+  strips cloud models, and the call is still metered into `CostEvent` (usage is
+  requested on the final chunk, so a streamed call cannot escape the cost
+  ledger). Both paths now share one `_prepare_call`, because the PII scrub and
+  residency rules are security controls and two copies of them would eventually
+  disagree. Fallback deliberately differs: once a delta has reached the client
+  it is on screen, so another model is tried only while nothing has been
+  emitted, never mid-stream.
+
+### Fixed
+- **The copilot's "streaming" was a typewriter animation over a finished
+  answer.** `/chat/stream` awaited the entire completion and then replayed it
+  word by word on a 30 ms timer, so the reader waited for the whole generation
+  and then waited again for the replay, adding roughly 15 s to a 500-word
+  answer. It now streams real deltas as the model produces them.
+
 ### Performance
 Measured against the dev database, not estimated.
 

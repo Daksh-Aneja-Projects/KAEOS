@@ -379,6 +379,91 @@ class LLMRouter:
         logger.error(f"[LLM] All fallback models exhausted. Last error: {last_error}")
         raise last_error or RuntimeError("All LLM fallback models failed")
 
+    async def stream_complete(
+        self,
+        prompt: str,
+        model: str = "gpt-4o-mini",
+        model_tier: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        tenant_api_keys: Optional[dict] = None,
+    ):
+        """Stream content deltas, with the same governance as ``complete()``.
+
+        Deliberately mirrors ``complete()``'s orchestration rather than calling
+        past it: the budget gate still runs before a model is chosen, the
+        degraded tier still applies, the data-residency filter still strips
+        cloud models, and the call is still metered into CostEvent. A streaming
+        path that skipped any of those would be a hole in the governance the
+        product sells.
+
+        Fallback differs, and it has to: once a delta has been handed to the
+        caller it is already on the client's screen, so a mid-stream failure
+        cannot be retried on the next model without duplicating text. We fall
+        back only while nothing has been emitted yet, and propagate after that.
+        """
+        import os
+        if os.environ.get("KAEOS_FAKE_LLM", "").lower() in ("1", "true"):
+            yield (
+                '{"status": "SUCCESS", "decision": "deterministic fake-llm response", '
+                '"confidence": 0.9, "violations": [], "verdict": "PROCEED", '
+                '"severity": "MEDIUM", "category": "general", "score": 0.8, '
+                '"fake_llm": true}'
+            )
+            return
+
+        await self._check_budget_gate(prompt)
+
+        fallback_chain = [model]
+        if model_tier:
+            if model_tier not in self.MODEL_TIERS:
+                raise ValueError(
+                    f"Unknown model_tier {model_tier!r}; expected one of "
+                    f"{sorted(self.MODEL_TIERS)}"
+                )
+            effective_tier = model_tier
+            if self._degraded and model_tier in ("reasoning", "classification"):
+                effective_tier = "fast"
+            fallback_chain = self.FALLBACK_CHAINS.get(
+                effective_tier, [self.MODEL_TIERS[effective_tier]]
+            )
+
+        if self._local_llm_only():
+            local_chain = [m for m in fallback_chain if self._is_local_model(m)]
+            if not local_chain:
+                local_defaults = [m for m in self.MODEL_TIERS.values() if self._is_local_model(m)]
+                local_chain = local_defaults[:1] or ["ollama/qwen2.5-coder:7b"]
+            fallback_chain = local_chain
+
+        last_error = None
+        for chain_model in fallback_chain:
+            emitted = False
+            usage: dict = {}
+            _t0 = time.perf_counter()
+            try:
+                async for delta in self._stream_llm(
+                    chain_model, prompt, system_prompt, temperature,
+                    max_tokens, tenant_api_keys, usage,
+                ):
+                    emitted = True
+                    yield delta
+                await self._record_cost(
+                    model=usage.get("model") or chain_model,
+                    model_tier=model_tier or "unspecified",
+                    usage=usage,
+                    latency_ms=int((time.perf_counter() - _t0) * 1000),
+                )
+                return
+            except Exception as e:
+                last_error = e
+                logger.error(f"[LLM] streaming {chain_model} failed: {e}")
+                if emitted:
+                    # Partial output is already on the client; a retry would
+                    # append a second answer to the first.
+                    raise
+        raise last_error or RuntimeError("All LLM fallback models failed")
+
     async def _check_budget_gate(self, prompt: str) -> None:
         """Refuse dispatch when the tenant's budget enforcement resolves to BLOCK.
 
@@ -546,8 +631,45 @@ class LLMRouter:
                 )
             return self._simulated_completion(prompt, system_prompt)
 
-        import litellm
+        messages, model, api_base, api_key, is_local = await self._prepare_call(
+            model, prompt, system_prompt, tenant_api_keys
+        )
 
+        import litellm
+        from app.core.config import get_settings as _get_cfg
+        _cfg = _get_cfg()
+        response = await litellm.acompletion(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_base=api_base,
+            api_key=api_key,
+            timeout=_cfg.LLM_LOCAL_TIMEOUT_SECONDS if is_local else _cfg.LLM_TIMEOUT_SECONDS,
+        )
+
+        return {
+            "content": response.choices[0].message.content,
+            "model": response.model,
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0,
+            },
+        }
+
+    async def _prepare_call(
+        self, model: str, prompt: str, system_prompt: Optional[str],
+        tenant_api_keys: Optional[dict],
+    ) -> tuple:
+        """Everything a provider call needs, done once for blocking AND streaming.
+
+        Shared deliberately: the PII scrub and the data-residency rules below are
+        security controls, and two copies of them would eventually disagree. The
+        streaming path must be exactly as safe as the blocking one.
+
+        Returns ``(messages, model, api_base, api_key, is_local)``.
+        """
         effective_keys = {**self.api_keys, **(tenant_api_keys or {})}
 
         # PII SCRUB BEFORE CLOUD EGRESS: local Ollama runs in-region and needs
@@ -591,6 +713,36 @@ class LLMRouter:
             api_base = effective_keys.get("custom_base_url")
             model = model.replace("custom/", "")
 
+        return messages, model, api_base, effective_keys.get(self._get_provider(model)), is_local
+
+    async def _stream_llm(
+        self, model: str, prompt: str, system_prompt: Optional[str],
+        temperature: float, max_tokens: int, tenant_api_keys: Optional[dict],
+        usage_sink: dict,
+    ):
+        """Yield content deltas from one model, filling ``usage_sink`` at the end.
+
+        Same preflight as ``_call_llm`` (see ``_prepare_call``), same fail-closed
+        behaviour when no provider is reachable. Usage arrives on a final chunk
+        via ``stream_options``, so a streamed call is metered exactly like a
+        blocking one rather than quietly escaping the cost ledger.
+        """
+        if not await self.provider_available(tenant_api_keys):
+            from app.core.config import get_settings
+            if not get_settings().simulated_llm_allowed:
+                raise NoLLMProviderError(
+                    "No LLM provider is reachable (no cloud key, no local Ollama) "
+                    "and ALLOW_SIMULATED_LLM is off. Refusing to fabricate a "
+                    "governance decision."
+                )
+            yield self._simulated_completion(prompt, system_prompt)["content"]
+            return
+
+        messages, model, api_base, api_key, is_local = await self._prepare_call(
+            model, prompt, system_prompt, tenant_api_keys
+        )
+
+        import litellm
         from app.core.config import get_settings as _get_cfg
         _cfg = _get_cfg()
         response = await litellm.acompletion(
@@ -599,19 +751,24 @@ class LLMRouter:
             temperature=temperature,
             max_tokens=max_tokens,
             api_base=api_base,
-            api_key=effective_keys.get(self._get_provider(model)),
+            api_key=api_key,
             timeout=_cfg.LLM_LOCAL_TIMEOUT_SECONDS if is_local else _cfg.LLM_TIMEOUT_SECONDS,
+            stream=True,
+            stream_options={"include_usage": True},
         )
-
-        return {
-            "content": response.choices[0].message.content,
-            "model": response.model,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                "total_tokens": response.usage.total_tokens if response.usage else 0,
-            },
-        }
+        usage_sink.setdefault("model", model)
+        async for chunk in response:
+            u = getattr(chunk, "usage", None)
+            if u is not None:
+                usage_sink["prompt_tokens"] = getattr(u, "prompt_tokens", 0) or 0
+                usage_sink["completion_tokens"] = getattr(u, "completion_tokens", 0) or 0
+                usage_sink["total_tokens"] = getattr(u, "total_tokens", 0) or 0
+            try:
+                delta = chunk.choices[0].delta.content
+            except (AttributeError, IndexError):
+                delta = None
+            if delta:
+                yield delta
 
     # ── Simulated (no-provider) responses ────────────────────────────────
 
