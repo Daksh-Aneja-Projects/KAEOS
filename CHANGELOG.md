@@ -14,6 +14,28 @@ All notable changes to KAEOS are documented here. This project adheres to
 ### Performance
 Measured against the dev database, not estimated.
 
+- **`GET /extraction/candidates` went from 67 s to 25 s** against the real local
+  model, returning the same seven mined rules. Three causes, in order of impact:
+  - It made one rule-mining call per domain **sequentially**, so the request
+    cost the sum of seven local-model calls. They now run concurrently. Nothing
+    in that loop shares the request's database session, which is what makes
+    `gather` safe here and not elsewhere in this codebase.
+  - Concurrency is **bounded to three**, which is faster than an unbounded
+    fan-out, not merely politer. Measured on this box for seven prompts:
+    sequential 59.4 s, two at a time 31.9 s, three at a time 22.4 s, all seven
+    at once 24.5 s. Past three the GPU thrashes. The bound also stops one
+    endpoint queueing the governance gates and the copilot behind it, since
+    they share the same model.
+  - Every signal reached the prompt as a **Python dict repr**, because the
+    caller sent `payload` and the miner read `clean_payload`, so the fallback
+    stringified the whole record including its id. That was about a third of
+    the prompt spent on syntax the model had to ignore. The miner now accepts
+    either key and emits the payload text only.
+- **A rule-mining prompt now carries at most 25 signals.** One domain had 65 and
+  dominated the request; a rule generalized from 25 examples is the same rule.
+  The reported `confidence_basis` still counts every instance, so the evidence
+  claim did not shrink with the prompt.
+
 - **`/neural/world` issues 36 queries instead of 49**, with byte-identical
   output. Two of the per-department queries were removable: the department's
   integration mappings were fetched twice with the same WHERE and different

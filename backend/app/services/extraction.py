@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any, List, Optional
 
 from app.services.json_utils import extract_json_object
@@ -80,16 +81,42 @@ class ContradictionDetector:
 class RuleMiner:
     """L2 - Rule Mining Sub-Engine"""
     
+    # A rule is generalized from examples; past a couple of dozen, more examples
+    # cost prompt tokens (and latency) without changing the rule. The full
+    # cluster size is still what confidence_basis reports.
+    MAX_PROMPT_SIGNALS = 25
+
+    @staticmethod
+    def _signal_text(s: Dict[str, Any]) -> str:
+        """The payload text for one signal, and nothing else.
+
+        Callers have passed both `clean_payload` and `payload`. Reading only the
+        first meant the other fell through to `str(s)`, which put the Python
+        dict repr -- braces, quotes and the signal id -- into the prompt. That
+        is roughly a third of the prompt spent on syntax the model must ignore.
+        """
+        payload = s.get("clean_payload")
+        if payload is None:
+            payload = s.get("payload")
+        if payload is None:
+            return ""
+        if isinstance(payload, str):
+            return payload
+        return json.dumps(payload, separators=(",", ":"), default=str)
+
     async def extract_rule(self, signal_cluster: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Uses LLM to articulate a rule from a cluster of signals."""
         from app.services.llm_router import LLMRouter
-        
+
         if len(signal_cluster) < 3:
             return None # Minimum cluster size not met
-            
+
         router = LLMRouter()
-        
-        signals_text = "\n".join([f"- {s.get('clean_payload', str(s))}" for s in signal_cluster])
+
+        sample = signal_cluster[: self.MAX_PROMPT_SIGNALS]
+        signals_text = "\n".join(
+            f"- {text}" for text in (self._signal_text(s) for s in sample) if text
+        )
         prompt = (
             f"You are the KAEOS Rule Miner. Analyze this cluster of historical events/signals and extract the underlying business rule.\n"
             f"Signals:\n{signals_text}\n"
@@ -97,7 +124,13 @@ class RuleMiner:
         )
         
         try:
-            res = await router.complete(prompt=prompt, model_tier="classification")
+            # The answer is one small JSON object, so cap the reply well below
+            # the router's 2048-token default. Measured: this does NOT speed up
+            # the normal case (the model already stops at the closing brace), it
+            # bounds the pathological one where it does not.
+            res = await router.complete(
+                prompt=prompt, model_tier="classification", max_tokens=256
+            )
             content = res if isinstance(res, str) else res.get("content", "{}")
             rule_data = extract_json_object(content) if isinstance(content, str) else content
             rule_data["confidence_basis"] = f"{len(signal_cluster)} consistent instances"

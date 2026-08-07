@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +10,21 @@ from app.models.domain import Signal, Rule
 from app.services.extraction import ContradictionDetector, RuleMiner
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/extraction", tags=["Extraction — L2 Knowledge Extraction"])
+
+# How many rule-mining calls may be in flight at once.
+#
+# Measured against the local 7B on this box, seven prompts of ~25 signals each:
+# sequential 59.4s, 2 at a time 31.9s, 3 at a time 22.4s, all 7 at once 24.5s.
+# Past three the GPU thrashes and it gets slower, so an unbounded fan-out is not
+# just impolite, it is worse. The bound also matters because the same model
+# serves the governance gates and the copilot: one endpoint must not be able to
+# queue every other request behind it.
+# ponytail: a per-endpoint bound, not a global one. If more endpoints start
+# fanning out, this belongs in the LLM router as a shared limiter.
+_MINING_CONCURRENCY = 3
 
 class CandidateRule(BaseModel):
     statement: str
@@ -34,18 +51,38 @@ async def get_candidate_rules(tenant_id: str = Depends(get_tenant_id), db: Async
     signal_list = signals.scalars().all()
     
     miner = RuleMiner()
+    clusters: dict[str, list] = {}
+    for s in signal_list:
+        if s.domain:
+            clusters.setdefault(s.domain, []).append(s)
+
+    # One LLM call per domain, run concurrently. They were sequential, so the
+    # request cost the SUM of seven local-model calls. Nothing here shares the
+    # request's AsyncSession (the DB read is already done and the miner only
+    # talks to the model), so gather is safe; the same is NOT true of the
+    # db.execute fan-outs elsewhere in this codebase.
+    minable = [(dom, cluster) for dom, cluster in sorted(clusters.items()) if len(cluster) >= 3]
+    sem = asyncio.Semaphore(_MINING_CONCURRENCY)
+
+    async def _mine(cluster) -> dict | None:
+        async with sem:
+            return await miner.extract_rule([{"clean_payload": s.clean_payload} for s in cluster])
+
+    results = await asyncio.gather(
+        *(_mine(cluster) for _dom, cluster in minable),
+        return_exceptions=True,
+    )
+
     candidates = []
-    domains = set(s.domain for s in signal_list if s.domain)
-    
-    for dom in domains:
-        cluster = [s for s in signal_list if s.domain == dom]
-        if len(cluster) >= 3:
-            rule_dict = await miner.extract_rule([{"id": s.id, "payload": s.clean_payload} for s in cluster])
-            if rule_dict:
-                rule_dict["domain"] = dom
-                rule_dict["id"] = f"cand_{dom}_{len(candidates)}"
-                candidates.append(rule_dict)
-                
+    for (dom, cluster), rule_dict in zip(minable, results):
+        if isinstance(rule_dict, Exception):
+            logger.warning("Rule mining failed for domain %s: %s", dom, rule_dict)
+            continue
+        if rule_dict:
+            rule_dict["domain"] = dom
+            rule_dict["id"] = f"cand_{dom}_{len(candidates)}"
+            candidates.append(rule_dict)
+
     return {"candidates": candidates}
 
 @router.post("/detect-conflict", dependencies=[Depends(require_role("operator"))])
