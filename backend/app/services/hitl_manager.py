@@ -102,6 +102,9 @@ class HITLManager:
                 "steps": skill.get("steps", []),
                 "compliance_tags": skill.get("compliance_tags", []),
                 "department": skill.get("department", "general"),
+                # A paused governed WRITE (e.g. the /actuation consequence
+                # gate) carries its intent so approval actually applies it.
+                "actuation": skill.get("actuation"),
             },
             "context": self._json_safe(context),
         }
@@ -337,17 +340,29 @@ class HITLManager:
                         f"(state={execution.agent_state}) — ignoring duplicate"
                     )
                     return False
+                # A rejection is terminal: finalize the row here so it leaves
+                # the PENDING_HITL queue no matter which surface decided it
+                # (the email-link path has no route-level finalizer). An
+                # approval only transitions to RUNNING - the resumed executor
+                # stamps the real final status when the run completes.
+                values = dict(
+                    agent_state="RUNNING" if approved else "FAILED",
+                    hitl_approved=approved,
+                    hitl_approver=approver,
+                )
+                if not approved:
+                    values.update(
+                        status="HUMAN_OVERRIDDEN",
+                        outcome_type="HUMAN_OVERRIDDEN",
+                        completed_at=datetime.now(timezone.utc),
+                    )
                 result = await session.execute(
                     update(SkillExecution)
                     .where(
                         SkillExecution.id == execution_id,
                         SkillExecution.agent_state.in_(["PENDING_HITL", "PAUSED", None]),
                     )
-                    .values(
-                        agent_state="RUNNING" if approved else "FAILED",
-                        hitl_approved=approved,
-                        hitl_approver=approver,
-                    )
+                    .values(**values)
                 )
                 if result.rowcount == 0:
                     logger.warning(f"[HITL] {execution_id} resolve lost CAS race — already handled")
@@ -431,6 +446,46 @@ class HITLManager:
             from app.services.skill_executor import SkillExecutionEngine
             executor = SkillExecutionEngine()
             result = await executor.run(skill_def, context, execution_id, tenant_id, skill_obj=skill_obj)
+
+            # Gate 5b parity: the human approved a governed WRITE, so the write
+            # must land - fail closed if it does not (mirrors agents/runtime).
+            # The intent rides in the skill_def (gate cache) with the durable
+            # DB-row context as fallback for cache-expired approvals.
+            _act = (skill_def or {}).get("actuation") or (context or {}).get("actuation")
+            if isinstance(_act, dict) and result.get("status") == "SUCCESS_CLEAN":
+                try:
+                    from app.services.actuation import Actuator
+                    async with AsyncSessionLocal() as adb:
+                        rec = await Actuator.apply_action(
+                            adb, tenant_id=tenant_id,
+                            system=_act.get("system", "sandbox"),
+                            object_type=_act.get("object_type", "record"),
+                            external_id=str(_act.get("external_id", execution_id)),
+                            operation=_act.get("operation", "UPDATE"),
+                            payload=_act.get("payload") or {},
+                            execution_id=execution_id,
+                            actor=(execution.hitl_approver if execution else None) or "hitl-approver",
+                            idempotency_key=_act.get("idempotency_key"),
+                        )
+                    logger.info(
+                        f"[HITL] approved actuation applied: "
+                        f"{rec.system}:{rec.external_id} -> {rec.status}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[HITL] approved actuation FAILED for {execution_id} "
+                        f"(fail-closed): {e}", exc_info=True,
+                    )
+                    async with AsyncSessionLocal() as session:
+                        from sqlalchemy import update
+                        await session.execute(
+                            update(SkillExecution)
+                            .where(SkillExecution.id == execution_id)
+                            .values(agent_state="FAILED", status="FAILED_ACTUATION",
+                                    outcome_type="FAILED_ACTUATION")
+                        )
+                        await session.commit()
+                    return False
 
             # 4. Emit activity event for the resumed execution
             from app.services.activity_feed import ActivityFeedService

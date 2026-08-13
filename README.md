@@ -107,9 +107,9 @@ Every department agent routes through it via its `gated_runner`.
 | 2 | **Fairness** | Scores bias on decisions touching people. Runs *concurrently* with Gate 1 (the two are independent), with compliance verdict ordering preserved. | `BLOCKED_FAIRNESS` |
 | 3 | **Confidence to HITL** | Caps the skill's confidence at the probed BYOK `tier_ceiling`; below-threshold and always-HITL actions pause for a human. Fails closed. | `PENDING_HITL` |
 | 4 | **Debate** | Adversarial multi-turn challenge of the proposed decision; a contested decision gets a second turn. | routed to HITL or blocked |
-| 5 | **Execution** | Runs the skill steps. Gate 5b performs governed actuation against the real target system when the skill is wired to act. | `FAILED` |
+| 5 | **Execution** | Runs the skill steps. Gate 5b performs governed actuation - against the external system where a write-back adapter exists (Salesforce, generic REST today), else into KAEOS's internal governed object store. | `FAILED` |
 | 6 | **Audit** | Enforces post-execution audit requirements for the action's compliance tags. | `FAILED_AUDIT` |
-| 7 | **Provenance** | Appends a hash-chained ledger record (`app/services/provenance.py`); the chain is independently verifiable and detects tampering. | chain verification failure |
+| 7 | **Provenance** | Appends a hash-chained ledger record (`app/services/provenance.py`). Honest boundary: several writers still use divergent hash schemes, so end-to-end chain verification is being unified onto one signed scheme - treat the ledger as append-only evidence, not yet as independently verifiable. | chain verification failure |
 
 Stage timings for every gate are recorded per execution and exposed at
 `GET /api/v1/metrics/latency`.
@@ -219,7 +219,7 @@ Start at the [documentation index](docs/README.md).
 | Architecture, project structure, performance | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Features and product tour | [docs/FEATURES.md](docs/FEATURES.md) |
 | API reference | [docs/API.md](docs/API.md) |
-| Integrations: 22 adapters, authority weighting, PII handling | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
+| Integrations: 22 ingestion adapters, write-back scope, PII handling | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
 | Bring your own model: tiers, probes, ceiling derivation | [docs/BYOK.md](docs/BYOK.md) |
 | Real-data benchmarks and methodology | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | Security model, multi-tenancy and RLS, SSO | [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) |

@@ -6,8 +6,15 @@ Back to the [README](../README.md). Related: [API reference](API.md) |
 Every tenant connects their own systems from the **Integrations** page - no engineering
 involvement. Click the key icon on any connector, paste your credentials, test, and sync:
 
-**22 live adapters** across every domain. `GET /connectors/providers` returns the machine-readable
-catalog (id, domain, authority weight, PII flag, required config).
+**22 live ingestion adapters** across every domain. `GET /connectors/providers` returns the
+machine-readable catalog (id, domain, authority weight, PII flag, required config).
+
+**Write-back scope (honest):** pushing governed changes back INTO the external system is currently
+implemented for **Salesforce** (Account/Opportunity) and the **generic REST** sink. Workday write-back
+is an explicit not-implemented stub, and every other adapter is read/sync-only - a write attempt
+returns `"no write-back adapter"` rather than pretending. Governed writes to targets without an
+adapter land in KAEOS's internal governed object store (reversible, drift-monitored) until their
+adapters ship. See [Known Limitations](KNOWN_LIMITATIONS.md).
 
 | Domain | Provider | Auth | What syncs |
 |--------|----------|------|-----------|

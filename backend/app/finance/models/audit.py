@@ -2,7 +2,7 @@
 KAEOS Finance Domain — Audit Models
 Internal audit trails, findings, and control testing.
 """
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -62,11 +62,15 @@ class FindingStatus(str, enum.Enum):
 class AuditFinding(Base):
     """Audit findings from internal or external audits."""
     __tablename__ = "fin_audit_findings"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "finding_number", name="uq_fin_finding_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
-    finding_number = Column(String(32), nullable=False, unique=True)
+    finding_number = Column(String(32), nullable=False)
     title = Column(String(256), nullable=False)
     description = Column(Text, nullable=False)
     severity = Column(Enum(FindingSeverity), nullable=False)

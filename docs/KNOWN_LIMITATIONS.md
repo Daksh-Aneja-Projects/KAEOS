@@ -109,6 +109,26 @@ Each item below states the capability, its honest boundary, and anything still a
   itself - that computation is external/pluggable by design (KAEOS orchestrates and governs it), and a
   simulated evaluation can never promote. Phases 4-5 (specialized models, autonomous foundry) remain
   roadmap.
+- **Write-back to external systems of record is Salesforce + generic REST today.** All 22
+  connectors ingest (read/sync) for real. Pushing governed changes back INTO the external system
+  is implemented for Salesforce (Account/Opportunity) and a generic REST sink; Workday write-back
+  is an explicit not-implemented stub and the remaining adapters return `"no write-back adapter"`
+  rather than pretending. Governed writes to targets without an adapter land in KAEOS's internal
+  governed object store - still idempotent, reversible, drift-monitored, and provenance-chained,
+  but internal until that target's adapter ships. **Boundary:** a claim of "we updated your ERP"
+  is only true for the systems above; everywhere else KAEOS records what it *would* write and
+  keeps it reversible. Bidirectional adapters for the top systems of record are the active
+  integration roadmap.
+- **Industry verticals are not yet load-bearing.** The seven "departments" are functional
+  domains (HR, Finance, Support...), not industry verticals. The `industry_vertical` captured at
+  onboarding is stored and displayed but does not yet change which packs, compliance frameworks,
+  seeds, or gate policies a tenant gets - a bank and a pharma company currently receive the same
+  functional shell with their industry as a label. There are **no built-in deterministic engines
+  for 21 CFR Part 11 / GxP, KYC / AML, SR 11-7 model risk, or ECOA adverse-action** today;
+  compliance tags name the frameworks a skill is *built against* (see the certification item
+  above), and the gates enforce process (approval, audit, provenance), not statutory rules.
+  **Roadmap:** make `industry_vertical` select packs, frameworks and gate policy, and ship one
+  real industry pack end-to-end with a deterministic statutory checker.
 - **Simulation surfaces.** The enterprise "what-if"/physics and evolution-fitness surfaces are
   parameterized simulations over configurable archetypes, labelled as such, not models learned
   from your data.

@@ -417,6 +417,11 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
             k: v for k, v in context.items()
             if not k.startswith("_") and _is_json_safe(v)
         }
+        # An approve-with-edit rides its correction in the context: the run is
+        # human-EDITED fallout in the safe-autonomy breakdown, not clean autonomy.
+        outcome = status
+        if status == "SUCCESS_CLEAN" and safe_context.get("human_corrected_answer"):
+            outcome = "SUCCESS_WITH_EDIT"
         async with AsyncSessionLocal() as session:
             # Upsert: a HITL-resumed execution already has a PENDING_HITL row
             # under this id - finalize it instead of colliding on insert.
@@ -432,7 +437,7 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
                 existing.reasoning_chain = reasoning_chain
                 existing.completed_at = datetime.now(timezone.utc)
                 existing.duration_ms = duration_ms
-                existing.outcome_type = status
+                existing.outcome_type = outcome
             else:
                 session.add(SkillExecution(
                     id=execution_id,
@@ -447,7 +452,7 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
                     reasoning_chain=reasoning_chain,
                     completed_at=datetime.now(timezone.utc),
                     duration_ms=duration_ms,
-                    outcome_type=status,
+                    outcome_type=outcome,
                     hitl_required=False,
                 ))
             await session.commit()

@@ -142,7 +142,9 @@ class TestSkillExecutionPipeline:
             exec_id = pending[0]["id"]
         r = await client.post(f"/skills/hitl/{exec_id}/approve")
         assert r.status_code == 200
-        assert r.json()["status"] == "SUCCESS"
+        # Honest contract: approval RESUMES the run; the executor stamps the
+        # final status when it completes (the route never fabricates SUCCESS).
+        assert r.json()["status"] == "RESUMING"
 
     async def test_hitl_reject(self, client):
         """A pending HITL execution can be rejected (triggers L10 elicitation)."""

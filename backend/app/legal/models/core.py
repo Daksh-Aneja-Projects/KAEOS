@@ -2,7 +2,7 @@
 KAEOS Legal Domain — Core Models
 General legal matters and legal team roster.
 """
-from sqlalchemy import Column, String, DateTime, Boolean, Enum, Text, ForeignKey
+from sqlalchemy import Column, String, DateTime, Boolean, Enum, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -28,13 +28,17 @@ class MatterPriority(str, enum.Enum):
 class LegalTeamMember(Base):
     """Roster of internal legal team members (Attorneys, Paralegals, Compliance Officers)."""
     __tablename__ = "leg_team_members"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_leg_team_tenant_email"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     
     name = Column(String(128), nullable=False)
     role = Column(String(64), nullable=False)  # General Counsel, Attorney, Compliance Lead, Paralegal
-    email = Column(String(128), nullable=False, unique=True)
+    email = Column(String(128), nullable=False)
     bar_license_number = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True)
 

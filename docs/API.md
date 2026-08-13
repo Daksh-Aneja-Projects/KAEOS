@@ -59,7 +59,7 @@ pauses for approval; approving in the HITL queue resumes and executes it).
 | Pipeline | `/pipeline` | `/llm/providers`, `/connectors/available`, `/transforms/available`, `/run` |
 | Dashboard | `/dashboard` | `/health`, `/cockpit`, `/ooda-events`, `/compliance` |
 | Reports | `/reports` | `/health`, `/compliance` |
-| Connectors | `/connectors` | `/providers` (catalog of all 22 live adapters), list, health, feed, sync, credentials, schema-map |
+| Connectors | `/connectors` | `/providers` (catalog of all 22 ingestion adapters), list, health, feed, sync, credentials, schema-map |
 | Extraction | `/extraction` | `/signals`, `/candidates` |
 | Events | `/events` | `/log` - system event stream |
 | Webhooks | `/webhooks` | Webhook subscription management |

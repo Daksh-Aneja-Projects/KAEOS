@@ -1,7 +1,7 @@
 """
 KAEOS Operations Domain — Procurement Models
 """
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Numeric, Boolean
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Numeric, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -42,12 +42,16 @@ class PurchaseRequest(Base):
 class PurchaseOrder(Base):
     """Official POs sent to suppliers."""
     __tablename__ = "ops_purchase_orders"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "po_number", name="uq_ops_po_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     purchase_request_id = Column(String, ForeignKey("ops_purchase_requests.id"), nullable=True)
 
-    po_number = Column(String(32), nullable=False, unique=True)
+    po_number = Column(String(32), nullable=False)
     vendor_name = Column(String(256), nullable=False)
     total_amount = Column(Numeric(18, 2), default=0.00)
     status = Column(Enum(ProcurementStatus), default=ProcurementStatus.PENDING_APPROVAL)

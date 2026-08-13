@@ -1,7 +1,7 @@
 """KAEOS — Domain Models (L3 Polystore: PostgreSQL/SQLite Rules Store)"""
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, DateTime, ForeignKey,
-    Text, JSON, Enum, Index,
+    Text, JSON, Enum, Index, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -210,9 +210,14 @@ class Workflow(Base):
 class Skill(Base):
     """L8 — Compiled Skill Contract"""
     __tablename__ = 'skills'
+    # Tenant-scoped business key: global unique meant a second tenant seeding
+    # the standard skill catalog collided with the first (cross-tenant DoS).
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "skill_id", name="uq_skills_tenant_skill_id"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
-    skill_id = Column(String, unique=True, nullable=False, index=True)
+    skill_id = Column(String, nullable=False, index=True)
     tenant_id = Column(String, nullable=False, index=True)
     department = Column(String(64), index=True)
     domain = Column(String(64))

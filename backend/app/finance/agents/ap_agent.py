@@ -63,11 +63,14 @@ Check if math is correct.""",
             },
             {
                 "step": 3,
-                "name": "3-Way Match Assessment",
-                "prompt": f"""Assess 3-way matching readiness:
+                "name": "PO Match Assessment",
+                # Honest inputs only: receipt status used to be hardcoded
+                # "CONFIRMED", fabricating a 3-way match KAEOS cannot verify
+                # (goods receipts are not linked to finance invoices yet).
+                "prompt": f"""Assess purchase-order matching readiness:
 Invoice PO: {invoice.po_number or 'No PO'}
-Receipt Status: CONFIRMED
-Recommend: APPROVE, HOLD, or REJECT""",
+Receipt Status: NOT TRACKED (goods receipts are not linked to this invoice; a full 3-way match cannot be verified)
+Recommend: APPROVE, HOLD, or REJECT. If the PO or receipt cannot be verified, do not recommend APPROVE on matching grounds alone.""",
             },
         ]
 

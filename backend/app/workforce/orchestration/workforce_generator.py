@@ -520,8 +520,11 @@ class WorkforceGenerator:
                 #    before crashing, so adopt the existing one instead of
                 #    violating the unique skill_id constraint.
                 skill_id_name = f"{pack.slug}_{agent_def['type']}_core"
+                # Tenant-scoped: unscoped, this ADOPTED another tenant's skill
+                # of the same name when re-deploying a pack.
                 existing_skill = (await db.execute(
-                    select(Skill).where(Skill.skill_id == skill_id_name)
+                    select(Skill).where(Skill.skill_id == skill_id_name,
+                                        Skill.tenant_id == tenant_id)
                 )).scalars().first()
                 if existing_skill is not None:
                     skill_uuid = existing_skill.id

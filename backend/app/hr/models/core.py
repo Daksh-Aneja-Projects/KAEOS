@@ -2,7 +2,7 @@
 KAEOS HR Vertical — Core Employee Models
 Function 1: Employee Data & Profiles
 """
-from sqlalchemy import Column, String, DateTime, Boolean, JSON, ForeignKey, Enum, Date
+from sqlalchemy import Column, String, DateTime, Boolean, JSON, ForeignKey, Enum, Date, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -21,16 +21,21 @@ class EmploymentStatus(str, enum.Enum):
 
 class HREmployee(Base):
     __tablename__ = "hr_employees"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "worker_id", name="uq_hr_emp_tenant_worker"),
+        UniqueConstraint("tenant_id", "email", name="uq_hr_emp_tenant_email"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     department_id = Column(String, ForeignKey("departments.id"), nullable=True) # Logical KAEOS department
     
     # Identity
-    worker_id = Column(String(64), nullable=True, unique=True) # HRIS ID
+    worker_id = Column(String(64), nullable=True) # HRIS ID
     first_name = Column(String(64), nullable=False)
     last_name = Column(String(64), nullable=False)
-    email = Column(String(128), nullable=False, unique=True)
+    email = Column(String(128), nullable=False)
     personal_email = Column(String(128), nullable=True)
     phone = Column(String(32), nullable=True)
     

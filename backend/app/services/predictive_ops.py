@@ -36,8 +36,11 @@ class PredictiveOpsEngine:
         """
         logger.info(f"Predictive Ops evaluating signal {signal.id} ({signal.signal_type}) for latent intent.")
         
-        # Fetch active skills to map against
-        skills_q = await db.execute(select(Skill).where(Skill.status == "ACTIVE"))
+        # Fetch active skills to map against - this tenant's only. Unscoped,
+        # every tenant's skill catalog leaked into the prompt and the intent
+        # could recommend (and later execute) another tenant's skill.
+        skills_q = await db.execute(select(Skill).where(
+            Skill.status == "ACTIVE", Skill.tenant_id == signal.tenant_id))
         available_skills = {s.skill_id: s.domain for s in skills_q.scalars().all()}
         
         if not available_skills:
@@ -75,7 +78,8 @@ class PredictiveOpsEngine:
                     confidence=analysis.get("confidence", 0.8),
                     recommended_skill_id=analysis["recommended_skill_id"],
                     context={
-                        "source_signal": signal.id, 
+                        "source_signal": signal.id,
+                        "tenant_id": signal.tenant_id,
                         "extracted_from": signal.source_type,
                         "llm_extracted_context": analysis.get("extracted_context", {})
                     }
@@ -94,9 +98,13 @@ class PredictiveOpsEngine:
         """
         logger.info(f"Triggering Zero-Prompt Execution for skill {intent.recommended_skill_id}")
         
-        # Locate the skill
-        skill_q = await db.execute(select(Skill).where(Skill.skill_id == intent.recommended_skill_id))
-        skill = skill_q.scalar_one_or_none()
+        # Locate the skill - in the signal's tenant only (skill names are
+        # unique per tenant, and the execution runs under skill.tenant_id).
+        stmt = select(Skill).where(Skill.skill_id == intent.recommended_skill_id)
+        if intent.context.get("tenant_id"):
+            stmt = stmt.where(Skill.tenant_id == intent.context["tenant_id"])
+        skill_q = await db.execute(stmt)
+        skill = skill_q.scalars().first()
         
         if not skill:
             raise ValueError(f"Skill {intent.recommended_skill_id} not found.")

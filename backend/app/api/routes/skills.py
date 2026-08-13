@@ -352,11 +352,18 @@ async def approve_hitl(
     must not be able to. Tenant-isolated by the query below; approver recorded
     is the authenticated principal, not free text.
 
-    Supplying `corrected_answer` records an approval WITH AN EDIT: the execution
-    is stamped SUCCESS_WITH_EDIT (so it counts as human-edited fallout in the
-    safe-autonomy breakdown instead of clean autonomy) and the corrected text is
-    captured as a Foundry training example, which is the strongest supervised
-    signal the platform can collect.
+    Every approval goes through hitl_manager.resolve_hitl - the same resolve
+    path as the email-link approver - which actually RUNS the paused skill.
+    The final status is stamped by the executor when the resumed run
+    completes; this route never marks work SUCCESS that has not run. (It used
+    to: it stamped SUCCESS_CLEAN unconditionally and only resumed when a
+    gate-cache record happened to survive.)
+
+    Supplying `corrected_answer` records an approval WITH AN EDIT: the human's
+    rewrite is captured as a Foundry training example (the strongest
+    supervised signal the platform can collect) and rides in the execution
+    context so the resumed run finalizes as SUCCESS_WITH_EDIT - human-edited
+    fallout in the safe-autonomy breakdown, not clean autonomy.
     """
     tenant_id = tenant["tenant_id"]
     approver = _approver_identity(tenant)
@@ -368,31 +375,17 @@ async def approve_hitl(
     execution = result.scalar_one_or_none()
     if not execution:
         raise HTTPException(404, "Execution not found")
-    
+    if execution.status != "PENDING_HITL" and execution.agent_state not in (
+        "PAUSED", "PENDING_HITL"
+    ):
+        raise HTTPException(409, "Execution is not awaiting approval")
+
     edit = (body.corrected_answer or "").strip() if body else ""
-    execution.status = "SUCCESS_CLEAN"
-    execution.outcome_type = "SUCCESS_WITH_EDIT" if edit else "SUCCESS_CLEAN"
-    execution.hitl_approved = True
-    execution.completed_at = datetime.now(timezone.utc)
-
-    # Emit activity event
-    await activity_feed.emit(
-        event_type=ActivityEventType.HITL_APPROVED,
-        title=f"HITL approved: {execution.skill_id_name}",
-        description=(
-            f"Human approved execution of '{execution.task_intent or 'unknown'}'"
-            + (" after editing the answer." if edit else ".")
-        ),
-        tenant_id=execution.tenant_id,
-        severity=ActivitySeverity.INFO,
-        source_type="execution", source_id=exec_id,
-    )
-
-    await db.commit()
-
-    # An edit is ground truth authored by the enterprise's own expert: capture it
-    # as a CORRECTED training example. Never fatal to the approval itself.
     if edit:
+        execution.context = {**(execution.context or {}), "human_corrected_answer": edit}
+        await db.commit()
+        # An edit is ground truth authored by the enterprise's own expert: capture
+        # it as a CORRECTED training example. Never fatal to the approval itself.
         try:
             from app.services.foundry import dataset_builder
             await dataset_builder.record_human_feedback(
@@ -400,21 +393,32 @@ async def approve_hitl(
         except Exception as e:
             logger.error(f"[HITL] could not record the correction for {exec_id}: {e}")
 
-    # Gate-3 pipeline pauses carry a resume payload in the hitl_manager cache:
-    # approving one actually RUNS the paused skill (not just marks it).
     from app.services.hitl_manager import hitl_manager
-    gate_record = await hitl_manager._get_record(exec_id)
-    if gate_record and gate_record.get("status") == "PENDING":
-        await hitl_manager.resolve_hitl(
-            exec_id, approved=True, approver=approver, tenant_id=tenant_id
-        )
+    resolved = await hitl_manager.resolve_hitl(
+        exec_id, approved=True, approver=approver, tenant_id=tenant_id
+    )
+    if not resolved:
+        raise HTTPException(409, "Approval was already resolved")
+
+    await activity_feed.emit(
+        event_type=ActivityEventType.HITL_APPROVED,
+        title=f"HITL approved: {execution.skill_id_name}",
+        description=(
+            f"Human approved execution of '{execution.task_intent or 'unknown'}'"
+            + (" after editing the answer" if edit else "")
+            + "; the skill is resuming."
+        ),
+        tenant_id=execution.tenant_id,
+        severity=ActivitySeverity.INFO,
+        source_type="execution", source_id=exec_id,
+    )
 
     await record_security_event(
         tenant_id=tenant_id, event_type="HITL_DECISION", action="APPROVE",
         actor=approver, actor_role=tenant.get("role"),
         resource_type="skill_execution", resource_id=exec_id,
     )
-    return {"status": "SUCCESS", "execution_id": exec_id}
+    return {"status": "RESUMING", "execution_id": exec_id}
 
 @router.post("/hitl/{exec_id}/reject")
 async def reject_hitl(

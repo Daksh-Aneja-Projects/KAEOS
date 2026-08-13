@@ -2,7 +2,7 @@
 KAEOS Sales Domain — Core Models
 Sales reps, teams, and territories.
 """
-from sqlalchemy import Column, String, DateTime, Boolean, Numeric, ForeignKey
+from sqlalchemy import Column, String, DateTime, Boolean, Numeric, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 
@@ -27,12 +27,16 @@ class SalesTeam(Base):
 class SalesRep(Base):
     """Sales representatives, account executives, and business development reps."""
     __tablename__ = "sls_reps"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_sls_rep_tenant_email"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
     name = Column(String(128), nullable=False)
-    email = Column(String(128), nullable=False, unique=True)
+    email = Column(String(128), nullable=False)
     team_id = Column(String, ForeignKey("sls_teams.id"), nullable=True)
     
     quota_ytd = Column(Numeric(18, 2), default=0)

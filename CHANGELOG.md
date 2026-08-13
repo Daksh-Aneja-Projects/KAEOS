@@ -11,6 +11,45 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Security / Integrity (10/10 hardening, Phase 0)
+- **Approving a paused execution now actually runs it.** `POST /skills/hitl/{id}/approve`
+  used to stamp `SUCCESS_CLEAN` unconditionally and only resumed the skill if a
+  gate-cache record happened to survive - a human could "approve" work that then
+  never executed while the ledger said it completed cleanly. Every approval now
+  routes through `hitl_manager.resolve_hitl` (the same path as the email-link
+  approver), the response is `RESUMING`, and the final status is stamped by the
+  executor when the resumed run completes. Approving a finished execution is a
+  409. An approval carrying a correction still records the Foundry training
+  example, and the resumed run finalizes as `SUCCESS_WITH_EDIT`.
+- **Rejections decided via the email link now leave the queue.** `resolve_hitl`
+  finalizes the execution row (`HUMAN_OVERRIDDEN`, completed timestamp) on
+  reject, so a rejection decided from a notification link no longer sits in the
+  pending queue forever.
+- **The direct actuation API is gated.** `POST /actuation/execute` was the one
+  execution path with no gate at all: one operator API call could delete data or
+  move money. High-consequence writes (the shared `is_high_consequence` rule -
+  payments, deletions, terminations, and every DELETE operation) now pause in
+  the HITL queue and apply only after human approval, fail-closed, attributed to
+  the approver, through the same resume path as every other approval.
+- **Tenant-scoped business keys are no longer globally unique.** `worker_id`,
+  employee/contact emails, invoice/journal/expense/finding/PO/ticket numbers,
+  SOX control codes, KB slugs, department slugs and `skill_id` carried a global
+  `unique=True`, so tenant B could not create `INV-001` - or seed the standard
+  skill catalog - once tenant A had (cross-tenant collision and denial of
+  service). All 16 keys are now composite `(tenant_id, key)` (migration `0031`),
+  and the skill lookups/joins that relied on global uniqueness are tenant-scoped
+  (workforce deploy idempotency, workforce analytics join, predictive-ops intent
+  execution - which also no longer leaks every tenant's skill catalog into the
+  intent-analysis prompt).
+- **Honesty relabel sweep.** The docs no longer claim writes KAEOS cannot make:
+  external write-back is scoped to Salesforce + generic REST (the other adapters
+  are ingestion-only and say so), the AP agent no longer feeds the model a
+  hardcoded `Receipt Status: CONFIRMED` for receipts it does not track (the
+  pack process is now "Invoice PO Matching"), Gate 2 is described as
+  LLM-assisted bias screening rather than a statutory EEOC test, and
+  KNOWN_LIMITATIONS gains the two entries the review said were missing:
+  write-back scope and the industry-vertical depth gap.
+
 ### Added
 - **The intelligence report is delivered as it is written.** Caching removed the
   wait on every request after the first, but somebody still pays it the first

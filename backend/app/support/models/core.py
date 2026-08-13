@@ -2,7 +2,7 @@
 KAEOS Support Domain — Core Models
 Support agents and channel routing.
 """
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, ForeignKey
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -34,12 +34,16 @@ class SupportTeam(Base):
 class SupportAgent(Base):
     """Support agents (both human reps and AI digital twins)."""
     __tablename__ = "sup_agents"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_sup_agent_tenant_email"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
     name = Column(String(128), nullable=False)
-    email = Column(String(128), nullable=False, unique=True)
+    email = Column(String(128), nullable=False)
     team_id = Column(String, ForeignKey("sup_teams.id"), nullable=True)
     
     is_ai = Column(Boolean, default=False)

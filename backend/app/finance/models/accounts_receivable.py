@@ -2,7 +2,7 @@
 KAEOS Finance Domain — Accounts Receivable Models
 Customer management, customer invoicing, and receipt/payment collection.
 """
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -76,12 +76,16 @@ class CustomerInvoiceStatus(str, enum.Enum):
 class CustomerInvoice(Base):
     """Accounts Receivable invoice TO a customer."""
     __tablename__ = "fin_customer_invoices"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "invoice_number", name="uq_fin_cust_inv_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     customer_id = Column(String, ForeignKey("fin_customers.id"), nullable=False, index=True)
 
-    invoice_number = Column(String(64), nullable=False, unique=True)
+    invoice_number = Column(String(64), nullable=False)
     invoice_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False)
     status = Column(Enum(CustomerInvoiceStatus), default=CustomerInvoiceStatus.DRAFT)

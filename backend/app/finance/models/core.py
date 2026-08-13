@@ -2,7 +2,7 @@
 KAEOS Finance Domain — Core Accounting Models
 Chart of Accounts, Journal Entries, and General Ledger line items.
 """
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -65,11 +65,15 @@ class JournalEntryStatus(str, enum.Enum):
 class JournalEntry(Base):
     """Double-entry journal entries — the atomic unit of accounting."""
     __tablename__ = "fin_journal_entries"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "entry_number", name="uq_fin_je_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
-    entry_number = Column(String(32), nullable=False, unique=True)
+    entry_number = Column(String(32), nullable=False)
     entry_date = Column(Date, nullable=False)
     posting_date = Column(Date, nullable=True)
 

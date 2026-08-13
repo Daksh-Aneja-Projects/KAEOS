@@ -104,7 +104,9 @@ agent_definitions:
 
 process_definitions:
   - id: "invoice_matching"
-    name: "3-Way Invoice Matching"
+    # Honest scope: receipts are not linked to invoices yet, so this is a
+    # PO-match assessment, not a verified 3-way match.
+    name: "Invoice PO Matching"
     capability: "accounts_payable"
     sla_hours: 24
     steps:

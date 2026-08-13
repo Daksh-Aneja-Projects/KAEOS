@@ -1,7 +1,7 @@
 """
 KAEOS Support Domain — Tickets Models
 """
-from sqlalchemy import Column, String, DateTime, Enum, Text, ForeignKey
+from sqlalchemy import Column, String, DateTime, Enum, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -28,11 +28,15 @@ class TicketStatus(str, enum.Enum):
 class Ticket(Base):
     """Customer support tickets/incidents."""
     __tablename__ = "sup_tickets"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "ticket_number", name="uq_sup_ticket_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
-    ticket_number = Column(String(32), nullable=False, unique=True)
+    ticket_number = Column(String(32), nullable=False)
     customer_id = Column(String, nullable=True) # Linked customer reference
     
     subject = Column(String(256), nullable=False)

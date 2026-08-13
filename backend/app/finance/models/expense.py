@@ -2,7 +2,7 @@
 KAEOS Finance Domain — Expense Management Models
 Employee expense reports, line items, and policy enforcement.
 """
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -42,12 +42,16 @@ class ExpenseReportStatus(str, enum.Enum):
 class ExpenseReport(Base):
     """Employee-submitted expense report."""
     __tablename__ = "fin_expense_reports"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "report_number", name="uq_fin_exp_tenant_number"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
 
-    report_number = Column(String(32), nullable=False, unique=True)
+    report_number = Column(String(32), nullable=False)
     title = Column(String(128), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(Enum(ExpenseReportStatus), default=ExpenseReportStatus.DRAFT)
