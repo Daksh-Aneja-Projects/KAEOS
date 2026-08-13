@@ -258,6 +258,54 @@ async def list_invoices(tenant_id: str = Depends(get_tenant_id), status: Optiona
              "total": float(i.total_amount), "balance": float(i.balance_due), "due_date": str(i.due_date),
              "po_number": i.po_number, "three_way_match": i.three_way_match_status, "ai_duplicate": i.ai_duplicate_flag} for i in invoices]
 
+class PaymentIn(BaseModel):
+    invoice_id: str
+    amount: float
+    method: str = "ACH"
+    reference_number: Optional[str] = None
+    bank_account_id: Optional[str] = None
+
+
+@router.post("/payments")
+async def record_payment(body: PaymentIn, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Record a vendor payment - the first P2P money event wired end to end.
+
+    Controls: the invoice must be APPROVED with a recorded approver, the payer
+    may not be that approver (four-eyes), overpayment is refused, and the
+    payment posts through the GL keystone atomically with the Payment row and
+    invoice balance (cash-basis: DR expense / CR cash)."""
+    from app.core.tenant import approver_identity
+    from app.finance.services.gl import GLPostingError
+    from app.finance.services.payments import PaymentError, record_vendor_payment
+    tenant_id = tenant["tenant_id"]
+    try:
+        payment = await record_vendor_payment(
+            db, tenant_id,
+            invoice_id=body.invoice_id,
+            amount=body.amount,
+            method=body.method,
+            reference_number=body.reference_number,
+            bank_account_id=body.bank_account_id,
+            recorded_by=approver_identity(tenant),
+        )
+    except PaymentError as e:
+        code = 403 if str(e).startswith("Four-eyes") else 400
+        raise HTTPException(code, str(e))
+    except GLPostingError as e:
+        raise HTTPException(400, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="payment", resource_id=payment.id,
+        details={"payment_number": payment.payment_number,
+                 "amount": float(payment.amount or 0)},
+    )
+    return {"id": payment.id, "payment_number": payment.payment_number,
+            "amount": float(payment.amount or 0),
+            "status": payment.status.value,
+            "journal_entry_id": payment.journal_entry_id}
+
+
 @router.get("/payments")
 async def list_payments(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(Payment).where(Payment.tenant_id == tenant_id).order_by(Payment.payment_date.desc()).limit(200))

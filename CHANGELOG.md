@@ -12,6 +12,25 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
+- **Vendor payments reach the ledger.** `POST /finance/payments` is the first
+  P2P money event wired end to end: the invoice must be APPROVED with a
+  recorded approver, the payer may not be that approver (four-eyes),
+  overpayment is refused, and the Payment row + invoice balance + journal
+  entry + account balances + signed provenance event land in ONE commit
+  through the GL keystone (cash basis: DR expense / CR cash; the accrual
+  upgrade belongs with the invoice-approval hook). `Payment.journal_entry_id`
+  existed since the schema was written; this is the first code to set it.
+- **Embeddings obey the same governance as every other model call.** The
+  Polystore embedded rule text via a direct litellm call with a hardcoded
+  OpenAI model - bypassing the data-residency filter (a local-only tenant's
+  rule text still went to the cloud), cost metering, tenant BYOK and the
+  local-Ollama fallback. Both sites now route through `LLMRouter.embed`.
+- **AI system inventory + model cards** (`GET /governance/ai-inventory`):
+  the EU-AI-Act-shaped answer to "which AI systems run here, on what models,
+  with what oversight" - derived from the tenant's live tier-to-model
+  routing, probe-measured confidence ceilings (unprobed reports unknown, not
+  flattering), and real oversight counts, with code references a reviewer
+  can check. An inventory, not legal advice, and it says so.
 - **The General Ledger posts for real.** `JournalEntry`/`JournalLine`/
   `ChartOfAccount` were display-only schemas: nothing ever posted, balances
   never moved, and an unbalanced entry would have been accepted. The new
