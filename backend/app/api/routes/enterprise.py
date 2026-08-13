@@ -361,8 +361,14 @@ from app.core.tenant import get_tenant_id
 
 @router.post("/import/rules")
 async def import_rules(body: BulkRuleImport, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    """Bulk import rules from JSON array. Requires operator role."""
+    """Bulk import rules from JSON array. Requires operator role.
+
+    Maker-checker: imported rules land non-executable and are attributed to
+    the importing principal; each needs a different validator before it can
+    steer governed decisions."""
+    from app.core.tenant import approver_identity
     tenant_id = tenant["tenant_id"]
+    _import_maker = approver_identity(tenant)
     from app.services.confidence import ConfidenceEngine
     ce = ConfidenceEngine()
     imported = 0
@@ -376,7 +382,10 @@ async def import_rules(body: BulkRuleImport, tenant: dict = Depends(require_role
             trigger_json=rd.get("trigger_json", {}), action_json=rd.get("action_json", {}),
             workflow_id=rd.get("workflow_id"), confidence_vector=vector,
             confidence_scalar=scalar, confidence_tier="INFERRED",
-            half_life_days=rd.get("half_life_days", 90), is_executable=scalar >= 0.60,
+            half_life_days=rd.get("half_life_days", 90),
+            # Maker-checker: imported rules validate before they execute.
+            is_executable=False,
+            authored_by=_import_maker,
             compliance_tags=rd.get("compliance_tags", []),
         )
         db.add(rule)
@@ -442,6 +451,7 @@ async def clone_rule(
         confidence_scalar=original.confidence_scalar * 0.8,  # Discount for clone
         confidence_tier=original.confidence_tier, half_life_days=original.half_life_days,
         is_executable=False,  # Needs validation
+        authored_by="clone_engine",
         compliance_tags=original.compliance_tags, parent_version=original.id,
     )
     db.add(clone)

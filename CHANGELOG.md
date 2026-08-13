@@ -12,6 +12,20 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Trust artifacts (10/10 hardening, Phase 1)
+- **Maker-checker on rules.** Every rule - typed by an operator, bulk-imported,
+  or synthesized by the regulatory engine from pasted directive text - now
+  lands NON-executable with its maker recorded (`rules.authored_by`, migration
+  `0033`), and starts steering governed decisions only after a different
+  authenticated identity validates it. The regulatory engine's LLM
+  interpretation used to go live instantly with `is_executable=True`. The
+  validate endpoint enforces four-eyes against the AUTHENTICATED principal
+  (client-supplied validator text is display metadata, not identity - it used
+  to be recorded verbatim, letting any caller attribute a validation to
+  someone else), and the checker's approval is what authorizes execution;
+  evidence confidence keeps its own job at the runtime confidence gate. The
+  old `scalar >= 0.60` executability shortcut conflated the two in both
+  directions: un-reviewed rules auto-armed at creation while a human
+  validation could fail to authorize anything.
 - **The provenance ledger is one signed, verifiable scheme.** Five writers used
   to put five incompatible values in the same `chain_hash` column (two
   different sha256 payload shapes, a sha3-512 chained to the newest row by

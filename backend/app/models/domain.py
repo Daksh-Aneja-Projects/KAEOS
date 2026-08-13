@@ -59,6 +59,11 @@ class Rule(Base):
     is_archived = Column(Boolean, default=False)
     version = Column(Integer, default=1)
     parent_version = Column(String, ForeignKey('rules.id'), nullable=True)
+    # Maker-checker: who authored this rule (an authenticated human principal,
+    # or a system engine like "regulatory_engine"/"extraction_engine"). A rule
+    # becomes executable only through /rules/{id}/validate, and the checker
+    # must be a DIFFERENT identity than a human maker (four-eyes).
+    authored_by = Column(String(128))
 
     source_signals = Column(JSON, default=list)
     validated_by = Column(JSON, default=list)

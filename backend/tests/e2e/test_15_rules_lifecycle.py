@@ -30,21 +30,23 @@ class TestRuleLifecycle:
         assert rule["statement"].startswith("E2E:")
         TestRuleLifecycle._rule_id = rule["id"]
 
-    async def test_02_validate_rule_bumps_confidence(self, client):
-        """Human validation raises confidence via Bayesian update."""
+    async def test_02_maker_cannot_self_validate(self, client):
+        """Four-eyes: the identity that created a rule may not validate it
+        into execution. (The e2e lane runs as one principal, so validating our
+        own rule must be refused - the confidence-bump path with a second
+        identity is covered by tests/test_rule_maker_checker.py.)"""
         rule_id = TestRuleLifecycle._rule_id
         if not rule_id:
             pytest.skip("Rule creation did not run")
-        before = (await client.get(f"/rules/{rule_id}")).json()["confidence_scalar"]
+        created = (await client.get(f"/rules/{rule_id}")).json()
+        assert created["is_executable"] is False, "a new rule must land as draft"
 
         r = await client.put(f"/rules/{rule_id}/validate", json={
             "validator_role": "dept_head",
             "validator_hash": "e2e_validator",
             "new_tier": "VALIDATED_DH",
         })
-        assert r.status_code == 200, f"{r.status_code}: {r.text[:300]}"
-        after = r.json()["confidence_scalar"]
-        assert after > before, f"Validation should raise confidence ({before} → {after})"
+        assert r.status_code == 403, f"{r.status_code}: {r.text[:300]}"
 
     async def test_03_rule_history(self, client):
         """Confidence history is recorded for the rule."""

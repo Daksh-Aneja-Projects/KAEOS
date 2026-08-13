@@ -109,6 +109,11 @@ Each item below states the capability, its honest boundary, and anything still a
   itself - that computation is external/pluggable by design (KAEOS orchestrates and governs it), and a
   simulated evaluation can never promote. Phases 4-5 (specialized models, autonomous foundry) remain
   roadmap.
+- **Maker-checker applies to rules created from now on.** New rules (operator-typed,
+  bulk-imported, or AI-synthesized from regulatory text) land non-executable and require a
+  different authenticated identity to validate them into execution. Rules that existed before
+  this control keep their current executability - re-review them at your own pace; the
+  provenance ledger records who validated what from here forward.
 - **Provenance ledger: entries written before the 2026-08 unification are unverifiable.** The
   ledger previously had five writers using incompatible hash schemes (one stored a random UUID in
   the integrity column), which made end-to-end verification impossible and produced false

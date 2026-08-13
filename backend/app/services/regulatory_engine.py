@@ -95,11 +95,14 @@ class RegulatoryEngine:
                     confidence_scalar=confidence_scalar,
                     # Honesty: this is an LLM INTERPRETATION of a directive with
                     # outcome_validation=0.0 and explicit_validation=0.0 — nothing
-                    # is VERIFIED. INFERRED matches the vector; the high authority
-                    # keeps it executable without overclaiming validation.
+                    # is VERIFIED. INFERRED matches the vector.
                     confidence_tier=ConfidenceTier.INFERRED,
                     half_life_days=365,
-                    is_executable=True,
+                    # Maker-checker: an AI-authored interpretation of pasted
+                    # regulatory text NEVER executes until a human validates it
+                    # (PUT /rules/{id}/validate). It used to go live instantly.
+                    is_executable=False,
+                    authored_by="regulatory_engine",
                     compliance_tags=[update.framework_name],
                     access_level="global"
                 )
