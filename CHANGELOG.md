@@ -11,7 +11,28 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
-### Trust artifacts (10/10 hardening, Phase 1)
+### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start)
+- **The security audit trail is tamper-evident with a durable fallback.**
+  Every `SecurityAuditLog` row is HMAC-signed at write time (a DB-level edit
+  is detectable by `GET /security/audit-log/verify`), and the scheduler
+  anchors windowed per-tenant checkpoints (count + digest) into the signed
+  provenance ledger every 12h, so deletions surface too - windowed rather
+  than since-genesis because the opt-in 730-day retention class must not
+  read as tampering. A failed DB write now lands the signed event in a local
+  JSONL fallback sink instead of vanishing into a warning log. On Postgres,
+  migration `0034` revokes UPDATE/DELETE from the app role.
+- **TrustedHost + browser-hardening headers.** Host-header validation
+  (`ALLOWED_HOSTS`, permissive in dev, real hostnames in prod) plus nosniff,
+  X-Frame-Options DENY, Referrer-Policy no-referrer, and HSTS outside
+  DEV_MODE, on every response.
+- **Fairness Gate 2 got real statistics.** When cohort outcome counts are
+  supplied, the gate runs the EEOC four-fifths selection-rate test with a
+  two-proportion significance check (stdlib math, deterministic, the cohort
+  snapshot persisted in the audit log) - measured disparity, not model
+  opinion, and the LLM is not consulted at all. Thin samples report as
+  advisory instead of hard-blocking on noise. Without cohort data the LLM
+  screen still runs, and its rationale is now labeled "[LLM screening - not
+  a statistical test]" in every audit record.
 - **Maker-checker on rules.** Every rule - typed by an operator, bulk-imported,
   or synthesized by the regulatory engine from pasted directive text - now
   lands NON-executable with its maker recorded (`rules.authored_by`, migration

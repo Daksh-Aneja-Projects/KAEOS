@@ -340,6 +340,41 @@ async def run_benchmark_warmup():
         logger.error(f"[Scheduler] Benchmark warmup failed: {e}")
 
 
+async def run_audit_checkpoints():
+    """Anchor each tenant's recent audit-log window into the signed ledger.
+
+    Windowed digests (see app/core/audit.py): a later deletion or edit of
+    audit rows inside an anchored window is detectable against the append-only
+    provenance chain. Leader-guarded; owner session so every tenant is swept.
+    """
+    if not _is_leader():
+        return
+    try:
+        from sqlalchemy import select
+
+        from app.core.audit import checkpoint_audit_log
+        from app.core.context import current_tenant_id
+        from app.core.database import MaintenanceSessionLocal
+        from app.models.domain import SecurityAuditLog
+
+        async with MaintenanceSessionLocal() as db:
+            tenants = (await db.execute(
+                select(SecurityAuditLog.tenant_id).distinct()
+            )).scalars().all()
+        anchored = 0
+        for t in tenants:
+            if not t:
+                continue
+            current_tenant_id.set(t)
+            async with MaintenanceSessionLocal() as db:
+                if await checkpoint_audit_log(db, t):
+                    anchored += 1
+        if anchored:
+            logger.info("[Scheduler] Anchored audit checkpoints for %d tenant(s)", anchored)
+    except Exception as e:
+        logger.error(f"[Scheduler] Audit checkpointing failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -381,6 +416,13 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_retention_sweep, 'interval', hours=24,
         id='retention_sweep_job', replace_existing=True
+    )
+    # Audit tamper-evidence: anchor each tenant's recent audit window into the
+    # signed provenance ledger every 12h (windows are 24h, so consecutive
+    # checkpoints overlap and no row goes unanchored).
+    scheduler.add_job(
+        run_audit_checkpoints, 'interval', hours=12,
+        id='audit_checkpoint_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # AI Foundry: mine governed executions into training examples on a cadence so
     # the improvement loop is continuous, not manual. Promotion stays human-gated.

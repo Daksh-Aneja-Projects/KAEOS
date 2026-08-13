@@ -499,6 +499,11 @@ class SecurityAuditLog(Base):
     details = Column(JSON, default=dict)
 
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    # Tamper-evidence: HMAC-SHA256 over the row's canonical content, keyed
+    # from SECRET_KEY (see app/core/audit.py). A DB-level edit of any signed
+    # row is detectable; deletions surface against the periodic checkpoints
+    # anchored into the signed provenance ledger. NULL = pre-signing legacy.
+    signature = Column(String(64))
 
 
 class DecayEvent(Base):

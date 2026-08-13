@@ -79,8 +79,19 @@ class FairnessEngine:
         blueprint_id: Optional[str] = None,
     ) -> dict:
         """Run fairness assessment and persist audit log.
-        
+
         Returns: { score, passed, flagged_attributes, rationale, audit_log_id }
+
+        Two methods, honestly labeled:
+        - STATISTICAL (primary): when the context carries cohort outcome
+          counts (``cohort_outcomes`` = {attribute: {group: {selected,
+          total}}}), the EEOC four-fifths selection-rate test runs with a
+          two-proportion significance check - real measured disparity, not a
+          model's opinion. The cohort snapshot is persisted in the audit log
+          so the evidence is reviewable.
+        - LLM SCREENING (fallback): without cohort data, the LLM screens the
+          action description. This is screening, not a statutory test, and
+          the audit log says so.
         """
         # Load tenant config
         config = await self._get_config(tenant_id, skill.department)
@@ -93,15 +104,46 @@ class FairnessEngine:
         if entity_metadata:
             action_desc += f"\n\nAFFECTED ENTITIES (Sample data from Graph): {entity_metadata}"
 
-        # LLM fairness assessment on THIS tenant's fine-tuned model (BYOK).
-        # Local var, not self.llm: FairnessEngine is a shared singleton, so
-        # mutating self would race across concurrent tenants.
-        llm = await get_tenant_router(tenant_id)
-        assessment = await self._assess_fairness(llm, action_desc, attributes)
-
-        score = assessment.get("overall_score", 0.5)
-        passed = score >= threshold
-        flagged = assessment.get("flagged_attributes", [])
+        cohorts = context.get("cohort_outcomes")
+        if isinstance(cohorts, dict) and cohorts:
+            from app.services.disparate_impact import four_fifths_test
+            stat = four_fifths_test(cohorts)
+            # Ratio of clean attributes as the score surface (UI continuity);
+            # the verdict itself is the 4/5ths + significance outcome.
+            assessed = [a for a, r in stat["attributes"].items()
+                        if r.get("status") != "INSUFFICIENT_GROUPS"]
+            score = (1.0 if not assessed else
+                     (len(assessed) - len(stat["flagged"])) / len(assessed))
+            passed = stat["passed"]
+            flagged = stat["flagged"]
+            assessment = {
+                "overall_score": score,
+                "attribute_scores": stat["attributes"],
+                "flagged_attributes": flagged,
+                "rationale": (
+                    "Statistical four-fifths selection-rate test over the "
+                    "provided cohort outcomes"
+                    + (f": adverse impact on {', '.join(flagged)} "
+                       "(impact ratio below 0.8 with statistical significance)."
+                       if flagged else ": no statistically supported adverse "
+                       "impact found.")
+                ),
+                "method": stat["method"],
+            }
+        else:
+            # LLM fairness assessment on THIS tenant's fine-tuned model (BYOK).
+            # Local var, not self.llm: FairnessEngine is a shared singleton, so
+            # mutating self would race across concurrent tenants.
+            llm = await get_tenant_router(tenant_id)
+            assessment = await self._assess_fairness(llm, action_desc, attributes)
+            assessment.setdefault("method", "llm_screening")
+            assessment["rationale"] = (
+                "[LLM screening - no cohort outcome data supplied; not a "
+                "statistical test] " + str(assessment.get("rationale", ""))
+            )
+            score = assessment.get("overall_score", 0.5)
+            passed = score >= threshold
+            flagged = assessment.get("flagged_attributes", [])
 
         # Persist audit log
         log = FairnessAuditLog(

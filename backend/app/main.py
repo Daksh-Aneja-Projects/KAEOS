@@ -295,9 +295,11 @@ elif _HAS_OTEL:
 
 from app.core.middleware import (
     RequestIdMiddleware, RequestLoggingMiddleware, RateLimitMiddleware, BodySizeLimitMiddleware,
+    SecurityHeadersMiddleware,
 )
 
-# Innermost → Outermost: Tenant → RequestID → Logging → RateLimit → BodySize → CORS
+# Innermost → Outermost: Tenant → RequestID → Logging → RateLimit → BodySize
+#                        → SecurityHeaders → TrustedHost → CORS
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
@@ -307,6 +309,15 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_RPM)
 # Reject over-large bodies before a handler allocates them (OOM guard).
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
+# Browser-hardening headers on every response (HSTS outside DEV_MODE only).
+app.add_middleware(SecurityHeadersMiddleware)
+# Host-header validation. Default ["*"] keeps dev/test permissive; production
+# sets ALLOWED_HOSTS to its real hostnames so Host-header attacks (cache
+# poisoning, password-reset poisoning) die at the edge of the app too, not
+# only at the proxy. NOTE: security gates must keep using scope["path"], never
+# the Host header (GHSA-86qp class).
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
 # CORS must be outermost, so it is added LAST
 app.add_middleware(

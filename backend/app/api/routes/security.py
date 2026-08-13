@@ -67,3 +67,20 @@ async def get_audit_log(
             "allowed": total_events - blocked_events - escalated_events,
         },
     }
+
+
+@router.get("/audit-log/verify")
+async def verify_audit_log(
+    limit: int = 5000,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Verify the audit trail's tamper-evidence for this tenant.
+
+    Recomputes per-row HMAC signatures (edits) and the newest windowed
+    checkpoint anchored in the signed provenance ledger (deletions). Rows
+    written before signing report as legacy, never as tampering.
+    """
+    from app.core.audit import verify_audit_checkpoint, verify_audit_rows
+    rows = await verify_audit_rows(db, tenant_id, limit=limit)
+    checkpoint = await verify_audit_checkpoint(db, tenant_id)
+    return {"rows": rows, "checkpoint": checkpoint}

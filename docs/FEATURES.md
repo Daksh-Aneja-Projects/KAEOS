@@ -49,7 +49,7 @@ Signal / Trigger
   1. Compliance      <- SOX, GDPR, HIPAA, PCI, EEOC, CCPA enforcement
       |
       v
-  2. Fairness        <- LLM-assisted bias screening (not a statistical EEOC test)
+  2. Fairness        <- Statistical 4/5ths disparate-impact test on cohort outcomes; LLM screening (labeled) when no cohort data
       |
       v
   3. Confidence      <- Threshold check, AMBER/GREEN/RED tier routing

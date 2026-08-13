@@ -114,6 +114,110 @@ async def list_chart_of_accounts(tenant_id: str = Depends(get_tenant_id), accoun
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# General Ledger — the posting keystone (real double entry)
+# ═══════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel
+
+
+class JournalLineIn(BaseModel):
+    account_id: Optional[str] = None
+    account_code: Optional[str] = None
+    debit: float = 0
+    credit: float = 0
+    description: Optional[str] = None
+    department: Optional[str] = None
+    cost_center: Optional[str] = None
+
+
+class JournalEntryIn(BaseModel):
+    description: str
+    lines: list[JournalLineIn]
+    reference: Optional[str] = None
+    source_module: str = "MANUAL"
+    source_document_id: Optional[str] = None
+
+
+def _entry_dict(e) -> dict:
+    return {
+        "id": e.id, "entry_number": e.entry_number,
+        "entry_date": e.entry_date.isoformat() if e.entry_date else None,
+        "posting_date": e.posting_date.isoformat() if e.posting_date else None,
+        "description": e.description, "reference": e.reference,
+        "source_module": e.source_module, "status": getattr(e.status, "value", e.status),
+        "total_debit": float(e.total_debit or 0), "total_credit": float(e.total_credit or 0),
+        "created_by": e.created_by, "fiscal_year": e.fiscal_year,
+        "fiscal_period": e.fiscal_period,
+    }
+
+
+@router.post("/gl/journal-entries")
+async def post_gl_entry(body: JournalEntryIn, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Post a balanced journal entry - the only write path into the GL.
+
+    Fail-closed double entry: unbalanced, zero-amount, or unknown-account
+    entries are refused with nothing posted. Balances move atomically with
+    the entry, and the posting lands in the signed provenance ledger."""
+    from app.core.tenant import approver_identity
+    from app.finance.services.gl import GLPostingError, post_journal_entry
+    tenant_id = tenant["tenant_id"]
+    try:
+        entry = await post_journal_entry(
+            db, tenant_id,
+            lines=[l.model_dump() for l in body.lines],
+            description=body.description,
+            reference=body.reference,
+            source_module=body.source_module,
+            source_document_id=body.source_document_id,
+            created_by=approver_identity(tenant),
+        )
+    except GLPostingError as e:
+        raise HTTPException(400, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="journal_entry", resource_id=entry.id,
+        details={"entry_number": entry.entry_number,
+                 "total": float(entry.total_debit or 0)},
+    )
+    return _entry_dict(entry)
+
+
+@router.post("/gl/journal-entries/{entry_id}/reverse")
+async def reverse_gl_entry(entry_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Reverse a POSTED entry with a mirror entry (append-only correction)."""
+    from app.core.tenant import approver_identity
+    from app.finance.services.gl import GLPostingError, reverse_journal_entry
+    tenant_id = tenant["tenant_id"]
+    try:
+        mirror = await reverse_journal_entry(
+            db, tenant_id, entry_id, actor=approver_identity(tenant))
+    except GLPostingError as e:
+        raise HTTPException(400, str(e))
+    return _entry_dict(mirror)
+
+
+@router.get("/gl/journal-entries")
+async def list_gl_entries(
+    limit: int = 50, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)
+):
+    from app.finance.models.core import JournalEntry
+    rows = (await db.execute(
+        select(JournalEntry).where(JournalEntry.tenant_id == tenant_id)
+        .order_by(JournalEntry.created_at.desc()).limit(max(1, min(200, limit)))
+    )).scalars().all()
+    return [_entry_dict(e) for e in rows]
+
+
+@router.get("/gl/trial-balance")
+async def get_trial_balance(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Trial balance derived from POSTED journal lines (the ledger is the
+    source of truth; cached balances are cross-checked and drift reported)."""
+    from app.finance.services.gl import trial_balance
+    return await trial_balance(db, tenant_id)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Accounts Payable
 # ═══════════════════════════════════════════════════════════════════════
 
