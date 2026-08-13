@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # Safe default: auth is ENFORCED unless DEV_MODE is explicitly enabled
     # (e.g. DEV_MODE=true in a local .env). Never ship DEV_MODE=true to production.
     DEV_MODE: bool = False
+
+    # Host-header validation (TrustedHostMiddleware). ["*"] keeps dev/test
+    # permissive; production deployments MUST list their real hostnames,
+    # e.g. ALLOWED_HOSTS=["kaeos.example.com","api.kaeos.example.com"].
+    ALLOWED_HOSTS: list[str] = ["*"]
     # Deployment environment marker: development | staging | production.
     # DEV_MODE combined with staging/production REFUSES TO BOOT (see main.py).
     ENVIRONMENT: str = "development"

@@ -12,7 +12,7 @@ from app.models.agent_factory import (
     AgentBlueprint, BlueprintStatus, DeployedAgent, AgentType, AgentStatus,
     ActivityFeedEvent, ActivityEventType, ActivitySeverity,
 )
-from app.models.domain import Skill, ProvenanceLedger
+from app.models.domain import Skill
 from app.services.provenance import ProvenanceEngine
 
 logger = logging.getLogger(__name__)
@@ -87,23 +87,19 @@ class SkillsCompiler:
             # Update blueprint status
             blueprint.status = BlueprintStatus.COMPILED
             
-            # Create provenance entry
-            import hashlib
-            chain_data = f"SKILL_COMPILED:{skill_id}:{blueprint.id}:{datetime.now(timezone.utc).isoformat()}"
-            chain_hash = hashlib.sha256(chain_data.encode()).hexdigest()
-
-            provenance = ProvenanceLedger(
+            # Provenance via the unified signed writer (this site used to hash
+            # a timestamp string - unchained, unverifiable). Lands atomically
+            # with the pending skill + blueprint-status change above.
+            from app.services.provenance import append_ledger_event
+            await append_ledger_event(
+                session,
                 tenant_id=tenant_id,
                 event_type="SKILL_COMPILED_FROM_BLUEPRINT",
                 actor_hash="system:compiler",
                 actor_role="system",
                 confidence_at=chain_confidence,
                 reasoning=f"Compiled from blueprint '{blueprint.name}' with {len(steps)} steps",
-                chain_hash=chain_hash,
             )
-            session.add(provenance)
-
-            await session.commit()
             await session.refresh(skill)
 
             logger.info(f"[Compiler] Compiled blueprint '{blueprint.name}' → skill '{skill_id}' ({len(steps)} steps)")

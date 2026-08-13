@@ -3,7 +3,8 @@
 1. Gate 5b FAILS CLOSED: a human-approved actuation that throws must not report
    SUCCESS_CLEAN, and the mission engine must mark the step FAILED.
 2. The L1 vocabulary split: a measured BAD outcome is never mined as gold, and a
-   HITL approval carrying an edit is stamped SUCCESS_WITH_EDIT.
+   HITL approval carrying an edit records the correction; the RESUMED run (not
+   the approve route) stamps SUCCESS_WITH_EDIT.
 3. L4 outcomes are attributed to the mission's real step executions.
 4. Enterprise memory is written after a governed decision and read back before
    the next one.
@@ -163,11 +164,29 @@ def mute_feed(monkeypatch):
     monkeypatch.setattr(ActivityFeedService, "emit", _noop)
 
 
-async def test_hitl_approval_with_edit_stamps_success_with_edit(db, mute_feed):
-    """An approval carrying a correction is human-EDITED fallout, not clean
-    autonomy, and the correction becomes a training example."""
+def _spy_resolve(monkeypatch):
+    """Spy out hitl_manager.resolve_hitl (the resume side is covered by
+    test_hitl_memory_fallback); the route contract is what is under test."""
+    from app.services.hitl_manager import hitl_manager
+
+    calls = {}
+
+    async def spy(execution_id, approved, approver="human", reason="", tenant_id=None):
+        calls.update(execution_id=execution_id, approved=approved,
+                     approver=approver, tenant_id=tenant_id)
+        return True
+
+    monkeypatch.setattr(hitl_manager, "resolve_hitl", spy)
+    return calls
+
+
+async def test_hitl_approval_with_edit_records_correction_and_resumes(db, mute_feed, monkeypatch):
+    """An approval carrying a correction captures it as a training example and
+    plants the edit marker for the resumed run. The route must NOT stamp a
+    success outcome itself - only the resumed executor knows how the run ends."""
     from app.api.routes.skills import approve_hitl, ApproveHitlIn
 
+    calls = _spy_resolve(monkeypatch)
     t = "tenant_edit"
     ex = SkillExecution(id=str(uuid.uuid4()), tenant_id=t, skill_id_name="hr.offer",
                         status="PENDING_HITL", outcome_type="PENDING_HITL",
@@ -177,13 +196,16 @@ async def test_hitl_approval_with_edit_stamps_success_with_edit(db, mute_feed):
     await db.commit()
 
     tenant = {"tenant_id": t, "role": "operator", "email": "hr@acme"}
-    await approve_hitl(ex.id, ApproveHitlIn(corrected_answer="offer 110k"),
-                       tenant=tenant, db=db)
+    res = await approve_hitl(ex.id, ApproveHitlIn(corrected_answer="offer 110k"),
+                             tenant=tenant, db=db)
+    assert res["status"] == "RESUMING"
+    assert calls == {"execution_id": ex.id, "approved": True,
+                     "approver": "hr@acme", "tenant_id": t}
 
     refreshed = (await db.execute(
         select(SkillExecution).where(SkillExecution.id == ex.id))).scalar_one()
-    assert refreshed.outcome_type == "SUCCESS_WITH_EDIT"
-    assert refreshed.hitl_approved is True
+    assert refreshed.status == "PENDING_HITL"          # no fabricated SUCCESS
+    assert refreshed.context["human_corrected_answer"] == "offer 110k"
 
     from app.models.foundry import TrainingExample
     correction = (await db.execute(
@@ -192,19 +214,44 @@ async def test_hitl_approval_with_edit_stamps_success_with_edit(db, mute_feed):
     assert correction.human_verified is True
 
 
-async def test_plain_approval_stays_success_clean(db, mute_feed):
+async def test_plain_approval_resumes_instead_of_stamping_success(db, mute_feed, monkeypatch):
+    """Regression for the P0 lie: approving used to stamp SUCCESS_CLEAN without
+    running the skill. Now it resolves through hitl_manager and leaves the
+    outcome to the resumed run."""
     from app.api.routes.skills import approve_hitl
 
+    calls = _spy_resolve(monkeypatch)
     t = "tenant_plain"
     ex = SkillExecution(id=str(uuid.uuid4()), tenant_id=t, skill_id_name="hr.offer",
                         status="PENDING_HITL", outcome_type="PENDING_HITL", hitl_required=True)
     db.add(ex)
     await db.commit()
 
-    await approve_hitl(ex.id, None, tenant={"tenant_id": t, "role": "operator"}, db=db)
+    res = await approve_hitl(ex.id, None, tenant={"tenant_id": t, "role": "operator"}, db=db)
+    assert res["status"] == "RESUMING"
+    assert calls["approved"] is True
+
     refreshed = (await db.execute(
         select(SkillExecution).where(SkillExecution.id == ex.id))).scalar_one()
-    assert refreshed.outcome_type == "SUCCESS_CLEAN"
+    assert refreshed.status == "PENDING_HITL"
+    assert refreshed.outcome_type == "PENDING_HITL"
+
+
+async def test_approving_a_finished_execution_is_a_409(db, mute_feed):
+    from fastapi import HTTPException
+
+    from app.api.routes.skills import approve_hitl
+
+    t = "tenant_done"
+    ex = SkillExecution(id=str(uuid.uuid4()), tenant_id=t, skill_id_name="hr.offer",
+                        status="SUCCESS_CLEAN", outcome_type="SUCCESS_CLEAN",
+                        agent_state="COMPLETED", hitl_required=True)
+    db.add(ex)
+    await db.commit()
+
+    with pytest.raises(HTTPException) as ei:
+        await approve_hitl(ex.id, None, tenant={"tenant_id": t, "role": "operator"}, db=db)
+    assert ei.value.status_code == 409
 
 
 def test_time_machine_recognises_the_edited_class():

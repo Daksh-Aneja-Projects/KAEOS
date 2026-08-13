@@ -59,8 +59,68 @@ async def execute_action(
 ):
     """Perform a governed write to a system of record. Idempotent on retry and
     reversible: the action carries an idempotency key, provenance id, and a
-    compensator computed from the captured before-state."""
+    compensator computed from the captured before-state.
+
+    Consequence gate at the actuation boundary: this route used to be the one
+    execution path with NO gate at all - one API call could delete data or move
+    money. High-consequence writes (the same shared is_high_consequence rule
+    Gate 3 and /skills enforce) now pause in the HITL queue and apply only
+    after human approval, fail-closed, via the same resume path as every other
+    approval."""
     tenant_id = tenant["tenant_id"]
+
+    from app.services.consequence import is_high_consequence
+    _probe = {
+        "skill_id": f"actuation.{body.system}.{body.object_type}.{body.operation}".lower(),
+        "tags": ["data_deletion"] if body.operation.upper() == "DELETE" else [],
+    }
+    if is_high_consequence(_probe):
+        import uuid as _uuid
+
+        from app.services.hitl_manager import hitl_manager
+        exec_id = f"exec-{_uuid.uuid4().hex[:8]}"
+        target = f"{body.system}:{body.object_type}/{body.external_id}"
+        await hitl_manager.request_human_confirmation(
+            skill={
+                "skill_id": _probe["skill_id"],
+                # One LLM-free step so the resumed run finalizes the row.
+                "steps": [{"id": "approved", "action": "log",
+                           "message": f"Approved governed write to {target}."}],
+                "compliance_tags": [], "department": "operations",
+                "actuation": {
+                    "system": body.system, "object_type": body.object_type,
+                    "external_id": body.external_id, "operation": body.operation,
+                    "payload": body.payload,
+                    "idempotency_key": body.idempotency_key,
+                },
+            },
+            context={
+                "execution_id": exec_id, "tenant_id": tenant_id,
+                "intent": f"{body.operation} {target}",
+                "requested_by": tenant.get("email") or tenant.get("name") or "operator",
+                # Also on the durable DB row: the write must still apply if the
+                # 24h gate-cache record expires before someone approves.
+                "actuation": {
+                    "system": body.system, "object_type": body.object_type,
+                    "external_id": body.external_id, "operation": body.operation,
+                    "payload": body.payload,
+                    "idempotency_key": body.idempotency_key,
+                },
+            },
+        )
+        await record_security_event(
+            tenant_id=tenant_id, event_type="ACTUATION", action="HITL_PENDING",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type=f"{body.system}:{body.object_type}", resource_id=body.external_id,
+            details={"execution_id": exec_id, "operation": body.operation},
+        )
+        return {
+            "status": "PENDING_HITL", "execution_id": exec_id,
+            "detail": (f"{body.operation} on {target} is high-consequence and "
+                       "awaits human approval in the HITL queue; the write "
+                       "applies only after approval."),
+        }
+
     try:
         record = await Actuator.apply_action(
             db, tenant_id=tenant_id, system=body.system,

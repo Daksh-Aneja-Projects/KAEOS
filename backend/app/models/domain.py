@@ -1,7 +1,7 @@
 """KAEOS — Domain Models (L3 Polystore: PostgreSQL/SQLite Rules Store)"""
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, DateTime, ForeignKey,
-    Text, JSON, Enum, Index,
+    Text, JSON, Enum, Index, UniqueConstraint, text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -59,6 +59,11 @@ class Rule(Base):
     is_archived = Column(Boolean, default=False)
     version = Column(Integer, default=1)
     parent_version = Column(String, ForeignKey('rules.id'), nullable=True)
+    # Maker-checker: who authored this rule (an authenticated human principal,
+    # or a system engine like "regulatory_engine"/"extraction_engine"). A rule
+    # becomes executable only through /rules/{id}/validate, and the checker
+    # must be a DIFFERENT identity than a human maker (four-eyes).
+    authored_by = Column(String(128))
 
     source_signals = Column(JSON, default=list)
     validated_by = Column(JSON, default=list)
@@ -150,6 +155,25 @@ class ProvenanceLedger(Base):
     # the overflow (StringDataRightTruncationError); SQLite truncated silently,
     # so every federated/quantum export was corrupt-but-quiet in dev.
     chain_hash = Column(String(128), unique=True)
+    # Ledger unification (schema v2, see app/services/provenance.py):
+    # chain_scope names the chain an entry belongs to (a rule/skill id, or
+    # "_tenant" for the subjectless event stream); schema_version stamps which
+    # hashing scheme signed the row (NULL = pre-unification legacy, reported
+    # honestly by the verifier instead of "TAMPERED").
+    chain_scope = Column(String(64), index=True)
+    schema_version = Column(String(8))
+    __table_args__ = (
+        # Appends are serialized by the DATABASE, not a lock: each parent may
+        # have at most one child per chain, and each chain at most one genesis
+        # row. A concurrent append loses the race with an IntegrityError and
+        # retries against the new head - across workers and replicas.
+        Index("uq_prov_chain_parent", "tenant_id", "chain_scope", "parent_id",
+              unique=True),
+        Index("uq_prov_chain_genesis", "tenant_id", "chain_scope",
+              unique=True,
+              postgresql_where=text("parent_id IS NULL"),
+              sqlite_where=text("parent_id IS NULL")),
+    )
 
     rule = relationship(
         "Rule",
@@ -210,9 +234,14 @@ class Workflow(Base):
 class Skill(Base):
     """L8 — Compiled Skill Contract"""
     __tablename__ = 'skills'
+    # Tenant-scoped business key: global unique meant a second tenant seeding
+    # the standard skill catalog collided with the first (cross-tenant DoS).
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "skill_id", name="uq_skills_tenant_skill_id"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
-    skill_id = Column(String, unique=True, nullable=False, index=True)
+    skill_id = Column(String, nullable=False, index=True)
     tenant_id = Column(String, nullable=False, index=True)
     department = Column(String(64), index=True)
     domain = Column(String(64))
@@ -470,6 +499,11 @@ class SecurityAuditLog(Base):
     details = Column(JSON, default=dict)
 
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    # Tamper-evidence: HMAC-SHA256 over the row's canonical content, keyed
+    # from SECRET_KEY (see app/core/audit.py). A DB-level edit of any signed
+    # row is detectable; deletions surface against the periodic checkpoints
+    # anchored into the signed provenance ledger. NULL = pre-signing legacy.
+    signature = Column(String(64))
 
 
 class DecayEvent(Base):

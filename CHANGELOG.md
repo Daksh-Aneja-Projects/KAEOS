@@ -11,6 +11,154 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
+- **Vendor payments reach the ledger.** `POST /finance/payments` is the first
+  P2P money event wired end to end: the invoice must be APPROVED with a
+  recorded approver, the payer may not be that approver (four-eyes),
+  overpayment is refused, and the Payment row + invoice balance + journal
+  entry + account balances + signed provenance event land in ONE commit
+  through the GL keystone (cash basis: DR expense / CR cash; the accrual
+  upgrade belongs with the invoice-approval hook). `Payment.journal_entry_id`
+  existed since the schema was written; this is the first code to set it.
+- **Embeddings obey the same governance as every other model call.** The
+  Polystore embedded rule text via a direct litellm call with a hardcoded
+  OpenAI model - bypassing the data-residency filter (a local-only tenant's
+  rule text still went to the cloud), cost metering, tenant BYOK and the
+  local-Ollama fallback. Both sites now route through `LLMRouter.embed`.
+- **AI system inventory + model cards** (`GET /governance/ai-inventory`):
+  the EU-AI-Act-shaped answer to "which AI systems run here, on what models,
+  with what oversight" - derived from the tenant's live tier-to-model
+  routing, probe-measured confidence ceilings (unprobed reports unknown, not
+  flattering), and real oversight counts, with code references a reviewer
+  can check. An inventory, not legal advice, and it says so.
+- **The General Ledger posts for real.** `JournalEntry`/`JournalLine`/
+  `ChartOfAccount` were display-only schemas: nothing ever posted, balances
+  never moved, and an unbalanced entry would have been accepted. The new
+  posting keystone (`app/finance/services/gl.py`) is the only write path:
+  fail-closed double entry (sum of debits must equal sum of credits, Decimal
+  cents, exactly one positive side per line, active tenant-scoped accounts
+  only - violations post NOTHING), race-safe sequential entry numbers,
+  account balances moved by normal-balance convention in the same
+  transaction as the entry, and a signed provenance-ledger event landing
+  atomically with the posting. Corrections are append-only reversals (mirror
+  entries), and the trial balance (`GET /finance/gl/trial-balance`) derives
+  from POSTED lines - the ledger is the source of truth, with cached-balance
+  drift cross-checked and reported. New endpoints:
+  `POST /finance/gl/journal-entries`, `.../{id}/reverse`,
+  `GET /finance/gl/journal-entries`.
+- **The security audit trail is tamper-evident with a durable fallback.**
+  Every `SecurityAuditLog` row is HMAC-signed at write time (a DB-level edit
+  is detectable by `GET /security/audit-log/verify`), and the scheduler
+  anchors windowed per-tenant checkpoints (count + digest) into the signed
+  provenance ledger every 12h, so deletions surface too - windowed rather
+  than since-genesis because the opt-in 730-day retention class must not
+  read as tampering. A failed DB write now lands the signed event in a local
+  JSONL fallback sink instead of vanishing into a warning log. On Postgres,
+  migration `0034` revokes UPDATE/DELETE from the app role.
+- **TrustedHost + browser-hardening headers.** Host-header validation
+  (`ALLOWED_HOSTS`, permissive in dev, real hostnames in prod) plus nosniff,
+  X-Frame-Options DENY, Referrer-Policy no-referrer, and HSTS outside
+  DEV_MODE, on every response.
+- **Fairness Gate 2 got real statistics.** When cohort outcome counts are
+  supplied, the gate runs the EEOC four-fifths selection-rate test with a
+  two-proportion significance check (stdlib math, deterministic, the cohort
+  snapshot persisted in the audit log) - measured disparity, not model
+  opinion, and the LLM is not consulted at all. Thin samples report as
+  advisory instead of hard-blocking on noise. Without cohort data the LLM
+  screen still runs, and its rationale is now labeled "[LLM screening - not
+  a statistical test]" in every audit record.
+- **Maker-checker on rules.** Every rule - typed by an operator, bulk-imported,
+  or synthesized by the regulatory engine from pasted directive text - now
+  lands NON-executable with its maker recorded (`rules.authored_by`, migration
+  `0033`), and starts steering governed decisions only after a different
+  authenticated identity validates it. The regulatory engine's LLM
+  interpretation used to go live instantly with `is_executable=True`. The
+  validate endpoint enforces four-eyes against the AUTHENTICATED principal
+  (client-supplied validator text is display metadata, not identity - it used
+  to be recorded verbatim, letting any caller attribute a validation to
+  someone else), and the checker's approval is what authorizes execution;
+  evidence confidence keeps its own job at the runtime confidence gate. The
+  old `scalar >= 0.60` executability shortcut conflated the two in both
+  directions: un-reviewed rules auto-armed at creation while a human
+  validation could fail to authorize anything.
+- **The provenance ledger is one signed, verifiable scheme.** Five writers used
+  to put five incompatible values in the same `chain_hash` column (two
+  different sha256 payload shapes, a sha3-512 chained to the newest row by
+  wall clock across all tenants, a hash of a timestamp string, and a random
+  `uuid4()`), so the verify endpoint reported cleanly created rules as
+  "TAMPERED". Every writer now routes through one writer
+  (`app/services/provenance.py`): HMAC-SHA256 signed (a database-only attacker
+  cannot recompute a valid chain), explicit parent pointers, per-tenant
+  chains (RLS-compatible), and appends serialized by database uniqueness - a
+  concurrent append cannot fork a chain on any worker count, no locks
+  involved. The verifier recomputes end-to-end and is honest about history:
+  pre-unification rows report as `legacy`, never as tampering. New
+  `/provenance/stream/verify` covers the subjectless event stream the old
+  code had no verifier for. Postgres deployments revoke UPDATE/DELETE on the
+  table from the app role (migration `0032`), making append-only a database
+  guarantee instead of a convention. The "quantum ledger" facade delegates to
+  the same writer, closing its timestamp-derived-parent fork bug.
+- **One gated execution path.** `/skills/{id}/execute` (which the MCP
+  `execute_skill` tool forwards to) ran a partial inline pipeline that
+  skipped Gate 2 (Fairness) and Gate 4 (Debate); the HITL resume re-entered
+  at Gate 5 only, skipping fairness, audit and governed actuation on exactly
+  the executions a human had just approved. Both now run
+  `AgentExecutor.execute_skill` - the same pipeline missions and the domain
+  agents use - and the pipeline itself is restructured so the pre-approved
+  shortcut and the normal flow share one post-HITL body and cannot drift
+  apart. Debate is skipped for human-approved resumes (its strongest outcome
+  is "escalate to a human", and a human has already ruled), approved
+  actuations are attributed to the approver, and a resume blocked at a
+  statutory gate finalizes the execution row instead of leaving it RUNNING
+  forever. A regression test locks the route to the pipeline.
+- **Approved work survives a crash.** The resume after a human approval was a
+  fire-and-forget task: a worker dying between "approved" and "completed"
+  lost the run while the row said RUNNING forever. Every approval now
+  enqueues a durable `hitl_resume` job atomically with the approval itself
+  (same transaction - no crash window), processed by the existing
+  leader-guarded job queue with retry and backoff. The resume is idempotent
+  on execution_id, so the normal in-process resume makes the backstop a
+  no-op, and a crashed one is recovered within minutes.
+
+### Security / Integrity (10/10 hardening, Phase 0)
+- **Approving a paused execution now actually runs it.** `POST /skills/hitl/{id}/approve`
+  used to stamp `SUCCESS_CLEAN` unconditionally and only resumed the skill if a
+  gate-cache record happened to survive - a human could "approve" work that then
+  never executed while the ledger said it completed cleanly. Every approval now
+  routes through `hitl_manager.resolve_hitl` (the same path as the email-link
+  approver), the response is `RESUMING`, and the final status is stamped by the
+  executor when the resumed run completes. Approving a finished execution is a
+  409. An approval carrying a correction still records the Foundry training
+  example, and the resumed run finalizes as `SUCCESS_WITH_EDIT`.
+- **Rejections decided via the email link now leave the queue.** `resolve_hitl`
+  finalizes the execution row (`HUMAN_OVERRIDDEN`, completed timestamp) on
+  reject, so a rejection decided from a notification link no longer sits in the
+  pending queue forever.
+- **The direct actuation API is gated.** `POST /actuation/execute` was the one
+  execution path with no gate at all: one operator API call could delete data or
+  move money. High-consequence writes (the shared `is_high_consequence` rule -
+  payments, deletions, terminations, and every DELETE operation) now pause in
+  the HITL queue and apply only after human approval, fail-closed, attributed to
+  the approver, through the same resume path as every other approval.
+- **Tenant-scoped business keys are no longer globally unique.** `worker_id`,
+  employee/contact emails, invoice/journal/expense/finding/PO/ticket numbers,
+  SOX control codes, KB slugs, department slugs and `skill_id` carried a global
+  `unique=True`, so tenant B could not create `INV-001` - or seed the standard
+  skill catalog - once tenant A had (cross-tenant collision and denial of
+  service). All 16 keys are now composite `(tenant_id, key)` (migration `0031`),
+  and the skill lookups/joins that relied on global uniqueness are tenant-scoped
+  (workforce deploy idempotency, workforce analytics join, predictive-ops intent
+  execution - which also no longer leaks every tenant's skill catalog into the
+  intent-analysis prompt).
+- **Honesty relabel sweep.** The docs no longer claim writes KAEOS cannot make:
+  external write-back is scoped to Salesforce + generic REST (the other adapters
+  are ingestion-only and say so), the AP agent no longer feeds the model a
+  hardcoded `Receipt Status: CONFIRMED` for receipts it does not track (the
+  pack process is now "Invoice PO Matching"), Gate 2 is described as
+  LLM-assisted bias screening rather than a statutory EEOC test, and
+  KNOWN_LIMITATIONS gains the two entries the review said were missing:
+  write-back scope and the industry-vertical depth gap.
+
 ### Added
 - **The intelligence report is delivered as it is written.** Caching removed the
   wait on every request after the first, but somebody still pays it the first

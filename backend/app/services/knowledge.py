@@ -156,22 +156,23 @@ class PolystoreEngine:
         """
         Generate a semantic embedding for the rule statement.
 
-        Uses LiteLLM's embedding API (OpenAI text-embedding-3-small by default).
-        Falls back to None if no embedding key is configured.
+        Routes through LLMRouter.embed - the SAME governance surface as every
+        other model call. This used to call litellm.aembedding directly with a
+        hardcoded OpenAI model, which bypassed the data-residency filter (a
+        local-only tenant's rule text still went to a cloud provider), cost
+        metering, tenant BYOK, and the local-Ollama fallback.
         """
         try:
-            import litellm
+            from app.services.llm_router import get_tenant_router
             text_to_embed = (
                 f"{rule.statement} "
                 f"Domain: {rule.domain}. "
                 f"Trigger: {json.dumps(rule.trigger_json)}. "
                 f"Action: {json.dumps(rule.action_json)}."
             )
-            response = await litellm.aembedding(
-                model="text-embedding-3-small",
-                input=[text_to_embed],
-            )
-            return response.data[0]["embedding"]
+            router = await get_tenant_router(rule.tenant_id)
+            vectors = await router.embed([text_to_embed])
+            return vectors[0] if vectors else None
         except Exception as exc:
             logger.warning(f"[Polystore] Embedding generation skipped: {exc}")
             return None
@@ -449,14 +450,16 @@ class PolystoreEngine:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _generate_embedding_for_text(self, text_: str) -> Optional[list]:
-        """Embed a plain text string (used for semantic_search queries)."""
+        """Embed a plain text string (used for semantic_search queries).
+
+        Through LLMRouter.embed (ambient tenant router) - see
+        ``_generate_embedding`` for why the direct litellm call was a
+        governance bypass."""
         try:
-            import litellm
-            response = await litellm.aembedding(
-                model="text-embedding-3-small",
-                input=[text_],
-            )
-            return response.data[0]["embedding"]
+            from app.services.llm_router import get_tenant_router
+            router = await get_tenant_router()
+            vectors = await router.embed([text_])
+            return vectors[0] if vectors else None
         except Exception as exc:
             logger.warning(f"[Polystore] Query embedding failed: {exc}")
             return None

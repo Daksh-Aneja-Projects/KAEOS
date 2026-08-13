@@ -4,8 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 from typing import Optional
 from datetime import datetime, timezone
-import hashlib
-import json
 import uuid
 
 from app.core.database import get_db
@@ -38,9 +36,10 @@ def _tier_from_scalar(s: float) -> ConfidenceTier:
     return ConfidenceTier.SPECULATIVE
 
 
-def _chain_hash(parent_hash: str, payload: dict) -> str:
-    content = f"{parent_hash}|{json.dumps(payload, sort_keys=True, default=str)}"
-    return hashlib.sha256(content.encode()).hexdigest()
+# Provenance entries go through the unified signed writer
+# (app/services/provenance.py). The local sha256 helper this file used wrote a
+# THIRD hash scheme into the shared chain_hash column, which is why the verify
+# endpoint reported cleanly-created rules as TAMPERED.
 
 
 @router.get("", response_model=RuleListResponse)
@@ -93,8 +92,18 @@ async def get_rule(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: As
 
 @router.post("", response_model=RuleResponse, status_code=201)
 async def create_rule(body: RuleCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    """Create a new candidate rule (enters KB at INFERRED tier). Requires operator role."""
+    """Create a new candidate rule (enters KB at INFERRED tier). Requires operator role.
+
+    Maker-checker: a new rule ALWAYS lands non-executable, whatever its
+    computed confidence. It starts steering governed decisions only after a
+    different identity validates it (PUT /rules/{id}/validate). Confidence
+    measures how well-evidenced a rule is, not whether a second pair of eyes
+    has agreed the org should act on it - the old `scalar >= 0.60` shortcut
+    conflated the two.
+    """
+    from app.core.tenant import approver_identity
     tenant_id = tenant["tenant_id"]
+    maker = approver_identity(tenant)
     vector = {
         "source_breadth": 0.3,
         "source_authority": 0.4,
@@ -118,31 +127,26 @@ async def create_rule(body: RuleCreate, tenant: dict = Depends(require_role("ope
         confidence_scalar=scalar,
         confidence_tier=tier,
         half_life_days=body.half_life_days,
-        is_executable=scalar >= 0.60,
+        is_executable=False,  # maker-checker: executable only after validation
+        authored_by=maker,
         compliance_tags=body.compliance_tags,
         access_level=body.access_level,
     )
     db.add(rule)
 
-    # Write provenance genesis entry
-    prov_payload = {
-        "rule_id": rule.id, "event_type": "CREATED",
-        "confidence_at": scalar, "reasoning": "New candidate rule ingested",
-    }
-    prov = ProvenanceLedger(
-        id=str(uuid.uuid4()),
+    # Provenance genesis entry via the unified signed writer (commits the
+    # session, so the rule and its ledger entry land atomically).
+    from app.services.provenance import append_ledger_event
+    await append_ledger_event(
+        db,
         tenant_id=tenant_id,
         rule_id=rule.id,
         event_type="CREATED",
         actor_hash="system",
         actor_role="extraction_engine",
-        evidence_ids=[],
         confidence_at=scalar,
         reasoning="New candidate rule ingested via API",
-        chain_hash=_chain_hash("GENESIS", prov_payload),
     )
-    db.add(prov)
-    await db.commit()
     await db.refresh(rule)
     return RuleResponse.model_validate(rule.__dict__)
 
@@ -154,14 +158,28 @@ async def validate_rule(
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bump a rule's confidence tier via human validation (L5 HITL gate). Tenant-scoped to the caller. Requires operator role."""
+    """Bump a rule's confidence tier via human validation (L5 HITL gate). Tenant-scoped to the caller. Requires operator role.
+
+    Maker-checker: validation is what makes a rule executable, so the checker
+    is the AUTHENTICATED principal (client-supplied validator text is display
+    metadata, not identity) and must differ from the rule's maker - the same
+    person may not author a rule and then approve it into execution.
+    """
+    from app.core.tenant import approver_identity
     tenant_id = tenant["tenant_id"]
+    checker = approver_identity(tenant)
     result = await db.execute(
         select(Rule).where(Rule.tenant_id == tenant_id).where(Rule.id == rule_id)
     )
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(404, "Rule not found")
+    if rule.authored_by and rule.authored_by == checker:
+        raise HTTPException(
+            403,
+            "Four-eyes: the identity that authored this rule cannot also "
+            "validate it. Ask a different operator to review it.",
+        )
 
     old_scalar = rule.confidence_scalar
     vector = dict(rule.confidence_vector) if rule.confidence_vector else {}
@@ -176,10 +194,20 @@ async def validate_rule(
     rule.confidence_vector = vector
     rule.confidence_scalar = new_scalar
     rule.confidence_tier = new_tier
-    rule.is_executable = new_scalar >= 0.60
+    # The checker's explicit approval IS the authorization to act - that is
+    # what maker-checker means. Evidence confidence keeps its own job: the
+    # runtime confidence gate still routes weak decisions to a human, so an
+    # authorized-but-thinly-evidenced rule earns no free autonomy. (The old
+    # `new_scalar >= 0.60` gate meant a human validation could fail to
+    # authorize anything, while un-reviewed rules auto-armed at creation -
+    # both directions of the same conflation.)
+    rule.is_executable = True
     rule.validated_at = datetime.now(timezone.utc)
+    # Non-repudiation: the recorded validator is the AUTHENTICATED principal.
+    # body.validator_hash used to be recorded verbatim, letting any caller
+    # attribute a validation to someone else.
     validated_by = list(rule.validated_by or [])
-    validated_by.append(body.validator_hash)
+    validated_by.append(checker)
     rule.validated_by = validated_by
 
     # Log confidence history
@@ -189,40 +217,24 @@ async def validate_rule(
         confidence_old=old_scalar,
         confidence_new=new_scalar,
         reason=f"VALIDATION_{body.new_tier.value}",
-        changed_by=body.validator_hash,
+        changed_by=checker,
     )
     db.add(history)
 
-    # Log provenance
-    last_prov = await db.execute(
-        select(ProvenanceLedger)
-        .where(ProvenanceLedger.rule_id == rule_id)
-        .order_by(ProvenanceLedger.timestamp.desc())
-        .limit(1)
-    )
-    parent = last_prov.scalar_one_or_none()
-    parent_hash = parent.chain_hash if parent else "GENESIS"
-
-    prov_payload = {
-        "rule_id": rule.id, "event_type": "VALIDATED",
-        "confidence_at": new_scalar,
-        "reasoning": f"Validated by {body.validator_role}",
-    }
-    prov = ProvenanceLedger(
-        id=str(uuid.uuid4()),
+    # Log provenance via the unified signed writer; it derives the chain head
+    # itself (the manual newest-by-timestamp parent lookup here was one of the
+    # ways concurrent validations forked the chain).
+    from app.services.provenance import append_ledger_event
+    await append_ledger_event(
+        db,
         tenant_id=tenant_id,
         rule_id=rule.id,
         event_type="VALIDATED",
-        actor_hash=body.validator_hash,
+        actor_hash=checker,
         actor_role=body.validator_role,
-        evidence_ids=[],
         confidence_at=new_scalar,
         reasoning=f"Rule validated by {body.validator_role}. Tier: {new_tier.value}",
-        parent_id=parent.id if parent else None,
-        chain_hash=_chain_hash(parent_hash, prov_payload),
     )
-    db.add(prov)
-    await db.commit()
     await db.refresh(rule)
     return RuleResponse.model_validate(rule.__dict__)
 

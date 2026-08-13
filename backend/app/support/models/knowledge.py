@@ -1,7 +1,7 @@
 """
 KAEOS Support Domain — Knowledge Base Models
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, Boolean, Numeric
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, Boolean, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 
@@ -13,12 +13,16 @@ def _uuid():
 class KBCategory(Base):
     """Knowledge base folder structure (e.g. Account Security, Billing FAQ)."""
     __tablename__ = "sup_kb_categories"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_sup_kbcat_tenant_slug"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
     name = Column(String(128), nullable=False)
-    slug = Column(String(128), nullable=False, unique=True)
+    slug = Column(String(128), nullable=False)
     description = Column(String(256), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

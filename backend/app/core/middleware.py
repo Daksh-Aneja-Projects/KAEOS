@@ -165,3 +165,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Standard browser-hardening headers on every response.
+
+    - nosniff stops MIME-confusion attacks on any served content.
+    - X-Frame-Options: DENY blocks clickjacking (the API serves no frames).
+    - Referrer-Policy keeps tokens/paths out of third-party referrer logs.
+    - HSTS is sent only outside DEV_MODE (localhost HTTP must stay usable).
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        from app.core.config import get_settings
+        if not get_settings().DEV_MODE:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
+            )
+        return response

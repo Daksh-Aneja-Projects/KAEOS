@@ -36,7 +36,10 @@ def _sse(body: str) -> list[dict]:
 
 
 def _capture_llm(monkeypatch) -> dict:
-    """Stub LLMRouter.complete/embed; returns a dict that collects the prompt."""
+    """Stub LLMRouter.complete/stream_complete/embed; collects the prompt.
+    Chat streams for real since f1627b7, so the streaming path is stubbed with
+    the same capture - otherwise these tests exercise the fallback, not the
+    grounding contract."""
     from app.services.llm_router import LLMRouter
 
     seen: dict = {}
@@ -46,6 +49,11 @@ def _capture_llm(monkeypatch) -> dict:
         seen["system_prompt"] = kwargs.get("system_prompt")
         return "stubbed answer"
 
+    async def fake_stream(self, prompt=None, **kwargs):
+        seen["prompt"] = prompt
+        seen["system_prompt"] = kwargs.get("system_prompt")
+        yield "stubbed answer"
+
     async def fake_embed(self, texts, **kwargs):
         # A fixed unit vector: identical to what the seeded record embeds to, so
         # cosine similarity is a deterministic 1.0 when a record exists.
@@ -53,6 +61,7 @@ def _capture_llm(monkeypatch) -> dict:
         return [[1.0, 0.0, 0.0] for _ in texts]
 
     monkeypatch.setattr(LLMRouter, "complete", fake_complete)
+    monkeypatch.setattr(LLMRouter, "stream_complete", fake_stream)
     monkeypatch.setattr(LLMRouter, "embed", fake_embed)
     return seen
 
@@ -137,11 +146,18 @@ async def test_chat_llm_failure_admits_it_instead_of_claiming_knowledge(
     async def boom(self, *a, **k):
         raise RuntimeError("no provider")
 
+    async def boom_stream(self, *a, **k):
+        # Chat streams for real: the failure must hit the streaming path too,
+        # else this test talks to a live local Ollama instead of failing.
+        raise RuntimeError("no provider")
+        yield  # pragma: no cover - makes this an async generator
+
     async def fake_embed(self, texts, **kwargs):
         self.embeddings_simulated = False
         return [[1.0, 0.0, 0.0] for _ in texts]
 
     monkeypatch.setattr(LLMRouter, "complete", boom)
+    monkeypatch.setattr(LLMRouter, "stream_complete", boom_stream)
     monkeypatch.setattr(LLMRouter, "embed", fake_embed)
 
     r = await async_client.post("/api/v1/chat/stream", json={

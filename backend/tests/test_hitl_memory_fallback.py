@@ -54,6 +54,32 @@ def _mute_activity_feed(monkeypatch):
     monkeypatch.setattr(ActivityFeedService, "emit", _noop)
 
 
+@pytest.fixture(autouse=True)
+def _mute_notifier(monkeypatch):
+    """Not under test - and its fire-and-forget task opens a concurrent session
+    on the :memory: StaticPool's SINGLE shared connection, where an interleaved
+    ROLLBACK can silently undo another session's in-flight transaction."""
+    from app.services import notifier
+
+    monkeypatch.setattr(notifier, "notify_fire_and_forget", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _mute_enterprise_memory(monkeypatch):
+    """The resume runs the FULL gate pipeline; memory recall embeds via the
+    real local model - stub it so unit tests never touch the GPU."""
+    from app.services.memory.enterprise_memory import EnterpriseMemoryService
+
+    async def _no_recall(*a, **k):
+        return []
+
+    async def _no_store(*a, **k):
+        return None
+
+    monkeypatch.setattr(EnterpriseMemoryService, "recall_similar_situations", _no_recall)
+    monkeypatch.setattr(EnterpriseMemoryService, "store_decision_memory", _no_store)
+
+
 def test_pending_is_stored_listed_and_rejectable():
     mgr = _NoRedisHITLManager()
     exec_id = f"exec-test-{uuid.uuid4().hex[:8]}"
@@ -91,11 +117,13 @@ def test_gate_pause_persists_db_row_and_approve_resumes(monkeypatch):
     ran = {}
 
     class _FakeEngine:
-        async def run(self, skill_def, context, execution_id, tenant_id, skill_obj=None):
-            ran["skill_id"] = skill_def["skill_id"]
-            ran["steps"] = skill_def["steps"]
+        async def run(self, skill, context, execution_id, tenant_id,
+                      skill_obj=None, compliance_warnings=None):
+            ran["skill_id"] = skill["skill_id"]
+            ran["steps"] = skill["steps"]
             ran["hitl_approved"] = context.get("hitl_approved")
-            return {"status": "SUCCESS_CLEAN", "reasoning_chain": [{}]}
+            return {"status": "SUCCESS_CLEAN", "reasoning_chain": [{}],
+                    "steps_completed": 1, "duration_ms": 1}
 
     import app.services.skill_executor as se
     monkeypatch.setattr(se, "SkillExecutionEngine", _FakeEngine)
@@ -120,6 +148,52 @@ def test_gate_pause_persists_db_row_and_approve_resumes(monkeypatch):
         assert ran.get("skill_id") == "hitl_resume_test", "resume never executed the stored contract"
         assert ran.get("hitl_approved") is True
         assert ran.get("steps"), "stored steps were lost"
+
+    asyncio.run(run())
+
+
+def test_reject_finalizes_the_db_row():
+    """A rejection decided through resolve_hitl alone (the email-link path has
+    no route-level finalizer) must leave the PENDING_HITL queue."""
+    mgr = _NoRedisHITLManager()
+    exec_id = f"exec-test-{uuid.uuid4().hex[:8]}"
+    ctx = {"execution_id": exec_id, "tenant_id": "tenant_test_hitl"}
+
+    async def run():
+        await mgr.request_human_confirmation(_skill("hitl_reject_final"), ctx)
+        ok = await mgr.resolve_hitl(exec_id, approved=False, approver="tester", reason="no")
+        assert ok is True
+        async with AsyncSessionLocal() as s:
+            row = (await s.execute(
+                select(SkillExecution).where(SkillExecution.id == exec_id)
+            )).scalar_one()
+            assert row.status == "HUMAN_OVERRIDDEN"
+            assert row.outcome_type == "HUMAN_OVERRIDDEN"
+            assert row.completed_at is not None
+
+    asyncio.run(run())
+
+
+def test_resumed_run_with_correction_finalizes_as_success_with_edit():
+    """The approve-with-edit marker in the context makes the executor stamp
+    SUCCESS_WITH_EDIT (human-edited fallout), never clean autonomy."""
+    from app.services.skill_executor import SkillExecutionEngine
+
+    exec_id = f"exec-test-{uuid.uuid4().hex[:8]}"
+
+    async def run():
+        await SkillExecutionEngine()._persist_execution(
+            skill=_skill("hitl_edit_final"), skill_obj=None, execution_id=exec_id,
+            tenant_id="tenant_test_hitl",
+            context={"human_corrected_answer": "offer 110k"},
+            reasoning_chain=[{}], status="SUCCESS_CLEAN", duration_ms=5,
+        )
+        async with AsyncSessionLocal() as s:
+            row = (await s.execute(
+                select(SkillExecution).where(SkillExecution.id == exec_id)
+            )).scalar_one()
+            assert row.status == "SUCCESS_CLEAN"
+            assert row.outcome_type == "SUCCESS_WITH_EDIT"
 
     asyncio.run(run())
 

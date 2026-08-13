@@ -50,7 +50,9 @@ async def _automation_by_department(db, tenant_id: str):
             sqlfunc.sum(case((SkillExecution.hitl_required.is_(False), 1), else_=0)),
         )
         .select_from(SkillExecution)
-        .join(Skill, Skill.skill_id == SkillExecution.skill_id_name, isouter=True)
+        # Join on tenant too: skill names are only unique per tenant.
+        .join(Skill, (Skill.skill_id == SkillExecution.skill_id_name)
+              & (Skill.tenant_id == SkillExecution.tenant_id), isouter=True)
         .where(SkillExecution.tenant_id == tenant_id)
         .group_by(Skill.department)
     )).all()

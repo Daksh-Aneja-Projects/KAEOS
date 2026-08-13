@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 _HITL_KEY_PREFIX = "kaeos:hitl:"
 # TTL: 24 hours (86400 seconds)
 _HITL_TTL = 86400
+# The durable resume backstop fires this long after approval. Long enough that
+# a legitimate slow resume (local-model steps run minutes) has finished - the
+# handler no-ops on terminal rows - short enough that a crashed resume is
+# recovered the same morning it was approved.
+RESUME_BACKSTOP_SECONDS = 600
 
 
 class HITLManager:
@@ -99,9 +104,16 @@ class HITLManager:
             # SkillExecution row yet: the skill contract and a JSON-safe context.
             "skill_def": {
                 "skill_id": skill.get("skill_id", "unknown"),
+                # The compiled Skill row id, when the pause came from a
+                # persisted skill: lets the resume rebuild the full contract
+                # even after this cache record expires.
+                "skill_db_id": skill.get("skill_db_id"),
                 "steps": skill.get("steps", []),
                 "compliance_tags": skill.get("compliance_tags", []),
                 "department": skill.get("department", "general"),
+                # A paused governed WRITE (e.g. the /actuation consequence
+                # gate) carries its intent so approval actually applies it.
+                "actuation": skill.get("actuation"),
             },
             "context": self._json_safe(context),
         }
@@ -130,6 +142,7 @@ class HITLManager:
                 else:
                     session.add(SkillExecution(
                         id=exec_id,
+                        skill_db_id=skill.get("skill_db_id"),
                         skill_id_name=skill.get("skill_id", "unknown"),
                         tenant_id=tenant_id,
                         status="PENDING_HITL",
@@ -337,37 +350,101 @@ class HITLManager:
                         f"(state={execution.agent_state}) — ignoring duplicate"
                     )
                     return False
+                # A rejection is terminal: finalize the row here so it leaves
+                # the PENDING_HITL queue no matter which surface decided it
+                # (the email-link path has no route-level finalizer). An
+                # approval only transitions to RUNNING - the resumed executor
+                # stamps the real final status when the run completes.
+                values = dict(
+                    agent_state="RUNNING" if approved else "FAILED",
+                    hitl_approved=approved,
+                    hitl_approver=approver,
+                )
+                if not approved:
+                    values.update(
+                        status="HUMAN_OVERRIDDEN",
+                        outcome_type="HUMAN_OVERRIDDEN",
+                        completed_at=datetime.now(timezone.utc),
+                    )
                 result = await session.execute(
                     update(SkillExecution)
                     .where(
                         SkillExecution.id == execution_id,
                         SkillExecution.agent_state.in_(["PENDING_HITL", "PAUSED", None]),
                     )
-                    .values(
-                        agent_state="RUNNING" if approved else "FAILED",
-                        hitl_approved=approved,
-                        hitl_approver=approver,
-                    )
+                    .values(**values)
                 )
                 if result.rowcount == 0:
                     logger.warning(f"[HITL] {execution_id} resolve lost CAS race — already handled")
                     return False
+
+            if approved and (record or execution):
+                # DURABLE resume: the backstop job commits ATOMICALLY with the
+                # approval CAS above (same session), so there is no crash
+                # window where a human approved work that then silently never
+                # runs. The job fires only after RESUME_BACKSTOP_SECONDS; if
+                # the immediate in-process resume below finished by then (the
+                # normal case), the handler sees a terminal row and no-ops -
+                # at-least-once, idempotent on execution_id.
+                try:
+                    from app.services import job_queue
+                    _job_tenant = ((record or {}).get("tenant_id")
+                                   or (execution.tenant_id if execution else None)
+                                   or "default")
+                    await job_queue.enqueue(
+                        session, _job_tenant, "hitl_resume",
+                        {"execution_id": execution_id,
+                         "fallback_record": record if record else None},
+                        max_attempts=3,
+                        delay_seconds=RESUME_BACKSTOP_SECONDS,
+                    )  # enqueue commits: CAS + job land together
+                except Exception as e:
+                    # The backstop failing must not block the approval itself -
+                    # commit the CAS alone and fall back to the in-process task.
+                    logger.error(f"[HITL] could not enqueue durable resume for "
+                                 f"{execution_id}: {e}")
+                    await session.commit()
+            else:
                 await session.commit()
 
         if not record and not execution:
             logger.warning(f"[HITL] {execution_id} unknown in cache and DB - nothing to resolve")
             return False
 
-        # If approved, schedule a background task to resume execution from Gate 5
+        # Immediate in-process resume for latency; the durable job above is
+        # the crash-safety net, not the primary path.
         if approved:
             import asyncio
             asyncio.create_task(self._resume_from_hitl(execution_id, fallback_record=record))
 
         return True
 
-    async def _resume_from_hitl(self, execution_id: str, fallback_record: Dict[str, Any] | None = None):
-        """Background task: Resume execution from Gate 5 (Executor) after HITL approval."""
+    async def _resume_from_hitl(self, execution_id: str, fallback_record: Dict[str, Any] | None = None) -> bool:
+        """Resume an approved execution through the full gate pipeline.
+
+        Runs as the immediate in-process task AND as the durable ``hitl_resume``
+        job's handler, so it is IDEMPOTENT on execution_id: a terminal row is a
+        successful no-op. Returns True when the resume is handled (ran, or was
+        already handled), False when it could not run (caller may retry).
+        """
         logger.info(f"[HITL] Resuming execution {execution_id} post-approval")
+        # Idempotency guard: the at-least-once backstop means this can run
+        # after (or even while) another attempt handled the same approval.
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import select
+            row = (await session.execute(
+                select(SkillExecution).where(SkillExecution.id == execution_id)
+            )).scalar_one_or_none()
+            if row is not None and (
+                row.completed_at is not None
+                or (row.agent_state in ("COMPLETED", "FAILED")
+                    # FAILED_RESUME means a previous ATTEMPT died, not that the
+                    # decision reached a terminal outcome - retry those.
+                    and row.status != "FAILED_RESUME")
+            ):
+                logger.info(f"[HITL] {execution_id} already finalized "
+                            f"({row.agent_state}/{row.status}); resume is a no-op")
+                return True
         try:
             # 1. Load execution record and the associated compiled Skill from the DB
             async with AsyncSessionLocal() as session:
@@ -405,6 +482,8 @@ class HITLManager:
             if skill_obj:
                 skill_def = {
                     "skill_id": skill_obj.skill_id,
+                    "skill_db_id": skill_obj.id,
+                    "department": skill_obj.department,
                     "steps": skill_obj.steps or [],
                     "compliance_tags": skill_obj.compliance_tags or [],
                     "guardrails": skill_obj.guardrails or {},
@@ -423,14 +502,61 @@ class HITLManager:
                     "guardrails": {},
                 }
 
-            # 3. Run executor with hitl_approved flag (bypasses confidence gate)
+            # A paused governed WRITE rides its intent in the gate cache, with
+            # the durable DB-row context as fallback for expired caches. It is
+            # attached to the skill contract so runtime Gate 5b (the one
+            # actuation gate) performs it fail-closed after every other gate.
+            _act = ((fallback_record or {}).get("skill_def") or {}).get("actuation") \
+                or (context or {}).get("actuation")
+            if isinstance(_act, dict) and _act and not skill_def.get("actuation"):
+                skill_def["actuation"] = _act
+
+            # 3. Resume through the ONE gate pipeline (AgentExecutor), not a
+            # bare SkillExecutionEngine. The old re-entry at Gate 5 skipped
+            # fairness, audit and governed actuation on exactly the executions
+            # a human had just approved. hitl_pre_approved=True satisfies
+            # Gate 3 (the human gate has been passed - that is what this
+            # resume IS); compliance and fairness still run, because a human
+            # approval does not waive statutory checks.
             context["hitl_approved"] = True
             context["execution_id"] = execution_id
             context["tenant_id"] = tenant_id
+            # The real approver identity, for the SOX has-human-approver check
+            # and for actuation attribution. Server-derived from the resolved
+            # execution row, never from client input.
+            context["has_human_approver"] = (
+                (execution.hitl_approver if execution else None) or "human-approver"
+            )
+            if skill_obj is not None:
+                context["_skill_obj"] = skill_obj
 
-            from app.services.skill_executor import SkillExecutionEngine
-            executor = SkillExecutionEngine()
-            result = await executor.run(skill_def, context, execution_id, tenant_id, skill_obj=skill_obj)
+            from app.agents.runtime import AgentExecutor
+            from app.services.compliance import ComplianceEngine
+            executor = AgentExecutor(ComplianceEngine(), self)
+            result = await executor.execute_skill(
+                skill_def, context, hitl_pre_approved=True
+            )
+
+            # A resume blocked at a pre-execution gate (compliance/fairness/
+            # audit) never reaches the engine's persist step - finalize the
+            # row here so an approved-then-blocked execution cannot sit in
+            # RUNNING forever looking alive.
+            terminal = result.get("status", "FAILED")
+            if terminal not in ("SUCCESS_CLEAN",):
+                async with AsyncSessionLocal() as session:
+                    from sqlalchemy import update
+                    await session.execute(
+                        update(SkillExecution)
+                        .where(SkillExecution.id == execution_id,
+                               # "FAILED" included so a retried FAILED_RESUME
+                               # that then blocks at a gate still finalizes.
+                               SkillExecution.agent_state.in_(
+                                   ["RUNNING", "PAUSED", "FAILED", None]))
+                        .values(agent_state="FAILED", status=terminal,
+                                outcome_type=terminal,
+                                completed_at=datetime.now(timezone.utc))
+                    )
+                    await session.commit()
 
             # 4. Emit activity event for the resumed execution
             from app.services.activity_feed import ActivityFeedService
@@ -446,6 +572,7 @@ class HITLManager:
                 source_id=execution_id,
             )
             logger.info(f"[HITL] Execution {execution_id} resumed and completed successfully")
+            return True
 
         except Exception as e:
             logger.error(f"[HITL] Error resuming execution {execution_id}: {e}", exc_info=True)
@@ -457,6 +584,7 @@ class HITLManager:
                     .values(agent_state="FAILED", status="FAILED_RESUME")
                 )
                 await session.commit()
+            return False
 
 
 # Global singleton

@@ -2,7 +2,7 @@
 KAEOS Finance Domain — Compliance Models
 Financial compliance rules, SOX controls, and regulatory tracking.
 """
-from sqlalchemy import Column, String, Float, DateTime, Boolean, JSON, Enum, Date, Text
+from sqlalchemy import Column, String, Float, DateTime, Boolean, JSON, Enum, Date, Text, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -54,11 +54,15 @@ class SOXControlStatus(str, enum.Enum):
 class SOXControl(Base):
     """SOX Section 404 internal controls over financial reporting (ICFR)."""
     __tablename__ = "fin_sox_controls"
+    # Tenant-scoped business key: global unique caused cross-tenant collisions.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "control_id_code", name="uq_fin_sox_tenant_code"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
-    control_id_code = Column(String(32), nullable=False, unique=True)  # e.g., "CTRL-AP-001"
+    control_id_code = Column(String(32), nullable=False)  # e.g., "CTRL-AP-001"
     name = Column(String(256), nullable=False)
     description = Column(Text, nullable=False)
     objective = Column(Text, nullable=True)

@@ -49,7 +49,7 @@ Signal / Trigger
   1. Compliance      <- SOX, GDPR, HIPAA, PCI, EEOC, CCPA enforcement
       |
       v
-  2. Fairness        <- EU AI Act Art.13, demographic bias detection
+  2. Fairness        <- Statistical 4/5ths disparate-impact test on cohort outcomes; LLM screening (labeled) when no cohort data
       |
       v
   3. Confidence      <- Threshold check, AMBER/GREEN/RED tier routing
@@ -65,7 +65,7 @@ Signal / Trigger
   6. Execute         <- LLM execution via tiered BYOK routing (local Ollama or cloud via LiteLLM)
       |
       v
-  7. Provenance      <- Hash-chained, tamper-evident decision ledger with full lineage
+  7. Provenance      <- Hash-chained, append-only decision ledger with full lineage
 ```
 
 The gates live in `backend/app/agents/runtime.py` (`AgentExecutor`);
@@ -101,11 +101,15 @@ Autonomous steps run on their own; the ones that need you pause for approval.
 ## Actions Ledger - autonomy that acts
 
 Autonomy that only recommends is a demo; autonomy that **acts** is the product. The **Actions Ledger**
-(Decisions, beside the provenance ledger) records every governed write KAEOS made to a system of record
-- idempotent on retry, reversible via a compensator, and provenance-chained. Agents actuate through
-**Gate 5b**, so a write only fires after the compliance / fairness / HITL / debate gates pass. A drift
-monitor reconciles the system of record against the actions that governed it (`GET /actuation/ledger`,
-`/actuation/drift`).
+(Decisions, beside the provenance ledger) records every governed write KAEOS made - idempotent on
+retry, reversible via a compensator, and provenance-chained. Honest scope: **external** write-back
+reaches Salesforce and any generic REST sink today; other connectors are ingestion-only for now, and
+governed writes to those targets land in KAEOS's internal governed object store until their write-back
+adapters ship (see [Known Limitations](KNOWN_LIMITATIONS.md)). Agents actuate through **Gate 5b**, so a
+write only fires after the compliance / fairness / HITL / debate gates pass - and the direct
+`/actuation` API enforces the same consequence gate: high-consequence writes pause for human approval.
+A drift monitor reconciles the actuated store against the actions that governed it
+(`GET /actuation/ledger`, `/actuation/drift`).
 
 ## KAEOS Copilot - always-on conversational touchpoint
 
@@ -262,10 +266,12 @@ graph the Company Brain reasons over.</sub>
 <sub>When an agent hits an edge case, KAEOS asks the right human a targeted question and folds the
 answer back into the Company Brain - scored for specificity, groundedness and answerability.</sub>
 
-### Pre-built connectors - 22 live adapters
+### Pre-built connectors - 22 live ingestion adapters
 ![Connector Library](screenshots/21-connector-library.png)
-<sub>Connectors across Engineering, Finance, HR, Legal, Sales, Support and Operations. Credentials
-are encrypted at rest and never returned by the API.</sub>
+<sub>Ingestion connectors across Engineering, Finance, HR, Legal, Sales, Support and Operations.
+Write-back to the external system currently ships for Salesforce and generic REST; the rest are
+read/sync-only and say so at runtime. Credentials are encrypted at rest and never returned by the
+API.</sub>
 
 ### The seven AI departments
 ![Departments](screenshots/02-departments.png)

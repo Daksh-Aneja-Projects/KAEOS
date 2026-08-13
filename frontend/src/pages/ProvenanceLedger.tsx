@@ -16,7 +16,7 @@ const ProvenanceLedger = () => {
  const [exportError, setExportError] = useState<string | null>(null);
  // Chain-integrity results, keyed by rule id (one verify covers every entry of that rule).
  const [verifying, setVerifying] = useState<string | null>(null);
- const [verdicts, setVerdicts] = useState<Record<string, { valid: boolean; status: string }>>({});
+ const [verdicts, setVerdicts] = useState<Record<string, { valid: boolean | null; status: string }>>({});
 
  const exportCsv = async () => {
   setExporting(true);
@@ -118,15 +118,17 @@ const ProvenanceLedger = () => {
             <span className="text-[11px]" style={{ color: colors.inkTertiary }}>-</span>
            ) : verdict ? (
             <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold w-fit"
-              title={verdict.valid
-                ? 'Every link in this rule’s history hashes correctly. Nothing has been altered.'
-                : 'The hash chain does not line up. This rule’s history has been altered outside the ledger.'}
+              title={verdict.valid === true
+                ? 'Every link in this rule’s signed history checks out. Nothing has been altered.'
+                : verdict.valid === false
+                ? 'The signed chain does not line up. This rule’s history has been altered outside the ledger.'
+                : 'These entries predate the signed ledger, so their integrity cannot be proven or disproven. New entries are signed and verifiable.'}
               style={{
-                background: (verdict.valid ? colors.success : colors.error) + '18',
-                color: verdict.valid ? colors.success : colors.error,
+                background: (verdict.valid === true ? colors.success : verdict.valid === false ? colors.error : colors.inkSubtle) + '18',
+                color: verdict.valid === true ? colors.success : verdict.valid === false ? colors.error : colors.inkMuted,
               }}>
-             {verdict.valid ? <ShieldCheck className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-             {verdict.valid ? 'Intact' : 'Altered'}
+             {verdict.valid === false ? <ShieldAlert className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+             {verdict.valid === true ? 'Intact' : verdict.valid === false ? 'Altered' : 'Predates signing'}
             </span>
            ) : (
             <button onClick={() => verifyChain(e.rule_id as string)} disabled={verifying === e.rule_id}
