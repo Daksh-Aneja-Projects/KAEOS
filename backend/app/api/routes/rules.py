@@ -4,8 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 from typing import Optional
 from datetime import datetime, timezone
-import hashlib
-import json
 import uuid
 
 from app.core.database import get_db
@@ -38,9 +36,10 @@ def _tier_from_scalar(s: float) -> ConfidenceTier:
     return ConfidenceTier.SPECULATIVE
 
 
-def _chain_hash(parent_hash: str, payload: dict) -> str:
-    content = f"{parent_hash}|{json.dumps(payload, sort_keys=True, default=str)}"
-    return hashlib.sha256(content.encode()).hexdigest()
+# Provenance entries go through the unified signed writer
+# (app/services/provenance.py). The local sha256 helper this file used wrote a
+# THIRD hash scheme into the shared chain_hash column, which is why the verify
+# endpoint reported cleanly-created rules as TAMPERED.
 
 
 @router.get("", response_model=RuleListResponse)
@@ -124,25 +123,19 @@ async def create_rule(body: RuleCreate, tenant: dict = Depends(require_role("ope
     )
     db.add(rule)
 
-    # Write provenance genesis entry
-    prov_payload = {
-        "rule_id": rule.id, "event_type": "CREATED",
-        "confidence_at": scalar, "reasoning": "New candidate rule ingested",
-    }
-    prov = ProvenanceLedger(
-        id=str(uuid.uuid4()),
+    # Provenance genesis entry via the unified signed writer (commits the
+    # session, so the rule and its ledger entry land atomically).
+    from app.services.provenance import append_ledger_event
+    await append_ledger_event(
+        db,
         tenant_id=tenant_id,
         rule_id=rule.id,
         event_type="CREATED",
         actor_hash="system",
         actor_role="extraction_engine",
-        evidence_ids=[],
         confidence_at=scalar,
         reasoning="New candidate rule ingested via API",
-        chain_hash=_chain_hash("GENESIS", prov_payload),
     )
-    db.add(prov)
-    await db.commit()
     await db.refresh(rule)
     return RuleResponse.model_validate(rule.__dict__)
 
@@ -193,36 +186,20 @@ async def validate_rule(
     )
     db.add(history)
 
-    # Log provenance
-    last_prov = await db.execute(
-        select(ProvenanceLedger)
-        .where(ProvenanceLedger.rule_id == rule_id)
-        .order_by(ProvenanceLedger.timestamp.desc())
-        .limit(1)
-    )
-    parent = last_prov.scalar_one_or_none()
-    parent_hash = parent.chain_hash if parent else "GENESIS"
-
-    prov_payload = {
-        "rule_id": rule.id, "event_type": "VALIDATED",
-        "confidence_at": new_scalar,
-        "reasoning": f"Validated by {body.validator_role}",
-    }
-    prov = ProvenanceLedger(
-        id=str(uuid.uuid4()),
+    # Log provenance via the unified signed writer; it derives the chain head
+    # itself (the manual newest-by-timestamp parent lookup here was one of the
+    # ways concurrent validations forked the chain).
+    from app.services.provenance import append_ledger_event
+    await append_ledger_event(
+        db,
         tenant_id=tenant_id,
         rule_id=rule.id,
         event_type="VALIDATED",
         actor_hash=body.validator_hash,
         actor_role=body.validator_role,
-        evidence_ids=[],
         confidence_at=new_scalar,
         reasoning=f"Rule validated by {body.validator_role}. Tier: {new_tier.value}",
-        parent_id=parent.id if parent else None,
-        chain_hash=_chain_hash(parent_hash, prov_payload),
     )
-    db.add(prov)
-    await db.commit()
     await db.refresh(rule)
     return RuleResponse.model_validate(rule.__dict__)
 

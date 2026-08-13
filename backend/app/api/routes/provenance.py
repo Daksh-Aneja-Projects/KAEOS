@@ -90,10 +90,25 @@ async def export_global_ledger(tenant_id: str = Depends(get_tenant_id), db: Asyn
     )
 
 
+@router.get("/stream/verify")
+async def verify_tenant_stream(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Verify the tenant's subjectless event stream (actuations, exports,
+    governance events) - the chain the old code never had a verifier for."""
+    from app.services.provenance import TENANT_STREAM, verify_chain
+    verdict = await verify_chain(db, tenant_id, TENANT_STREAM)
+    return {"scope": "event_stream", **verdict}
+
+
 @router.get("/{rule_id}/verify")
 async def verify_chain_integrity(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """L11 — Verify tamper-evident integrity of the provenance chain for a rule."""
-    from app.services.provenance import ProvenanceEngine
-    engine = ProvenanceEngine()
-    is_valid = await engine.verify_chain_integrity(db, rule_id)
-    return {"rule_id": rule_id, "chain_valid": is_valid, "status": "VERIFIED" if is_valid else "TAMPERED"}
+    """L11 — Verify the signed provenance chain for a rule.
+
+    Recomputes every schema-v2 entry against the unified HMAC scheme. Rows
+    written before the unification are reported as `legacy` and the status is
+    LEGACY_UNVERIFIABLE when only such rows exist - absence of proof is not
+    proof of tampering, and the old behavior of calling mixed-scheme rows
+    "TAMPERED" was a false positive that cost the artifact its credibility.
+    """
+    from app.services.provenance import verify_chain
+    verdict = await verify_chain(db, tenant_id, rule_id)
+    return {"rule_id": rule_id, **verdict}

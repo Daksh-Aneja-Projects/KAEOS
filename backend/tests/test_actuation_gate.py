@@ -40,6 +40,19 @@ def _mute_side_channels(monkeypatch):
     async def _no_redis(self):
         return None
     monkeypatch.setattr(HITLManager, "_get_redis", _no_redis)
+    # The resume runs the FULL gate pipeline now; enterprise-memory recall
+    # embeds via the real local model - stub it so unit tests never touch the
+    # GPU and never wait on a model load.
+    from app.services.memory.enterprise_memory import EnterpriseMemoryService
+
+    async def _no_recall(*a, **k):
+        return []
+
+    async def _no_store(*a, **k):
+        return None
+
+    monkeypatch.setattr(EnterpriseMemoryService, "recall_similar_situations", _no_recall)
+    monkeypatch.setattr(EnterpriseMemoryService, "store_decision_memory", _no_store)
 
 
 def _tenant(t):

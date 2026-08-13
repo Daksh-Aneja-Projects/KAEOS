@@ -1,7 +1,7 @@
 """KAEOS — Domain Models (L3 Polystore: PostgreSQL/SQLite Rules Store)"""
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, DateTime, ForeignKey,
-    Text, JSON, Enum, Index, UniqueConstraint,
+    Text, JSON, Enum, Index, UniqueConstraint, text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -150,6 +150,25 @@ class ProvenanceLedger(Base):
     # the overflow (StringDataRightTruncationError); SQLite truncated silently,
     # so every federated/quantum export was corrupt-but-quiet in dev.
     chain_hash = Column(String(128), unique=True)
+    # Ledger unification (schema v2, see app/services/provenance.py):
+    # chain_scope names the chain an entry belongs to (a rule/skill id, or
+    # "_tenant" for the subjectless event stream); schema_version stamps which
+    # hashing scheme signed the row (NULL = pre-unification legacy, reported
+    # honestly by the verifier instead of "TAMPERED").
+    chain_scope = Column(String(64), index=True)
+    schema_version = Column(String(8))
+    __table_args__ = (
+        # Appends are serialized by the DATABASE, not a lock: each parent may
+        # have at most one child per chain, and each chain at most one genesis
+        # row. A concurrent append loses the race with an IntegrityError and
+        # retries against the new head - across workers and replicas.
+        Index("uq_prov_chain_parent", "tenant_id", "chain_scope", "parent_id",
+              unique=True),
+        Index("uq_prov_chain_genesis", "tenant_id", "chain_scope",
+              unique=True,
+              postgresql_where=text("parent_id IS NULL"),
+              sqlite_where=text("parent_id IS NULL")),
+    )
 
     rule = relationship(
         "Rule",

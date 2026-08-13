@@ -11,6 +11,46 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Trust artifacts (10/10 hardening, Phase 1)
+- **The provenance ledger is one signed, verifiable scheme.** Five writers used
+  to put five incompatible values in the same `chain_hash` column (two
+  different sha256 payload shapes, a sha3-512 chained to the newest row by
+  wall clock across all tenants, a hash of a timestamp string, and a random
+  `uuid4()`), so the verify endpoint reported cleanly created rules as
+  "TAMPERED". Every writer now routes through one writer
+  (`app/services/provenance.py`): HMAC-SHA256 signed (a database-only attacker
+  cannot recompute a valid chain), explicit parent pointers, per-tenant
+  chains (RLS-compatible), and appends serialized by database uniqueness - a
+  concurrent append cannot fork a chain on any worker count, no locks
+  involved. The verifier recomputes end-to-end and is honest about history:
+  pre-unification rows report as `legacy`, never as tampering. New
+  `/provenance/stream/verify` covers the subjectless event stream the old
+  code had no verifier for. Postgres deployments revoke UPDATE/DELETE on the
+  table from the app role (migration `0032`), making append-only a database
+  guarantee instead of a convention. The "quantum ledger" facade delegates to
+  the same writer, closing its timestamp-derived-parent fork bug.
+- **One gated execution path.** `/skills/{id}/execute` (which the MCP
+  `execute_skill` tool forwards to) ran a partial inline pipeline that
+  skipped Gate 2 (Fairness) and Gate 4 (Debate); the HITL resume re-entered
+  at Gate 5 only, skipping fairness, audit and governed actuation on exactly
+  the executions a human had just approved. Both now run
+  `AgentExecutor.execute_skill` - the same pipeline missions and the domain
+  agents use - and the pipeline itself is restructured so the pre-approved
+  shortcut and the normal flow share one post-HITL body and cannot drift
+  apart. Debate is skipped for human-approved resumes (its strongest outcome
+  is "escalate to a human", and a human has already ruled), approved
+  actuations are attributed to the approver, and a resume blocked at a
+  statutory gate finalizes the execution row instead of leaving it RUNNING
+  forever. A regression test locks the route to the pipeline.
+- **Approved work survives a crash.** The resume after a human approval was a
+  fire-and-forget task: a worker dying between "approved" and "completed"
+  lost the run while the row said RUNNING forever. Every approval now
+  enqueues a durable `hitl_resume` job atomically with the approval itself
+  (same transaction - no crash window), processed by the existing
+  leader-guarded job queue with retry and backoff. The resume is idempotent
+  on execution_id, so the normal in-process resume makes the backstop a
+  no-op, and a crashed one is recovered within minutes.
+
 ### Security / Integrity (10/10 hardening, Phase 0)
 - **Approving a paused execution now actually runs it.** `POST /skills/hitl/{id}/approve`
   used to stamp `SUCCESS_CLEAN` unconditionally and only resumed the skill if a

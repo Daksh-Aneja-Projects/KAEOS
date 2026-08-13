@@ -137,20 +137,8 @@ async def execute_skill(
     for _trusted_key in ("hitl_pre_approved", "has_human_approver"):
         exec_context.pop(_trusted_key, None)
 
-    # 2. L13 Compliance pre-check
-    # check_before_execution is async — an un-awaited coroutine is always truthy
-    # and silently blocked every tagged skill (see app/agents/runtime.py:159)
-    compliance_violations = await compliance_engine.check_before_execution(
-        skill.compliance_tags or [], exec_context
-    )
-    if compliance_violations:
-        return SkillExecutionResponse(
-            execution_id=exec_id, skill_id=skill.skill_id,
-            status="BLOCKED_COMPLIANCE", route_type="SKILL_EXEC",
-            duration_ms=0, hitl_required=False,
-        )
-
-    # 3. Pre-execution guardrails
+    # 2. Pre-execution guardrails (route-level throttle; runs before the
+    # pipeline so a rate-limited caller never burns gate model calls).
     pre_guards = skill.guardrails.get("pre_execution", []) if skill.guardrails else []
     for guard in pre_guards:
         if isinstance(guard, str) and "rate_limit" in guard:
@@ -168,78 +156,56 @@ async def execute_skill(
                     duration_ms=0, hitl_required=False,
                 )
 
-    # 3. Confidence gate — HITL check.
-    # BYOK adaptation: a tenant's own model can only claim as much confidence as
-    # its capability probe earned it. A weaker model lowers effective confidence,
-    # so more of its decisions fall below the threshold and route to a human.
-    from app.services.llm_router import LLMRouter
+    # 3. The ONE gate pipeline. This route used to re-implement a partial
+    # inline pipeline (compliance + confidence only), silently skipping
+    # Gate 2 (Fairness) and Gate 4 (Debate) - and since the MCP execute_skill
+    # tool forwards here, agents inherited the same holes. It now runs
+    # AgentExecutor.execute_skill, the same path missions use: compliance +
+    # fairness concurrently, the autonomy-dial confidence/consequence gate
+    # (which pauses to the durable HITL queue), debate, execution, governed
+    # actuation, post-audit, and provenance.
+    from app.agents.runtime import AgentExecutor
+    from app.services.hitl_manager import hitl_manager
 
-    _router = await LLMRouter.for_tenant(skill.tenant_id)
-    effective_confidence = min(skill.confidence, _router.confidence_ceiling("reasoning"))
-    # Threshold is CONFIGURABLE (CONFIDENCE_AUTONOMOUS_EXEC), and high-consequence
-    # skills (payments, terminations, contract execution, external sends, data
-    # deletion) ALWAYS route to a human here too — the same rule the agent runtime
-    # gate enforces, so this direct-execution path can't be used to bypass it.
-    from app.core.config import get_settings
-    from app.services.consequence import is_high_consequence
-    _settings = get_settings()
-    # Shared helper - same rule the agent runtime gate enforces (explicit
-    # always_hitl flag first, tag inference as an escalate-only fallback).
-    _high_consequence = is_high_consequence(skill)
-    hitl_required = _high_consequence or effective_confidence < _settings.CONFIDENCE_AUTONOMOUS_EXEC
-    if hitl_required:
-        execution = SkillExecution(
-            id=exec_id,
-            skill_db_id=skill.id,
-            skill_id_name=skill.skill_id,
-            tenant_id=skill.tenant_id,
-            status="PENDING_HITL",
-            route_type="SKILL_EXEC",
-            agent_state="PAUSED",
-            task_intent=body.intent,
-            context=exec_context,
-            reasoning_chain=[],
-            started_at=start,
-            duration_ms=0,
-            hitl_required=True,
-            outcome_type="PENDING_HITL",
-        )
-        db.add(execution)
-        await db.commit()
-        return SkillExecutionResponse(
-            execution_id=exec_id, skill_id=skill.skill_id, status="PENDING_HITL",
-            route_type="SKILL_EXEC", duration_ms=0, hitl_required=True
-        )
-
-    # 4. Actual Generative Skill Execution & Reasoning
-    from app.services.skill_executor import SkillExecutionEngine
-    exec_engine = SkillExecutionEngine()
-    
-    # Pass dict representation to run
-    skill_dict = skill.__dict__.copy()
-    skill_dict["skill_id"] = skill.skill_id
-    
-    exec_result = await exec_engine.run(
-        skill=skill_dict,
-        context=exec_context,
-        execution_id=exec_id,
-        tenant_id=skill.tenant_id,
-        skill_obj=skill
-    )
-
-    # 5. Feedback Loop
-    await feedback_engine.process_agent_outcome({
-        "status": exec_result["status"], "rule_id": skill.skill_id
+    skill_dict = {
+        "skill_id": skill.skill_id,
+        # Lets a Gate-3 pause resume from the compiled Skill row even after
+        # the 24h gate-cache record expires.
+        "skill_db_id": skill.id,
+        "department": skill.department,
+        "domain": skill.domain,
+        "steps": skill.steps or [],
+        "compliance_tags": skill.compliance_tags or [],
+        "confidence": skill.confidence or 0.0,
+        "guardrails": skill.guardrails or {},
+        "always_hitl": bool(getattr(skill, "always_hitl", False)),
+    }
+    exec_context.update({
+        "intent": body.intent,
+        "tenant_id": skill.tenant_id,
+        "execution_id": exec_id,
+        "_skill_obj": skill,
     })
 
+    executor = AgentExecutor(compliance_engine, hitl_manager)
+    result = await executor.execute_skill(skill_dict, exec_context)
+    status = result.get("status", "FAILED")
+
+    # 4. Feedback loop on terminal outcomes (a pause is not an outcome yet).
+    if status not in ("PENDING_HITL", "ESCALATED_DEBATE"):
+        await feedback_engine.process_agent_outcome({
+            "status": status, "rule_id": skill.skill_id
+        })
+
+    hitl_required = status in ("PENDING_HITL", "ESCALATED_DEBATE")
     return SkillExecutionResponse(
-        execution_id=exec_id,
+        execution_id=result.get("execution_id", exec_id),
         skill_id=skill.skill_id,
-        status=exec_result["status"],
+        status=status,
         route_type="SKILL_EXEC",
-        reasoning_chain=exec_result["reasoning_chain"],
-        duration_ms=exec_result["duration_ms"],
-        hitl_required=False,
+        reasoning_chain=result.get("reasoning_chain", []),
+        duration_ms=result.get("duration_ms", result.get("pipeline_ms", 0)),
+        hitl_required=hitl_required,
     )
 
 

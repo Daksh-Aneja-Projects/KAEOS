@@ -446,15 +446,20 @@ async def clone_rule(
     )
     db.add(clone)
 
-    # Provenance
-    prov = ProvenanceLedger(
-        id=str(uuid.uuid4()), tenant_id=tenant_id, rule_id=clone.id, event_type="CLONED",
-        actor_hash="system", actor_role="clone_engine",
-        evidence_ids=[], confidence_at=clone.confidence_scalar,
-        reasoning=f"Cloned from rule {rule_id}", chain_hash=str(uuid.uuid4()),
+    # Provenance via the unified signed writer (this site used to store a
+    # random uuid4() in the integrity column - garbage where the chain hash
+    # belongs). Commits the session, landing the clone atomically with it.
+    from app.services.provenance import append_ledger_event
+    await append_ledger_event(
+        db,
+        tenant_id=tenant_id,
+        rule_id=clone.id,
+        event_type="CLONED",
+        actor_hash="system",
+        actor_role="clone_engine",
+        confidence_at=clone.confidence_scalar,
+        reasoning=f"Cloned from rule {rule_id}",
     )
-    db.add(prov)
-    await db.commit()
     return {"status": "CLONED", "original_id": rule_id, "clone_id": clone.id}
 
 

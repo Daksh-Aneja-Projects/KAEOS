@@ -109,6 +109,17 @@ Each item below states the capability, its honest boundary, and anything still a
   itself - that computation is external/pluggable by design (KAEOS orchestrates and governs it), and a
   simulated evaluation can never promote. Phases 4-5 (specialized models, autonomous foundry) remain
   roadmap.
+- **Provenance ledger: entries written before the 2026-08 unification are unverifiable.** The
+  ledger previously had five writers using incompatible hash schemes (one stored a random UUID in
+  the integrity column), which made end-to-end verification impossible and produced false
+  "TAMPERED" verdicts. All writers now go through one signed scheme (HMAC-SHA256, key derived
+  from `SECRET_KEY`) with explicit parent pointers, per-tenant chains, database-serialized
+  appends, and an end-to-end verifier; on Postgres the app role's UPDATE/DELETE on the table is
+  revoked. **Boundary:** rows written before the unification carry no schema version and are
+  reported as `legacy` (unverifiable) - absence of proof is not proof of tampering, and the
+  verifier says so instead of guessing. Rotating `SECRET_KEY` invalidates HMAC verification of
+  rows signed under the old key; export the ledger before rotating if evidence continuity
+  matters.
 - **Write-back to external systems of record is Salesforce + generic REST today.** All 22
   connectors ingest (read/sync) for real. Pushing governed changes back INTO the external system
   is implemented for Salesforce (Account/Opportunity) and a generic REST sink; Workday write-back

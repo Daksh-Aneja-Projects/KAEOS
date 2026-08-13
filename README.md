@@ -109,7 +109,7 @@ Every department agent routes through it via its `gated_runner`.
 | 4 | **Debate** | Adversarial multi-turn challenge of the proposed decision; a contested decision gets a second turn. | routed to HITL or blocked |
 | 5 | **Execution** | Runs the skill steps. Gate 5b performs governed actuation - against the external system where a write-back adapter exists (Salesforce, generic REST today), else into KAEOS's internal governed object store. | `FAILED` |
 | 6 | **Audit** | Enforces post-execution audit requirements for the action's compliance tags. | `FAILED_AUDIT` |
-| 7 | **Provenance** | Appends a hash-chained ledger record (`app/services/provenance.py`). Honest boundary: several writers still use divergent hash schemes, so end-to-end chain verification is being unified onto one signed scheme - treat the ledger as append-only evidence, not yet as independently verifiable. | chain verification failure |
+| 7 | **Provenance** | Appends a SIGNED, hash-chained ledger record (`app/services/provenance.py`): one HMAC scheme across every writer, explicit parent pointers, per-tenant chains, appends serialized by the database so they cannot fork, and an end-to-end verifier (`/provenance/{rule}/verify`, `/provenance/stream/verify`). Entries written before the unification are reported honestly as legacy, not as tampering. | chain verification failure |
 
 Stage timings for every gate are recorded per execution and exposed at
 `GET /api/v1/metrics/latency`.

@@ -150,9 +150,14 @@ export const operationsApi = {
       `/federated/export-skill/${skillId}`, { method: 'POST' }),
 
   // ─── Provenance integrity ───
+  // chain_valid is null when nothing can be cryptographically judged
+  // (pre-unification legacy rows, or an empty chain) - honest three-state.
   verifyProvenance: (ruleId: string) =>
-    request<{ rule_id: string; chain_valid: boolean; status: 'VERIFIED' | 'TAMPERED' }>(
-      `/provenance/${ruleId}/verify`),
+    request<{
+      rule_id: string; chain_valid: boolean | null;
+      status: 'VERIFIED' | 'TAMPERED' | 'LEGACY_UNVERIFIABLE' | 'EMPTY';
+      total: number; verified: number; legacy: number;
+    }>(`/provenance/${ruleId}/verify`),
 
   // ─── Actuation reconciliation (operator) ───
   reconcileActuation: () =>

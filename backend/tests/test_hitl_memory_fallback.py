@@ -64,6 +64,22 @@ def _mute_notifier(monkeypatch):
     monkeypatch.setattr(notifier, "notify_fire_and_forget", lambda *a, **k: None)
 
 
+@pytest.fixture(autouse=True)
+def _mute_enterprise_memory(monkeypatch):
+    """The resume runs the FULL gate pipeline; memory recall embeds via the
+    real local model - stub it so unit tests never touch the GPU."""
+    from app.services.memory.enterprise_memory import EnterpriseMemoryService
+
+    async def _no_recall(*a, **k):
+        return []
+
+    async def _no_store(*a, **k):
+        return None
+
+    monkeypatch.setattr(EnterpriseMemoryService, "recall_similar_situations", _no_recall)
+    monkeypatch.setattr(EnterpriseMemoryService, "store_decision_memory", _no_store)
+
+
 def test_pending_is_stored_listed_and_rejectable():
     mgr = _NoRedisHITLManager()
     exec_id = f"exec-test-{uuid.uuid4().hex[:8]}"
@@ -101,11 +117,13 @@ def test_gate_pause_persists_db_row_and_approve_resumes(monkeypatch):
     ran = {}
 
     class _FakeEngine:
-        async def run(self, skill_def, context, execution_id, tenant_id, skill_obj=None):
-            ran["skill_id"] = skill_def["skill_id"]
-            ran["steps"] = skill_def["steps"]
+        async def run(self, skill, context, execution_id, tenant_id,
+                      skill_obj=None, compliance_warnings=None):
+            ran["skill_id"] = skill["skill_id"]
+            ran["steps"] = skill["steps"]
             ran["hitl_approved"] = context.get("hitl_approved")
-            return {"status": "SUCCESS_CLEAN", "reasoning_chain": [{}]}
+            return {"status": "SUCCESS_CLEAN", "reasoning_chain": [{}],
+                    "steps_completed": 1, "duration_ms": 1}
 
     import app.services.skill_executor as se
     monkeypatch.setattr(se, "SkillExecutionEngine", _FakeEngine)

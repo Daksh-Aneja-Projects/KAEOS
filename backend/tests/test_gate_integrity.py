@@ -241,6 +241,16 @@ async def test_api_request_context_cannot_smuggle_pre_approval(db, async_client,
 
     monkeypatch.setattr(lr.LLMRouter, "for_tenant", classmethod(fake_for_tenant))
 
+    # The route runs the full pipeline now; the Gate-3 pause emits to the
+    # activity feed, whose table lives on the app engine this module never
+    # initializes. The feed is not under test - mute it.
+    from app.services.activity_feed import ActivityFeedService
+
+    async def _noop(self, **kwargs):
+        return None
+
+    monkeypatch.setattr(ActivityFeedService, "emit", _noop)
+
     tenant = "tenant_acme"  # DEV_MODE middleware tenant
     low_id = f"low_conf_{uuid.uuid4().hex[:6]}"
     high_id = f"wire_transfer_approve_{uuid.uuid4().hex[:6]}"
@@ -260,6 +270,40 @@ async def test_api_request_context_cannot_smuggle_pre_approval(db, async_client,
     r2 = await async_client.post(f"/api/v1/skills/{high_id}/execute", json=payload)
     assert r2.status_code == 200, r2.text
     assert r2.json()["status"] == "PENDING_HITL"
+
+
+async def test_skills_route_runs_the_one_pipeline(db, async_client, monkeypatch):
+    """Regression lock for the collapsed execution paths: /skills/{id}/execute
+    (which the MCP execute_skill tool forwards to) must run
+    AgentExecutor.execute_skill - the ONE pipeline - not a partial inline
+    re-implementation that skips Fairness/Debate."""
+    from app.agents.runtime import AgentExecutor
+
+    seen = {}
+
+    async def spy(self, skill, context, *, hitl_pre_approved=False):
+        seen["skill"] = skill
+        seen["pre_approved"] = hitl_pre_approved
+        seen["has_skill_obj"] = context.get("_skill_obj") is not None
+        return {"status": "SUCCESS_CLEAN", "execution_id": context.get("execution_id"),
+                "reasoning_chain": [], "steps_completed": 0, "duration_ms": 1}
+
+    monkeypatch.setattr(AgentExecutor, "execute_skill", spy)
+
+    tenant = "tenant_acme"
+    sid = f"pipeline_lock_{uuid.uuid4().hex[:6]}"
+    db.add(Skill(id=str(uuid.uuid4()), skill_id=sid, tenant_id=tenant,
+                 department="support", domain="support", status="ACTIVE",
+                 confidence=0.95))
+    await db.commit()
+
+    r = await async_client.post(f"/api/v1/skills/{sid}/execute",
+                                json={"intent": "run", "context": {}})
+    assert r.status_code == 200, r.text
+    assert seen["skill"]["skill_id"] == sid
+    assert seen["skill"]["skill_db_id"], "pause-resume needs the compiled Skill id"
+    assert seen["pre_approved"] is False, "a route call is never pre-approved"
+    assert seen["has_skill_obj"], "fairness/debate gates need the ORM skill"
 
 
 if __name__ == "__main__":

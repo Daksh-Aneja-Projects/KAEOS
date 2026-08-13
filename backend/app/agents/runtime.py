@@ -432,6 +432,20 @@ class AgentExecutor:
         await self._emit_gate(context, "fairness", "passed")
 
         # ── Gate 3: Confidence → HITL Check ─────────────────────────────
+        # A mission step or HITL-resume that carries a persisted human approval
+        # has already satisfied this gate - that approval is exactly what the
+        # gate exists to obtain. The flag arrives ONLY via the keyword-only
+        # argument (context-supplied values are stripped at entry), so
+        # request-controlled data can never claim pre-approval. Skipping the
+        # whole body also skips the ceiling lookup, whose only consumer is the
+        # pause decision being skipped.
+        _pre_approved = bool(hitl_pre_approved)
+        if _pre_approved:
+            await self._emit_gate(context, "confidence", "passed")
+            await self._emit_gate(context, "hitl", "pre-approved")
+            return await self._run_post_hitl(skill, context, skill_obj, warnings,
+                                             _pre_approved=True)
+
         # BYOK: the tenant's probed model ceiling caps every skill's
         # confidence. A weak model mechanically routes more decisions to
         # humans - in the domain-agent path too, not just /skills routes.
@@ -501,15 +515,7 @@ class AgentExecutor:
         from app.services.consequence import is_high_consequence
         _high_consequence = is_high_consequence(skill) or is_high_consequence(skill_obj)
 
-        # A mission step that already cleared its mission-level HITL checkpoint
-        # carries an explicit human approval, so Gate 3 must not re-pause it — the
-        # human gate has already been satisfied upstream. The flag arrives ONLY
-        # via the keyword-only argument (backed by a persisted approval record at
-        # the mission engine); context-supplied values are stripped at entry, so
-        # request-controlled data can never claim pre-approval.
-        _pre_approved = bool(hitl_pre_approved)
-
-        if not _pre_approved and (_high_consequence or effective_confidence < _threshold):
+        if _high_consequence or effective_confidence < _threshold:
             if _high_consequence:
                 logger.info(f"[Gate3] high-consequence action -> forcing HITL: {skill.get('skill_id')}")
             gate_decision = await self.hitl.request_human_confirmation(skill, context)
@@ -528,14 +534,28 @@ class AgentExecutor:
 
         await self._emit_gate(context, "confidence", "passed")
         await self._emit_gate(context, "hitl", "passed")
+        return await self._run_post_hitl(skill, context, skill_obj, warnings,
+                                         _pre_approved=False)
 
+    async def _run_post_hitl(
+        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
+        warnings: list, *, _pre_approved: bool,
+    ) -> Dict[str, Any]:
+        """Gates 4-6 - everything past the human gate. One body shared by the
+        normal flow and the pre-approved (mission / HITL-resume) shortcut, so
+        the two can never drift apart again (three divergent pipelines each
+        skipping different gates is the exact defect this collapses)."""
         # ── Enterprise memory: what happened last time we faced this? ───
         # Recalled BEFORE deliberation so the debate and the execution both
         # reason over the organization's own history, not a blank slate.
         await self._recall_memory(context, skill)
 
         # ── Gate 4: Debate Engine (AEOS P6) ─────────────────────────────
-        if skill_obj:
+        # Skipped for pre-approved (HITL-resumed / mission-approved) runs:
+        # debate's strongest outcome is "escalate to a human", and a human has
+        # already ruled - human override wins, and re-escalating an approval
+        # would loop the decision back into the queue it just cleared.
+        if skill_obj and not _pre_approved:
             should_debate, debate_reason = self.debate_engine.should_debate(skill_obj, context)
             if should_debate:
                 logger.info(f"Debate Engine triggered for {skill.get('skill_id')}: {debate_reason}")
@@ -657,7 +677,13 @@ class AgentExecutor:
                         operation=_actuation.get("operation", "UPDATE"),
                         payload=_actuation.get("payload", {}),
                         execution_id=exec_id,
-                        actor=skill.get("skill_id", "agent"),
+                        # A human-approved write is attributed to the approver
+                        # (server-derived identity string); autonomous writes
+                        # to the skill that made them.
+                        actor=(context.get("has_human_approver")
+                               if isinstance(context.get("has_human_approver"), str)
+                               else None) or skill.get("skill_id", "agent"),
+                        idempotency_key=_actuation.get("idempotency_key"),
                     )
                     logger.info(f"[Gate 5b] actuated {_rec.system}:{_rec.external_id} -> {_rec.status}")
             except Exception as e:
