@@ -11,7 +11,22 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
-### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start)
+### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
+- **The General Ledger posts for real.** `JournalEntry`/`JournalLine`/
+  `ChartOfAccount` were display-only schemas: nothing ever posted, balances
+  never moved, and an unbalanced entry would have been accepted. The new
+  posting keystone (`app/finance/services/gl.py`) is the only write path:
+  fail-closed double entry (sum of debits must equal sum of credits, Decimal
+  cents, exactly one positive side per line, active tenant-scoped accounts
+  only - violations post NOTHING), race-safe sequential entry numbers,
+  account balances moved by normal-balance convention in the same
+  transaction as the entry, and a signed provenance-ledger event landing
+  atomically with the posting. Corrections are append-only reversals (mirror
+  entries), and the trial balance (`GET /finance/gl/trial-balance`) derives
+  from POSTED lines - the ledger is the source of truth, with cached-balance
+  drift cross-checked and reported. New endpoints:
+  `POST /finance/gl/journal-entries`, `.../{id}/reverse`,
+  `GET /finance/gl/journal-entries`.
 - **The security audit trail is tamper-evident with a durable fallback.**
   Every `SecurityAuditLog` row is HMAC-signed at write time (a DB-level edit
   is detectable by `GET /security/audit-log/verify`), and the scheduler
