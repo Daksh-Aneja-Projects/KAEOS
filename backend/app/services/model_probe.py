@@ -43,9 +43,21 @@ def _grade_json_object(raw: str) -> float:
 
 
 def _grade_arithmetic(raw: str) -> float:
-    """Multi-step reasoning: 3 vendors, 20% discount on the largest."""
-    nums = re.findall(r"\d[\d,]*\.?\d*", (raw or "").replace(",", ""))
-    return 1.0 if any(abs(float(n) - 36000.0) < 1.0 for n in nums if n) else 0.0
+    """Multi-step reasoning: 3 vendors, 20% discount on the largest.
+
+    Invoices 12,000 / 45,000 / 8,000; 20% off the largest (45,000 -> 36,000); the
+    prompt asks for the new TOTAL of all three = 56,000. Full marks for the requested
+    total; half marks for showing the correct discounted figure (36,000) without the
+    right total. Previously this rewarded 36,000 (an intermediate, not the answer),
+    so a model that correctly reported 56,000 scored 0.0 and the tier ceiling that
+    drives autonomy was corrupted.
+    """
+    nums = {float(n) for n in re.findall(r"\d[\d,]*\.?\d*", (raw or "").replace(",", "")) if n}
+    if any(abs(n - 56000.0) < 1.0 for n in nums):
+        return 1.0
+    if any(abs(n - 36000.0) < 1.0 for n in nums):
+        return 0.5  # showed the discount step but not the requested total
+    return 0.0
 
 
 def _grade_instruction(raw: str) -> float:
