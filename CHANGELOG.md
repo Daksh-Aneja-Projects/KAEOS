@@ -11,6 +11,28 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Commercial + observability backend: operator console, status, metrics store, white-label
+- **Super-admin operator console** (`/api/v1/ops/*`, gated by the existing
+  ADMIN_SECRET super-admin dependency, fail-closed): cross-tenant `/ops/tenants`,
+  per-tenant usage/entitlement/health at `/ops/tenants/{id}`, and platform
+  `/ops/overview` (tenant counts, plan distribution, blended safe-autonomy rate -
+  null-with-note when there is no activity). Cross-tenant reads go through the
+  owner/maintenance session by design, never by dropping tenant filters.
+- **Public status page** (`/status`, no auth): db/redis/llm reachability, version,
+  uptime. Deliberately does NOT expose the platform safe-autonomy rate - that is a
+  business metric and its cross-tenant aggregate is an unindexed scan, so it stays
+  on the gated `/ops/overview` (no DoS-amplification on an auth-free endpoint).
+- **Time-series metrics store**: `ts_metric_samples` (migration `0043`, RLS) plus a
+  leader-guarded hourly rollup that snapshots each active tenant's safe-autonomy
+  rate, execution volume, and cost - idempotent per bucket, and a metric with no
+  underlying data is never stored as a fabricated 0. `GET /metrics/timeseries`
+  returns the stored series so Time Machine reads recorded history, not an on-read
+  reconstruction. Interval via `METRICS_ROLLUP_INTERVAL_MINUTES` (default 60).
+- **White-label tenant theming**: `brand_tenant_branding` (migration `0044`, RLS) +
+  `GET/PUT /branding`. Admin-gated writes with fail-closed validation (hex colors;
+  logo_url must be http(s), never a `javascript:`/`data:` URI); reads fall back to
+  sane KAEOS defaults so the SPA can theme per tenant.
+
 ### Every department to production depth (8+): Healthcare, Lending, Procurement, Engineering
 Brought the three thin departments up to the Finance/HR standard and closed
 Engineering's one gap. Each built on a disjoint file tree, then adversarially

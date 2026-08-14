@@ -69,6 +69,8 @@ _model_modules = [
     "app.engineering.models",
     "app.healthcare.models",
     "app.lending.models",
+    "app.models.metrics_ts",
+    "app.models.branding",
 ]
 for _mod in _model_modules:
     try:

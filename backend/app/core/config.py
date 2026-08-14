@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # existing 1536-dim behaviour; change only alongside a dim migration + re-embed.
     EMBEDDING_MODEL: str = ""
 
+    # How often the leader-guarded metrics rollup snapshots the per-tenant
+    # time-series (safe-autonomy rate, execution volume, cost). Default hourly.
+    METRICS_ROLLUP_INTERVAL_MINUTES: int = 60
+
     # Tenant base/reporting currency (ISO 4217). The GL converts every foreign
     # journal line to this at post time and reports in it. Change only with a
     # deliberate re-statement: it does not retroactively re-convert posted lines.

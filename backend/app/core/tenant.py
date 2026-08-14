@@ -101,7 +101,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # which no FastAPI supports). scope["path"] is the path the router actually
         # matched and cannot be poisoned this way.
         req_path = request.scope["path"]
-        public_paths = ("/health", "/health/live", "/docs", "/openapi.json", "/redoc", "/metrics")
+        public_paths = ("/health", "/health/live", "/status", "/docs", "/openapi.json", "/redoc", "/metrics")
         # Inbound sync ingest is PUBLIC BY DESIGN: external systems (Workday,
         # Salesforce, relays) cannot hold KAEOS JWTs. Each request is instead
         # authenticated by an HMAC-SHA256 signature over the raw body using the
