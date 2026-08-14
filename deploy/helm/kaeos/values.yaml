@@ -23,11 +23,18 @@ backend:
   replicaCount: 2
   # start-prod.sh migrates then runs gunicorn; in k8s the migration Job (a Helm
   # hook) owns migrations, so app pods run gunicorn directly and never race.
-  command: ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8001"]
+  # -c gunicorn.conf.py wires Prometheus multiprocess aggregation across the 4
+  # workers (resets the mmap dir on boot, marks dead workers).
+  command: ["gunicorn", "app.main:app", "-c", "gunicorn.conf.py", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8001"]
   containerPort: 8001
   env:
     ENVIRONMENT: production
     GUNICORN_WORKERS: "4"
+    # Observability: shared dir so /metrics aggregates all 4 workers (writable
+    # tmpfs; readOnlyRootFilesystem is false). EXPOSE_METRICS publishes /metrics
+    # for the Prometheus scrape. Set OTEL_EXPORTER_OTLP_ENDPOINT to enable traces.
+    PROMETHEUS_MULTIPROC_DIR: "/tmp/kaeos-metrics"
+    EXPOSE_METRICS: "true"
   resources:
     requests: { cpu: "250m", memory: "512Mi" }
     limits:   { cpu: "1",    memory: "1Gi" }

@@ -11,6 +11,32 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Wave 2: observability + write-back reliability
+- **Reliable system-of-record write-back.** The outbound queue no longer
+  head-of-line-blocks: each write is delivered and committed on its own, so one
+  dead endpoint fails only its row (it exhausts retries into a terminal `DEAD`
+  dead-letter state instead of masquerading as retryable). External idempotency
+  keys stop a create whose HTTP response was lost from duplicating on retry;
+  connector pulls upsert on a natural key `(tenant, source, external_id)` so a
+  re-sync updates the twin instead of inserting a duplicate; a persisted
+  incremental cursor + pagination bounds each pull. A **ServiceNow** adapter
+  (incidents/tasks/problem/change) lands behind the bidirectional adapter
+  interface, routed through Gate 5b. All outbound HTTP uses the SSRF-pinned
+  guarded client (migration `0037`).
+  - Fixed before merge (found by adversarial review): the scheduled dispatcher
+    ran with no tenant context, so under Postgres RLS it matched zero rows and
+    write-backs never dispatched — it now uses the RLS-exempt maintenance
+    session; the Salesforce branch was using a raw (unpinned, redirect-following)
+    HTTP client; and an inbound amount was round-tripping through float.
+- **Production observability.** Golden-signal Prometheus metrics (gate pipeline,
+  LLM calls, job queue, HITL, leader election) aggregated across the 4 gunicorn
+  workers via a multiprocess dir; `/metrics` (opt-in `EXPOSE_METRICS`); request
+  correlation IDs threaded through logs; OTLP spans on the gate pipeline. The
+  WebSocket layer now fans out across workers over Redis pub/sub (with an
+  in-process fallback) so a gate event on one worker reaches a client on
+  another — the per-worker subscriber is started on every worker and each send
+  is time-bounded so a stalled client cannot block delivery to the rest.
+
 ### Wave 1 hardening: security, fairness-to-HITL, real 3-way match
 - **Multi-worker session security.** JWT revocation (logout) and login lockout
   are now backed by Redis so a logout or lockout is seen by every worker (prod

@@ -21,16 +21,27 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID", f"req-{uuid.uuid4().hex[:12]}")
         request.state.request_id = request_id
 
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        # Publish onto the ambient contextvar so the logging filter can stamp
+        # every record produced while this request runs (deep in services that
+        # never see the Request object). Reset on the way out so a pooled worker
+        # task does not inherit a stale id.
+        from app.core.context import current_request_id
+        token = current_request_id.set(request_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            current_request_id.reset(token)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Structured request/response logging with latency tracking."""
 
-    # Paths to skip logging (noisy health checks)
-    SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
+    # Paths to skip logging (noisy health checks + the metrics scrape). /health/live
+    # is hit by the kubelet liveness probe ~every 20s and /metrics by Prometheus
+    # ~every 15s; logging each would drown the request log in probe noise.
+    SKIP_PATHS = {"/health", "/health/live", "/metrics", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Use the raw ASGI scope path (the router's matched path), never
@@ -102,8 +113,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rpm = requests_per_minute
         self._windows: dict[str, list[float]] = defaultdict(list)
 
-    # Paths exempt from rate limiting
-    EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+    # Paths exempt from rate limiting. /health/live and /metrics are hit by
+    # infra probes (kubelet, Prometheus) whose source IP is shared/anonymous, so
+    # counting them would let a probe rate-limit real callers off that IP.
+    EXEMPT_PATHS = {"/health", "/health/live", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
     def _caller_id(self, request: Request) -> str:
         tenant = getattr(request.state, "tenant", None)

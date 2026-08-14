@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Dict, List, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
@@ -7,6 +8,11 @@ import json
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["WebSockets"])
+
+# Redis channel every worker publishes gate/HITL/activity events to and every
+# worker subscribes back on. This is what makes a gate event emitted on worker A
+# reach a browser whose socket lives on worker B.
+_WS_CHANNEL = "kaeos:ws:broadcast"
 
 
 def _extract_ws_token(sec_protocol_header: str, query_token: str | None):
@@ -25,6 +31,8 @@ class ConnectionManager:
     def __init__(self):
         # Maps tenant_id -> list of active WebSockets
         self.active_connections: Dict[str, List[WebSocket]] = {}
+        # Per-worker Redis subscriber task (set by run_subscriber via main.py).
+        self._subscriber_task: "asyncio.Task | None" = None
 
     MAX_CONNECTIONS_PER_TENANT = 50
 
@@ -57,17 +65,37 @@ class ConnectionManager:
                 del self.active_connections[tenant_id]
         logger.info(f"WebSocket disconnected for tenant {tenant_id}")
 
-    async def broadcast_to_tenant(self, tenant_id: str, message: Dict[str, Any]) -> int:
-        """Broadcast to all connections for a tenant. Returns number of recipients."""
+    async def _publish(self, envelope: Dict[str, Any]) -> bool:
+        """Fan an event out to every worker via Redis pub/sub. Returns True when
+        it was published (each worker's subscriber then delivers to its own local
+        sockets, including this worker's), False when Redis is unavailable so the
+        caller falls back to local-only delivery (single-instance dev)."""
+        try:
+            from app.core.redis import get_redis
+            client = await get_redis()
+            if client is None:
+                return False
+            await client.publish(_WS_CHANNEL, json.dumps(envelope, default=str))
+            return True
+        except Exception as e:
+            logger.debug(f"[WS] redis publish failed, local fallback: {e}")
+            return False
+
+    async def _deliver_local_tenant(self, tenant_id: str, message: Dict[str, Any]) -> int:
+        """Send to THIS worker's sockets for a tenant. Returns recipients."""
         sent = 0
         dead = []
         for conn in self.active_connections.get(tenant_id, []):
             try:
-                await conn.send_json(message)
+                # Bounded send: a client that is connected but stalled (TCP
+                # backpressure, no exception) would otherwise block the single
+                # subscriber loop and head-of-line-block delivery to everyone
+                # else. Time it out and drop it.
+                await asyncio.wait_for(conn.send_json(message), timeout=5.0)
                 sent += 1
             except Exception:
-                # Best-effort broadcast: a send to a client that has already gone
-                # away raises here; queue it for removal and keep fanning out.
+                # Gone away or stalled past the timeout; queue for removal and
+                # keep fanning out to the rest.
                 dead.append(conn)
         # Clean dead connections. Mutate the actual tracked list (not a fresh
         # default) and guard membership — under concurrency a connection may
@@ -81,12 +109,59 @@ class ConnectionManager:
                 self.active_connections.pop(tenant_id, None)
         return sent
 
-    async def broadcast_to_all(self, message: Dict[str, Any]) -> int:
-        """Broadcast to ALL tenants (system-level events)."""
+    async def _deliver_local_all(self, message: Dict[str, Any]) -> int:
         total = 0
         for tenant_id in list(self.active_connections.keys()):
-            total += await self.broadcast_to_tenant(tenant_id, message)
+            total += await self._deliver_local_tenant(tenant_id, message)
         return total
+
+    async def broadcast_to_tenant(self, tenant_id: str, message: Dict[str, Any]) -> int:
+        """Broadcast to all connections for a tenant across ALL workers.
+
+        Published to Redis so a socket on another worker/replica receives it too;
+        the local return count is only meaningful on the Redis-absent fallback
+        path (callers use it for a debug log, not correctness)."""
+        if await self._publish({"scope": "tenant", "tenant_id": tenant_id, "message": message}):
+            return 0
+        return await self._deliver_local_tenant(tenant_id, message)
+
+    async def broadcast_to_all(self, message: Dict[str, Any]) -> int:
+        """Broadcast to ALL tenants across ALL workers (system-level events)."""
+        if await self._publish({"scope": "all", "message": message}):
+            return 0
+        return await self._deliver_local_all(message)
+
+    async def run_subscriber(self) -> None:
+        """Per-worker loop: subscribe to the fan-out channel and deliver each
+        published event to THIS worker's local sockets. Started once per worker
+        in main.py's lifespan; cancelled on shutdown. Re-checks for Redis every
+        5s so it self-heals if Redis comes up after boot."""
+        while True:
+            try:
+                from app.core.redis import get_redis
+                client = await get_redis()
+                if client is None:
+                    await asyncio.sleep(5)  # no Redis -> broadcasts stay local
+                    continue
+                pubsub = client.pubsub()
+                await pubsub.subscribe(_WS_CHANNEL)
+                logger.info("[WS] subscribed to %s for cross-worker fan-out", _WS_CHANNEL)
+                async for msg in pubsub.listen():
+                    if msg.get("type") != "message":
+                        continue
+                    try:
+                        env = json.loads(msg["data"])
+                        if env.get("scope") == "all":
+                            await self._deliver_local_all(env["message"])
+                        else:
+                            await self._deliver_local_tenant(env["tenant_id"], env["message"])
+                    except Exception as e:
+                        logger.debug(f"[WS] fan-out delivery error: {e}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"[WS] subscriber loop error, restarting in 5s: {e}")
+                await asyncio.sleep(5)
 
     def tenant_connection_count(self, tenant_id: str) -> int:
         return len(self.active_connections.get(tenant_id, []))

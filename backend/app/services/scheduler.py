@@ -292,10 +292,75 @@ async def run_outbound_sync_dispatch():
     try:
         from app.services.sync_engine import dispatch_outbound
         result = await dispatch_outbound()
-        if result.get("sent") or result.get("failed"):
+        if result.get("sent") or result.get("failed") or result.get("dead"):
             logger.info("[Scheduler] outbound sync: %s", result)
     except Exception as e:
         logger.error(f"[Scheduler] outbound sync dispatch failed: {e}")
+
+
+# How many connectors one pull pass will touch. Real HTTP + inference per
+# connector, so an unbounded sweep on a large install is a self-inflicted load
+# spike; the rest are picked up on the next tick.
+# ponytail: flat cap, upgrade to a per-connector due-time (sync_frequency) if a
+# large install needs different cadences per connector.
+_PULL_CONNECTOR_LIMIT = 25
+
+
+async def run_connector_pull_sync():
+    """Leader-guarded incremental pull: fetch changed records from every
+    credentialed CONNECTED connector, dedup them into the twin, and advance
+    each connector's persisted cursor so the next pass only fetches deltas.
+
+    Per-connector isolation: one unreachable source fails only its own row.
+    """
+    if not _is_leader():
+        return
+    from app.core.context import current_tenant_id
+    from app.core.database import AsyncSessionLocal
+    from app.models.domain import Connector, ConnectorCredential
+    from app.services.live_connectors import LiveConnectorService, decrypt_secrets
+
+    async with MaintenanceSessionLocal() as mdb:
+        rows = (await mdb.execute(
+            select(Connector, ConnectorCredential)
+            .join(ConnectorCredential, ConnectorCredential.connector_id == Connector.id)
+            .where(Connector.status == "CONNECTED")
+            .limit(_PULL_CONNECTOR_LIMIT)
+        )).all()
+        targets = [(c.id, c.tenant_id, c.name, c.sync_cursor,
+                    cred.provider, dict(cred.config or {}), cred.secrets_encrypted)
+                   for c, cred in rows]
+
+    synced = 0
+    for cid, tid, name, cursor, provider, config, enc in targets:
+        # ServiceNow-format watermark; a 60s overlap re-fetches a few boundary
+        # records, and the natural-key upsert makes that harmless.
+        started = datetime.now(timezone.utc)
+        new_cursor = started.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+        token = current_tenant_id.set(tid)
+        try:
+            async with AsyncSessionLocal() as db:
+                secrets = decrypt_secrets(enc)
+                records = await LiveConnectorService.fetch_records(
+                    provider, {**config, "_cursor": cursor}, secrets)
+                signals = LiveConnectorService.records_to_signals(records, tid, name)
+                stats = await LiveConnectorService.persist_signals(db, signals)
+                conn = (await db.execute(
+                    select(Connector).where(Connector.id == cid))).scalar_one_or_none()
+                if conn is not None:
+                    conn.events_ingested = (conn.events_ingested or 0) + len(records)
+                    conn.signals_extracted = (conn.signals_extracted or 0) + stats["inserted"]
+                    conn.last_sync_at = started
+                    conn.sync_cursor = new_cursor
+                await db.commit()
+                if stats["inserted"] or stats["updated"]:
+                    synced += 1
+        except Exception as e:
+            logger.warning("[Scheduler] pull sync connector %s failed: %s", cid, e)
+        finally:
+            current_tenant_id.reset(token)
+    if synced:
+        logger.info("[Scheduler] pull sync updated %d connector(s)", synced)
 
 
 # How many tenants one warming pass will generate reports for. The work is real
@@ -404,6 +469,13 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_outbound_sync_dispatch, 'interval', minutes=1,
         id='outbound_sync_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Inbound pull half: incremental delta pull from credentialed connectors on
+    # an interval (real-time connectors push via webhooks; this catches systems
+    # that cannot push, and backfills what a missed webhook dropped).
+    scheduler.add_job(
+        run_connector_pull_sync, 'interval', minutes=5,
+        id='connector_pull_sync_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Executive digest: Monday 08:00 in the server's timezone. Tenants without
     # a subscribed notification channel simply receive nothing.

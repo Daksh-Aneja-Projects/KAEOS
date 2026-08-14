@@ -289,6 +289,21 @@ class AgentExecutor:
                 {"gate": gate, "state": state, "ms": ms}
             )
         context["_gate_t_last"] = now
+        # Observability: a Prometheus census of every gate verdict + an OTLP span
+        # event on the pipeline span opened by execute_skill. Both best-effort -
+        # a metrics/trace error must never stop a governed decision.
+        try:
+            from app.core.metrics import GATE_TRANSITIONS
+            GATE_TRANSITIONS.labels(gate=gate, state=state).inc()
+        except Exception:
+            pass
+        try:
+            from opentelemetry import trace as _otel_trace
+            _otel_trace.get_current_span().add_event(
+                "gate", {"gate": gate, "state": state, "ms": ms if ms is not None else -1}
+            )
+        except Exception:
+            pass
         try:
             from app.api.routes.ws import manager
             from app.core.context import current_actor
@@ -323,9 +338,26 @@ class AgentExecutor:
         t0 = time.perf_counter()
         context["_gate_t_last"] = t0
         context["_stage_timings"] = []
-        result = await self._run_gates(skill, context, hitl_pre_approved=hitl_pre_approved)
+        # OTLP: one span per governed execution. _emit_gate attaches a per-gate
+        # event to this span (get_current_span). No-op overhead when tracing is
+        # not configured, so it is always on.
+        from app.core.telemetry import tracer
+        with tracer.start_as_current_span("kaeos.gate_pipeline") as _span:
+            try:
+                _span.set_attribute("kaeos.skill_id", str(skill.get("skill_id", "unknown")))
+                _span.set_attribute("kaeos.tenant_id", str(context.get("tenant_id", "default")))
+            except Exception:
+                pass
+            result = await self._run_gates(skill, context, hitl_pre_approved=hitl_pre_approved)
+            if isinstance(result, dict):
+                try:
+                    _span.set_attribute("kaeos.status", str(result.get("status")))
+                except Exception:
+                    pass
         total_ms = int((time.perf_counter() - t0) * 1000)
         if isinstance(result, dict):
+            from app.core.metrics import observe_pipeline
+            observe_pipeline(result.get("status"), total_ms)
             stages = context.get("_stage_timings", [])
             result["stage_timings"] = stages
             result["pipeline_ms"] = total_ms

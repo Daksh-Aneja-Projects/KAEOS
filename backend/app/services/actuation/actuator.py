@@ -197,6 +197,10 @@ class Actuator:
                 payload={"system": system, "operation": operation,
                          "state": after_state or {}},
                 external_id=external_id,
+                # Reuse the governed action's idempotency key as the EXTERNAL
+                # write-back token so a lost HTTP response cannot duplicate the
+                # record on the system of record.
+                idempotency_key=key,
                 db=db,
             )
             # The action itself is already committed above; commit the queue row

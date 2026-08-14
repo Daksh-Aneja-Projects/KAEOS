@@ -68,6 +68,22 @@ class PIIRedactionFilter(logging.Filter):
             record.args = None
         return True
 
+class CorrelationIdFilter(logging.Filter):
+    """Stamp the ambient request-id onto every record so a single request's
+    whole log footprint - across every module and thread-hop - shares one
+    greppable id. '-' when there is no request in flight (startup, background
+    jobs). Always sets the attribute so the text formatter's %(request_id)s
+    never raises on a record from outside a request."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            from app.core.context import current_request_id
+            record.request_id = current_request_id.get() or "-"
+        except Exception:
+            record.request_id = "-"
+        return True
+
+
 try:
     from pythonjsonlogger import jsonlogger
 
@@ -81,6 +97,7 @@ try:
                 log_record['level'] = log_record['level'].upper()
             else:
                 log_record['level'] = record.levelname
+            log_record['request_id'] = getattr(record, 'request_id', '-')
 
     _HAS_JSON_LOGGER = True
 
@@ -115,13 +132,15 @@ def setup_logging():
     else:
         # Fallback: structured text logging when pythonjsonlogger is not installed
         formatter = logging.Formatter(
-            fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            fmt='%(asctime)s [%(levelname)s] %(name)s [%(request_id)s]: %(message)s',
             datefmt='%Y-%m-%dT%H:%M:%S'
         )
         logHandler.setFormatter(formatter)
 
-    # Install PII redaction on the root logger so every emitted record — from
-    # any module, via any handler — is scrubbed of emails/SSNs/secrets/salaries.
+    # Correlation id first (adds record.request_id), then PII redaction. Both
+    # run before the record is formatted, so the text formatter always finds
+    # request_id and the emitted line is scrubbed.
+    logHandler.addFilter(CorrelationIdFilter())
     logHandler.addFilter(PIIRedactionFilter())
 
     logger.addHandler(logHandler)

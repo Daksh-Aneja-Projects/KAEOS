@@ -148,6 +148,13 @@ async def process_jobs(max_jobs: int = _DEFAULT_MAX_JOBS_PER_TICK) -> dict:
                 job.locked_by = None
                 await db.commit()
                 counts["succeeded"] += 1
+    try:
+        from app.core.metrics import JOBS_PROCESSED
+        for _outcome in ("succeeded", "failed", "retried"):
+            if counts[_outcome]:
+                JOBS_PROCESSED.labels(outcome=_outcome).inc(counts[_outcome])
+    except Exception:
+        pass
     return counts
 
 
