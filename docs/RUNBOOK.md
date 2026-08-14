@@ -15,7 +15,15 @@ Order matters, and both steps run as the OWNER role (`kaeos`):
    docker compose exec backend sh -c 'DATABASE_URL="$KAEOS_OWNER_DB_URL" alembic upgrade head'
    ```
    The migration chain is state-aware (checks before adding), so it is safe on both
-   fresh and existing databases, before or after `create_all`.
+   fresh and existing databases, before or after `create_all`. It currently runs to head
+   **`0044_tenant_branding`**; verify with `alembic current` after the upgrade.
+   Two rules when authoring a new revision, both learned the hard way:
+   - **Revision ids must stay <= 32 chars.** `alembic_version.version_num` is
+     `VARCHAR(32)`; a longer id inserts on SQLite and fails on Postgres. Two ids
+     were renamed for this.
+   - **Validate the chain on a real `pgvector/pgvector:pg16` instance, never only
+     on SQLite.** SQLite hides dialect bugs: a `boolean = integer` comparison in
+     `0025` ran clean locally and was rejected by Postgres.
 3. **Prove tenant isolation** after any deploy:
    ```bash
    DATABASE_URL=<kaeos_app url> KAEOS_OWNER_DB_URL=<owner url> python scripts/verify_rls.py
@@ -23,6 +31,12 @@ Order matters, and both steps run as the OWNER role (`kaeos`):
    ```
    If it reports the connected role OWNS the tables, the app is connecting as the owner
    and every policy is silently inert - fix the DATABASE_URL before going further.
+4. **Org-graph seeding runs itself.** On every boot a startup step
+   (`app/core/workforce_seed.py`) runs the real `WorkforceGenerator` against each synced
+   domain pack so every department gets its capability + agent backbone. Deterministic,
+   no LLM calls, idempotent, so it costs nothing on a warm database. It is separate from
+   the fictional demo dataset (`SEED_DEMO_DATA`), which is skipped in a production-like
+   environment.
 
 ## 0b. Known Version Pins (do not "upgrade past" these without re-verifying)
 
@@ -119,6 +133,46 @@ Order matters, and both steps run as the OWNER role (`kaeos`):
   3. If secrets were stored before `SECRET_KEY` changed, decryption fails - re-enter the credentials.
      Rotating `SECRET_KEY` invalidates **all** stored connector secrets and BYOK model keys.
 
+### 1.7 The Neural Map / Reality Experience Renders an Empty Organisation
+
+- **Symptom**: departments and their domain data exist, but the org-wide views (neural map,
+  reality, org pulse) show no agents or capabilities.
+- **Cause**: the startup org-graph seed (`app/core/workforce_seed.py`) did not run or failed.
+- **Action**:
+  1. Check the boot logs for the workforce seed step and for a domain-pack sync warning just
+     above it (pack sync failures are logged non-fatal, and the seed has nothing to run against).
+  2. Restart the backend; the seed is deterministic, LLM-free and idempotent, so re-running is
+     safe and cheap on an already-seeded tenant.
+  3. A freshly seeded tenant should carry 10 departments (the 7 original plus Healthcare,
+     Procurement and Banking & Lending) with their capability and agent backbone attached.
+
+### 1.8 `/metrics/timeseries` Has No Recent Samples
+
+- **Symptom**: `GET /api/v1/metrics/timeseries` returns nothing new; charts flatline at the last
+  stored bucket.
+- **Cause**: the rollup is **leader-guarded**. If no replica holds leadership (or every replica
+  was pinned with `RUN_BACKGROUND_JOBS=false`), nobody writes samples.
+- **Action**:
+  1. Confirm exactly one replica is the leader; a replica that never contends for leadership
+     never runs the singleton loops.
+  2. Check `METRICS_ROLLUP_INTERVAL_MINUTES` (default `60`) - the job is registered on the shared
+     scheduler at that interval, so the first sample can be up to one interval away.
+  3. Writes are idempotent per bucket, with a unique constraint as the backstop against a racing
+     second leader, so a brief double-leader window does not corrupt the series.
+  4. **A gap is not always a fault.** A metric with no underlying data is stored as null, never as
+     a fabricated `0`; a tenant with no executions in the bucket legitimately has no rate.
+
+### 1.9 Browser Console Shows CSP Violations / Every XHR or WebSocket Fails
+
+- **Symptom**: the SPA loads but every API call and the WebSocket are blocked, with
+  Content-Security-Policy errors in the browser console.
+- **Cause**: the API and the SPA are on different origins and `connect-src` does not cover the API
+  or WS origin. The hardened middleware default now sets `connect-src` (it previously had none,
+  which blocked all XHR/WS).
+- **Action**: leave `CONTENT_SECURITY_POLICY` empty to use the hardened default, or set it to a
+  policy whose `connect-src` names your actual API and WebSocket origins. Do not confuse this with
+  the `VITE_API_BASE` build-arg failure in 0b, which reports "Failed to fetch" with no CSP error.
+
 ## 2. Staging & Production Deployment
 
 ### 2.1 Deploying Staging
@@ -137,6 +191,25 @@ docker compose -f docker-compose.staging.yml up --build -d
   cat dump_...sql | docker exec -i kaeos-postgres-1 psql -U kaeos
   ```
 
+### 2.3 Health & Status Surfaces
+- **`/status`** - PUBLIC, no auth, root-mounted. This is what the load balancer and the uptime
+  monitor should poll. Returns `version`, `uptime_seconds` and db/redis/llm reachability, and
+  **503** when the database (the only critical dependency) is unreachable, so a balancer can drain
+  the instance. It carries no per-tenant data, and deliberately omits the platform safe-autonomy
+  rate: that aggregate is an unindexed cross-tenant scan and would be a DoS amplifier on an
+  auth-free endpoint.
+- **`/health`** - the richer backend-by-backend view (vector store, graph store, cache bus).
+- **`/api/v1/ops/*`** - the super-admin operator console (tenants, tenant detail, overview),
+  gated by the `ADMIN_SECRET` super-admin dependency. The blended safe-autonomy rate lives here,
+  not on `/status`.
+
 ## 3. Local LLM Management
-- KAEOS uses `phi4-mini` via Ollama.
-- To preload the model on boot, ensure the Ollama initialization script runs `ollama pull phi4-mini`.
+- The default local model for every text tier is `ollama/qwen2.5-coder:7b` (strict JSON, fits a
+  6GB GPU). To preload it on boot, have the Ollama initialization script run
+  `ollama pull qwen2.5-coder:7b`.
+- `phi4-mini` is kept as the deliberately weak BYOK demo model: it probes at ~0.70 and its
+  capability ceiling routes decisions to humans (see 1.5). Do not point the reasoning tier at it
+  in an autonomous deployment.
+- `nomic-embed-text` is the local embedding model for RAG (`ollama pull nomic-embed-text`).
+  `EMBEDDING_MODEL` drives the pgvector column width, so change it only alongside a dimension
+  migration and a full re-embed.

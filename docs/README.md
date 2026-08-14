@@ -3,8 +3,10 @@
 Back to the [project README](../README.md).
 
 All API paths in these documents are relative to the API prefix **`/api/v1`**
-(configurable via `API_PREFIX`). The only exception is the WebSocket feed, which
-is mounted bare at `/ws/{tenant_id}`. Against a default local stack the base URL
+(configurable via `API_PREFIX`). There are two exceptions, both mounted bare at
+the root: the WebSocket feed at `/ws/{tenant_id}`, and the public `/status`
+endpoint (no auth; db/redis/llm reachability, version and uptime, deliberately
+no business metrics). Against a default local stack the base URL
 is `http://localhost:8001/api/v1`, and the live Swagger UI is at
 `http://localhost:8001/docs`.
 
@@ -24,32 +26,32 @@ is `http://localhost:8001/api/v1`, and the live Swagger UI is at
 
 | Document | Covers |
 |----------|--------|
-| [FEATURES.md](FEATURES.md) | The 7 departments and their 41 agents, gates, missions, Foundry, Neural Map, screenshots |
-| [BENCHMARKS.md](BENCHMARKS.md) | Real-data benchmark methodology and results, wins and losses |
-| [CONNECTORS.md](CONNECTORS.md) | The 22 live connector adapters, authority weighting, PII handling |
+| [FEATURES.md](FEATURES.md) | The 10 departments and their agents, gates, missions, Foundry, Neural Map, screenshots |
+| [BENCHMARKS.md](BENCHMARKS.md) | Real-data benchmark methodology and results, wins and losses, and why the regulated verticals are validated differently |
+| [CONNECTORS.md](CONNECTORS.md) | The 22 live connector adapters, authority weighting, PII handling, write-back |
 
 ### Engineering
 
 | Document | Covers |
 |----------|--------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, project structure, request path, performance |
-| [API.md](API.md) | Department and platform endpoint reference |
+| [API.md](API.md) | Department and platform endpoint reference, including the healthcare, lending, procurement, ops-console, branding and metrics surfaces |
 | [BYOK.md](BYOK.md) | Bring your own model: tiers, probe battery, ceiling derivation, data residency |
-| [TESTING.md](TESTING.md) | Test suites, CI lanes, how to run each locally |
+| [TESTING.md](TESTING.md) | Test suites (backend unit, e2e, frontend), CI lanes, how to run each locally |
 
 ### Security and compliance
 
 | Document | Covers |
 |----------|--------|
-| [SECURITY_MODEL.md](SECURITY_MODEL.md) | Multi-tenancy, row-level security, authn/authz, SSO and SCIM |
-| [COMPLIANCE_POSTURE.md](COMPLIANCE_POSTURE.md) | Control coverage and the audit-readiness evidence endpoint |
+| [SECURITY_MODEL.md](SECURITY_MODEL.md) | Multi-tenancy, row-level security, authn/authz, SSO and SCIM, CSP, prompt-injection screening |
+| [COMPLIANCE_POSTURE.md](COMPLIANCE_POSTURE.md) | Control coverage, the deterministic statutory checkers behind the regulated departments, and the audit-readiness evidence endpoint |
 | [../SECURITY.md](../SECURITY.md) | How to report a vulnerability |
 
 ### Operations
 
 | Document | Covers |
 |----------|--------|
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploying KAEOS, including the Helm chart under `deploy/helm/kaeos` |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploying KAEOS, the Alembic chain (currently head `0044`), and the Helm chart under `deploy/helm/kaeos` |
 | [OPS_RUNBOOK.md](OPS_RUNBOOK.md) | Day-2 operations, monitoring, incident procedures |
 | [RUNBOOK.md](RUNBOOK.md) | Model and LLM operations, including local Ollama troubleshooting |
 
