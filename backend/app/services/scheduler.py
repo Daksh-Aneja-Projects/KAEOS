@@ -2,8 +2,10 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, and_
 from datetime import datetime, timezone
+from app.core.config import get_settings
 from app.core.database import MaintenanceSessionLocal
 from app.models.domain import Rule
+from app.services.metrics_timeseries import run_metrics_rollup
 
 logger = logging.getLogger(__name__)
 
@@ -575,5 +577,14 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_usage_metering, 'interval', hours=1,
         id='usage_metering_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Time-series metrics rollup: snapshot each tenant's current-hour safe-autonomy
+    # rate / cost / execution volume into ts_metric_samples so Time Machine and
+    # dashboards read a stored series. Idempotent per (tenant, metric, hour bucket),
+    # so hourly cadence with coalesce means at most one row per bucket.
+    scheduler.add_job(
+        run_metrics_rollup, 'interval',
+        minutes=int(getattr(get_settings(), "METRICS_ROLLUP_INTERVAL_MINUTES", 60)),
+        id='metrics_rollup_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     return scheduler

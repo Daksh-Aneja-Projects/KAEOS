@@ -12,7 +12,7 @@ circular import back through the app object.
 import secrets as _secrets
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import Header, HTTPException
 
 from app.core.config import get_settings
 
@@ -33,6 +33,19 @@ def verify_admin_secret(x_admin_secret: Optional[str]) -> None:
         )
     if not x_admin_secret or not _secrets.compare_digest(x_admin_secret, admin_secret):
         raise HTTPException(status_code=403, detail="Invalid admin secret")
+
+
+def require_superadmin(x_admin_secret: Optional[str] = Header(None)) -> None:
+    """FastAPI dependency: gate a route behind platform super-admin.
+
+    Thin wrapper over verify_admin_secret so cross-tenant operator routes can
+    declare ``dependencies=[Depends(require_superadmin)]`` instead of repeating
+    the Header+verify dance. Same gate as the existing /tenants/stats and
+    /admin/security/api-keys surfaces (the ADMIN_SECRET), not a new authority:
+    a tenant JWT proves who a customer is, never that they may act platform-wide.
+    Fails closed — 503 when ADMIN_SECRET is unconfigured, 403 when wrong.
+    """
+    verify_admin_secret(x_admin_secret)
 
 
 def is_admin(x_admin_secret: Optional[str]) -> bool:

@@ -77,6 +77,49 @@ async def get_safe_autonomy(
     return await compute_safe_autonomy(db, tenant_id, days=days)
 
 
+@router.get("/timeseries")
+async def get_timeseries(
+    metric: str = Query("safe_autonomy_rate",
+                        description="safe_autonomy_rate | cost_usd | execution_volume"),
+    from_: datetime | None = Query(None, alias="from"),
+    to: datetime | None = Query(None),
+    interval: str = Query("hour", pattern="^(hour|day)$"),
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """The STORED metric series for the caller's tenant (from the rollup), so
+    Time Machine / dashboards read a real recorded series instead of
+    reconstructing it on every request. Honest: a metric with no stored samples
+    returns an empty series with a note, never a fabricated 0 line."""
+    from app.models.metrics_ts import MetricSample
+
+    to = to or datetime.now(timezone.utc)
+    from_ = from_ or (to - timedelta(days=30))
+
+    rows = (await db.execute(
+        select(MetricSample.bucket_start, MetricSample.value)
+        .where(MetricSample.tenant_id == tenant_id,
+               MetricSample.metric_key == metric,
+               MetricSample.interval == interval,
+               MetricSample.bucket_start >= from_,
+               MetricSample.bucket_start <= to)
+        .order_by(MetricSample.bucket_start)
+    )).all()
+
+    series = [{"captured_at": bucket.isoformat(), "value": float(value)}
+              for bucket, value in rows]
+    return {
+        "metric": metric,
+        "interval": interval,
+        "from": from_.isoformat(),
+        "to": to.isoformat(),
+        "series": series,
+        "note": (None if series else
+                 "No stored samples for this metric/window; the rollup writes a "
+                 "sample only when the metric has underlying data (never a 0)."),
+    }
+
+
 @router.get("/forecast")
 async def get_forecast(
     days: int = Query(45, ge=7, le=365),

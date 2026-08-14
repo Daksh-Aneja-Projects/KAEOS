@@ -402,6 +402,11 @@ from app.api.routes import agent_interface as agent_interface_routes
 app.include_router(agent_interface_routes.router, prefix=PREFIX)
 from app.api.routes import billing
 app.include_router(billing.router,         prefix=PREFIX)
+from app.api.routes import ops as ops_routes
+app.include_router(ops_routes.router,      prefix=PREFIX)   # /api/v1/ops/* - super-admin gated (require_superadmin)
+app.include_router(ops_routes.status_router)               # public /status (root-mounted, no auth, no tenant data)
+from app.api.routes import branding as branding_routes
+app.include_router(branding_routes.router, prefix=PREFIX)   # /api/v1/branding - tenant theming
 from app.api.routes import notifications as notification_routes
 app.include_router(notification_routes.router, prefix=PREFIX)
 from app.api.routes import sync as sync_routes
