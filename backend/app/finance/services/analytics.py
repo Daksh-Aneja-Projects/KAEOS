@@ -8,6 +8,7 @@ domain-analytics shape rendered by the frontend DomainAnalytics component:
     insights: [{severity,message}] }
 """
 from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +45,7 @@ async def finance_analytics(db: AsyncSession, tenant_id: str,
             .where(Invoice.tenant_id == tenant_id, Invoice.status.in_(OPEN_AP))
             .group_by(bucket)
         )
-        aging_raw = dict(aging_q.all())
+        aging_raw: dict[str, Decimal] = {r[0]: r[1] for r in aging_q.all()}
         aging_order = ["Current", "1-30 days", "31-60 days", "61-90 days", "90+ days"]
         aging = [{"label": b, "value": float(aging_raw.get(b, 0))} for b in aging_order]
 

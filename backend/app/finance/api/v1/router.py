@@ -240,6 +240,31 @@ async def get_balance_sheet(
     return await balance_sheet(db, tenant_id, as_of=as_of)
 
 
+@router.get("/gl/cash-flow-statement")
+async def get_cash_flow_statement(
+    period_start: Optional[date] = None, period_end: Optional[date] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Net change in cash/bank accounts over a window, derived from POSTED
+    journal lines (not the persisted CashFlow rows). Pass period_start/period_end
+    (YYYY-MM-DD) to bound the window; omit for inception-to-date."""
+    from app.finance.services.gl import cash_flow_statement
+    return await cash_flow_statement(db, tenant_id, period_start=period_start, period_end=period_end)
+
+
+@router.get("/aging")
+async def get_aging_report(
+    side: str = "both", as_of: Optional[date] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """AR/AP aging: open invoice balances bucketed by days past due_date
+    (current / 1-30 / 31-60 / 61-90 / 90+). side = ar | ap | both."""
+    if side.lower() not in ("ar", "ap", "both"):
+        raise HTTPException(400, "side must be one of: ar, ap, both")
+    from app.finance.services.gl import aging_report
+    return await aging_report(db, tenant_id, side=side, as_of=as_of)
+
+
 @router.get("/gl/periods")
 async def get_fiscal_periods(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """Closed/reopened fiscal periods. Periods without a row are OPEN."""

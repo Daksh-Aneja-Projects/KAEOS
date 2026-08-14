@@ -131,6 +131,27 @@ class JournalLine(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class FXRate(Base):
+    """Exchange rate: how many units of the tenant base currency one unit of
+    ``currency`` is worth, effective ``as_of``. post_journal_entry converts every
+    foreign-currency line to base at the most recent rate on/before the entry
+    date; a line whose account currency has no such rate is refused."""
+    __tablename__ = "fin_fx_rates"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "currency", "as_of", name="uq_fin_fx_tenant_ccy_asof"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+
+    currency = Column(String(3), nullable=False)          # ISO 4217, the FROM currency
+    base_currency = Column(String(3), nullable=False, default="USD")
+    rate = Column(Numeric(18, 8), nullable=False)          # base units per 1 unit of currency
+    as_of = Column(Date, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class FiscalPeriodStatus(str, enum.Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"

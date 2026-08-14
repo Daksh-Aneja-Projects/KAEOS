@@ -11,6 +11,34 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Campaign closeout: finance FX, transport CSP, prompt-injection fences, connectors
+Integration of a multi-agent closeout batch, each finding adversarially verified
+before landing:
+- **Multi-currency general ledger (correctness).** Every journal line now converts
+  to the tenant base currency at post time via a new `fin_fx_rates` table, and all
+  GL reports (trial balance, income statement, balance sheet, cash-flow) aggregate
+  the base-currency amount instead of summing native debit/credit columns - a
+  multi-currency tenant was previously adding, say, EUR and USD magnitudes into one
+  meaningless total. A reversal now re-converts at the original entry's rate so the
+  base amounts offset to exactly zero. New setting `FINANCE_BASE_CURRENCY` (default
+  USD); migration `0040_fin_fx_rates` (additive, RLS, inspector-guarded).
+- **CRITICAL - Content-Security-Policy blocked the whole app.** The new CSP set
+  `default-src 'self'` with no `connect-src`, so the SPA (served on a different port
+  than the API) could make no XHR or WebSocket calls at all. `connect-src` now allows
+  the cross-origin API and WebSocket (local http/ws in dev, https/wss in prod), with
+  `object-src 'none'` added; operators can pin it via `CONTENT_SECURITY_POLICY`.
+- **HIGH - prompt-injection fence escape.** Untrusted content wrapped for the LLM
+  could emit the literal fence close-marker and inject trusted-channel instructions.
+  `wrap_untrusted` now neutralizes embedded markers at the root, protecting chat RAG,
+  the debate engine, HR knowledge, and missions in one fix.
+- **Write-back connector library + Salesforce idempotency.** Zendesk/Jira/Slack
+  outbound adapters; the Salesforce create path gained the idempotency probe the other
+  adapters already had, so a lost response cannot duplicate a record.
+- **Info-leak fences.** The chat stream, failed-deployment step log, and health
+  dependency probes no longer surface raw exception text (DSN/host) to tenants.
+- Removed the dead legacy HMAC-token verification path (past its removal date);
+  demo-data seeding is now skipped in production-like environments.
+
 ### Pre-launch audit: blocking fixes (adversarial attack pass)
 An adversarial pre-launch audit attacked the codebase; these blockers are fixed:
 - **CRITICAL - SSO open-redirect token theft.** The freshly minted session token

@@ -210,10 +210,19 @@ _FENCE_OPEN = (
 )
 _FENCE_CLOSE = "\n<<END_UNTRUSTED_EXTERNAL_CONTENT>>"
 
+# Any occurrence of our own fence markers inside the untrusted payload is a
+# fence-escape attempt: emit the close marker, then inject trusted-channel
+# instructions. Neutralize the markers (open/close, with or without a slash or
+# whitespace) before wrapping so the fence cannot be broken from the inside.
+_FENCE_MARKER_RE = re.compile(
+    r"<<\s*/?\s*(?:END_)?UNTRUSTED_EXTERNAL_CONTENT\s*>>", re.IGNORECASE
+)
+
 
 def wrap_untrusted(text: str) -> str:
     """Fence ``text`` as untrusted data before it enters an LLM context window."""
-    return f"{_FENCE_OPEN}{text or ''}{_FENCE_CLOSE}"
+    inner = _FENCE_MARKER_RE.sub("[redacted-fence-marker]", text or "")
+    return f"{_FENCE_OPEN}{inner}{_FENCE_CLOSE}"
 
 
 def guard(text: str, *, redact: bool = True) -> dict:

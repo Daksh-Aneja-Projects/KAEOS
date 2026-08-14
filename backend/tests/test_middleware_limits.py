@@ -2,7 +2,11 @@
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.core.middleware import BodySizeLimitMiddleware, RateLimitMiddleware
+from app.core.middleware import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 
 
@@ -57,3 +61,21 @@ async def test_rate_limit_exempt_paths_never_throttled(monkeypatch):
     for _ in range(10):
         resp = await mw.dispatch(_req([], path="/health"), _ok)
         assert resp.status_code == 200
+
+
+async def test_security_headers_present():
+    mw = SecurityHeadersMiddleware(app=None)
+    resp = await mw.dispatch(_req([]), _ok)
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert resp.headers["X-Frame-Options"] == "DENY"
+    assert resp.headers["Referrer-Policy"] == "no-referrer"
+    csp = resp.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "script-src 'self'" in csp
+    assert "object-src 'none'" in csp
+    assert "font-src 'self' https://fonts.gstatic.com" in csp
+    # connect-src MUST be present and reach the cross-origin API + WebSocket,
+    # else the SPA (served on a different port) can make no XHR/WS calls at all.
+    assert "connect-src" in csp
+    assert "wss:" in csp and "ws://localhost:*" in csp

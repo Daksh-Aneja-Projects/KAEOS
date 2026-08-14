@@ -16,7 +16,7 @@ from app.models.intelligence_metrics import EnterpriseFitnessRecord, EvolutionMe
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
-async def run_evolution_acceptance_test():
+async def test_evolution_engine_acceptance():
     logger.info("==================================================")
     logger.info("   EVOLUTION ENGINE ACCEPTANCE TEST STARTED       ")
     logger.info("==================================================")
@@ -123,4 +123,4 @@ async def run_evolution_acceptance_test():
     logger.info("==================================================")
 
 if __name__ == "__main__":
-    asyncio.run(run_evolution_acceptance_test())
+    asyncio.run(test_evolution_engine_acceptance())

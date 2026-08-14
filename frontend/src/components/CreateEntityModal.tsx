@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { Loader2, Plus, X } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { announce } from './a11y/LiveRegion';
 
 /**
  * Config-driven create form for the domain entities exposed by the new
@@ -36,6 +38,8 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const titleId = useId();
+  const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
@@ -45,7 +49,9 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
   const submit = async () => {
     for (const f of fields) {
       if (f.required && !val(f).trim()) {
-        setError(`${f.label} is required`);
+        const msg = `${f.label} is required`;
+        setError(msg);
+        announce(msg, 'assertive');
         return;
       }
     }
@@ -59,10 +65,14 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
     try {
       await api.createDomainEntity(domain, entityPath, body);
       setValues({});
-      onCreated(`${title.replace(/^New /, '')} created`);
+      const done = `${title.replace(/^New /, '')} created`;
+      announce(done);
+      onCreated(done);
       onClose();
     } catch (e: any) {
-      setError(e?.message || 'Create failed');
+      const msg = e?.message || 'Create failed';
+      setError(msg);
+      announce(msg, 'assertive');
     } finally {
       setBusy(false);
     }
@@ -75,27 +85,30 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}
       onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="w-full max-w-md rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
         style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-bold" style={{ color: colors.ink }}>{title}</h2>
-          <button onClick={onClose} className="p-1 rounded" style={{ color: colors.inkSubtle }}>
+          <h2 id={titleId} className="text-[15px] font-bold" style={{ color: colors.ink }}>{title}</h2>
+          <button onClick={onClose} aria-label="Close dialog" className="p-1 rounded" style={{ color: colors.inkSubtle }}>
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {fields.map(f => (
+        {fields.map(f => {
+          const fieldId = `${titleId}-${f.key}`;
+          return (
           <div key={f.key}>
-            <label className="text-[11px] font-semibold block mb-1" style={{ color: colors.inkSubtle }}>
+            <label htmlFor={fieldId} className="text-[11px] font-semibold block mb-1" style={{ color: colors.inkSubtle }}>
               {f.label}{f.required && <span style={{ color: '#ef4444' }}> *</span>}
             </label>
             {f.type === 'textarea' ? (
-              <textarea value={val(f)} onChange={e => set(f.key, e.target.value)} rows={3}
-                placeholder={f.placeholder}
+              <textarea id={fieldId} value={val(f)} onChange={e => set(f.key, e.target.value)} rows={3}
+                placeholder={f.placeholder} required={f.required}
                 className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none resize-none" style={inputStyle} />
             ) : f.type === 'select' ? (
-              <select value={val(f)} onChange={e => set(f.key, e.target.value)}
+              <select id={fieldId} value={val(f)} onChange={e => set(f.key, e.target.value)} required={f.required}
                 className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
                 <option value="">Select…</option>
                 {(f.options || []).map(o => {
@@ -104,14 +117,15 @@ const CreateEntityModal: React.FC<Props> = ({ open, title, domain, entityPath, f
                 })}
               </select>
             ) : (
-              <input type={f.type} value={val(f)} onChange={e => set(f.key, e.target.value)}
-                placeholder={f.placeholder}
+              <input id={fieldId} type={f.type} value={val(f)} onChange={e => set(f.key, e.target.value)}
+                placeholder={f.placeholder} required={f.required}
                 className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
             )}
           </div>
-        ))}
+          );
+        })}
 
-        {error && <p className="text-[11px] font-medium" style={{ color: '#ef4444' }}>{error}</p>}
+        {error && <p role="alert" className="text-[11px] font-medium" style={{ color: '#ef4444' }}>{error}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="px-3 py-2 rounded-lg text-[12px] font-semibold"

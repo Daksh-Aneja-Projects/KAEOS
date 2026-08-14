@@ -137,14 +137,15 @@ async def lifespan(app: FastAPI):
     async with MaintenanceSessionLocal() as session:
         # Demo/fictional dataset (tenant_acme) is opt-out: set SEED_DEMO_DATA=false
         # in a real deployment so dashboards only reflect genuinely ingested data.
-        if settings.SEED_DEMO_DATA:
+        if settings.SEED_DEMO_DATA and not settings.is_production_like:
             seeded = await seed_database(session)
             if seeded:
                 logger.info("Database seeded with KAEOS demo data")
             else:
                 logger.info("Database already contains data, skipping seed")
         else:
-            logger.info("SEED_DEMO_DATA=false — skipping fictional demo dataset")
+            logger.info("Skipping fictional demo dataset (SEED_DEMO_DATA off or "
+                        "production-like environment)")
         # Provision the root admin account from configuration (no public default).
         from app.services.auth import AuthService
         await AuthService.seed_admin_user(session)
@@ -538,13 +539,15 @@ async def _probe_dependencies() -> dict:
             await rc.ping()
             deps["redis"] = {"available": True}
     except Exception as e:
-        deps["redis"] = {"available": False, "error": str(e)[:160]}
+        logger.warning(f"[health] redis probe failed: {e}")
+        deps["redis"] = {"available": False, "note": "unreachable"}
     # LLM provider (a governance decision needs one; degraded, not fatal, if absent).
     try:
         from app.services.llm_router import LLMRouter
         deps["llm"] = {"available": bool(await LLMRouter().provider_available(None))}
     except Exception as e:
-        deps["llm"] = {"available": False, "error": str(e)[:160]}
+        logger.warning(f"[health] llm probe failed: {e}")
+        deps["llm"] = {"available": False, "note": "unreachable"}
     return deps
 
 

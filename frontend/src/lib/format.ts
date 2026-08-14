@@ -35,6 +35,110 @@ export function measured<T>(
   return format(value);
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Intl formatting. One place to format money, numbers, percents and
+   dates so we never surface `toFixed`/`toLocaleString` drift (grouping,
+   currency symbol, locale) inconsistently across the app. Uses the
+   viewer's locale by default; money defaults to USD (the platform's
+   settlement currency) and is overridable per call.
+   ═══════════════════════════════════════════════════════════════ */
+
+const _currencyFmt = new Map<string, Intl.NumberFormat>();
+const _num0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const _compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+function _num(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Money via Intl currency formatting. Accepts number | numeric string
+ * (backend sends Decimal money as a string). Returns NOT_MEASURED when the
+ * value is genuinely absent, so this respects the honesty contract.
+ *
+ *   formatCurrency(1500.5)          -> "$1,500.50"
+ *   formatCurrency("1200000", 'EUR')-> "€1,200,000.00"
+ *   formatCurrency(null)            -> "Not measured"
+ */
+export function formatCurrency(
+  value: unknown,
+  currency = 'USD',
+  opts?: Intl.NumberFormatOptions,
+): string {
+  const n = _num(value);
+  if (n == null) return NOT_MEASURED;
+  const key = currency + JSON.stringify(opts ?? {});
+  let fmt = _currencyFmt.get(key);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      ...opts,
+    });
+    _currencyFmt.set(key, fmt);
+  }
+  return fmt.format(n);
+}
+
+/**
+ * Grouped number. `digits` sets the fraction length (default: integer).
+ *   formatNumber(12345)      -> "12,345"
+ *   formatNumber(3.14159, 2) -> "3.14"
+ */
+export function formatNumber(value: unknown, digits?: number): string {
+  const n = _num(value);
+  if (n == null) return NOT_MEASURED;
+  if (digits == null) return _num0.format(n);
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(n);
+}
+
+/** Compact number for tight cells: 1_200_000 -> "1.2M". */
+export function formatCompact(value: unknown): string {
+  const n = _num(value);
+  if (n == null) return NOT_MEASURED;
+  return _compact.format(n);
+}
+
+/**
+ * Percent from a 0-100 scale (this app's convention; run values through
+ * `toPct` first if they may be 0-1 ratios).
+ *   formatPercent(87.5)    -> "88%"
+ *   formatPercent(87.5, 1) -> "87.5%"
+ */
+export function formatPercent(value: unknown, digits = 0): string {
+  const n = _num(value);
+  if (n == null) return NOT_MEASURED;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(n) + '%';
+}
+
+/** Locale date, no time. `2026-08-14` -> "Aug 14, 2026". */
+export function formatDate(
+  value?: string | number | Date | null,
+  opts: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' },
+): string {
+  if (value == null || value === '') return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, opts).format(d);
+}
+
+/** Locale date + time. */
+export function formatDateTime(value?: string | number | Date | null): string {
+  return formatDate(value, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 /**
  * Turn a raw enum / code token into human copy. Backend statuses, types, and
  * routes arrive as SNAKE_CASE / kebab-case / camelCase / dotted tokens; never

@@ -186,8 +186,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - nosniff stops MIME-confusion attacks on any served content.
     - X-Frame-Options: DENY blocks clickjacking (the API serves no frames).
     - Referrer-Policy keeps tokens/paths out of third-party referrer logs.
+    - CSP locks the origin down to self; frame-ancestors 'none' backstops the
+      X-Frame-Options for modern browsers. The style/font/img allowances match
+      what the SPA actually loads (Google Fonts, inline Tailwind styles, data:
+      image URIs); everything else stays 'self'.
     - HSTS is sent only outside DEV_MODE (localhost HTTP must stay usable).
     """
+
+    # Sane API/SPA default. Keep in sync with the <meta http-equiv> in
+    # frontend/index.html that guards the statically-served SPA.
+    #
+    # connect-src MUST allow the API + WebSocket origin, which is a different
+    # port/host than the served SPA in every shipped config (dev SPA :5174 ->
+    # API :8001/:8011; Docker likewise). 'self' alone would block all XHR/WS and
+    # brick the app. We allow local http/ws (dev) and any https/wss (prod API on
+    # its own domain). The XSS-critical directives (script-src/object-src/
+    # base-uri/form-action) stay locked; operators with a fixed API domain SHOULD
+    # tighten connect-src via the CONTENT_SECURITY_POLICY setting.
+    DEFAULT_CSP = (
+        "default-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "object-src 'none'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data:; "
+        "script-src 'self'; "
+        "connect-src 'self' http://localhost:* http://127.0.0.1:* "
+        "ws://localhost:* ws://127.0.0.1:* https: wss:"
+    )
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
@@ -195,6 +223,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         from app.core.config import get_settings
+        csp = getattr(get_settings(), "CONTENT_SECURITY_POLICY", None) or self.DEFAULT_CSP
+        response.headers.setdefault("Content-Security-Policy", csp)
         if not get_settings().DEV_MODE:
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=63072000; includeSubDomains"

@@ -127,12 +127,16 @@ class DeploymentStateMachine:
             return None
             
         error_msg = str(error)
-        tb = traceback.format_exc()
-        
+        # Keep the full traceback in server logs only. Persisting it into
+        # error_log (which is read back by tenant-facing deployment views)
+        # would leak internal stack frames / paths to the client.
+        logger.error(
+            f"Deployment {deployment_id} failed: {error_msg}\n{traceback.format_exc()}"
+        )
+
         error_entry = {
             "step": deployment.current_step,
-            "error": error_msg,
-            "traceback": tb,
+            "error": error_msg[:500],
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
@@ -152,13 +156,14 @@ class DeploymentStateMachine:
                 dept.status = DepartmentStatus.DEGRADED
                 db.add(dept)
         
-        DeploymentStateMachine._log_step(deployment, deployment.current_step.upper(), "FAILED", error_msg)
+        # Truncate here too: deployment_steps is the same tenant-facing surface
+        # that error_log ([:500]) already guards, so an unbounded exception
+        # message (DSN/host on a DB error) must not leak in via the step log.
+        DeploymentStateMachine._log_step(deployment, deployment.current_step.upper(), "FAILED", error_msg[:500])
         
         db.add(deployment)
         await db.commit()
         await db.refresh(deployment)
-        
-        logger.error(f"Deployment {deployment_id} failed: {error_msg}")
         return deployment
 
     @staticmethod

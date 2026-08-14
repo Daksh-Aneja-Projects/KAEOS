@@ -129,10 +129,10 @@ async def evaluate_three_way_match(
         }, "qty_tolerance": QTY_TOL,
             "price_tolerance": max(PRICE_ABS_TOL, _money(po.total_amount) * PRICE_PCT_TOL)}
         res = check_three_way_match(ctx)
-        reasons = [f.message for f in res.findings]
+        header_reasons = [f.message for f in res.findings]
         if res.status == CheckStatus.BLOCK:
             return _result("EXCEPTION", po_matched=True, lines=lines,
-                           reasons=reasons, evidence_ids=evidence)
+                           reasons=header_reasons, evidence_ids=evidence)
         return _result("MATCHED", po_matched=True, receipt_matched=True,
                        lines=lines, evidence_ids=evidence)
 
@@ -168,7 +168,7 @@ async def evaluate_three_way_match(
             inv_price = _money(il.get("unit_price") if il.get("unit_price") is not None else po_price)
         else:
             # No invoice line for this PO line: bill nothing (honest under-bill).
-            inv_qty, inv_price = 0, po_price
+            inv_qty, inv_price = Decimal(0), po_price
 
         line_tol = max(PRICE_ABS_TOL, po_price * PRICE_PCT_TOL)
         ctx = {"three_way_match": {

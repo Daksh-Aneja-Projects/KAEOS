@@ -17,7 +17,7 @@ from sqlalchemy import select
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
-async def run_genome_acceptance_test():
+async def test_genome_intelligence_acceptance():
     logger.info("==================================================")
     logger.info("   GENOME INTELLIGENCE ACCEPTANCE TEST STARTED    ")
     logger.info("==================================================")
@@ -119,4 +119,4 @@ async def run_genome_acceptance_test():
     logger.info("==================================================")
 
 if __name__ == "__main__":
-    asyncio.run(run_genome_acceptance_test())
+    asyncio.run(test_genome_intelligence_acceptance())

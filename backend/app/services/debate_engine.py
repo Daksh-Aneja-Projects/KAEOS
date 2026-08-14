@@ -9,6 +9,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.agent_factory import DebateTranscript
 from app.models.domain import Skill
 from app.services.llm_router import LLMRouter, get_tenant_router
+from app.services import prompt_guard
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,11 @@ class DebateEngine:
 
     def _build_context(self, skill: Skill, context: dict) -> str:
         steps = "\n".join(f"  Step {i+1}: {s.get('action','?')}" for i, s in enumerate(skill.steps or []))
-        return f"SKILL: {skill.skill_id} | Dept: {skill.department} | Conf: {skill.confidence} ({skill.confidence_tier}) | Success: {skill.success_rate} over {skill.execution_count} runs | Tags: {skill.compliance_tags}\nSTEPS:\n{steps}\nINTENT: {context.get('intent','N/A')}"
+        # intent is operator/signal-authored text that reaches every debate agent's
+        # prompt. Fence it as data so a goal carrying "ignore your instructions..."
+        # cannot re-steer the proposer/advocate/arbitrator (as missions/engine.py does).
+        intent = prompt_guard.wrap_untrusted(context.get("intent", "N/A"))
+        return f"SKILL: {skill.skill_id} | Dept: {skill.department} | Conf: {skill.confidence} ({skill.confidence_tier}) | Success: {skill.success_rate} over {skill.execution_count} runs | Tags: {skill.compliance_tags}\nSTEPS:\n{steps}\nINTENT: {intent}"
 
     async def _proposer(self, llm, ctx: str) -> dict:
         try:

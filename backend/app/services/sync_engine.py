@@ -32,6 +32,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
@@ -48,13 +49,17 @@ logger = logging.getLogger(__name__)
 HTTP_TIMEOUT = 20.0
 CANONICAL_ENTITIES = ("employee", "account", "opportunity", "ticket", "incident")
 
-# entity_type -> connector category expected to receive its write-backs
+# entity_type -> connector category expected to receive its write-backs.
+# Used only when a write is queued WITHOUT an explicit provider (the actuation
+# path): the dispatcher then routes by matching a CONNECTED connector's category.
 _ENTITY_CATEGORY = {
     "employee": "hris",
     "account": "crm",
     "opportunity": "crm",
     "ticket": "support",
     "incident": "engineering",
+    "issue": "engineering",
+    "message": "collaboration",
 }
 
 
@@ -432,25 +437,52 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
     if provider == "servicenow":
         return await _write_servicenow(config, secrets, write, idem)
 
+    if provider == "zendesk":
+        return await _write_zendesk(config, secrets, write, idem)
+
+    if provider == "jira":
+        return await _write_jira(config, secrets, write, idem)
+
+    if provider == "slack":
+        return await _write_slack(config, secrets, write, idem)
+
     if provider == "salesforce":
         instance = (config.get("instance_url") or "").rstrip("/")
         token = secrets.get("access_token")
         if not instance or not token:
-            return None if False else "salesforce connector missing instance_url/access_token"
+            return "salesforce connector missing instance_url/access_token"
         sobject = {"account": "Account", "opportunity": "Opportunity"}.get(write.entity_type)
         if sobject is None:
             return f"salesforce write-back does not map entity_type '{write.entity_type}'"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        api = "v59.0"
         # guarded_async_client (not raw httpx): pins the connect-time IP against
         # DNS-rebind and forces follow_redirects off, so a tenant-supplied
         # instance_url cannot be rebound/redirected to internal/metadata hosts.
         async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
             if write.external_id:
-                url = f"{instance}/services/data/v59.0/sobjects/{sobject}/{write.external_id}"
+                url = f"{instance}/services/data/{api}/sobjects/{sobject}/{write.external_id}"
                 resp = await client.patch(url, json=write.payload, headers=headers)
-            else:
-                url = f"{instance}/services/data/v59.0/sobjects/{sobject}"
-                resp = await client.post(url, json=write.payload, headers=headers)
+                if resp.status_code >= 400:
+                    return f"HTTP {resp.status_code}: {resp.text[:300]}"
+                return None
+            # CREATE - idempotent like the Zendesk/Jira/ServiceNow adapters: stamp
+            # the idem token into Description as a [kaeos:<idem>] marker and
+            # SOQL-probe for it first, so a lost create response cannot duplicate
+            # the record. Marker charset excludes SOQL LIKE wildcards (% _) and
+            # quotes, so it is safe to inline into the query literal.
+            marker = "kaeos:" + re.sub(r"[^A-Za-z0-9.-]", "-", idem)[:60]
+            soql = f"SELECT Id FROM {sobject} WHERE Description LIKE '%{marker}%' LIMIT 1"
+            probe = await client.get(f"{instance}/services/data/{api}/query",
+                                     headers=headers, params={"q": soql})
+            if probe.status_code < 400 and (probe.json().get("records") or []):
+                return None
+            payload = dict(write.payload or {})
+            desc = str(payload.get("Description") or "").strip()
+            payload["Description"] = (f"{desc}\n[{marker}]" if desc else f"[{marker}]")
+            resp = await client.post(
+                f"{instance}/services/data/{api}/sobjects/{sobject}",
+                json=payload, headers=headers)
             if resp.status_code >= 400:
                 return f"HTTP {resp.status_code}: {resp.text[:300]}"
         return None
@@ -470,9 +502,10 @@ _SERVICENOW_TABLE = {"incident": "incident", "task": "task", "sc_task": "sc_task
                      "problem": "problem", "change": "change_request"}
 
 
-def _servicenow_fields(write: OutboundWrite) -> Dict[str, Any]:
-    """The actual SoR field dict. Actuation queues {system, operation, state};
-    a direct queue_outbound passes the fields as the payload itself."""
+def _outbound_fields(write: OutboundWrite) -> Dict[str, Any]:
+    """The actual SoR field dict for any adapter. Actuation queues
+    {system, operation, state}; a direct queue_outbound passes the fields as the
+    payload itself. Shared by every write-back adapter below."""
     state = write.payload.get("state") if isinstance(write.payload, dict) else None
     return dict(state) if isinstance(state, dict) else dict(write.payload or {})
 
@@ -494,7 +527,7 @@ async def _write_servicenow(config: Dict[str, Any], secrets: Dict[str, Any],
     if not user:
         return "servicenow connector missing username/password"
     table = config.get("table") or _SERVICENOW_TABLE.get(write.entity_type, "incident")
-    fields = _servicenow_fields(write)
+    fields = _outbound_fields(write)
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     base = f"{instance}/api/now/table/{table}"
 
@@ -523,6 +556,155 @@ async def _write_servicenow(config: Dict[str, Any], secrets: Dict[str, Any],
         resp = await client.post(base, json=fields, headers=headers)
         if resp.status_code >= 400:
             return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
+async def _write_zendesk(config: Dict[str, Any], secrets: Dict[str, Any],
+                         write: OutboundWrite, idem: str) -> Optional[str]:
+    """Zendesk API v2 ticket write-back. Basic auth '{email}/token' + api_token
+    (the same credentials the inbound ZendeskAdapter uses).
+
+    Idempotent creates: the idem token is stamped on the ticket's native
+    ``external_id`` field and searched for before the create, so a create whose
+    HTTP response was lost is not duplicated - the retry finds the existing
+    ticket and returns success. Updates/deletes target the ticket by its Zendesk
+    id (our external_id).
+    """
+    base = (config.get("subdomain_url") or "").rstrip("/")
+    if not base:
+        return "zendesk connector has no subdomain_url configured"
+    email, token = secrets.get("email", ""), secrets.get("api_token", "")
+    if not email or not token:
+        return "zendesk connector missing email/api_token"
+    auth = (f"{email}/token", token)
+    fields = _outbound_fields(write)
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=auth) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.delete(f"{base}/api/v2/tickets/{write.external_id}.json",
+                                       headers=headers)
+            if resp.status_code >= 400 and resp.status_code != 404:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        if write.external_id:
+            resp = await client.put(f"{base}/api/v2/tickets/{write.external_id}.json",
+                                    json={"ticket": fields}, headers=headers)
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on the ticket's external_id field.
+        probe = await client.get(f"{base}/api/v2/search.json", headers=headers,
+                                 params={"query": f"type:ticket external_id:{idem}"})
+        if probe.status_code < 400 and (probe.json().get("results") or []):
+            return None
+        resp = await client.post(f"{base}/api/v2/tickets.json",
+                                 json={"ticket": {**fields, "external_id": idem}},
+                                 headers=headers)
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
+async def _write_jira(config: Dict[str, Any], secrets: Dict[str, Any],
+                      write: OutboundWrite, idem: str) -> Optional[str]:
+    """Jira Cloud REST v3 issue write-back. Basic auth email + api_token (the
+    same credentials the inbound JiraAdapter uses).
+
+    Idempotent creates: the idem token is carried as a ``kaeos-<idem>`` label and
+    searched via JQL before the create, so a lost response does not duplicate the
+    issue. Updates/deletes target the issue by key (our external_id). A create
+    needs project + issuetype; connector config may supply defaults
+    (``project_key`` / ``issue_type``) so a bare payload still lands.
+
+    ponytail: field writes only. A Jira status change is a POST to the
+    /transitions endpoint, not a field, so a `status` field is a no-op here;
+    add a transitions call if a tenant needs governed status moves.
+    """
+    base = (config.get("base_url") or "").rstrip("/")
+    if not base:
+        return "jira connector has no base_url configured"
+    email, api_token = secrets.get("email", ""), secrets.get("api_token", "")
+    if not email or not api_token:
+        return "jira connector missing email/api_token"
+    auth = (email, api_token)
+    fields = _outbound_fields(write)
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=auth) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.delete(f"{base}/rest/api/3/issue/{write.external_id}",
+                                       headers=headers)
+            if resp.status_code >= 400 and resp.status_code != 404:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        if write.external_id:
+            resp = await client.put(f"{base}/rest/api/3/issue/{write.external_id}",
+                                    json={"fields": fields}, headers=headers)
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on a kaeos-<idem> label (Jira labels forbid spaces).
+        label = "kaeos-" + re.sub(r"[^A-Za-z0-9_.-]", "-", idem)[:60]
+        probe = await client.get(f"{base}/rest/api/3/search", headers=headers,
+                                 params={"jql": f'labels = "{label}"', "maxResults": 1})
+        if probe.status_code < 400 and (probe.json().get("issues") or []):
+            return None
+        create_fields: Dict[str, Any] = {}
+        if config.get("project_key"):
+            create_fields["project"] = {"key": config["project_key"]}
+        if config.get("issue_type"):
+            create_fields["issuetype"] = {"name": config["issue_type"]}
+        create_fields.update(fields)   # payload wins over config defaults
+        create_fields["labels"] = [*create_fields.get("labels", []), label]
+        resp = await client.post(f"{base}/rest/api/3/issue",
+                                 json={"fields": create_fields}, headers=headers)
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
+async def _write_slack(config: Dict[str, Any], secrets: Dict[str, Any],
+                       write: OutboundWrite, idem: str) -> Optional[str]:
+    """Slack Web API chat.postMessage. Bearer bot token (the same the inbound
+    SlackAdapter uses). Channel comes from the payload or the connector config.
+
+    Slack returns HTTP 200 with ``ok:false`` on API errors, so the JSON body is
+    checked, not just the status code.
+
+    ponytail: chat.postMessage has no server-side idempotency and is append-only,
+    so a lost-response retry can post a duplicate. The idem token is stamped into
+    the message's event metadata for downstream dedup; a client-side sent-token
+    cache is the upgrade if duplicates ever matter.
+    """
+    bot_token = secrets.get("bot_token", "")
+    if not bot_token:
+        return "slack connector missing bot_token"
+    fields = _outbound_fields(write)
+    channel = fields.get("channel") or config.get("channel_id")
+    if not channel:
+        return "slack write-back has no channel (set channel_id in config or payload)"
+    text = fields.get("text") or fields.get("message") or ""
+    if not text:
+        return "slack write-back has no message text"
+    body = {"channel": channel, "text": text,
+            "metadata": {"event_type": "kaeos_writeback",
+                         "event_payload": {"idempotency_key": idem}}}
+    headers = {"Authorization": f"Bearer {bot_token}",
+               "Content-Type": "application/json; charset=utf-8"}
+    base = (config.get("api_url") or "https://slack.com").rstrip("/")
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
+        resp = await client.post(f"{base}/api/chat.postMessage",
+                                 json=body, headers=headers)
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Slack API error: {data.get('error', 'unknown')}"
     return None
 
 

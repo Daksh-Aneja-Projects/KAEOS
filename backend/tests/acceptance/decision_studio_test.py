@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class MockGraph:
     pass
 
-async def run_decision_acceptance_test():
+async def test_decision_studio_acceptance():
     logger.info("==================================================")
     logger.info("   DECISION STUDIO ACCEPTANCE TEST STARTED        ")
     logger.info("==================================================")
@@ -68,7 +68,7 @@ async def run_decision_acceptance_test():
     evaluated_options.sort(key=lambda x: x["deep_decision_quality"], reverse=True)
     
     for rank, opt in enumerate(evaluated_options):
-        logger.info(f"Rank {rank+1}: {opt['action']} | Quality Score: {opt['deep_decision_quality']:.3f} | EV: {opt['deep_expected_value']:.3f}")
+        logger.info(f"Rank {rank+1}: {opt['action']} | Quality Score: {opt['deep_decision_quality']:.3f} | EV: {opt['initial_expected_value']:.3f}")
         
     # 4. Selection & Ledger Storage
     logger.info("--- 4. Storing Decision Ledger & Trace ---")
@@ -86,7 +86,7 @@ async def run_decision_acceptance_test():
             decision_maker="EXECUTIVE_TWIN",
             evaluation_tier=2,
             decision_score=best_option["deep_decision_quality"],
-            expected_value=best_option["deep_expected_value"],
+            expected_value=best_option["initial_expected_value"],
             risk_score=best_option["risk_score"],
             decision_quality_score=best_option["deep_decision_quality"],
             expected_outcome=best_option["description"]
@@ -114,4 +114,4 @@ async def run_decision_acceptance_test():
     logger.info("==================================================")
 
 if __name__ == "__main__":
-    asyncio.run(run_decision_acceptance_test())
+    asyncio.run(test_decision_studio_acceptance())
