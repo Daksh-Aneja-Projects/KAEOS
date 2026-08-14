@@ -158,5 +158,12 @@ async def seed():
         print(f"   - {len(requests)} purchase requests")
         print(f"   - {len(inspections)} inspections, {len(standards)} standards")
 
+    # Procurement is a first-class department over these same ops_ tables. It has
+    # no separate sentinel table, so seed its comprehensive source-to-pay
+    # governance scenarios here (after the ops session closes - it opens its own).
+    from app.procurement.seed import seed as _seed_procurement
+    await _seed_procurement()
+
+
 if __name__ == "__main__":
     asyncio.run(seed())

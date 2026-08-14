@@ -31,6 +31,10 @@ _DOMAINS = [
     ("Support",    "app.support.seed",    "app.support.models.tickets:Ticket"),
     ("Operations", "app.operations.seed", "app.operations.models.projects:Project"),
     ("Engineering", "app.engineering.seed", "app.engineering.models.core:Service"),
+    ("Healthcare", "app.healthcare.seed", "app.healthcare.models.core:PatientEncounter"),
+    ("Lending",    "app.lending.seed",    "app.lending.models.core:LoanApplication"),
+    # Procurement reuses the operations P2P tables (ops_purchase_*), which the
+    # Operations seeder above populates - no separate procurement seeder needed.
 ]
 
 SEED_TENANT = "tenant_acme"

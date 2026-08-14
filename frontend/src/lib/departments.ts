@@ -11,6 +11,9 @@
 
 export const DEPARTMENTS = [
   'hr', 'finance', 'legal', 'sales', 'support', 'operations', 'engineering',
+  // Regulated verticals — each mounts a first-class backend surface gated by
+  // require_department(<slug>) in app/main.py.
+  'healthcare', 'lending', 'procurement',
 ] as const;
 
 export type DepartmentSlug = typeof DEPARTMENTS[number];
@@ -23,6 +26,9 @@ export const DEPARTMENT_LABELS: Record<DepartmentSlug, string> = {
   support: 'Customer Support',
   operations: 'Operations',
   engineering: 'Engineering & IT Ops',
+  healthcare: 'Healthcare',
+  lending: 'Lending & Credit',
+  procurement: 'Procurement',
 };
 
 // Matches the accent colors used for the department context indicator in App.tsx.
@@ -34,6 +40,9 @@ export const DEPARTMENT_COLORS: Record<DepartmentSlug, string> = {
   support: '#3b82f6',
   operations: '#ef4444',
   engineering: '#6366f1',
+  healthcare: '#14b8a6',
+  lending: '#d97706',
+  procurement: '#8b5cf6',
 };
 
 /**

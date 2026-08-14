@@ -26,9 +26,10 @@ describe('canSeeDepartment', () => {
 });
 
 describe('department metadata', () => {
-  it('covers all 7 backend-valid departments', () => {
+  it('covers all backend-valid departments', () => {
     expect([...DEPARTMENTS].sort()).toEqual(
-      ['engineering', 'finance', 'hr', 'legal', 'operations', 'sales', 'support'],
+      ['engineering', 'finance', 'healthcare', 'hr', 'legal', 'lending',
+       'operations', 'procurement', 'sales', 'support'],
     );
   });
 
