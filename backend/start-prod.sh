@@ -9,5 +9,13 @@ set -e
 echo "Running production migrations (as owner role)..."
 DATABASE_URL="${KAEOS_OWNER_DB_URL:-$DATABASE_URL}" alembic upgrade head
 
+# Prometheus multiprocess: with -w4 each worker has its own registry, so /metrics
+# would serve only the scraped worker (~1/4 of reality) unless the workers share
+# a directory. gunicorn.conf.py (auto-loaded from CWD, passed explicitly here)
+# resets this dir on boot and marks dead workers so the endpoint aggregates
+# correctly. EXPOSE_METRICS publishes the /metrics endpoint (off by default).
+export PROMETHEUS_MULTIPROC_DIR="${PROMETHEUS_MULTIPROC_DIR:-/tmp/kaeos-metrics}"
+export EXPOSE_METRICS="${EXPOSE_METRICS:-true}"
+
 echo "Starting Gunicorn server (as non-owner app role)..."
-exec gunicorn app.main:app -w "${GUNICORN_WORKERS:-4}" -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001
+exec gunicorn app.main:app -c gunicorn.conf.py -w "${GUNICORN_WORKERS:-4}" -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001

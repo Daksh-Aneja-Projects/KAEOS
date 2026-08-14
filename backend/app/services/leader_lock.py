@@ -72,6 +72,15 @@ class LeaderLock:
     def is_leader(self) -> bool:
         return self._is_leader
 
+    def _sync_gauge(self) -> None:
+        """Reflect current leadership on the Prometheus gauge. Best-effort: a
+        metrics hiccup must never affect who leads."""
+        try:
+            from app.core.metrics import LEADER
+            LEADER.set(1 if self._is_leader else 0)
+        except Exception:
+            pass
+
     @property
     def backend(self) -> str | None:
         return self._backend
@@ -105,11 +114,14 @@ class LeaderLock:
         """Attempt to become (or confirm we are) the leader. Returns is_leader."""
         backend = await self._select_backend()
         if backend == "redis":
-            return await self._acquire_redis()
-        if backend == "postgres":
-            return await self._acquire_postgres()
-        self._is_leader = True   # local: single instance always leads
-        return True
+            got = await self._acquire_redis()
+        elif backend == "postgres":
+            got = await self._acquire_postgres()
+        else:
+            self._is_leader = True   # local: single instance always leads
+            got = True
+        self._sync_gauge()
+        return got
 
     async def renew(self) -> bool:
         """Extend the lease if we still hold it. Returns whether we remain leader."""
@@ -122,6 +134,7 @@ class LeaderLock:
                 client = await get_redis()
                 if client is None:
                     self._is_leader = False
+                    self._sync_gauge()
                     return False
                 ok = await client.eval(
                     _RENEW_LUA, 1, self.name, self.instance_id, str(self.ttl * 1000)
@@ -130,6 +143,7 @@ class LeaderLock:
             except Exception as e:
                 logger.warning("[Leader] renew failed: %s", e)
                 self._is_leader = False
+            self._sync_gauge()
             return self._is_leader
         if backend == "postgres":
             # Advisory lock is held by the live connection; nothing to renew, but
@@ -137,6 +151,7 @@ class LeaderLock:
             # longer the leader and must re-acquire.
             if self._pg_conn is None or self._pg_conn.closed:
                 self._is_leader = False
+            self._sync_gauge()
             return self._is_leader
         return True  # local
 
@@ -162,6 +177,7 @@ class LeaderLock:
             logger.warning("[Leader] release failed (lease will expire): %s", e)
         finally:
             self._is_leader = False
+            self._sync_gauge()
 
     async def _acquire_redis(self) -> bool:
         from app.core.redis import get_redis

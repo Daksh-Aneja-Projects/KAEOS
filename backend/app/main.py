@@ -216,6 +216,12 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("[Background] RUN_BACKGROUND_JOBS=false — this instance stays API-only (no leadership)")
 
+    # WS cross-worker fan-out subscriber runs on EVERY worker (NOT leader-gated):
+    # each worker owns its own local sockets and must receive broadcasts a gate
+    # event published from another worker. Self-heals if Redis appears after boot.
+    from app.api.routes.ws import manager as _ws_manager
+    ws_subscriber_task = asyncio.create_task(_ws_manager.run_subscriber())
+
     yield
 
     # Shutdown: stop electing, then stop the loops, draining cancelled tasks.
@@ -229,6 +235,11 @@ async def lifespan(app: FastAPI):
             # loop does not log "Task was destroyed but it is pending".
             pass
     _stop_background_loops()
+    ws_subscriber_task.cancel()
+    try:
+        await ws_subscriber_task
+    except asyncio.CancelledError:
+        pass
     await close_redis()
 
     for _t in (_precog_t, _eventbus_t):

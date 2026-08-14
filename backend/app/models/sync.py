@@ -58,9 +58,20 @@ class OutboundWrite(Base):
     payload = Column(JSON, nullable=False, default=dict)
 
     status = Column(String(24), nullable=False, default="PENDING", index=True)
-    # PENDING -> SENT | FAILED | SKIPPED_NO_CONNECTOR | SKIPPED_NO_CREDENTIALS
+    # PENDING -> SENT | FAILED (retryable) | DEAD (terminal, retries exhausted)
+    #         -> SKIPPED_NO_CONNECTOR | SKIPPED_NO_CREDENTIALS
+    # DEAD is the dead-letter state: attempts hit MAX and the row is no longer
+    # selected for dispatch, but stays queryable/alertable (WHERE status='DEAD')
+    # instead of masquerading as a retryable FAILED forever.
     attempts = Column(Integer, nullable=False, default=0)
     last_error = Column(Text, nullable=True)
+
+    # EXTERNAL idempotency token, stable across retries. Sent to the system of
+    # record so a create whose HTTP response was lost (read timeout) is deduped
+    # on the SoR side rather than creating a second record on the retry. When an
+    # actuation queues the write it passes its ActionRecord.idempotency_key so
+    # the token ties back to the governed decision.
+    idempotency_key = Column(String(64), nullable=False, default=_uuid, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

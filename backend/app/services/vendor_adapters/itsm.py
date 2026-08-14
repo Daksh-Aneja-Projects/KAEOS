@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List
 
+from app.core.outbound import guarded_async_client
 
-from .base import _RestAdapter
+from .base import _RestAdapter, HTTP_TIMEOUT
 
 
 class ServiceNowAdapter(_RestAdapter):
-    """ServiceNow Table API — incidents. Auth: basic."""
+    """ServiceNow Table API - incidents/tasks. Auth: basic.
+
+    Incremental + paginated pull: an opaque ``_cursor`` (the sys_updated_on of
+    the newest record seen last sync) is passed by the sync engine and turned
+    into a ``sys_updated_on>`` filter, so each pull only fetches records changed
+    since the last one instead of re-reading the whole table every time. Within
+    one sync it pages through sysparm_offset until the table is drained or the
+    page cap is hit.
+    """
     domain, entity, authority = "operations", "incident", 0.95
 
     def auth(self, config, secrets):
@@ -21,12 +31,38 @@ class ServiceNowAdapter(_RestAdapter):
     def fetch_path(self, config):
         return f"/api/now/table/{config.get('table', 'incident')}"
 
+    def _query(self, config) -> str:
+        base = config.get("query", "ORDERBYsys_updated_on")
+        cursor = config.get("_cursor")
+        if cursor:
+            # Only records updated strictly after the last watermark.
+            return f"sys_updated_on>{cursor}^{base}"
+        return base
+
     def fetch_params(self, config):
         return {"sysparm_limit": config.get("batch_size", 25),
-                "sysparm_query": config.get("query", "ORDERBYDESCsys_created_on")}
+                "sysparm_query": self._query(config)}
 
     def extract(self, body):
         return body.get("result", [])
+
+    async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
+        limit = int(config.get("batch_size", 25))
+        max_pages = int(config.get("max_pages", 20))   # ponytail: hard page cap, raise if a tenant needs deeper backfill
+        url = f"{self.base_url(config, secrets).rstrip('/')}{self.fetch_path(config)}"
+        out: List[Dict[str, Any]] = []
+        async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=self.auth(config, secrets)) as c:
+            for page in range(max_pages):
+                r = await c.get(url, headers=self.headers(config, secrets), params={
+                    **self.fetch_params(config),
+                    "sysparm_offset": page * limit,
+                })
+                r.raise_for_status()
+                rows = self.extract(r.json())
+                out.extend(self.to_signal(i) for i in rows if isinstance(i, dict))
+                if len(rows) < limit:
+                    break
+        return out
 
     def ok_detail(self, body):
         return "Instance reachable"
@@ -35,7 +71,7 @@ class ServiceNowAdapter(_RestAdapter):
         return {
             "external_id": str(r.get("number", r.get("sys_id", ""))),
             "entity": "incident",
-            "summary": f"[{r.get('number', '?')}] {r.get('short_description', '')} — "
+            "summary": f"[{r.get('number', '?')}] {r.get('short_description', '')} - "
                        f"state={r.get('state', '?')} priority={r.get('priority', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }
@@ -44,7 +80,7 @@ class ServiceNowAdapter(_RestAdapter):
 # ── Support ──────────────────────────────────────────────────────────────────
 
 class ZendeskAdapter(_RestAdapter):
-    """Zendesk API v2 — tickets. Auth: '{email}/token' + API token."""
+    """Zendesk API v2 - tickets. Auth: '{email}/token' + API token."""
     domain, entity, authority, pii = "support", "ticket", 0.9, True
 
     def auth(self, config, secrets):
@@ -72,14 +108,14 @@ class ZendeskAdapter(_RestAdapter):
         return {
             "external_id": str(t.get("id", "")),
             "entity": "ticket",
-            "summary": f"#{t.get('id')} {t.get('subject', '')} — status={t.get('status')} "
+            "summary": f"#{t.get('id')} {t.get('subject', '')} - status={t.get('status')} "
                        f"priority={t.get('priority', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": True,
         }
 
 
 class IntercomAdapter(_RestAdapter):
-    """Intercom API — conversations. Auth: bearer access token."""
+    """Intercom API - conversations. Auth: bearer access token."""
     domain, entity, authority, pii = "support", "conversation", 0.85, True
 
     def headers(self, config, secrets):
@@ -109,7 +145,7 @@ class IntercomAdapter(_RestAdapter):
         return {
             "external_id": str(c.get("id", "")),
             "entity": "conversation",
-            "summary": f"Conversation {c.get('id')} — state={c.get('state', '?')} "
+            "summary": f"Conversation {c.get('id')} - state={c.get('state', '?')} "
                        f"open={c.get('open')} priority={c.get('priority', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": True,
         }
@@ -118,7 +154,7 @@ class IntercomAdapter(_RestAdapter):
 # ── Sales ────────────────────────────────────────────────────────────────────
 
 class HubSpotAdapter(_RestAdapter):
-    """HubSpot CRM v3 — deals. Auth: private app bearer token."""
+    """HubSpot CRM v3 - deals. Auth: private app bearer token."""
     domain, entity, authority = "sales", "deal", 0.9
 
     def headers(self, config, secrets):
@@ -142,14 +178,14 @@ class HubSpotAdapter(_RestAdapter):
         return body.get("results", [])
 
     def ok_detail(self, body):
-        return f"CRM reachable — {len(body.get('results', []))} deals visible"
+        return f"CRM reachable - {len(body.get('results', []))} deals visible"
 
     def to_signal(self, d):
         p = d.get("properties", {})
         return {
             "external_id": str(d.get("id", "")),
             "entity": "deal",
-            "summary": f"{p.get('dealname', 'deal')} — stage={p.get('dealstage', '?')} "
+            "summary": f"{p.get('dealname', 'deal')} - stage={p.get('dealstage', '?')} "
                        f"amount={p.get('amount', '?')} close={p.get('closedate', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }

@@ -71,6 +71,12 @@ class HITLManager:
             logger.error("No execution ID provided for HITL")
             return {"approved": None, "pending": True, "execution_id": None, "reason": "System error: No execution_id"}
 
+        try:
+            from app.core.metrics import HITL_REQUESTS
+            HITL_REQUESTS.inc()
+        except Exception:
+            pass
+
         logger.info(f"[HITL] Approval required for execution {exec_id} — returning immediately (non-blocking)")
 
         # Emit an event to the activity feed
@@ -319,6 +325,12 @@ class HITLManager:
                     f"owned by {owner} - denied"
                 )
                 return False
+
+        try:
+            from app.core.metrics import HITL_RESOLUTIONS
+            HITL_RESOLUTIONS.labels(decision="approved" if approved else "rejected").inc()
+        except Exception:
+            pass
 
         if record:
             record["status"] = "RESOLVED"

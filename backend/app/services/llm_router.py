@@ -501,6 +501,17 @@ class LLMRouter:
 
     async def _record_cost(self, model: str, model_tier: str, usage: dict, latency_ms: int) -> None:
         """Write one CostEvent per real model call. Never raises."""
+        # Golden-signal metrics: count every completed call and its latency,
+        # even boot/probe calls with no tenant (those return before billing
+        # below). Kept separate from billing so a metrics error never blocks a
+        # CostEvent write, and vice versa.
+        try:
+            from app.core.metrics import LLM_CALLS, LLM_LATENCY
+            _tier = model_tier or "unspecified"
+            LLM_CALLS.labels(tier=_tier).inc()
+            LLM_LATENCY.labels(tier=_tier).observe(latency_ms / 1000.0)
+        except Exception:
+            pass
         try:
             tenant_id = current_tenant_id.get()
             if not tenant_id:

@@ -1,5 +1,5 @@
 """
-KAEOS — Live Connector Service (L0 Data Fabric, real integrations)
+KAEOS - Live Connector Service (L0 Data Fabric, real integrations)
 
 Turns the connector mesh from simulated feeds into real integrations: a client
 stores their OAuth/API credentials once and every sync pulls live records from
@@ -73,11 +73,11 @@ def _fernet() -> Fernet:
     one signing context then does not hand over the other). Falls back to
     ``SECRET_KEY`` when the dedicated key is unset, so existing deployments keep
     decrypting their stored secrets unchanged. (Setting a NEW key later rotates
-    it — existing ciphertext must be re-encrypted, the standard rotation caveat.)
+    it - existing ciphertext must be re-encrypted, the standard rotation caveat.)
 
     Hardened over the old single unsalted sha256:
       - PBKDF2 (200k iterations) instead of one hash pass;
-      - NO insecure hardcoded fallback — a missing/weak key raises rather than
+      - NO insecure hardcoded fallback - a missing/weak key raises rather than
         silently using a world-readable default key;
       - entropy floor enforced so BYOK secrets aren't protected by a guessable key.
     """
@@ -85,7 +85,7 @@ def _fernet() -> Fernet:
     secret = getattr(settings, "CONNECTOR_ENCRYPTION_KEY", "") or settings.SECRET_KEY or ""
     if len(secret) < 16 and not settings.DEV_MODE:
         raise RuntimeError(
-            "No strong at-rest key (<16 chars) — refusing to encrypt customer "
+            "No strong at-rest key (<16 chars) - refusing to encrypt customer "
             "credentials. Set CONNECTOR_ENCRYPTION_KEY (preferred) or SECRET_KEY."
         )
     if not secret:
@@ -142,7 +142,7 @@ async def _fernet_for_tenant(tenant_id: str) -> Fernet:
             try:
                 await db.commit()
             except Exception:
-                # Lost a create race with a concurrent caller — read theirs.
+                # Lost a create race with a concurrent caller - read theirs.
                 await db.rollback()
                 row = (await db.execute(
                     select(TenantDataKey).where(TenantDataKey.tenant_id == tenant_id)
@@ -223,7 +223,7 @@ def infer_provider(name: str, category: Optional[str]) -> str:
 #       {"external_id", "entity", "summary", "domain", "authority", "pii"}
 
 class JiraAdapter:
-    """Jira Cloud REST API v3 — email + API token basic auth."""
+    """Jira Cloud REST API v3 - email + API token basic auth."""
     domain = "engineering"
 
     @staticmethod
@@ -262,7 +262,7 @@ class JiraAdapter:
 
 
 class SalesforceAdapter:
-    """Salesforce REST — OAuth2 client-credentials (or pre-issued access token)."""
+    """Salesforce REST - OAuth2 client-credentials (or pre-issued access token)."""
     domain = "sales"
 
     async def _token(self, config, secrets) -> tuple[str, str]:
@@ -287,7 +287,7 @@ class SalesforceAdapter:
         async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.get(f"{instance}/services/data/", headers={"Authorization": f"Bearer {token}"})
             if r.status_code == 200:
-                return {"ok": True, "detail": f"Connected — {len(r.json())} API versions available"}
+                return {"ok": True, "detail": f"Connected - {len(r.json())} API versions available"}
             return {"ok": False, "detail": f"Salesforce responded {r.status_code}"}
 
     async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
@@ -305,7 +305,7 @@ class SalesforceAdapter:
             {
                 "external_id": rec.get("Id", ""),
                 "entity": rec.get("attributes", {}).get("type", "record").lower(),
-                "summary": f"{rec.get('Name', 'record')} — stage {rec.get('StageName', '?')}, "
+                "summary": f"{rec.get('Name', 'record')} - stage {rec.get('StageName', '?')}, "
                            f"amount {rec.get('Amount', '?')}",
                 "domain": self.domain,
                 "authority": 0.9,
@@ -316,7 +316,7 @@ class SalesforceAdapter:
 
 
 class WorkdayAdapter:
-    """Workday RaaS (report-as-a-service) JSON endpoint — ISU basic auth."""
+    """Workday RaaS (report-as-a-service) JSON endpoint - ISU basic auth."""
     domain = "hr"
 
     async def test(self, config, secrets):
@@ -348,7 +348,7 @@ class WorkdayAdapter:
 
 
 class SAPAdapter:
-    """SAP OData v2/v4 service — basic auth or APIKey header."""
+    """SAP OData v2/v4 service - basic auth or APIKey header."""
     domain = "finance"
 
     def _headers(self, secrets) -> Dict[str, str]:
@@ -393,7 +393,7 @@ class SAPAdapter:
 
 
 class GenericRESTAdapter:
-    """Any JSON REST endpoint — optional bearer token / API-key header."""
+    """Any JSON REST endpoint - optional bearer token / API-key header."""
     domain = "general"
 
     def _headers(self, secrets) -> Dict[str, str]:
@@ -541,6 +541,7 @@ class LiveConnectorService:
                 signal_type="QUARANTINED" if injection.should_block else "LIVE_SYNC",
                 source_type=source_name.lower().replace(" ", "_"),
                 source_entity=f"{rec['entity']}:{rec['external_id']}",
+                external_id=str(rec.get("external_id") or "") or None,
                 clean_payload=payload,
                 pii_present=bool(rec.get("pii")),
                 authority_score=0.0 if injection.should_block else float(rec.get("authority", 0.7)),
@@ -548,3 +549,43 @@ class LiveConnectorService:
                 created_at=now,
             ))
         return signals
+
+    @staticmethod
+    async def persist_signals(db, signals: list) -> Dict[str, int]:
+        """Upsert built signals on the natural key (tenant, source_type,
+        external_id) so a re-sync UPDATES the existing twin row instead of
+        inserting a fresh random-UUID duplicate every poll.
+
+        Signals with no external_id (there is no stable dedup key) are inserted
+        as before - they are webhook/demo rows, not repeated pulls.
+        """
+        from app.models.domain import Signal
+
+        keyed = [s for s in signals if s.external_id]
+        existing: Dict[tuple, Signal] = {}
+        if keyed:
+            keys = {(s.tenant_id, s.source_type, s.external_id) for s in keyed}
+            tenants = {s.tenant_id for s in keyed}
+            rows = (await db.execute(select(Signal).where(
+                Signal.tenant_id.in_(tenants), Signal.external_id.isnot(None)
+            ))).scalars().all()
+            existing = {(r.tenant_id, r.source_type, r.external_id): r
+                        for r in rows if (r.tenant_id, r.source_type, r.external_id) in keys}
+
+        inserted = updated = 0
+        for s in signals:
+            prior = existing.get((s.tenant_id, s.source_type, s.external_id)) if s.external_id else None
+            if prior is None:
+                db.add(s)
+                if s.external_id:
+                    existing[(s.tenant_id, s.source_type, s.external_id)] = s
+                inserted += 1
+            else:
+                prior.clean_payload = s.clean_payload
+                prior.authority_score = s.authority_score
+                prior.signal_type = s.signal_type
+                prior.pii_present = s.pii_present
+                prior.domain = s.domain
+                prior.created_at = s.created_at
+                updated += 1
+        return {"inserted": inserted, "updated": updated}

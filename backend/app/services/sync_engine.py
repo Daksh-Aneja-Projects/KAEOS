@@ -32,6 +32,7 @@ import hashlib
 import hmac
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -39,6 +40,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.outbound import guarded_async_client
 from app.models.sync import OutboundWrite, SyncLedger
 
 logger = logging.getLogger(__name__)
@@ -187,8 +189,8 @@ async def _apply_upsert(db, tenant_id: str, envelope: Dict[str, Any]) -> Tuple[s
             db.add(row)
         if data.get("amount") is not None:
             try:
-                row.amount = float(data["amount"])
-            except (TypeError, ValueError):
+                row.amount = Decimal(str(data["amount"]))   # money: no float round-trip
+            except (TypeError, ValueError, InvalidOperation):
                 pass
         stage = str(data.get("stage") or "").upper().replace(" ", "_")
         if stage in OpportunityStage.__members__:
@@ -353,10 +355,14 @@ def select_connector_for_update(connector_id: str):
 
 # ── Outbound: queue + dispatch ────────────────────────────────────────────────
 
+MAX_ATTEMPTS = 5
+
+
 async def queue_outbound(tenant_id: str, entity_type: str, internal_id: str,
                          op: str, payload: Dict[str, Any],
                          external_id: Optional[str] = None,
                          provider: Optional[str] = None,
+                         idempotency_key: Optional[str] = None,
                          db: Optional[AsyncSession] = None) -> Optional[str]:
     """Queue a governed mutation for write-back. Never raises into callers.
 
@@ -378,6 +384,8 @@ async def queue_outbound(tenant_id: str, entity_type: str, internal_id: str,
         entity_type=entity_type, internal_id=internal_id,
         external_id=external_id, op=op.upper(), payload=payload,
     )
+    if idempotency_key:
+        row.idempotency_key = idempotency_key[:64]
     try:
         if db is not None:
             db.add(row)
@@ -406,19 +414,23 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
     body = {"entity_type": write.entity_type, "op": write.op,
             "external_id": write.external_id, "internal_id": write.internal_id,
             "data": write.payload}
+    idem = write.idempotency_key or write.id
 
     if provider == "generic_rest":
         base = (config.get("base_url") or "").rstrip("/")
         if not base:
             return "generic_rest connector has no base_url configured"
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "Idempotency-Key": idem}
         if secrets.get("api_key"):
             headers["Authorization"] = f"Bearer {secrets['api_key']}"
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
             resp = await client.post(f"{base}/kaeos/sync", json=body, headers=headers)
             if resp.status_code >= 400:
                 return f"HTTP {resp.status_code}: {resp.text[:300]}"
         return None
+
+    if provider == "servicenow":
+        return await _write_servicenow(config, secrets, write, idem)
 
     if provider == "salesforce":
         instance = (config.get("instance_url") or "").rstrip("/")
@@ -429,7 +441,10 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
         if sobject is None:
             return f"salesforce write-back does not map entity_type '{write.entity_type}'"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        # guarded_async_client (not raw httpx): pins the connect-time IP against
+        # DNS-rebind and forces follow_redirects off, so a tenant-supplied
+        # instance_url cannot be rebound/redirected to internal/metadata hosts.
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
             if write.external_id:
                 url = f"{instance}/services/data/v59.0/sobjects/{sobject}/{write.external_id}"
                 resp = await client.patch(url, json=write.payload, headers=headers)
@@ -450,76 +465,174 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
     return f"no write-back adapter for provider '{provider}'"
 
 
+# ServiceNow entity_type -> Table API table name.
+_SERVICENOW_TABLE = {"incident": "incident", "task": "task", "sc_task": "sc_task",
+                     "problem": "problem", "change": "change_request"}
+
+
+def _servicenow_fields(write: OutboundWrite) -> Dict[str, Any]:
+    """The actual SoR field dict. Actuation queues {system, operation, state};
+    a direct queue_outbound passes the fields as the payload itself."""
+    state = write.payload.get("state") if isinstance(write.payload, dict) else None
+    return dict(state) if isinstance(state, dict) else dict(write.payload or {})
+
+
+async def _write_servicenow(config: Dict[str, Any], secrets: Dict[str, Any],
+                            write: OutboundWrite, idem: str) -> Optional[str]:
+    """ServiceNow Table API write-back for incidents/tasks. Basic auth.
+
+    Idempotent creates: the idempotency token is stamped on ServiceNow's native
+    ``correlation_id`` field and we query for it before creating, so a create
+    whose HTTP response was lost is not duplicated on the retry - the second
+    attempt finds the existing record and returns success instead of a duplicate.
+    Updates target the record by sys_id (our external_id).
+    """
+    instance = (config.get("instance_url") or "").rstrip("/")
+    if not instance:
+        return "servicenow connector has no instance_url configured"
+    user, pwd = secrets.get("username", ""), secrets.get("password", "")
+    if not user:
+        return "servicenow connector missing username/password"
+    table = config.get("table") or _SERVICENOW_TABLE.get(write.entity_type, "incident")
+    fields = _servicenow_fields(write)
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    base = f"{instance}/api/now/table/{table}"
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=(user, pwd)) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.delete(f"{base}/{write.external_id}", headers=headers)
+            if resp.status_code >= 400 and resp.status_code != 404:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        if write.external_id:
+            # UPDATE by sys_id.
+            resp = await client.patch(f"{base}/{write.external_id}", json=fields, headers=headers)
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on correlation_id. If a prior attempt already
+        # created the record (response lost), do not create a second one.
+        probe = await client.get(base, headers=headers, params={
+            "sysparm_query": f"correlation_id={idem}", "sysparm_limit": 1,
+            "sysparm_fields": "sys_id"})
+        if probe.status_code < 400 and (probe.json().get("result") or []):
+            return None
+        fields = {**fields, "correlation_id": idem}
+        resp = await client.post(base, json=fields, headers=headers)
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
 async def dispatch_outbound(tenant_id: Optional[str] = None, limit: int = 25) -> Dict[str, int]:
-    """Deliver PENDING/FAILED-retryable outbound writes through connectors."""
-    from app.core.database import AsyncSessionLocal
+    """Deliver PENDING/FAILED-retryable outbound writes through connectors.
+
+    Runs on the MAINTENANCE (owner) session: the scheduled dispatcher scans
+    across tenants with no request context, and under Postgres RLS a tenant-less
+    app-role session sets no ``app.tenant_id`` GUC, so the SELECT would match
+    ZERO rows and write-backs would never dispatch. The owner role is RLS-exempt;
+    isolation is preserved because delivery filters connectors by the write's own
+    ``tenant_id``.
+    """
+    from app.core.database import MaintenanceSessionLocal
     from app.models.domain import Connector, ConnectorCredential
     from app.services.live_connectors import decrypt_secrets
 
-    sent = failed = skipped = 0
-    async with AsyncSessionLocal() as db:
+    sent = failed = skipped = dead = 0
+    async with MaintenanceSessionLocal() as db:
+        # DEAD is terminal: attempts >= MAX_ATTEMPTS are never reselected, so a
+        # poison write can no longer sit at the head of the queue forever.
         q = select(OutboundWrite).where(OutboundWrite.status.in_(("PENDING", "FAILED")),
-                                        OutboundWrite.attempts < 5)
+                                        OutboundWrite.attempts < MAX_ATTEMPTS)
         if tenant_id:
             q = q.where(OutboundWrite.tenant_id == tenant_id)
         writes = (await db.execute(q.order_by(OutboundWrite.created_at).limit(limit))).scalars().all()
 
         for w in writes:
+            # CRIT: each write is isolated. One dead outbound endpoint (an adapter
+            # that raises, e.g. httpx ConnectError/timeout) must fail ONLY its own
+            # row - without this guard the exception unwound the whole batch loop
+            # before commit, rolling back every attempts++ and status write, so the
+            # oldest poison row was reselected every tick and froze the queue for
+            # every tenant. We catch, mark this row FAILED/DEAD, and carry on.
             w.attempts = (w.attempts or 0) + 1
-            # Find a CONNECTED connector for the write's provider/category.
-            cq = select(Connector).where(Connector.tenant_id == w.tenant_id,
-                                         Connector.status.in_(("CONNECTED", "SYNCING")))
-            connectors = (await db.execute(cq)).scalars().all()
-            target = None
-            for c in connectors:
-                cred = (await db.execute(select(ConnectorCredential).where(
-                    ConnectorCredential.connector_id == c.id))).scalar_one_or_none()
-                prov = (cred.provider if cred else None)
-                if w.provider and prov == w.provider:
-                    target = (c, cred)
-                    break
-                if not w.provider and w.category and (c.category or "").lower() == w.category:
-                    target = (c, cred)
-                    break
-                if not w.provider and prov == "generic_rest" and target is None:
-                    target = (c, cred)   # generic sink accepts anything
-
-            if target is None:
-                w.status = "SKIPPED_NO_CONNECTOR"
-                w.last_error = (f"no CONNECTED connector for "
-                                f"provider={w.provider or '-'} category={w.category or '-'}")
-                skipped += 1
-                continue
-            connector, cred = target
-            if cred is None:
-                w.status = "SKIPPED_NO_CREDENTIALS"
-                w.last_error = f"connector '{connector.name}' has no stored credentials"
-                skipped += 1
-                continue
             try:
-                secrets = decrypt_secrets(cred.secrets_encrypted)
-            except Exception as e:
-                w.status = "FAILED"
-                w.last_error = f"credential decrypt failed: {e}"
-                failed += 1
-                continue
+                err = await _deliver_one(db, w)
+            except Exception as e:  # noqa: BLE001 - isolation is the whole point
+                err = f"{type(e).__name__}: {str(e)[:280]}"
+                logger.warning("[Sync] outbound write %s raised: %s", w.id, err)
 
-            err = await _write_via_adapter(cred.provider, cred, cred.config or {},
-                                           secrets, w)
             if err is None:
                 w.status = "SENT"
                 w.last_error = None
                 sent += 1
+            elif err.startswith("SKIPPED_"):
+                w.status, w.last_error = err.split(":", 1)
+                skipped += 1
+            elif w.attempts >= MAX_ATTEMPTS:
+                w.status = "DEAD"
+                w.last_error = f"DEAD after {w.attempts} attempts: {err[:860]}"
+                dead += 1
             else:
                 w.status = "FAILED"
                 w.last_error = err[:900]
                 failed += 1
-            db.add(SyncLedger(
-                tenant_id=w.tenant_id, connector_id=connector.id,
-                provider=cred.provider, direction="OUT",
-                entity_type=w.entity_type, external_id=w.external_id,
-                internal_id=w.internal_id, op=w.op,
-                status="APPLIED" if err is None else "FAILED", detail=err,
-            ))
-        await db.commit()
-    return {"sent": sent, "failed": failed, "skipped": skipped}
+            # Per-write durability: commit each row on its own so a DB-level error
+            # on one write cannot roll back its already-processed siblings.
+            try:
+                await db.commit()
+            except Exception as e:  # noqa: BLE001
+                await db.rollback()
+                logger.error("[Sync] commit failed for outbound write %s: %s", w.id, e)
+    return {"sent": sent, "failed": failed, "skipped": skipped, "dead": dead}
+
+
+async def _deliver_one(db: AsyncSession, w: OutboundWrite) -> Optional[str]:
+    """Route one outbound write to a connector and push it. Returns:
+    None on success, ``SKIPPED_<STATE>:<reason>`` for honest no-op states, or a
+    plain error string for a (retryable) failure. Writes a SyncLedger OUT row.
+    Raising is allowed - the caller isolates it per write.
+    """
+    from app.models.domain import Connector, ConnectorCredential
+    from app.services.live_connectors import decrypt_secrets
+
+    cq = select(Connector).where(Connector.tenant_id == w.tenant_id,
+                                 Connector.status.in_(("CONNECTED", "SYNCING")))
+    connectors = (await db.execute(cq)).scalars().all()
+    target = None
+    _SN_ENTITIES = set(_SERVICENOW_TABLE)
+    for c in connectors:
+        cred = (await db.execute(select(ConnectorCredential).where(
+            ConnectorCredential.connector_id == c.id))).scalar_one_or_none()
+        prov = (cred.provider if cred else None)
+        if w.provider and prov == w.provider:
+            target = (c, cred)
+            break
+        if not w.provider and w.category and (c.category or "").lower() == w.category:
+            target = (c, cred)
+            break
+        if not w.provider and prov == "servicenow" and w.entity_type in _SN_ENTITIES:
+            target = (c, cred)
+            break
+        if not w.provider and prov == "generic_rest" and target is None:
+            target = (c, cred)   # generic sink accepts anything
+
+    if target is None:
+        return (f"SKIPPED_NO_CONNECTOR:no CONNECTED connector for "
+                f"provider={w.provider or '-'} category={w.category or '-'}")
+    connector, cred = target
+    if cred is None:
+        return f"SKIPPED_NO_CREDENTIALS:connector '{connector.name}' has no stored credentials"
+    secrets = decrypt_secrets(cred.secrets_encrypted)
+
+    err = await _write_via_adapter(cred.provider, cred, cred.config or {}, secrets, w)
+    db.add(SyncLedger(
+        tenant_id=w.tenant_id, connector_id=connector.id,
+        provider=cred.provider, direction="OUT",
+        entity_type=w.entity_type, external_id=w.external_id,
+        internal_id=w.internal_id, op=w.op,
+        status="APPLIED" if err is None else "FAILED", detail=err,
+    ))
+    return err

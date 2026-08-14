@@ -197,11 +197,21 @@ class ConfidenceHistory(Base):
 class Signal(Base):
     """L1 — Structured Signal from Ingestion Pipeline"""
     __tablename__ = 'signals'
+    # Natural key for live-sync dedup: re-syncing the same external record must
+    # UPDATE its twin, not insert a fresh random-UUID row every poll. NULL
+    # external_id (webhook/demo signals) never collides (NULLs are distinct), so
+    # this only constrains connector pulls, which is exactly where duplication
+    # inflated every twin/analytics count.
+    __table_args__ = (
+        Index("uq_signals_natural", "tenant_id", "source_type", "external_id",
+              unique=True),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     source_type = Column(String(32))     # messaging, helpdesk, issue_tracker, etc.
     source_entity = Column(String)       # channel_id, ticket_id
+    external_id = Column(String(256), nullable=True)  # id in the source system (dedup key)
     signal_type = Column(String(32))     # DECISION, APPROVAL, EXCEPTION, etc.
     domain = Column(String(64), index=True)
     clean_payload = Column(Text)
@@ -400,6 +410,10 @@ class Connector(Base):
     api_endpoint = Column(String)
     sync_frequency = Column(String(32), default="REAL_TIME")  # REAL_TIME, HOURLY, DAILY
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    # Persisted incremental pull cursor (opaque per-provider watermark, e.g. a
+    # ServiceNow sys_updated_on timestamp). NULL = full pull; each sync advances
+    # it so the next pull only fetches records changed since the last one.
+    sync_cursor = Column(Text, nullable=True)
 
     # Stats
     events_ingested = Column(Integer, default=0)

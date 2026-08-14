@@ -1,4 +1,4 @@
-"""KAEOS — Enterprise Connectors API (L0 Data Fabric Connector Mesh)"""
+"""KAEOS - Enterprise Connectors API (L0 Data Fabric Connector Mesh)"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from app.core.database import get_db
 from app.models.domain import Connector, ConnectorCredential
 
-router = APIRouter(prefix="/connectors", tags=["Connectors — L0 Data Fabric"])
+router = APIRouter(prefix="/connectors", tags=["Connectors - L0 Data Fabric"])
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 
@@ -17,7 +17,7 @@ from app.core.audit import record_security_event
 class CredentialsBody(BaseModel):
     provider: Optional[str] = None          # inferred from connector when omitted
     config: Dict[str, Any] = {}             # non-secret settings (base_url, filters…)
-    secrets: Dict[str, Any] = {}            # tokens/passwords — encrypted at rest
+    secrets: Dict[str, Any] = {}            # tokens/passwords - encrypted at rest
 
 
 @router.get("/providers")
@@ -26,7 +26,7 @@ async def list_supported_providers():
     Catalog of every live integration KAEOS can talk to.
 
     Declared before /{connector_id} routes so "providers" is never swallowed as
-    a connector id. Returns no secrets — this is a public capability listing.
+    a connector id. Returns no secrets - this is a public capability listing.
     """
     from app.services.live_connectors import list_providers
 
@@ -163,7 +163,7 @@ async def credential_status(
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Masked credential status — secret VALUES are never returned, only key names."""
+    """Masked credential status - secret VALUES are never returned, only key names."""
     from app.services.live_connectors import decrypt_secrets, infer_provider, REQUIRED_CONFIG
     conn = await _get_connector(connector_id, tenant_id, db)
     cred = (await db.execute(
@@ -181,7 +181,7 @@ async def credential_status(
     try:
         secret_keys = sorted(decrypt_secrets(cred.secrets_encrypted).keys())
     except ValueError:
-        secret_keys = ["<undecryptable — re-enter credentials>"]
+        secret_keys = ["<undecryptable - re-enter credentials>"]
 
     return {
         "configured": True,
@@ -200,7 +200,7 @@ async def delete_credentials(
     db: AsyncSession = Depends(get_db),
     tenant: dict = Depends(require_role("admin")),
 ):
-    """Remove stored credentials — connector falls back to the simulated demo feed."""
+    """Remove stored credentials - connector falls back to the simulated demo feed."""
     conn = await _get_connector(connector_id, tenant["tenant_id"], db)
     cred = (await db.execute(
         select(ConnectorCredential).where(ConnectorCredential.connector_id == conn.id)
@@ -231,7 +231,7 @@ async def test_connection(
         select(ConnectorCredential).where(ConnectorCredential.connector_id == conn.id)
     )).scalar_one_or_none()
     if not cred:
-        raise HTTPException(400, "No credentials stored — PUT /credentials first")
+        raise HTTPException(400, "No credentials stored - PUT /credentials first")
 
     try:
         secrets = decrypt_secrets(cred.secrets_encrypted)
@@ -314,7 +314,7 @@ async def disconnect_connector(connector_id: str, db: AsyncSession = Depends(get
 
 @router.get("/{connector_id}/health")
 async def connector_health(connector_id: str, db: AsyncSession = Depends(get_db), tenant_id: str = Depends(get_tenant_id)):
-    """Computed health metrics for a connector — replaces frontend Math.random()."""
+    """Computed health metrics for a connector - replaces frontend Math.random()."""
     result = await db.execute(select(Connector).where(Connector.id == connector_id, Connector.tenant_id == tenant_id))
     conn = result.scalar_one_or_none()
     if not conn:
@@ -398,7 +398,7 @@ async def connector_feed(
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id)
 ):
-    """Recent ingestion events for a connector — replaces Array.from fake feed."""
+    """Recent ingestion events for a connector - replaces Array.from fake feed."""
     result = await db.execute(select(Connector).where(Connector.id == connector_id, Connector.tenant_id == tenant_id))
     conn = result.scalar_one_or_none()
     if not conn:
@@ -465,10 +465,9 @@ async def sync_connector(
             raise HTTPException(502, f"Live sync failed ({cred.provider}): {str(e)[:200]}")
 
         signals = LiveConnectorService.records_to_signals(records, conn.tenant_id, conn.name)
-        for s in signals:
-            db.add(s)
+        stats = await LiveConnectorService.persist_signals(db, signals)
         conn.events_ingested += len(records)
-        conn.signals_extracted += len(signals)
+        conn.signals_extracted += stats["inserted"]
         conn.last_sync_at = datetime.now(timezone.utc)
         await db.commit()
         return {
@@ -477,11 +476,12 @@ async def sync_connector(
             "provider": cred.provider,
             "connector": conn.name,
             "events_synced": len(records),
-            "signals_created": len(signals),
+            "signals_created": stats["inserted"],
+            "signals_updated": stats["updated"],
             "last_sync": conn.last_sync_at.isoformat(),
         }
 
-    # ── Demo path: no credentials — deterministic simulated feed ──
+    # ── Demo path: no credentials - deterministic simulated feed ──
     import uuid
     from app.models.domain import Signal
 
