@@ -14,14 +14,14 @@ so any recreated dev DB is correct.
 # not wrong); rebuild the table here if a dev DB ever needs two tenants.
 
 Revision ID: 0031_tenant_scoped_unique_keys
-Revises: 0030_clear_fabricated_hours_saved
+Revises: 0030_clear_fabricated_hours
 Create Date: 2026-08-13
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "0031_tenant_scoped_unique_keys"
-down_revision = "0030_clear_fabricated_hours_saved"
+down_revision = "0030_clear_fabricated_hours"
 branch_labels = None
 depends_on = None
 

@@ -22,14 +22,16 @@ NULL, so the columns keep their existing NOT NULL/default semantics.
 Irreversible by design: the downgrade does NOT restore the fabricated numbers.
 Re-inventing them is the defect this migration exists to remove.
 
-Revision ID: 0030_clear_fabricated_hours_saved
+Revision ID: 0030_clear_fabricated_hours
 Revises: 0029_model_evolution_prompt_hash
 Create Date: 2026-08-03
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0030_clear_fabricated_hours_saved"
+# Kept <= 32 chars: alembic_version.version_num is VARCHAR(32); Postgres rejects
+# a longer id (SQLite silently truncates), which would break `alembic upgrade`.
+revision = "0030_clear_fabricated_hours"
 down_revision = "0029_model_evolution_prompt_hash"
 branch_labels = None
 depends_on = None
