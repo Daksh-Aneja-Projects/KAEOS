@@ -208,7 +208,7 @@ KAEOS/
 │   │   └── hr/ finance/ legal/ sales/ support/ operations/ engineering/
 │   │                         7 departments, 41 agents, each behind a gated_runner
 │   │                         (finance: real double-entry accrual GL + statements)
-│   ├── alembic/versions/     38 migrations
+│   ├── alembic/versions/     39 migrations
 │   ├── benchmark/            Real-data benchmark harness
 │   └── tests/                114 files, 900 tests (441 e2e + 459 unit)
 ├── frontend/                 React 19 + TypeScript + Vite + Tailwind

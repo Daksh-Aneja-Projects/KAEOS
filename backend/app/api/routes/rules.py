@@ -213,6 +213,7 @@ async def validate_rule(
     # Log confidence history
     history = ConfidenceHistory(
         id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
         rule_id=rule.id,
         confidence_old=old_scalar,
         confidence_new=new_scalar,
@@ -276,9 +277,9 @@ async def get_provenance(rule_id: str, tenant_id: str = Depends(get_tenant_id), 
 async def get_confidence_history(rule_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """Get confidence change history for a rule (L6 audit trail).
 
-    `confidence_history` carries no tenant_id of its own, so the scope comes
-    from its parent rule: a rule the caller's tenant does not own yields
-    nothing rather than another tenant's confidence deltas.
+    `confidence_history` now carries a tenant_id (RLS-covered), but this read
+    still scopes through the parent rule as defense in depth: a rule the caller's
+    tenant does not own yields nothing rather than another tenant's deltas.
     """
     owns = await db.execute(
         select(Rule.id).where(Rule.id == rule_id, Rule.tenant_id == tenant_id)

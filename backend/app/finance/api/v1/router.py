@@ -687,6 +687,35 @@ async def transition_invoice(
                 # the COA gap instead of failing the approval or hiding it.
                 logger.warning("[AP] accrual on approval of %s failed: %s", invoice_id, e)
                 result["accrual_warning"] = str(e)
+    elif result.get("to_state") == InvoiceStatus.VOIDED.value:
+        # Voiding an accrued invoice must UNWIND its AP_ACCRUAL entry, else the
+        # P&L overstates expense and the balance sheet overstates AP for an invoice
+        # that no longer exists. Reverse the accrual (append-only mirror). Skip if
+        # the invoice already took a payment - that needs a manual reconciliation.
+        from decimal import Decimal
+        from app.core.tenant import approver_identity
+        from app.finance.models.core import JournalEntry, JournalEntryStatus
+        from app.finance.services.gl import GLPostingError, reverse_journal_entry
+        invoice = (await db.execute(select(Invoice).where(
+            Invoice.id == invoice_id, Invoice.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        accrual = (await db.execute(select(JournalEntry).where(
+            JournalEntry.tenant_id == tenant["tenant_id"],
+            JournalEntry.source_module == "AP_ACCRUAL",
+            JournalEntry.source_document_id == invoice_id,
+            JournalEntry.status == JournalEntryStatus.POSTED,
+        ))).scalar_one_or_none()
+        if accrual is not None and invoice is not None:
+            if Decimal(str(invoice.amount_paid or 0)) != 0:
+                result["reversal_warning"] = ("invoice has payments; accrual not "
+                    "auto-reversed - reconcile the void manually")
+            else:
+                try:
+                    mirror = await reverse_journal_entry(
+                        db, tenant["tenant_id"], accrual.id, actor=approver_identity(tenant))
+                    result["accrual_reversed"] = mirror.entry_number
+                except GLPostingError as e:
+                    logger.warning("[AP] accrual reversal on void of %s failed: %s", invoice_id, e)
+                    result["reversal_warning"] = str(e)
     return result
 
 

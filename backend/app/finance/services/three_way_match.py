@@ -16,7 +16,7 @@ ordered or received, or an overcharge past tolerance, is an EXCEPTION.
 """
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -156,7 +156,15 @@ async def evaluate_three_way_match(
 
         il = _find_invoice_line(inv_lines, pol, idx)
         if il is not None:
-            inv_qty = int(il.get("qty") if il.get("qty") is not None else po_qty)
+            # Decimal, not int(): a services invoice billing a fractional qty
+            # (e.g. 10.9h against 10 received) must NOT truncate down into
+            # tolerance - that is a fail-open on the exact control this enforces.
+            try:
+                inv_qty = Decimal(str(il.get("qty") if il.get("qty") is not None else po_qty))
+            except (InvalidOperation, TypeError, ValueError):
+                # Unparseable qty is not a pass: bill "more than ordered" so the
+                # line fails closed as an EXCEPTION rather than truncating or 500-ing.
+                inv_qty = Decimal(po_qty) + Decimal("1")
             inv_price = _money(il.get("unit_price") if il.get("unit_price") is not None else po_price)
         else:
             # No invoice line for this PO line: bill nothing (honest under-bill).

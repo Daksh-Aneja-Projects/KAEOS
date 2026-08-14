@@ -136,6 +136,12 @@ class RuleGuardrail(Base):
     __tablename__ = 'rule_guardrails'
 
     id = Column(String, primary_key=True, default=_uuid)
+    # Tenant scope so the RLS sweep installs a tenant_isolation policy here too:
+    # the parent-rule ownership check was the ONLY isolation, and a direct query
+    # that forgot the rule_id join would have leaked another tenant's guardrails.
+    # Nullable so pre-existing rows backfilled from rules.tenant_id don't block the
+    # migration; NULL fails closed under RLS. New writes copy the rule's tenant_id.
+    tenant_id = Column(String, nullable=True, index=True)
     rule_id = Column(String, ForeignKey('rules.id'), index=True)
     guardrail_type = Column(String(32))  # PRE_CHECK, POST_CHECK, RATE_LIMIT
     condition = Column(JSON)
@@ -203,6 +209,10 @@ class ConfidenceHistory(Base):
     __tablename__ = 'confidence_history'
 
     id = Column(String, primary_key=True, default=_uuid)
+    # Tenant scope so RLS covers this audit trail directly, not just through the
+    # parent rule. Nullable so pre-existing rows backfilled from rules.tenant_id
+    # don't block the migration; NULL fails closed under RLS. New writes set it.
+    tenant_id = Column(String, nullable=True, index=True)
     rule_id = Column(String, ForeignKey('rules.id'), index=True)
     confidence_old = Column(Float)
     confidence_new = Column(Float)

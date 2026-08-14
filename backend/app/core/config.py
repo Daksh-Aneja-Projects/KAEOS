@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     # Embedding model that drives the pgvector column width. Empty keeps the
     # existing 1536-dim behaviour; change only alongside a dim migration + re-embed.
     EMBEDDING_MODEL: str = ""
+
+    # Polymorphic tool code-generation ast-compiles LLM-authored Python into the
+    # import path. It is an arbitrary-code-execution risk and is OFF by default;
+    # only enable where a human-approval + real sandbox exists.
+    ALLOW_POLYMORPHIC_CODEGEN: bool = False
     # Force-enable/disable interactive API docs (/docs, /redoc, /openapi.json).
     # None = auto (on only in a development ENVIRONMENT). Set False for prod.
     ENABLE_DOCS: bool | None = None

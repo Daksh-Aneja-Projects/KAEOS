@@ -60,15 +60,22 @@ class ComplianceEngine:
                                    "method": "deterministic", "citations": res.citations})
 
         # 2) Hardcoded critical checks for tags without a deterministic checker.
+        # PCI is written three ways in the wild (PCI / PCI-DSS / PCI_DSS); the
+        # shipped support pack tags skills "PCI-DSS", so an exact "PCI" match let
+        # raw card data through under the real-world tag. Normalize the family.
+        _PCI = {"PCI", "PCI-DSS", "PCI_DSS"}
+        pci_tags = set()
         for tag in skill_tags:
             if tag in deterministic_tags:
                 continue
-            if tag == "PCI" and "raw_card_data" in context:
-                violations.append({
-                    "framework": "PCI",
-                    "severity": "BLOCKER",
-                    "reason": "PCI blocks raw card data handling in agent context."
-                })
+            if tag in _PCI:
+                pci_tags.add(tag)
+                if "raw_card_data" in context:
+                    violations.append({
+                        "framework": tag,
+                        "severity": "BLOCKER",
+                        "reason": "PCI blocks raw card data handling in agent context."
+                    })
 
         # 3) LLM-screening fallback ONLY for complex frameworks that have no
         # deterministic checker yet (labeled as screening, not a statutory test).
@@ -113,7 +120,25 @@ class ComplianceEngine:
                     "severity": "BLOCKER" if unverifiable_is_blocking else "WARNING",
                     "reason": f"Could not verify compliance due to system error: {e}"
                 })
-                
+
+        # 4) Fail-closed honesty: any tag that was neither judged deterministically,
+        # covered by the PCI raw-card guard, nor LLM-screened is NOT verified. Emit
+        # a WARNING so it can never SILENTLY pass (matching registry.run_checks'
+        # UNBACKED posture) - a posture tag like SOC2/ISO-27001/PCI-DSS must surface
+        # in the result and provenance, not vanish. WARNING (not BLOCKER) so a
+        # legitimately unbacked tag like GAAP does not gridlock every action.
+        covered = deterministic_tags | pci_tags | set(complex_tags)
+        for tag in skill_tags:
+            if tag in covered:
+                continue
+            violations.append({
+                "framework": tag,
+                "severity": "WARNING",
+                "reason": f"No deterministic checker backs '{tag}'; this compliance "
+                          "claim is not verified.",
+                "method": "registry",
+            })
+
         return violations
 
     def enforce_audit_requirements(self, skill_tags: List[str], execution_outcome: Dict[str, Any]) -> bool:

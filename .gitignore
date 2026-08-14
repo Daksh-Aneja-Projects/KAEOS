@@ -207,8 +207,16 @@ docs/*_PLAN.md
 docs/PLAN_*.md
 .token
 
+# Polymorphic-engine generated tools: LLM-authored Python written at runtime into
+# the dynamic MCP tool dir. Never commit generated code. The two committed
+# modules in this dir (the registry and the legacy bridge) are re-allowed below.
+backend/app/agents/mcp_tools_dynamic/*.py
+!backend/app/agents/mcp_tools_dynamic/registry.py
+!backend/app/agents/mcp_tools_dynamic/legacy_erp_bridge.py
+
 # Review deliverables (internal, not committed)
 KAEOS_REVIEW_*.md
 *_REVIEW_*.md
 _review_preview_tmp.html
 docs/CAMPAIGN_AUDIT_*.md
+docs/CAMPAIGN_MILESTONE_REVIEW_*.md
