@@ -7,6 +7,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { api } from '../../api/client';
 import { CountUp } from '../CountUp';
 import { humanize } from '../../lib/format';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export type DossierTarget =
   | { kind: 'agent'; id: string; label: string }
@@ -37,11 +38,7 @@ export default function DossierDrawer({
     load.then(setDossier).catch(e => setError(e?.message || 'Could not load the dossier'));
   }, [target]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  const trapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
   const section = (title: string, icon: React.ReactNode, body: React.ReactNode) => (
     <div className="space-y-1.5">
@@ -57,9 +54,12 @@ export default function DossierDrawer({
 
   return (
     <div
+      ref={trapRef}
+      tabIndex={-1}
       className="absolute top-0 right-0 bottom-0 w-[380px] max-w-full flex flex-col z-20 shadow-2xl"
       style={{ background: colors.surface1, borderLeft: `1px solid ${colors.hairline}` }}
       role="dialog"
+      aria-modal="true"
       aria-label={`${target.label} dossier`}
     >
       {/* Header */}

@@ -7,10 +7,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import hashlib
-import hmac
 import secrets
-import json
-import base64
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,53 +174,23 @@ def _create_token(user_id: str, email: str, role: str, tenant_id: str,
 
 
 def decode_token(token: str) -> Optional[dict]:
-    """Verify a JWT and return its claims, or None if invalid/expired.
-
-    Backwards-compatible: still accepts the legacy `payload.signature` HMAC
-    token so sessions issued before the JWT migration keep working until expiry.
-    """
+    """Verify a JWT and return its claims, or None if invalid/expired."""
     import jwt
     try:
-        claims = jwt.decode(
+        # Revocation is enforced at the async auth boundaries (get_current_user,
+        # TenantMiddleware's JWT branch, the WS handshake) via is_jti_revoked(),
+        # not here: decode_token is synchronous and the shared denylist lives in
+        # Redis (an async client). Keeping the check out of this hot sync path also
+        # avoids a Redis round-trip on every token parse.
+        return jwt.decode(
             token,
             _get_secret_key(),
             algorithms=[_JWT_ALG],
             audience=_JWT_AUD,
             issuer=_JWT_ISS,
         )
-        # Revocation is enforced at the async auth boundaries (get_current_user,
-        # TenantMiddleware's JWT branch, the WS handshake) via is_jti_revoked(),
-        # not here: decode_token is synchronous and the shared denylist lives in
-        # Redis (an async client). Keeping the check out of this hot sync path also
-        # avoids a Redis round-trip on every token parse.
-        return claims
     except jwt.PyJWTError:
-        # Not a valid current-format JWT. This is NOT a bypass: control falls
-        # through to the legacy verifier below, which still checks an HMAC with
-        # compare_digest and the expiry, and returns None on any failure.
-        pass
-    # Legacy fallback: verify the old base64(json)+HMAC format so live sessions
-    # are not force-logged-out by the upgrade. Tokens live TOKEN_EXPIRY_HOURS (24h),
-    # so every pre-migration token has expired well before this date.
-    # REMOVE ON OR AFTER 2026-08-01 (delete this block and the hmac/base64/json imports
-    # if unused elsewhere).
-    try:
-        parts = token.split(".")
-        if len(parts) != 2:
-            return None
-        payload_b64, signature = parts
-        expected_sig = hmac.new(_get_secret_key().encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected_sig):
-            return None
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        exp = datetime.fromisoformat(payload["exp"])
-        if datetime.now(timezone.utc) > exp:
-            return None
-        return payload
-    except Exception:
-        # Any malformed/legacy token (bad base64, JSON, signature, or expiry)
-        # is treated as unauthenticated. Broad on purpose: a hostile token can
-        # fail in many ways and all of them mean "reject", not "500".
+        # Malformed, mis-signed, or expired token -> unauthenticated.
         return None
 
 

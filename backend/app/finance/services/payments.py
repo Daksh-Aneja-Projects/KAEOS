@@ -241,7 +241,7 @@ async def record_vendor_payment(
         invoice_id=invoice.id,
         payment_number=f"PAY-{year}-{count + 1:06d}",
         payment_date=datetime.now(timezone.utc).date(),
-        amount=pay_amount,
+        amount=pay_amount,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
         currency=invoice.currency or "USD",
         method=PaymentMethod(method) if not isinstance(method, PaymentMethod) else method,
         status=PaymentStatus.COMPLETED,
@@ -251,8 +251,8 @@ async def record_vendor_payment(
     db.add(payment)
 
     # Invoice state rides in the same pending transaction as the entry.
-    invoice.amount_paid = (Decimal(str(invoice.amount_paid or 0)) + pay_amount)
-    invoice.balance_due = balance - pay_amount
+    invoice.amount_paid = (Decimal(str(invoice.amount_paid or 0)) + pay_amount)  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+    invoice.balance_due = balance - pay_amount  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
     if invoice.balance_due == 0:
         invoice.status = InvoiceStatus.PAID
 

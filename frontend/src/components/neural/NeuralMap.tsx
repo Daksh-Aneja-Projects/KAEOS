@@ -692,7 +692,21 @@ export default function NeuralMapView({ onOpenDept }: { onOpenDept?: (slug: stri
   const stats = world?.brain;
 
   return (
-    <div className="h-full w-full relative min-h-0 overflow-hidden" style={{ background: colors.canvas }}>
+    <div className="h-full w-full relative min-h-0 overflow-hidden" style={{ background: colors.canvas }}
+      role="region"
+      aria-label="Neural map: a live graph of your company's departments, agents and knowledge core. A text list of departments follows.">
+      {/* Keyboardable text alternative to the canvas graph, for screen readers
+          and keyboard users who can't interact with the visual force graph. */}
+      {!loading && !error && world?.departments?.length ? (
+        <ul className="sr-only">
+          {stats && (
+            <li>{`Knowledge core: ${stats.notes} notes, ${stats.links} links, ${stats.executions} runs.`}</li>
+          )}
+          {world.departments.map((d: any) => (
+            <li key={d.slug}>{`${d.name} department, ${d.agent_count || 0} agents.`}</li>
+          ))}
+        </ul>
+      ) : null}
       {loading ? (
         <BrainLoading message="Waking the neural map..." />
       ) : error ? (

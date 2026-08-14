@@ -25,7 +25,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import func as sqlfunc, select
+from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ from app.finance.models.core import (
     ChartOfAccount,
     FiscalPeriod,
     FiscalPeriodStatus,
+    FXRate,
     JournalEntry,
     JournalEntryStatus,
     JournalLine,
@@ -87,12 +88,58 @@ async def _next_entry_number(db: AsyncSession, tenant_id: str, year: int) -> str
     return f"JE-{year}-{count + 1:06d}"
 
 
+def base_currency() -> str:
+    """The tenant base (reporting) currency. Settings-driven, USD default."""
+    from app.core.config import get_settings
+    return (getattr(get_settings(), "FINANCE_BASE_CURRENCY", "USD") or "USD").upper()
+
+
+async def _fx_rate(
+    db: AsyncSession, tenant_id: str, currency: str, as_of: date, base: str,
+) -> Optional[Decimal]:
+    """Base units per 1 unit of ``currency`` at the most recent rate on/before
+    ``as_of``. The base currency is always 1. Returns None when no rate exists -
+    the caller refuses the line rather than posting an unconverted amount."""
+    if (currency or base).upper() == base:
+        return Decimal("1")
+    rate = (await db.execute(
+        select(FXRate.rate).where(
+            FXRate.tenant_id == tenant_id,
+            FXRate.currency == currency.upper(),
+            FXRate.as_of <= as_of,
+        ).order_by(FXRate.as_of.desc()).limit(1)
+    )).scalar_one_or_none()
+    return Decimal(str(rate)) if rate is not None else None
+
+
 def _balance_delta(account: ChartOfAccount, debit: Decimal, credit: Decimal) -> Decimal:
     """A debit increases a normal-DEBIT account (assets, expenses); a credit
     increases a normal-CREDIT account (liabilities, equity, revenue)."""
     if (account.normal_balance or "DEBIT").upper() == "CREDIT":
         return credit - debit
     return debit - credit
+
+
+# Reporting must aggregate in the tenant BASE currency, never native. A line's
+# amount_in_base holds the FX-converted magnitude of its single non-zero side;
+# CASE picks it back onto the right column. coalesce(...) falls back to the
+# native amount for pre-FX rows (amount_in_base NULL) so historic ledgers still
+# report. Without this, a multi-currency tenant would add e.g. EUR + USD
+# magnitudes into one meaningless sum.
+def _base_debits_sum():
+    return sqlfunc.sum(
+        case((JournalLine.debit > 0,
+              sqlfunc.coalesce(JournalLine.amount_in_base, JournalLine.debit)),
+             else_=0)
+    )
+
+
+def _base_credits_sum():
+    return sqlfunc.sum(
+        case((JournalLine.credit > 0,
+              sqlfunc.coalesce(JournalLine.amount_in_base, JournalLine.credit)),
+             else_=0)
+    )
 
 
 async def post_journal_entry(
@@ -139,19 +186,20 @@ async def post_journal_entry(
         for acc in (await db.execute(select(ChartOfAccount).where(
                 ChartOfAccount.tenant_id == tenant_id,
                 ChartOfAccount.id.in_(ids)))).scalars().all():
-            accounts[acc.id] = acc
+            accounts[acc.id] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
     if codes:
         for acc in (await db.execute(select(ChartOfAccount).where(
                 ChartOfAccount.tenant_id == tenant_id,
                 ChartOfAccount.account_code.in_(codes)))).scalars().all():
-            accounts[acc.account_code] = acc
+            accounts[acc.account_code] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
 
-    total_debit = Decimal("0")
+    base = base_currency()
+    total_debit = Decimal("0")   # in tenant base currency, after FX
     total_credit = Decimal("0")
-    resolved: list[tuple[ChartOfAccount, Decimal, Decimal, dict]] = []
+    resolved: list[tuple[ChartOfAccount, Decimal, Decimal, Decimal, Decimal, Decimal, dict]] = []
     for l in lines:
         key = str(l.get("account_id") or l.get("account_code"))
-        acc = accounts.get(key)
+        acc = accounts.get(key)  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
         if acc is None:
             raise GLPostingError(f"account {key!r} not found for this tenant")
         if not acc.is_active:
@@ -162,13 +210,26 @@ async def post_journal_entry(
                 f"line on {acc.account_code}: exactly one of debit/credit "
                 f"must be positive (got debit={debit}, credit={credit})"
             )
-        total_debit += debit
-        total_credit += credit
-        resolved.append((acc, debit, credit, l))
+        # Convert to base for balancing and amount_in_base. A foreign line with
+        # no rate on/before entry_date is refused (fail-closed): the ledger never
+        # holds an unconverted amount masquerading as base.
+        acc_ccy = (acc.currency or base).upper()
+        rate = await _fx_rate(db, tenant_id, acc_ccy, entry_date, base)
+        if rate is None:
+            raise GLPostingError(
+                f"no FX rate for {acc_ccy}->{base} on/before {entry_date.isoformat()} "
+                f"(account {acc.account_code}); load a fin_fx_rates row or post in {base}"
+            )
+        base_debit = (debit * rate).quantize(_CENT)
+        base_credit = (credit * rate).quantize(_CENT)
+        total_debit += base_debit
+        total_credit += base_credit
+        resolved.append((acc, debit, credit, base_debit, base_credit, rate, l))
 
     if total_debit != total_credit:
         raise GLPostingError(
-            f"unbalanced entry: debits {total_debit} != credits {total_credit}"
+            f"unbalanced entry: base debits {total_debit} != base credits {total_credit} "
+            f"({base}); multi-currency entries must balance after FX conversion"
         )
     if total_debit == 0:
         raise GLPostingError("zero-amount entries are not postable")
@@ -186,11 +247,11 @@ async def post_journal_entry(
             source_module=source_module,
             source_document_id=source_document_id,
             status=JournalEntryStatus.POSTED,
-            total_debit=total_debit,
-            total_credit=total_credit,
+            total_debit=total_debit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+            total_credit=total_credit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             created_by=created_by,
             ai_categorized=ai_categorized,
-            ai_confidence=ai_confidence,
+            ai_confidence=ai_confidence,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             fiscal_year=year,
             fiscal_period=entry_date.month,
         )
@@ -206,23 +267,24 @@ async def post_journal_entry(
             f"could not allocate an entry number after {_NUMBER_RETRIES} attempts"
         ) from last_error
 
-    for i, (acc, debit, credit, l) in enumerate(resolved, start=1):
+    for i, (acc, debit, credit, base_debit, base_credit, rate, l) in enumerate(resolved, start=1):
         db.add(JournalLine(
             tenant_id=tenant_id,
             journal_entry_id=entry.id,
             account_id=acc.id,
             description=(l.get("description") or None),
-            debit=debit,
-            credit=credit,
+            debit=debit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+            credit=credit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             department=l.get("department"),
             cost_center=l.get("cost_center"),
-            currency=acc.currency or "USD",
-            amount_in_base=debit if debit > 0 else credit,
+            currency=acc.currency or base,
+            exchange_rate=float(rate),  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+            amount_in_base=base_debit if base_debit > 0 else base_credit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             line_number=i,
         ))
         # Balance moves in the SAME transaction as the entry: a crash between
         # the two cannot exist.
-        acc.current_balance = (
+        acc.current_balance = (  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             Decimal(str(acc.current_balance or 0)) + _balance_delta(acc, debit, credit)
         ).quantize(_CENT)
 
@@ -273,6 +335,11 @@ async def reverse_journal_entry(
             "description": f"Reversal of {original.entry_number}",
         } for l in orig_lines],
         description=f"Reversal of {original.entry_number}: {original.description}",
+        # Reverse AT THE ORIGINAL ENTRY DATE so FX re-converts at the same rate
+        # and amount_in_base offsets to exactly zero. Defaulting to today would
+        # re-run FX at today's rate, leaving a residual base-currency imbalance
+        # for multi-currency entries (native offsets, base would not).
+        entry_date=original.entry_date,
         reference=original.entry_number,
         source_module=original.source_module or "MANUAL",
         source_document_id=original.id,
@@ -300,8 +367,8 @@ async def trial_balance(db: AsyncSession, tenant_id: str,
     line_agg = (
         select(
             JournalLine.account_id.label("account_id"),
-            sqlfunc.sum(JournalLine.debit).label("debits"),
-            sqlfunc.sum(JournalLine.credit).label("credits"),
+            _base_debits_sum().label("debits"),
+            _base_credits_sum().label("credits"),
         )
         .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
         .where(*line_filters)
@@ -393,8 +460,8 @@ async def _posted_balances(
     agg = (
         select(
             JournalLine.account_id.label("account_id"),
-            sqlfunc.sum(JournalLine.debit).label("debits"),
-            sqlfunc.sum(JournalLine.credit).label("credits"),
+            _base_debits_sum().label("debits"),
+            _base_credits_sum().label("credits"),
         )
         .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
         .where(*filters)
@@ -555,6 +622,161 @@ async def set_period_status(
             "closed_at": row.closed_at.isoformat() if row.closed_at else None}
 
 
+async def _cash_by_account(
+    db: AsyncSession, tenant_id: str,
+    date_from: Optional[date], date_to: Optional[date],
+) -> dict[str, dict]:
+    """Debits/credits per cash/bank account (is_bank_account) over POSTED lines
+    in [date_from, date_to], tenant-scoped. Keyed by account_id."""
+    filters = [
+        JournalLine.tenant_id == tenant_id,
+        JournalEntry.status == JournalEntryStatus.POSTED,
+        ChartOfAccount.is_bank_account.is_(True),
+    ]
+    if date_from:
+        filters.append(JournalEntry.entry_date >= date_from)
+    if date_to:
+        filters.append(JournalEntry.entry_date <= date_to)
+    q = (
+        select(
+            ChartOfAccount.id,
+            ChartOfAccount.account_code,
+            ChartOfAccount.account_name,
+            sqlfunc.coalesce(_base_debits_sum(), 0).label("debits"),
+            sqlfunc.coalesce(_base_credits_sum(), 0).label("credits"),
+        )
+        .select_from(ChartOfAccount)
+        .join(JournalLine, JournalLine.account_id == ChartOfAccount.id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(*filters)
+        .group_by(ChartOfAccount.id, ChartOfAccount.account_code, ChartOfAccount.account_name)
+    )
+    out: dict[str, dict] = {}
+    for r in (await db.execute(q)).all():
+        debits = Decimal(str(r.debits or 0)).quantize(_CENT)
+        credits = Decimal(str(r.credits or 0)).quantize(_CENT)
+        out[r.id] = {
+            "account_code": r.account_code, "account_name": r.account_name,
+            "net": (debits - credits).quantize(_CENT),   # cash rises on a debit
+        }
+    return out
+
+
+async def cash_flow_statement(
+    db: AsyncSession, tenant_id: str,
+    period_start: Optional[date] = None, period_end: Optional[date] = None,
+) -> dict:
+    """Net change in cash/bank accounts over a window, derived from POSTED lines
+    (not the cached CashFlow table). Net change = debits - credits (cash rises on
+    a debit). Closing balance is inception-to period_end; opening = closing - net."""
+    window = await _cash_by_account(db, tenant_id, period_start, period_end)
+    closing = await _cash_by_account(db, tenant_id, None, period_end)
+
+    accounts = []
+    total_net = Decimal("0")
+    for acc_id in sorted(set(window) | set(closing),
+                         key=lambda i: (closing.get(i) or window[i])["account_code"]):
+        net = window.get(acc_id, {}).get("net", Decimal("0"))
+        close_bal = closing.get(acc_id, {}).get("net", Decimal("0"))
+        meta = closing.get(acc_id) or window[acc_id]
+        total_net += net
+        accounts.append({
+            "account_code": meta["account_code"],
+            "account_name": meta["account_name"],
+            "opening_balance": str((close_bal - net).quantize(_CENT)),
+            "net_change": str(net.quantize(_CENT)),
+            "closing_balance": str(close_bal.quantize(_CENT)),
+        })
+    return {
+        "period_start": period_start.isoformat() if period_start else None,
+        "period_end": period_end.isoformat() if period_end else None,
+        "base_currency": base_currency(),
+        "accounts": accounts,
+        "net_change_in_cash": str(total_net.quantize(_CENT)),
+        "note": ("Net movement of cash/bank accounts (is_bank_account) over POSTED "
+                 "journal lines. Opening/closing are inception-to-date endpoints; "
+                 "opening = closing - net_change."),
+    }
+
+
+_AGING_BUCKETS = ("current", "1_30", "31_60", "61_90", "over_90")
+
+
+def _bucket(days_overdue: int) -> str:
+    if days_overdue <= 0:
+        return "current"
+    if days_overdue <= 30:
+        return "1_30"
+    if days_overdue <= 60:
+        return "31_60"
+    if days_overdue <= 90:
+        return "61_90"
+    return "over_90"
+
+
+async def aging_report(
+    db: AsyncSession, tenant_id: str, side: str = "both", as_of: Optional[date] = None,
+) -> dict:
+    """AR and/or AP aging: open invoice balances bucketed by (as_of - due_date)
+    into current / 1-30 / 31-60 / 61-90 / 90+ days. Derived from live invoice
+    balances (balance_due), not the denormalized aging_* columns."""
+    from app.finance.models.accounts_payable import Invoice, InvoiceStatus
+    from app.finance.models.accounts_receivable import (
+        CustomerInvoice, CustomerInvoiceStatus,
+    )
+
+    as_of = as_of or datetime.now(timezone.utc).date()
+    side = (side or "both").lower()
+
+    async def _age(model, party_col, closed_statuses):
+        rows = (await db.execute(
+            select(model).where(
+                model.tenant_id == tenant_id,
+                model.balance_due > 0,
+                model.status.notin_(closed_statuses),
+            )
+        )).scalars().all()
+        buckets = {b: Decimal("0") for b in _AGING_BUCKETS}
+        items, total = [], Decimal("0")
+        for inv in rows:
+            bal = Decimal(str(inv.balance_due or 0)).quantize(_CENT)
+            days = (as_of - inv.due_date).days if inv.due_date else 0
+            b = _bucket(days)
+            buckets[b] += bal
+            total += bal
+            items.append({
+                "invoice_number": inv.invoice_number,
+                "party_id": getattr(inv, party_col),
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "days_overdue": max(0, days),
+                "balance_due": str(bal),
+                "bucket": b,
+            })
+        return {
+            "buckets": {b: str(v.quantize(_CENT)) for b, v in buckets.items()},
+            "total_outstanding": str(total.quantize(_CENT)),
+            "open_count": len(items),
+            "items": items,
+        }
+
+    result = {
+        "as_of": as_of.isoformat(),
+        "note": ("Open invoice balances bucketed by days past due_date, derived "
+                 "from live balance_due (not the cached aging_* columns). 'current' "
+                 "= not yet overdue."),
+    }
+    if side in ("ap", "both"):
+        result["accounts_payable"] = await _age(
+            Invoice, "vendor_id",
+            [InvoiceStatus.PAID, InvoiceStatus.VOIDED])
+    if side in ("ar", "both"):
+        result["accounts_receivable"] = await _age(
+            CustomerInvoice, "customer_id",
+            [CustomerInvoiceStatus.PAID, CustomerInvoiceStatus.VOIDED,
+             CustomerInvoiceStatus.WRITE_OFF])
+    return result
+
+
 async def list_periods(db: AsyncSession, tenant_id: str) -> dict:
     """Explicitly-tracked periods (closed ones, plus any reopened). Periods
     with no row are OPEN by default and not listed."""
@@ -565,7 +787,7 @@ async def list_periods(db: AsyncSession, tenant_id: str) -> dict:
     return {
         "periods": [{
             "fiscal_year": r.fiscal_year, "fiscal_period": r.fiscal_period,
-            "status": r.status.value if hasattr(r.status, "value") else r.status,
+            "status": r.status.value if r.status is not None else None,
             "closed_by": r.closed_by,
             "closed_at": r.closed_at.isoformat() if r.closed_at else None,
         } for r in rows],

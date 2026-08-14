@@ -177,8 +177,10 @@ async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_
                 yield f"data: {json.dumps({'type': 'token', 'text': fallback})}\n\n"
 
         except Exception as e:
-            logger.error(f"[Chat] Streaming error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            # Log the detail server-side; never leak internal error text (stack
+            # frames, connection strings, driver messages) to the client stream.
+            logger.error(f"[Chat] Streaming error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The copilot hit an internal error. Please try again.'})}\n\n"
 
         # 3. Done event
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

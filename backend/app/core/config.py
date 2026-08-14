@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     # existing 1536-dim behaviour; change only alongside a dim migration + re-embed.
     EMBEDDING_MODEL: str = ""
 
+    # Tenant base/reporting currency (ISO 4217). The GL converts every foreign
+    # journal line to this at post time and reports in it. Change only with a
+    # deliberate re-statement: it does not retroactively re-convert posted lines.
+    FINANCE_BASE_CURRENCY: str = "USD"
+
+    # Optional Content-Security-Policy override for the API responses. Empty uses
+    # the hardened middleware default (which already allows the cross-origin API +
+    # WebSocket). Set to pin connect-src to a fixed API domain in production.
+    CONTENT_SECURITY_POLICY: str = ""
+
     # Polymorphic tool code-generation ast-compiles LLM-authored Python into the
     # import path. It is an arbitrary-code-execution risk and is OFF by default;
     # only enable where a human-approval + real sandbox exists.

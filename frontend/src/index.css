@@ -63,6 +63,21 @@
     color: var(--color-primary-hover);
   }
 
+  /* ── Keyboard focus ring ──
+     Many controls set `focus:outline-none` for the mouse aesthetic, which
+     also strips the keyboard affordance. `:focus-visible` only fires for
+     keyboard/AT users, so this restores a visible ring for them without
+     showing a ring on mouse click. Applies app-wide (root-cause fix). */
+  :focus-visible {
+    outline: 2px solid var(--color-primary-hover);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  /* Don't double up when a control opts into its own focus-visible styling. */
+  [data-focus-styled]:focus-visible {
+    outline: none;
+  }
+
   /* ── Ultra-thin Dark Scrollbars ── */
   * {
     scrollbar-width: thin;

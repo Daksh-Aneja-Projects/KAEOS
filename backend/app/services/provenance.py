@@ -251,7 +251,7 @@ async def append_ledger_event(
             actor_hash=actor_hash,
             actor_role=actor_role,
             evidence_ids=evidence_ids,
-            confidence_at=confidence_at,
+            confidence_at=confidence_at,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             reasoning=reasoning,
             parent_id=parent_id,
             chain_scope=scope,
@@ -388,8 +388,8 @@ class ProvenanceEngine:
         evidence_ids: list,
         confidence_at: float,
         reasoning: str,
-        parent_id: UUID = None,  # kept for API compat; the chain derives it
-        tenant_id: str = None,
+        parent_id: Optional[UUID] = None,  # kept for API compat; the chain derives it
+        tenant_id: Optional[str] = None,
     ) -> str:
         """Append an event about a rule/skill. Returns the entry's chain hash.
 
@@ -402,6 +402,13 @@ class ProvenanceEngine:
         if tenant_id is None and rule_id is not None:
             rule = await db_session.get(Rule, str(rule_id))
             tenant_id = getattr(rule, "tenant_id", None)
+
+        # Fail closed: an unattributed ledger row violates the provenance_ledger
+        # RLS policy on Postgres (500s) and silently writes an untenanted row on
+        # SQLite. If the rule_id is a skill id (no matching Rule) the caller MUST
+        # pass tenant_id - never write the entry without one.
+        if tenant_id is None:
+            raise ValueError("log_event requires a tenant_id (rule lookup did not resolve one)")
 
         entry = await append_ledger_event(
             db_session,
@@ -417,7 +424,7 @@ class ProvenanceEngine:
         return entry.chain_hash
 
     async def verify_chain_integrity(
-        self, db_session: AsyncSession, rule_id: UUID, tenant_id: str = None
+        self, db_session: AsyncSession, rule_id: UUID, tenant_id: Optional[str] = None
     ) -> bool:
         """Boolean compatibility wrapper over ``verify_chain``.
 

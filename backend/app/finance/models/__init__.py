@@ -14,6 +14,7 @@ from app.finance.models.core import (
     JournalEntry, JournalEntryStatus,
     JournalLine,
     FiscalPeriod, FiscalPeriodStatus,
+    FXRate,
 )
 from app.finance.models.accounts_payable import (
     Vendor, VendorStatus,

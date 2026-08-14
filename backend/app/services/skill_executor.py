@@ -331,7 +331,12 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
             step_num=step_num,
             total_steps=total_steps,
             tenant_id=tenant_id,
-            action=action_text,
+            # The ACTION line is a fixed contract instruction, but agents author
+            # steps whose action/prompt/name can carry interpolated entity text
+            # (ticket bodies, resume snippets). Fence it as data so an injected
+            # imperative in that text is not read as a step instruction; the real
+            # entity content still flows through the already-fenced context below.
+            action=_wrap_untrusted(action_text),
             tool=target_tool or "none",
             condition=step.get("condition", "none"),
             thresholds=step.get("thresholds", {}),

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { Rocket, Shield, ShieldCheck, ShieldAlert, Gauge, AlertTriangle, X, Zap } from 'lucide-react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface Props {
   blueprintId: string;
@@ -35,12 +36,15 @@ export default function DeployConfigModal({ blueprintId, blueprintName, colors, 
     hitl_mode: 'CONDITIONAL',
     hitl_threshold: 0.70,
   });
+  const titleId = useId();
+  const trapRef = useFocusTrap<HTMLDivElement>(true, onCancel);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
         style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
           <div className="flex items-center gap-3">
@@ -49,11 +53,11 @@ export default function DeployConfigModal({ blueprintId, blueprintName, colors, 
               <Rocket className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-[16px] font-semibold" style={{ color: colors.ink }}>Deploy Agent</h2>
+              <h2 id={titleId} className="text-[16px] font-semibold" style={{ color: colors.ink }}>Deploy Agent</h2>
               <p className="text-[11px]" style={{ color: colors.inkTertiary }}>{blueprintName}</p>
             </div>
           </div>
-          <button onClick={onCancel} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+          <button onClick={onCancel} aria-label="Close dialog" className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
             style={{ color: colors.inkTertiary }}
             onMouseEnter={e => (e.currentTarget.style.background = colors.surface2)}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>

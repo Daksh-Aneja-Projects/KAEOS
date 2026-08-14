@@ -19,11 +19,14 @@ from app.services.genome.transformation_recommendation_engine import Transformat
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
-async def run_recommendation_acceptance_test():
+async def test_recommendation_intelligence_acceptance():
     logger.info("==========================================================")
     logger.info("   RECOMMENDATION INTELLIGENCE ACCEPTANCE TEST STARTED    ")
     logger.info("==========================================================")
     
+    # Seed the RNG so the 80/20 transformation split is deterministic across runs.
+    random.seed(1337)
+
     # Use isolated in-memory DB for this test to ensure determinism
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
@@ -42,7 +45,11 @@ async def run_recommendation_acceptance_test():
         # Profile B: Low Capability Fitness. CAPABILITY_INVESTMENT works brilliantly here.
         
         for i in range(50):
-            tenant_id = f"tenant_{i}"
+            # The recommendation engine scopes peer search WITHIN a tenant
+            # (cross-tenant genome learning would leak data across customers).
+            # Seed the historical peers under the same tenant as the target so
+            # the engine can actually find them.
+            tenant_id = "target_tenant"
             is_profile_a = (i % 2 == 0)
             
             gen_id = str(uuid.uuid4())
@@ -160,4 +167,4 @@ async def run_recommendation_acceptance_test():
     logger.info("==========================================================")
 
 if __name__ == "__main__":
-    asyncio.run(run_recommendation_acceptance_test())
+    asyncio.run(test_recommendation_intelligence_acceptance())
