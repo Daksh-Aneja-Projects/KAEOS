@@ -116,17 +116,24 @@ async def _seed_invoice(db, **overrides):
 
 @pytest.mark.asyncio
 async def test_duplicate_flagged_invoice_cannot_be_paid(async_client: AsyncClient, db):
+    from app.finance.services.payments import PaymentError, record_vendor_payment
+    # Paying is no longer a lifecycle transition (that bypassed GL + four-eyes);
+    # the manual PAID transition is refused.
     inv = await _seed_invoice(db, invoice_number="INV-DUP", dup=True)
     r = await async_client.post(f"/api/v1/finance/invoices/{inv.id}/transition",
                                 json={"to_state": "PAID"})
-    assert r.status_code == 409, r.text
-    assert r.json()["detail"]["error"] == "guard_blocked"
+    assert r.status_code == 422, r.text   # PAID is not a lifecycle state at all
+    assert r.json()["detail"]["error"] == "unknown_state"
 
-    # Clean invoice pays fine.
-    ok = await _seed_invoice(db, invoice_number="INV-OK")
-    r = await async_client.post(f"/api/v1/finance/invoices/{ok.id}/transition",
-                                json={"to_state": "PAID"})
-    assert r.status_code == 200, r.text
+    # The duplicate control now lives in the payment path itself.
+    inv2 = await _seed_invoice(db, invoice_number="INV-DUP2", dup=True)
+    inv2.approved_by = "cfo@acme"
+    await db.commit()
+    inv2_id = inv2.id
+    with pytest.raises(PaymentError, match="duplicate"):
+        await record_vendor_payment(db, TENANT, invoice_id=inv2_id, amount=10,
+                                    recorded_by="ap-clerk@acme")
+    await db.rollback()
 
 
 @pytest.mark.asyncio
