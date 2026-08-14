@@ -6,6 +6,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
+from datetime import date
 from app.core.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -217,6 +218,28 @@ async def get_trial_balance(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
     return await trial_balance(db, tenant_id)
 
 
+@router.get("/gl/income-statement")
+async def get_income_statement(
+    period_start: Optional[date] = None, period_end: Optional[date] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Profit & loss from the ledger. Inception-to-date by default; pass
+    period_start/period_end (YYYY-MM-DD) to bound the reporting window."""
+    from app.finance.services.gl import income_statement
+    return await income_statement(db, tenant_id, period_start=period_start, period_end=period_end)
+
+
+@router.get("/gl/balance-sheet")
+async def get_balance_sheet(
+    as_of: Optional[date] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Balance sheet from the ledger as of a date (inception-to-date by
+    default). Current-period earnings close into equity so it always balances."""
+    from app.finance.services.gl import balance_sheet
+    return await balance_sheet(db, tenant_id, as_of=as_of)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Accounts Payable
 # ═══════════════════════════════════════════════════════════════════════
@@ -273,7 +296,8 @@ async def record_payment(body: PaymentIn, tenant: dict = Depends(require_role("o
     Controls: the invoice must be APPROVED with a recorded approver, the payer
     may not be that approver (four-eyes), overpayment is refused, and the
     payment posts through the GL keystone atomically with the Payment row and
-    invoice balance (cash-basis: DR expense / CR cash)."""
+    invoice balance (accrual: DR accounts-payable / CR cash, accruing the
+    invoice first if it was not booked at approval)."""
     from app.core.tenant import approver_identity
     from app.finance.services.gl import GLPostingError
     from app.finance.services.payments import PaymentError, record_vendor_payment
@@ -576,9 +600,32 @@ async def transition_invoice(
     invoice_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Guarded AP invoice lifecycle action (submit, approve, dispute, pay, void)."""
-    return await apply_transition(db, WORKFLOW_SPECS["invoice"], invoice_id,
-                                  body.to_state, tenant, note=body.note)
+    """Guarded AP invoice lifecycle action (submit, approve, dispute, pay, void).
+
+    Approving an invoice accrues it: DR expense / CR accounts-payable posts to
+    the GL (idempotent) so the P&L and balance sheet reflect the new liability.
+    """
+    result = await apply_transition(db, WORKFLOW_SPECS["invoice"], invoice_id,
+                                    body.to_state, tenant, note=body.note)
+    if result.get("to_state") == InvoiceStatus.APPROVED.value:
+        from app.core.tenant import approver_identity
+        from app.finance.services.gl import GLPostingError
+        from app.finance.services.payments import accrue_invoice
+        invoice = (await db.execute(select(Invoice).where(
+            Invoice.id == invoice_id, Invoice.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        if invoice is not None:
+            try:
+                entry = await accrue_invoice(db, tenant["tenant_id"], invoice,
+                                             actor=approver_identity(tenant))
+                if entry is not None:
+                    result["accrual_entry"] = entry.entry_number
+            except GLPostingError as e:
+                # The approval is a valid state change and already committed;
+                # accrual will be retried (idempotently) at payment time. Surface
+                # the COA gap instead of failing the approval or hiding it.
+                logger.warning("[AP] accrual on approval of %s failed: %s", invoice_id, e)
+                result["accrual_warning"] = str(e)
+    return result
 
 
 @router.post("/expense-reports/{report_id}/transition")

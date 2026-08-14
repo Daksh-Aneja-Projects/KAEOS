@@ -20,6 +20,8 @@ from app.finance.models.core import (
 )
 from app.finance.services.gl import (
     GLPostingError,
+    balance_sheet,
+    income_statement,
     post_journal_entry,
     reverse_journal_entry,
     trial_balance,
@@ -185,6 +187,37 @@ async def test_entry_numbers_are_sequential_per_tenant(db):
     n1 = int(e1.entry_number.rsplit("-", 1)[1])
     n2 = int(e2.entry_number.rsplit("-", 1)[1])
     assert n2 == n1 + 1
+
+
+async def test_statements_derive_from_the_ledger_and_balance_sheet_balances(db):
+    tenant = _t()
+    cash, revenue, expense = await _accounts(db, tenant)
+    ap = ChartOfAccount(tenant_id=tenant, account_code="2000",
+                        account_name="Accounts Payable",
+                        account_type=AccountType.LIABILITY, normal_balance="CREDIT")
+    db.add(ap)
+    await db.commit()
+
+    # Earn 2000 cash revenue, incur 750 of expense on credit (unpaid payable).
+    await post_journal_entry(db, tenant, lines=[
+        {"account_code": "1010", "debit": 2000},
+        {"account_code": "4000", "credit": 2000}], description="sale")
+    await post_journal_entry(db, tenant, lines=[
+        {"account_code": "6000", "debit": 750},
+        {"account_code": "2000", "credit": 750}], description="accrue expense")
+
+    pnl = await income_statement(db, tenant)
+    assert pnl["total_revenue"] == "2000.00"
+    assert pnl["total_expenses"] == "750.00"
+    assert pnl["net_income"] == "1250.00"
+
+    bs = await balance_sheet(db, tenant)
+    assert bs["balanced"] is True                 # Assets = Liabilities + Equity
+    assert bs["total_assets"] == "2000.00"        # cash
+    assert bs["total_liabilities"] == "750.00"    # unpaid payable
+    assert bs["total_equity"] == "1250.00"        # current-period earnings
+    # Net income closes into equity as a synthetic line.
+    assert any(e["account_name"] == "Current period earnings" for e in bs["equity"])
 
 
 async def test_posting_lands_in_the_signed_provenance_ledger(db):

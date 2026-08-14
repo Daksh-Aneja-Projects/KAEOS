@@ -12,14 +12,30 @@ All notable changes to KAEOS are documented here. This project adheres to
 ## [Unreleased]
 
 ### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
-- **Vendor payments reach the ledger.** `POST /finance/payments` is the first
-  P2P money event wired end to end: the invoice must be APPROVED with a
-  recorded approver, the payer may not be that approver (four-eyes),
+- **Vendor payments reach the ledger, on accrual basis.** `POST /finance/payments`
+  is the first P2P money event wired end to end: the invoice must be APPROVED
+  with a recorded approver, the payer may not be that approver (four-eyes),
   overpayment is refused, and the Payment row + invoice balance + journal
   entry + account balances + signed provenance event land in ONE commit
-  through the GL keystone (cash basis: DR expense / CR cash; the accrual
-  upgrade belongs with the invoice-approval hook). `Payment.journal_entry_id`
-  existed since the schema was written; this is the first code to set it.
+  through the GL keystone. `Payment.journal_entry_id` existed since the schema
+  was written; this is the first code to set it.
+- **Accrual accounting: the liability is booked when the invoice is approved.**
+  Approving an AP invoice now accrues it (`accrue_invoice`: DR expense /
+  CR accounts-payable for the full amount) so the P&L and balance sheet reflect
+  approved-but-unpaid invoices, and a payment settles the payable (DR
+  accounts-payable / CR cash) instead of expensing cash. Accrual is idempotent
+  (each invoice books once, guarded by its `AP_ACCRUAL` entry) and is retried
+  at payment time for invoices approved before the hook existed, so the ledger
+  is correct regardless of history. Wired into the invoice-approval transition
+  (`POST /finance/invoices/{id}/transition` -> APPROVED).
+- **Financial statements derive from the ledger.** `GET /finance/gl/income-statement`
+  (P&L: revenue - expenses = net income, inception-to-date or bounded by
+  period_start/period_end) and `GET /finance/gl/balance-sheet` (assets,
+  liabilities, equity, as-of a date). Both aggregate POSTED journal lines and
+  sign each account by its TYPE - not the mutable `normal_balance` string - so
+  a mis-seeded account can never flip a P&L or unbalance the sheet.
+  Current-period earnings close into equity so the balance sheet always
+  balances (Assets = Liabilities + Equity) without formal period-close entries.
 - **Embeddings obey the same governance as every other model call.** The
   Polystore embedded rule text via a direct litellm call with a hardcoded
   OpenAI model - bypassing the data-residency filter (a local-only tenant's

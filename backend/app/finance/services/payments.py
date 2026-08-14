@@ -10,10 +10,12 @@ Controls:
   * Four-eyes: the payer may not be the invoice's approver.
   * Overpayment is refused; amounts are Decimal cents.
 
-Accounting basis: CASH BASIS for this increment - the payment posts
-DR expense / CR cash, recognizing the expense when paid. The accrual upgrade
-(invoice approval posts DR expense / CR accounts-payable, payment posts
-DR accounts-payable / CR cash) belongs with the invoice-approval GL hook.
+Accounting basis: ACCRUAL. The liability is recognized when the invoice is
+approved - ``accrue_invoice`` posts DR expense / CR accounts-payable for the
+full invoice, so the P&L and balance sheet reflect approved-but-unpaid
+invoices. A payment then settles the payable: DR accounts-payable / CR cash.
+``record_vendor_payment`` calls ``accrue_invoice`` first (idempotent), so an
+invoice approved before the accrual hook existed is still booked correctly.
 """
 from __future__ import annotations
 
@@ -32,7 +34,12 @@ from app.finance.models.accounts_payable import (
     PaymentMethod,
     PaymentStatus,
 )
-from app.finance.models.core import AccountType, ChartOfAccount
+from app.finance.models.core import (
+    AccountType,
+    ChartOfAccount,
+    JournalEntry,
+    JournalEntryStatus,
+)
 from app.finance.services.gl import GLPostingError, _money, post_journal_entry
 
 logger = logging.getLogger(__name__)
@@ -83,6 +90,61 @@ async def _find_account(
     return acc
 
 
+async def accrue_invoice(
+    db: AsyncSession, tenant_id: str, invoice: Invoice, *, actor: Optional[str] = None,
+) -> Optional[JournalEntry]:
+    """Recognize an approved AP invoice as expense + payable (accrual basis).
+
+    Posts DR expense / CR accounts-payable for the invoice's full amount at the
+    moment the liability is incurred, so the P&L and balance sheet show
+    approved-but-unpaid invoices. Idempotent: each invoice is accrued once
+    (guarded by its existing AP_ACCRUAL entry); a repeat call returns the
+    original entry and posts nothing. Returns None for a zero-amount invoice.
+
+    ponytail: idempotency is a SELECT-then-post, not a DB unique constraint -
+    a rare approve/pay race could double-accrue. Add unique(tenant_id,
+    source_module, source_document_id) if concurrent approval+payment is real.
+    """
+    existing = (await db.execute(select(JournalEntry).where(
+        JournalEntry.tenant_id == tenant_id,
+        JournalEntry.source_module == "AP_ACCRUAL",
+        JournalEntry.source_document_id == invoice.id,
+        JournalEntry.status == JournalEntryStatus.POSTED,
+    ))).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    amount = _money(invoice.total_amount)
+    if amount <= 0:
+        return None
+
+    expense = await _find_account(
+        db, tenant_id, account_id=invoice.gl_account_id,
+        preferred_codes=("6000", "6010"), account_type=AccountType.EXPENSE,
+    )
+    ap = await _find_account(
+        db, tenant_id, preferred_codes=("2000",), account_type=AccountType.LIABILITY,
+    )
+
+    entry = await post_journal_entry(
+        db, tenant_id,
+        lines=[
+            {"account_id": expense.id, "debit": amount,
+             "description": f"Accrue invoice {invoice.invoice_number}"},
+            {"account_id": ap.id, "credit": amount,
+             "description": f"Payable for invoice {invoice.invoice_number}"},
+        ],
+        description=f"Accrual for invoice {invoice.invoice_number}",
+        reference=invoice.invoice_number,
+        source_module="AP_ACCRUAL",
+        source_document_id=invoice.id,
+        created_by=actor,
+    )
+    logger.info("[AP] accrued invoice %s -> JE %s (%s)",
+                invoice.invoice_number, entry.entry_number, amount)
+    return entry
+
+
 async def record_vendor_payment(
     db: AsyncSession,
     tenant_id: str,
@@ -130,13 +192,16 @@ async def record_vendor_payment(
             f"payment {pay_amount} exceeds the invoice balance {balance}"
         )
 
+    # Recognize the liability first if it wasn't booked at approval (idempotent).
+    # After this, the payment settles the payable rather than expensing cash.
+    await accrue_invoice(db, tenant_id, invoice, actor=recorded_by)
+
     cash = await _find_account(
         db, tenant_id, account_id=bank_account_id,
         preferred_codes=("1010", "1000"), account_type=AccountType.ASSET, bank=True,
     )
-    expense = await _find_account(
-        db, tenant_id, account_id=invoice.gl_account_id,
-        preferred_codes=("6000",), account_type=AccountType.EXPENSE,
+    ap = await _find_account(
+        db, tenant_id, preferred_codes=("2000",), account_type=AccountType.LIABILITY,
     )
 
     year = datetime.now(timezone.utc).year
@@ -165,11 +230,12 @@ async def record_vendor_payment(
 
     # The keystone commits the session: payment + invoice update + entry +
     # lines + balances + signed provenance land together or not at all.
+    # Accrual basis: settle the payable, not expense cash.
     entry = await post_journal_entry(
         db, tenant_id,
         lines=[
-            {"account_id": expense.id, "debit": pay_amount,
-             "description": f"Invoice {invoice.invoice_number}"},
+            {"account_id": ap.id, "debit": pay_amount,
+             "description": f"Settle invoice {invoice.invoice_number}"},
             {"account_id": cash.id, "credit": pay_amount,
              "description": f"Payment {payment.payment_number}"},
         ],
