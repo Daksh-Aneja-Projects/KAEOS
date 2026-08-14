@@ -98,7 +98,34 @@ def seed_departments():
                 icon="ENG", status=DepartmentStatus.ACTIVE,
                 employee_count=4, agent_count=3, capability_count=5, process_count=9,
                 health_score=0.87, automation_coverage=0.74,
+                compliance_frameworks=["SOC2", "ISO27001", "CHANGE_FREEZE"],
                 deployed_at=NOW - timedelta(days=5),),
+            # The three regulated departments. Their compliance_frameworks are the
+            # tags their gated runners actually pass to the checker registry, so the
+            # UI story and the enforced controls cannot drift apart.
+            Department(id="dept_healthcare", tenant_id=T, name="Healthcare", slug="healthcare",
+                description="AI-powered Healthcare department: encounters, PHI disclosure control, consent, clinical tasks.",
+                icon="HLT", status=DepartmentStatus.ACTIVE,
+                employee_count=12, agent_count=4, capability_count=8, process_count=10,
+                health_score=0.93, automation_coverage=0.55,
+                compliance_frameworks=["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION",
+                                       "HIPAA_DEIDENTIFICATION", "PART2"],
+                deployed_at=NOW - timedelta(days=3),),
+            Department(id="dept_procurement", tenant_id=T, name="Procurement", slug="procurement",
+                description="AI-powered Procurement department: source to pay, three-way match, vendor sanctions screening.",
+                icon="PRC", status=DepartmentStatus.ACTIVE,
+                employee_count=9, agent_count=2, capability_count=5, process_count=8,
+                health_score=0.90, automation_coverage=0.66,
+                compliance_frameworks=["THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES",
+                                       "SPEND_AUTHORIZATION", "OFAC_SANCTIONS"],
+                deployed_at=NOW - timedelta(days=3),),
+            Department(id="dept_lending", tenant_id=T, name="Banking & Lending", slug="lending",
+                description="AI-powered Lending department: origination, underwriting, adverse action, fair-lending monitoring.",
+                icon="LND", status=DepartmentStatus.ACTIVE,
+                employee_count=15, agent_count=3, capability_count=7, process_count=9,
+                health_score=0.91, automation_coverage=0.58,
+                compliance_frameworks=["ECOA", "FAIR_LENDING", "TILA", "FDCPA"],
+                deployed_at=NOW - timedelta(days=2),),
     ]
 
 

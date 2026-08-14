@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun, Bell } from 'lucide-react';
+import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun, Bell, Palette } from 'lucide-react';
 import SecuritySettings from './SecuritySettings';
 import DataGovernanceSettings from './DataGovernanceSettings';
 import NotificationSettings from './NotificationSettings';
 import PlatformAccessSettings from './PlatformAccessSettings';
+import BrandingSettings from './BrandingSettings';
 import { Lock } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -12,6 +13,7 @@ import { PAGE_PAD } from '../lib/layout';
 
 const SETTINGS_TABS = [
   { id: 'llm', label: 'LLM Routing', icon: Cpu },
+  { id: 'branding', label: 'Branding', icon: Palette },
   { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'security', label: 'Security', icon: Shield },
@@ -220,6 +222,9 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
           </div>
         </div>
       )}
+
+      {/* Branding */}
+      {tab === 'branding' && <BrandingSettings />}
 
       {/* Integrations */}
       {tab === 'integrations' && (
