@@ -15,6 +15,11 @@ import { operationsApi } from './endpoints/operations';
 import { healthcareApi } from './endpoints/healthcare';
 import { lendingApi } from './endpoints/lending';
 import { procurementApi } from './endpoints/procurement';
+import { opsApi } from './endpoints/ops';
+import { brandingApi } from './endpoints/branding';
+
+export * from './endpoints/ops';
+export * from './endpoints/branding';
 
 export const api = {
   ...governanceApi,
@@ -24,4 +29,6 @@ export const api = {
   ...healthcareApi,
   ...lendingApi,
   ...procurementApi,
+  ...opsApi,
+  ...brandingApi,
 };

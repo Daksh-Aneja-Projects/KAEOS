@@ -17,13 +17,15 @@ import { humanize } from './lib/format';
 import { PAGE_PAD_X } from './lib/layout';
 import KaeosLogo from './components/KaeosLogo';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BrandingProvider, useBranding } from './context/BrandingContext';
 import ThemeAdapter from './components/ThemeAdapter';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Pages
 const LoginPage = lazy(() => import('./pages/LoginPage'));
-// Public (rendered OUTSIDE the auth gate — an invitee has no session yet).
+// Public (rendered OUTSIDE the auth gate — no session required).
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const StatusPage = lazy(() => import('./pages/StatusPage'));
 
 // ─── WORKFORCE (Primary) ───────────────────────────────────────────
 const WorkforceDashboard = lazy(() => import('./pages/WorkforceDashboard'));
@@ -75,6 +77,7 @@ const DecisionsView = lazy(() => import('./views/DecisionsView'));
 const ComplianceChecker = lazy(() => import('./pages/ComplianceChecker'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+const OperatorConsole = lazy(() => import('./pages/OperatorConsole'));
 
 const RealityExperience = lazy(() => import('./pages/RealityExperience'));
 const Foresight = lazy(() => import('./pages/Foresight'));
@@ -126,6 +129,7 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/pioneer-lab', label: 'Pioneer Lab', icon: FlaskConical },
   // Admin/setup last.
   { path: '/platform/onboarding', label: 'Client Onboarding', icon: UserPlus, adminOnly: true },
+  { path: '/platform/operator', label: 'Operator Console', icon: Server, adminOnly: true },
   { path: '/platform/users', label: 'User Management', icon: Shield, adminOnly: true },
   { path: '/platform/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -134,6 +138,24 @@ const PLATFORM_NAV: NavItem[] = [
 // from the nav container's content edge. Section labels use the same inset so
 // the sidebar reads as one column instead of two ragged ones.
 const SIDEBAR_LABEL_INSET = 'pl-[15px] pr-3';
+
+// The sidebar brand chip: the tenant's logo when set (falls back to the KAEOS
+// mark if the URL is unset or fails to load), otherwise the KAEOS mark.
+function SidebarLogo({ logoUrl, primary }: { logoUrl: string | null; primary: string }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [logoUrl]);
+  if (logoUrl && !broken) {
+    return (
+      <img src={logoUrl} alt="" onError={() => setBroken(true)}
+        className="w-7 h-7 rounded object-contain" style={{ background: '#ffffff' }} />
+    );
+  }
+  return (
+    <div className="w-7 h-7 rounded flex items-center justify-center" style={{ background: primary }}>
+      <KaeosLogo className="w-5 h-5" color="#ffffff" />
+    </div>
+  );
+}
 
 function SidebarNavLink({ item, colors }: { item: NavItem; colors: Record<string, string> }) {
   // `end` on every link: NavLink prefix-matches by default, so on
@@ -164,6 +186,7 @@ function SidebarNavLink({ item, colors }: { item: NavItem; colors: Record<string
 function Shell() {
   const { theme, toggle, colors } = useTheme();
   const { user, logout, isAdmin } = useAuth();
+  const { brand } = useBranding();
   const [domain, setDomain] = useState('All Domains');
   const [domainOpen, setDomainOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -344,11 +367,9 @@ function Shell() {
       >
         <div className="h-14 flex items-center px-5 border-b flex-shrink-0" style={{ borderColor: colors.hairline }}>
           <NavLink to="/" className="flex items-center gap-2.5 w-full">
-            <div className="w-7 h-7 rounded flex items-center justify-center" style={{ background: colors.primary }}>
-              <KaeosLogo className="w-5 h-5" color="#ffffff" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[16px] font-semibold tracking-tight" style={{ color: colors.ink }}>KAEOS</span>
+            <SidebarLogo logoUrl={brand.logo_url} primary={colors.primary} />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[16px] font-semibold tracking-tight truncate" style={{ color: colors.ink }}>{brand.product_name}</span>
               <span className="text-[11px] -mt-0.5 tracking-wide uppercase" style={{ color: colors.inkSubtle }}>Governed Autonomy</span>
             </div>
           </NavLink>
@@ -723,6 +744,7 @@ function Shell() {
                 <Route path="/platform/brain" element={<Navigate to="/platform/knowledge" replace />} />
                 <Route path="/platform/trust" element={<Navigate to="/platform/decisions" replace />} />
                 <Route path="/platform/users" element={<ThemeAdapter><UserManagement /></ThemeAdapter>} />
+                <Route path="/platform/operator" element={<ThemeAdapter><OperatorConsole /></ThemeAdapter>} />
                 <Route path="/platform/settings" element={<ThemeAdapter><SettingsView domain={domain} /></ThemeAdapter>} />
 
                 {/* Fallback — surface broken links instead of silently rendering
@@ -774,7 +796,13 @@ function AuthGuard() {
     );
   }
 
-  return <Shell />;
+  // Branding is fetched inside the authed shell (a /branding call needs a
+  // session), then applied app-wide.
+  return (
+    <BrandingProvider>
+      <Shell />
+    </BrandingProvider>
+  );
 }
 
 export default function App() {
@@ -788,6 +816,12 @@ export default function App() {
           <Route path="/accept-invite" element={
             <Suspense fallback={null}>
               <AcceptInvite />
+            </Suspense>
+          } />
+          {/* Public, unauthenticated status page — rendered before the auth gate. */}
+          <Route path="/status" element={
+            <Suspense fallback={null}>
+              <StatusPage />
             </Suspense>
           } />
           <Route path="*" element={<AuthGuard />} />

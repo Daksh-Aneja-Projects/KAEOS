@@ -11,6 +11,35 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### All ten departments visible everywhere + org-graph seeding fix
+Two defects meant the three new departments existed in the API but were invisible
+in the org-wide surfaces, and the living views rendered a near-empty organisation:
+- **`seed_departments()` hardcoded seven departments.** Healthcare, Procurement and
+  Banking & Lending had full backends but no `Department` record, so they never
+  appeared in the Departments hub, Neural Map, Org Pulse or any cross-department
+  rollup. All three are now seeded with their real agent and capability counts and
+  the statutory frameworks their gated runners actually enforce.
+- **The workforce org-graph was never seeded.** `capabilities`, `department_agents`
+  and `deployed_agents` were all empty on a fresh database, so the Neural Map and
+  Reality Experience drew an organisation with no agents. A new startup step
+  (`app/core/workforce_seed.py`) drives the product's own deterministic deployment
+  path - `WorkforceGenerator.generate_department_structure()` then `deploy_agents()`
+  - against each synced domain pack. Nothing is fabricated: capabilities, agent
+  names, personas and compliance tags come from the pack definitions, so the demo
+  organisation is built exactly the way a real tenant's is. Idempotent and
+  LLM-free. Result on a fresh database: 10 departments, 45 capabilities, 51 agents,
+  31 processes, and a Reality twin of 173 nodes.
+
+### Commercial frontend + futuristic landing page
+- **Operator console** (`/platform/operator`, super-admin via `X-Admin-Secret` held
+  in session memory only), **public status page** (`/status`, no auth), and
+  **white-label branding** (Settings tab + a `BrandingContext` that applies the
+  tenant's product name, logo and accent across the shell).
+- **Landing page rebuilt** as a living single page: animated neural hero with a
+  safe-autonomy ring, the category ladder, all ten governed departments with their
+  statutory checker chips, a live seven-gate pipeline, and the honesty contract.
+  Respects `prefers-reduced-motion`; no emojis, no em-dashes.
+
 ### New department UIs + comprehensive demo data (Healthcare, Lending, Procurement)
 - **Premium frontend for the three new departments**, matching the existing
   Finance/Sales view pattern and bound to the real routers: each leads with a

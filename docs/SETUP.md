@@ -99,8 +99,16 @@ startup. There is **no** default/shared login: if `ADMIN_PASSWORD` is empty
 ## 4. Seed demo data (usually automatic)
 
 The stack **auto-seeds on startup** (`SEED_DEMO_DATA=true`, the default), so after step 2 the
-7 departments are already populated. Set `SEED_DEMO_DATA=false` if you want an empty tenant that
-reflects only genuinely ingested data.
+10 departments are already populated. Set `SEED_DEMO_DATA=false` if you want an empty tenant that
+reflects only genuinely ingested data. The fictional demo dataset is also **skipped automatically in
+a production-like environment**, so a real deploy never quietly acquires demo rows even if the flag
+is left on.
+
+> **Org-graph seeding (always on).** Separately from the demo dataset, a startup step
+> (`app/core/workforce_seed.py`) runs the real `WorkforceGenerator` against each synced domain pack
+> so every department gets its capability + agent backbone. It is deterministic, makes no LLM calls,
+> and is idempotent, so it is safe on every boot. Without it the Neural Map and Reality Experience
+> render an empty organisation even though the departments and their domain data exist.
 
 To (re)run the seeder manually, run it **inside the backend container** so it targets the same
 database the app uses (running it on your host hits a different DB, e.g. a local SQLite file):
@@ -109,10 +117,19 @@ database the app uses (running it on your host hits a different DB, e.g. a local
 docker compose exec backend python -m scripts.seed_master
 ```
 
-This seeds all 7 departments - HR, Finance, Legal, Sales, Support, Operations, **Engineering & IT Ops** -
-plus the Agent Factory, external-intelligence signals, and infrastructure (model registry, prompts,
-cost governor). Takes ~30 seconds. It is idempotent: re-running tops up anything added since your
-tenant was first seeded (new connectors, new departments) without duplicating existing rows.
+This seeds all 10 departments - HR, Finance, Legal, Sales, Support, Operations,
+**Engineering & IT Ops**, and the three regulated verticals **Healthcare**, **Procurement** and
+**Banking & Lending** - plus the Agent Factory, external-intelligence signals, and infrastructure
+(model registry, prompts, cost governor). Takes ~30 seconds. It is idempotent: re-running tops up
+anything added since your tenant was first seeded (new connectors, new departments) without
+duplicating existing rows.
+
+The three regulated departments carry `compliance_frameworks` that are the exact tags their gated
+runners pass to the deterministic statutory checkers in `backend/app/compliance/checkers/`
+(HIPAA/Part 2 for Healthcare, ECOA / fair lending / TILA / FDCPA for Lending, three-way match /
+segregation of duties / spend authorisation / OFAC for Procurement, SOC 2 / ISO 27001 / change
+freeze for Engineering), so the UI story and the enforced controls cannot drift apart. A compliance
+tag with no registered checker resolves to `UNBACKED`, which **blocks** - it is never a silent pass.
 
 ## 5. Deploy your first AI Department
 
@@ -139,6 +156,16 @@ See [`.env.example`](../.env.example) for the complete reference with descriptio
 | `REDIS_URL` | Redis connection URL (optional in dev mode) |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API key (or use `OPENAI_API_KEY`) |
 | `OLLAMA_BASE_URL` | Ollama base URL for local inference (default: `http://localhost:11434`) |
+
+**Optional variables worth setting deliberately:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FINANCE_BASE_CURRENCY` | `USD` | Tenant base/reporting currency (ISO 4217). Every foreign journal line is converted to it at post time via `fin_fx_rates`, and all GL reporting aggregates `amount_in_base`. Changing it does **not** retroactively re-convert posted lines, so treat a change as a deliberate re-statement. |
+| `CONTENT_SECURITY_POLICY` | *(empty)* | Overrides the hardened default CSP on API responses. Empty keeps the built-in policy, which already sets a `connect-src` that permits the SPA to reach the cross-origin API and WebSocket. Set it to pin `connect-src` to your fixed API domain in production. |
+| `METRICS_ROLLUP_INTERVAL_MINUTES` | `60` | How often the leader-guarded rollup snapshots each active tenant's safe-autonomy rate, execution volume and cost into `ts_metric_samples` (served by `/api/v1/metrics/timeseries`). |
+| `SEED_DEMO_DATA` | `true` | Seeds the fictional demo dataset. Set `false` for any real deployment; it is skipped in a production-like environment regardless. |
+| `KAEOS_MANAGED_CLOUD` | `false` | Self-host default: entitlements are a no-op and every feature is reachable. Managed cloud sets `true` so `Tenant.plan` gates managed/enterprise features and Stripe metering runs (`STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`). |
 
 ## Development
 
@@ -184,6 +211,16 @@ alembic upgrade head
 # Rollback one migration
 alembic downgrade -1
 ```
+
+The chain currently runs to head **`0044_tenant_branding`**. Two rules that have bitten this repo
+before, so they are worth repeating when you add a revision:
+
+- **Revision ids must stay <= 32 characters.** `alembic_version.version_num` is `VARCHAR(32)`, so a
+  longer id inserts fine on SQLite and fails on Postgres. Two ids were renamed for exactly this.
+- **Validate every new migration against a real `pgvector/pgvector:pg16` instance, not just SQLite.**
+  SQLite is permissive enough to hide dialect bugs: a `boolean = integer` comparison in `0025` ran
+  clean locally and was rejected by Postgres. `alembic upgrade head` on a scratch pgvector container
+  is the cheapest way to catch this class of defect.
 
 ### Local Ollama (for fully-local LLM inference)
 
@@ -235,6 +272,26 @@ curl http://localhost:8001/health
 ```
 
 On the dev stack (no external services): backends report `sqlite` / `sqlite` / `memory`.
+
+### Public status endpoint (load balancers)
+
+`/status` is **public** (no auth, root-mounted like `/health`) and is the surface to point a load
+balancer or uptime monitor at:
+
+```bash
+curl http://localhost:8001/status
+# {
+#   "status": "ok",
+#   "version": "...",
+#   "uptime_seconds": 812.4,
+#   "dependencies": {"db": true, "redis": true, "llm": true}
+# }
+```
+
+It returns **503** when the database (the only critical dependency) is unreachable, so a balancer can
+act on it. It deliberately exposes no per-tenant data and no platform safe-autonomy rate: that is a
+business metric whose cross-tenant aggregate is an unindexed full scan, which would be a DoS
+amplifier on an auth-free endpoint. It lives on the super-admin-gated `/api/v1/ops/overview` instead.
 
 ### Monitoring
 

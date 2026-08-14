@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { timeAgo, fullTime } from './time';
+import { timeAgo, fullTime, formatDuration } from './time';
 
 // Pin "now" so relative output is deterministic.
 const NOW = new Date('2026-07-25T12:00:00.000Z');
@@ -75,5 +75,21 @@ describe('fullTime', () => {
     );
     // The whole point: no raw microseconds leak through.
     expect(fullTime(d)).not.toContain('234');
+  });
+});
+
+describe('formatDuration', () => {
+  it('collapses missing/negative/NaN to 0s', () => {
+    expect(formatDuration(null)).toBe('0s');
+    expect(formatDuration(undefined)).toBe('0s');
+    expect(formatDuration(-5)).toBe('0s');
+    expect(formatDuration(NaN)).toBe('0s');
+  });
+
+  it('shows the two most-significant units', () => {
+    expect(formatDuration(45)).toBe('45s');
+    expect(formatDuration(95)).toBe('1m 35s');
+    expect(formatDuration(3661)).toBe('1h 1m');
+    expect(formatDuration(172800)).toBe('2d 0h');
   });
 });

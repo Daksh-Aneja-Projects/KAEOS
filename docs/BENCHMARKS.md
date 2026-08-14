@@ -6,8 +6,8 @@ KAEOS's decision logic is scored against **real, human-authored enterprise data*
 synthetic seed. Seven public datasets (IBM HR attrition, a real ServiceNow incident log,
 customer support tickets, sales lead conversion, procurement POs, IBM accounts-receivable
 late-payment histories, and CUAD v1's 510 expert-annotated SEC contracts) are mapped to
-KAEOS domains - one per department - and its classifiers are measured against the recorded
-human outcomes.
+KAEOS domains - one each for HR, Engineering, Support, Sales, Operations, Finance and Legal -
+and its classifiers are measured against the recorded human outcomes.
 
 ```bash
 cd backend && python -m benchmark.real_data.run --limit 5000   # writes benchmark/REAL_DATA_BENCHMARK.md
@@ -30,6 +30,28 @@ transparently - not spun as wins - in the underlying `benchmark/REAL_DATA_BENCHM
 The benchmark is repeatable and committed; raw datasets are gitignored (licensed) with their Kaggle
 refs recorded for reproduction. This **replaces** the previous `benchmark_reports/*.json`, which held
 fabricated numbers with no dataset behind them.
+
+## The three regulated verticals are not benchmarked, and that is deliberate
+
+Healthcare, Lending and Procurement ship as departments but do **not** appear in the table above.
+There is no public dataset of "correct HIPAA minimum-necessary decisions" or of "correct Reg B
+adverse-action notices" to score against, and inventing one would be exactly the fabricated-number
+problem this benchmark was built to replace.
+
+Their gates are also a different kind of thing. The seven benchmarked domains use statistical
+classifiers, so accuracy against recorded human outcomes is the honest measure. The regulated
+verticals use **deterministic statutory checkers** (`app/compliance/checkers/`) - pure functions
+with no LLM, fail-closed, where the correct answer is fixed by the statute rather than estimated
+from data. A checker is right or wrong, not 81% accurate. So they are validated the way
+deterministic logic is validated: exhaustive branch tests asserting a PASS, a BLOCK and the
+`NOT_APPLICABLE` / `ADVISORY` path for every framework tag (HIPAA and 42 CFR Part 2; ECOA,
+fair-lending four-fifths, TILA and FDCPA; three-way match, segregation of duties, spend
+authorization and OFAC screening; SOC 2 CC8.1, ISO 27001 and change freeze), plus the registry
+contract that an unbacked compliance tag returns `UNBACKED` and blocks rather than
+silently passing. See [TESTING.md](TESTING.md).
+
+The one place statistics do enter is fair lending: the four-fifths rule is a real statistical test
+over cohort outcome data, and it is scored as such (`tests/test_disparate_impact.py`).
 
 ## Onboard a real company
 

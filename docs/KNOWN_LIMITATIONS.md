@@ -5,11 +5,13 @@ Back to the [README](../README.md). Related: [Security model](SECURITY_MODEL.md)
 
 We'd rather you read this from us than find it. What's shipped and verified vs. what's ahead:
 
-**Verified today:** the governance spine (gates fail closed), per-tenant PostgreSQL row-level
-security (isolation proven on Postgres - cross-tenant reads scoped, cross-tenant writes blocked),
-default-deny authorization on every mutating endpoint (199/212 explicitly gated, the rest a reviewed
-allowlist, both regression-locked), BYOK LLM routing with real cost metering, a 441-test E2E suite
-green on SQLite **and** Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
+**Verified today:** the governance spine (gates fail closed), deterministic statutory checkers
+backing the regulated departments (an unbacked compliance tag returns `UNBACKED`, which blocks -
+never a silent pass), per-tenant PostgreSQL row-level security (isolation proven on Postgres -
+cross-tenant reads scoped, cross-tenant writes blocked), default-deny authorization on every
+mutating endpoint (227/242 explicitly gated, the rest a reviewed allowlist, both regression-locked),
+BYOK LLM routing with real cost metering, an 816-test unit lane plus a 441-test E2E suite green on
+SQLite **and** Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
 
 Here is exactly what is shipped versus in progress. We treat this candor as an asset, not an apology.
 Each item below states the capability, its honest boundary, and anything still ahead.
@@ -36,13 +38,15 @@ Each item below states the capability, its honest boundary, and anything still a
   **default-deny** policy: every state-changing endpoint must carry an authorization gate
   (`require_role`, `require_service_or_role`, or the out-of-band `verify_admin_secret`) or be on a
   short, reviewed allowlist, and `tests/test_default_deny.py` fails the build the moment a new ungated
-  mutation appears. In the current code **199 of 212** write endpoints carry an explicit gate. The
-  remaining **13** are the reviewed allowlist: 4 intentionally public auth routes (`login`/`logout`/
-  `accept-invite`/SSO), 2 HMAC-authenticated external ingest endpoints (Workday/Salesforce/SIEM relays
-  that cannot hold a KAEOS JWT, signed over the raw body), 3 MFA self-service endpoints (a user manages
-  their own second factor), 2 viewer-level self-actions (marking one's own items read), and 2 read-like
-  routes that produce no state change (skill `explain`, chat `stream`). None of the 13 mutate persistent
-  business state. Coverage is regression-locked by both `tests/test_default_deny.py` (the default-deny
+  mutation appears. In the current code **227 of 242** write endpoints carry an explicit gate. The
+  remaining **15** are the reviewed allowlist: 4 intentionally public auth routes (`login`/`logout`/
+  `accept-invite`/SAML ACS), 2 HMAC-authenticated external ingest endpoints (Workday/Salesforce/SIEM
+  relays that cannot hold a KAEOS JWT, signed over the raw body), 1 Stripe billing webhook (verified
+  by Stripe signature, which is the same pattern), 3 MFA self-service endpoints (a user manages their
+  own second factor), 2 viewer-level self-actions (marking one's own items read), and 3 read-like
+  routes that produce no state change (skill `explain`, `compliance/check`, chat `stream`). None of
+  the 15 mutate persistent business state. Coverage is regression-locked by both
+  `tests/test_default_deny.py` (the default-deny
   lint) and `tests/test_rbac_coverage.py` (which introspects the live route table and fails if any gate
   is dropped).
 - **Security audit logging.** The access/security audit log (`SecurityAuditLog`: auth successes and
@@ -97,7 +101,10 @@ Each item below states the capability, its honest boundary, and anything still a
   maps each to the relevant SOC 2 / ISO 27001 / GDPR / SOX criteria with code and test evidence. The
   report explicitly lists the external items (the attestation itself, an independent penetration test)
   and never marks them satisfied. Compliance tags in-product describe the frameworks a pack is *built
-  against*, not an external attestation.
+  against*, not an external attestation. This applies to the regulated verticals too, and the
+  distinction matters most there: shipping deterministic HIPAA and 42 CFR Part 2 checkers means the
+  gates enforce those rules on the facts they are given. It does **not** make KAEOS a certified
+  business associate, and no software can sign your BAA for you.
 - **AI Foundry fine-tuning.** Phase 2 (dataset curation) is live; Phase 3's
   **evaluation-and-gated-promotion** loop is live (a candidate model is measured against the tenant's
   baseline on held-out governed examples and, if it genuinely wins, promoted through a human gate); and
@@ -125,26 +132,61 @@ Each item below states the capability, its honest boundary, and anything still a
   verifier says so instead of guessing. Rotating `SECRET_KEY` invalidates HMAC verification of
   rows signed under the old key; export the ledger before rotating if evidence continuity
   matters.
-- **Write-back to external systems of record is Salesforce + generic REST today.** All 22
+- **Write-back to external systems of record covers six adapters today.** All 22
   connectors ingest (read/sync) for real. Pushing governed changes back INTO the external system
-  is implemented for Salesforce (Account/Opportunity) and a generic REST sink; Workday write-back
-  is an explicit not-implemented stub and the remaining adapters return `"no write-back adapter"`
+  is implemented for **ServiceNow** (incident/task/problem/change via the Table API),
+  **Salesforce** (Account/Opportunity), **Zendesk**, **Jira**, **Slack**, and a **generic REST**
+  sink; each create is idempotent, stamping the idempotency token on a native field
+  (ServiceNow `correlation_id`, a `[kaeos:...]` marker on Salesforce) and probing for it first, so
+  a create whose HTTP response was lost is not duplicated on retry. Workday write-back
+  is an explicit not-implemented stub (it needs a customer tenant and ISU credentials; no public
+  sandbox exists) and the remaining adapters return `"no write-back adapter"`
   rather than pretending. Governed writes to targets without an adapter land in KAEOS's internal
   governed object store - still idempotent, reversible, drift-monitored, and provenance-chained,
-  but internal until that target's adapter ships. **Boundary:** a claim of "we updated your ERP"
-  is only true for the systems above; everywhere else KAEOS records what it *would* write and
-  keeps it reversible. Bidirectional adapters for the top systems of record are the active
-  integration roadmap.
-- **Industry verticals are not yet load-bearing.** The seven "departments" are functional
-  domains (HR, Finance, Support...), not industry verticals. The `industry_vertical` captured at
-  onboarding is stored and displayed but does not yet change which packs, compliance frameworks,
-  seeds, or gate policies a tenant gets - a bank and a pharma company currently receive the same
-  functional shell with their industry as a label. There are **no built-in deterministic engines
-  for 21 CFR Part 11 / GxP, KYC / AML, SR 11-7 model risk, or ECOA adverse-action** today;
-  compliance tags name the frameworks a skill is *built against* (see the certification item
-  above), and the gates enforce process (approval, audit, provenance), not statutory rules.
-  **Roadmap:** make `industry_vertical` select packs, frameworks and gate policy, and ship one
-  real industry pack end-to-end with a deterministic statutory checker.
+  but internal until that target's adapter ships. The outbound queue isolates failures per write
+  and dead-letters after a maximum attempt count, so one unreachable endpoint no longer blocks
+  every other tenant's queue (`tests/test_writeback_reliability.py`). **Boundary:** a claim of
+  "we updated your ERP" is only true for the systems above; everywhere else KAEOS records what it
+  *would* write and keeps it reversible. Bidirectional adapters for the remaining systems of record
+  are the active integration roadmap.
+- **Three regulated verticals are real; `industry_vertical` still is not a switch.** This
+  limitation has partly closed. KAEOS now ships **ten** departments: the seven functional
+  domains (HR, Finance, Legal, Sales, Support, Operations, Engineering) plus
+  **healthcare**, **lending** and **procurement**,
+  which are regulated verticals with their own models, agents, API surfaces and migrations. Their
+  gates are **deterministic statutory checkers** in `app/compliance/checkers/` - pure functions,
+  no LLM, fail-closed, auto-discovered by `@register`: HIPAA minimum-necessary / authorization /
+  de-identification and 42 CFR Part 2 for healthcare; ECOA (Reg B adverse action), fair lending
+  (four-fifths / disparate impact), TILA and FDCPA for lending; three-way match, segregation of
+  duties, spend authorization and OFAC screening for procurement; SOC 2 CC8.1, ISO 27001 and change
+  freeze for engineering. A compliance tag with no backing checker returns `UNBACKED`, which is
+  **blocking**, and a checker that raises is treated as a BLOCK, so the registry cannot fail open.
+  **What remains:** the `industry_vertical` captured at onboarding is still stored and displayed
+  but does not itself select packs, frameworks, seeds or gate policy - the vertical departments are
+  deployed, not inferred from that field. And there are still **no built-in engines for 21 CFR Part
+  11 / GxP, KYC / AML, or SR 11-7 model risk**. Everywhere a department has no statutory checker,
+  compliance tags name the frameworks a skill is *built against* (see the certification item above)
+  and the gates enforce process (approval, audit, provenance), not statute.
+- **Statutory checkers are logic, not a data service.** The checkers decide correctly on the facts
+  they are given; they do not fetch those facts. Concretely: OFAC screening matches against a
+  **caller-supplied** denied-parties list and does exact normalized matching (a punctuation-only
+  difference such as `LLC` vs `L.L.C.` downgrades to ADVISORY rather than blocking) - there is no
+  bundled sanctions feed and no fuzzy/alias/phonetic matching, so screening with no list supplied
+  returns ADVISORY with a finding, never a pass. The fair-lending four-fifths test needs real
+  cohort outcome data and says so when it has none. Wire your own list and data sources.
+- **Multi-currency GL rates are tenant-supplied.** Every journal line converts to the tenant base
+  currency (`FINANCE_BASE_CURRENCY`, default USD) at post time using the most recent `fin_fx_rates`
+  row on or before the entry date, and all GL reporting (trial balance, income statement, balance
+  sheet, cash flow) aggregates `amount_in_base` rather than summing native debit/credit columns. A
+  reversal re-converts at the **original** entry date, so base amounts offset exactly. **Boundary:**
+  KAEOS does not subscribe to a market rate feed. Rates are rows you load. A line whose currency has
+  no rate on or before its date is **refused**, not converted at a guess.
+- **The stored metric series starts when the rollup starts.** `ts_metric_samples` is written by a
+  leader-guarded hourly rollup (`METRICS_ROLLUP_INTERVAL_MINUTES`, default 60) that is idempotent
+  per bucket, so dashboards and Time Machine read a recorded series instead of reconstructing it on
+  every request. There is **no backfill**: buckets before the rollup first ran are simply absent,
+  and a metric with no underlying data in a bucket is not stored at all rather than stored as a
+  fabricated `0`. `GET /metrics/timeseries` returns an empty series with a note saying so.
 - **Simulation surfaces.** The enterprise "what-if"/physics and evolution-fitness surfaces are
   parameterized simulations over configurable archetypes, labelled as such, not models learned
   from your data.

@@ -25,6 +25,25 @@ export function timeAgo(value?: string | number | Date | null): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Humanize a duration in seconds into a compact, plain-English string:
+ * `95` -> "1m 35s", `3661` -> "1h 1m", `172800` -> "2d 0h". Shows the two
+ * most-significant units so a status page reads "uptime: 3d 4h", never a raw
+ * second count. Negative/NaN collapses to "0s".
+ */
+export function formatDuration(seconds?: number | null): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '0s';
+  const s = Math.floor(seconds);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
 /** Full timestamp for a tooltip - precise on demand, never in the cell. */
 export function fullTime(value?: string | number | Date | null): string {
   if (!value) return '';

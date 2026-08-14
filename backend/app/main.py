@@ -165,7 +165,15 @@ async def lifespan(app: FastAPI):
     # when empty, then roll up department KPI metrics. Idempotent per domain.
     from app.core.domain_seed import seed_domains_if_empty
     await seed_domains_if_empty()
-            
+
+    # Give every department its capability + agent backbone by running the real
+    # WorkforceGenerator against each synced pack. Without this the org-wide
+    # views (neural map, reality, org pulse) render an empty graph even though
+    # the departments and their domain data exist. Deterministic + idempotent.
+    from app.core.workforce_seed import seed_workforce_graph
+    await seed_workforce_graph()
+
+
     # Initialize Redis
     from app.core.redis import init_redis, close_redis
     await init_redis()

@@ -33,7 +33,7 @@ human override at every step.
 | Pillar | What it does | Where it lives in KAEOS |
 |--------|--------------|-------------------------|
 | **Company Brain** | A unified intelligence layer that understands the whole organization instead of isolated departments - rules, skills, signals, and a cross-domain knowledge graph with 5-dimensional confidence scoring | `/brain/overview`, `/rules`, `/skills`, `/topology/graph`, `/elicitation`, `/extraction` |
-| **Department Brains** | Specialized AI reasoning engines per business function - HR, Finance, Legal, Sales, Customer Support, Operations (incl. procurement, vendors, QA), and Engineering & IT Ops (code review, deployments, incidents), each with domain agents that run through the gated pipeline | `/hr`, `/finance`, `/legal`, `/sales`, `/support`, `/operations`, `/engineering` |
+| **Department Brains** | Specialized AI reasoning engines per business function - HR, Finance, Legal, Sales, Customer Support, Operations, Engineering & IT Ops, plus three regulated verticals (Healthcare, Procurement & Sourcing, Banking & Lending), each with domain agents that run through the gated pipeline | `/hr`, `/finance`, `/legal`, `/sales`, `/support`, `/operations`, `/engineering`, `/healthcare`, `/procurement`, `/lending` |
 | **Agent Factory** | Create, approve, compile, deploy, and orchestrate enterprise AI agents that all share the same organizational context - from a plain-English prompt | `/agents/blueprint*`, `/agents/deployed`, `/agents/debates`, `/agents/activity-feed` |
 | **Decision Intelligence** | Evaluates business situations, generates options, scores cost / risk / impact, and recommends the best course of action - with adversarial debate before committing | `/reality/shock`, `/reality/decision`, `/simulation/what-if`, `/org-intelligence/*` |
 | **Learning Engine** | Learns continuously from decisions and outcomes: confidence decay, Bayesian validation updates, execution feedback (L10), and learning modifiers that improve future recommendations | `/reality/learning`, `ConfidenceEngine`, `FeedbackEngine`, `EvolutionEngine` |
@@ -46,7 +46,7 @@ human override at every step.
 ```
 +----------------------------------------------------------------------+
 |                         KAEOS Frontend                               |
-|   React / TypeScript / 40 Pages / 7 Department Views                 |
+|   React / TypeScript / 52 Pages / 10 Department Views                |
 |   Real-time WebSocket / SSE Streaming / Tailwind CSS                 |
 +----------------------------------+-----------------------------------+
                                    |  REST + WebSocket + SSE
@@ -61,9 +61,10 @@ human override at every step.
 |                                    +-------------+                   |
 |  +---------------------------------------------------------------+   |
 |  |             7-Gate Skill Execution Pipeline                   |   |
-|  |  Compliance -> Fairness -> Confidence -> HITL -> Debate ->    |   |
-|  |  Execute (tiered BYOK routing: local Ollama or cloud via      |   |
-|  |  LiteLLM) -> Provenance Ledger                                |   |
+|  |  Compliance (deterministic statutory checkers) -> Fairness -> |   |
+|  |  Confidence -> HITL -> Debate -> Execute (tiered BYOK         |   |
+|  |  routing: local Ollama or cloud via LiteLLM)                  |   |
+|  |  -> Provenance Ledger                                         |   |
 |  +---------------------------------------------------------------+   |
 |                                                                      |
 |  +-------------+  +-------------+  +-------------+  +-----------+    |
@@ -101,6 +102,98 @@ see [BYOK](BYOK.md) for the tier table and the measured confidence ceiling.
 | **Pattern Discovery Engine** | Mines unstructured signals for hidden workflow opportunities - surfacing automations no one asked for |
 | **Digital Twin** | A living, physics-simulated graph of your entire organization - employees, capabilities, projects, vendors, and their relationships. Department territories are hue-coded, energy particles trace signal flow, and injected shocks propagate visibly: an expanding shockwave hits each impacted node in graph-distance order with a physical impulse |
 
+## Compliance layer - deterministic statutory checkers
+
+Gate 1 does not ask a language model whether an action is compliant. It runs **pure functions**.
+
+`app/compliance/` is a small three-part package:
+
+| Piece | Responsibility |
+|-------|----------------|
+| `base.py` | `CheckResult` / `CheckStatus` / `Finding` - the verdict shape every checker returns |
+| `registry.py` | Framework tag -> checker binding, lazy `pkgutil` discovery, `run_checks()` |
+| `checkers/` | One module per department, each self-registering via `@register(...)` |
+
+The design rules that make it trustworthy:
+
+- **Deterministic and LLM-free.** A checker is a pure function over a context dict. The same
+  context always yields the same verdict, so a control can be unit-tested like any other code.
+- **Fail-closed by construction.** A framework tag with **no** backing checker returns
+  `UNBACKED`, which is **blocking**. An unbacked compliance claim can never read as satisfied -
+  that was precisely the hole in a guess-based path. A checker that **raises** is treated as
+  `BLOCK`: a broken control is not a passing control.
+- **Auto-discovered, no central edit.** Dropping a new module into `checkers/` registers its
+  frameworks at import. A module that fails to import is logged and skipped rather than taking
+  the app down.
+- **Self-describing.** `list_frameworks()` returns every framework the platform can actually
+  verify, with its title and statutory citation - the honest answer to "which of these
+  compliance badges are real versus a label".
+
+Frameworks backed today, by department module:
+
+| Module | Frameworks |
+|--------|-----------|
+| `healthcare.py` | `HIPAA_MINIMUM_NECESSARY`, `HIPAA_AUTHORIZATION`, `HIPAA_DEIDENTIFICATION`, `PART2` (42 CFR Part 2) |
+| `lending.py` | `ECOA` (Reg B adverse action), `FAIR_LENDING` (four-fifths / disparate impact), `TILA`, `FDCPA` |
+| `procurement.py` | `THREE_WAY_MATCH`, `SEGREGATION_OF_DUTIES`, `SPEND_AUTHORIZATION`, `OFAC_SANCTIONS` |
+| `engineering.py` | `SOC2` (CC8.1 change management), `ISO27001`, `CHANGE_FREEZE` |
+| `finance.py` | `SOX` |
+| `hr.py` | `EEOC`, `FLSA`, `I9` |
+| `legal.py` | `CONFLICT_OF_INTEREST`, `LEGAL_HOLD`, `RETENTION_SCHEDULE`, `CONTRACT_CLAUSE` |
+| `support.py` | `PII_REDACTION`, `CALL_RECORDING_CONSENT`, `SLA_BREACH` |
+| `operations.py` | `CHANGE_MANAGEMENT`, `INCIDENT_POSTMORTEM`, `BACKUP_RETENTION` |
+| `crm.py` | `GDPR`, `CCPA`, `TCPA`, `DSAR` |
+
+The three regulated verticals (Healthcare, Procurement, Lending) are built around this layer
+rather than bolted onto it: the hard block lives in the deterministic service, and the gated
+agent produces the plain-English "why" afterwards.
+
+## Operator and commercial surfaces
+
+Four surfaces sit outside the per-tenant product API and are worth calling out because their
+trust boundaries differ:
+
+| Surface | Auth | What it is |
+|---------|------|-----------|
+| `GET /status` | **None (public)** | Liveness for load balancers and uptime checks: db / redis / llm reachability, app version, uptime seconds. Returns **503** when the database is unreachable, since that is the only critical dependency. It reuses `main._probe_dependencies()` rather than forking it |
+| `/api/v1/ops/*` | Super-admin (`ADMIN_SECRET` dependency) | The operator console: `tenants`, `tenants/{id}`, `overview`. Cross-tenant reads go through the owner/maintenance session, which is the only place in the codebase that legitimately crosses the RLS boundary |
+| `/api/v1/branding` | GET any authed tenant user, PUT admin | White-label theming (product name, primary/accent colour, logo, login subtitle). Validation is fail-closed: colours must be `#rrggbb`, and `logo_url` must be an absolute `http(s)` URL with a host, so `javascript:` / `data:` payloads can never reach the login shell |
+| `/api/v1/metrics/timeseries` | Tenant user | The **stored** metric series (see below), so dashboards and Time Machine read a recorded series instead of reconstructing one per request |
+
+`/status` deliberately does **not** expose the platform safe-autonomy rate. It is a business
+metric, and its cross-tenant aggregate is an unindexed full scan (`skill_executions` is indexed
+tenant-id-leading), which would make an auth-free endpoint a DoS amplifier. That number lives on
+the super-admin-gated `/ops/overview` instead.
+
+## Time-series metrics store
+
+Metrics used to be recomputed from raw executions on every read. They are now **recorded**:
+
+- `ts_metric_samples` stores `(tenant_id, metric_key, interval, bucket_start, value)`.
+- A **leader-guarded** rollup runs on the existing scheduler, idempotent per bucket, snapshotting
+  each active tenant's `safe_autonomy_rate`, `execution_volume` and `cost_usd`.
+  Interval: `METRICS_ROLLUP_INTERVAL_MINUTES` (default 60).
+- **Honesty contract:** a metric with no underlying data in a bucket is **not written at all**.
+  There is no fabricated `0`. `cost_usd` keys off whether cost events exist rather than off
+  execution volume, because a gate-blocked action burns real tokens without ever producing an
+  execution row. A query over an empty window returns an empty series plus a note saying so.
+
+## Multi-currency general ledger
+
+The finance vertical posts a real multi-currency ledger rather than assuming one currency:
+
+- `fin_fx_rates` holds per-tenant rates; `fin_journal_lines.amount_in_base` holds the converted
+  magnitude of each line's single non-zero side.
+- Every journal line converts to the tenant base currency **at post time**
+  (`FINANCE_BASE_CURRENCY`, default `USD`). A foreign line with no rate on or before its entry
+  date is **refused**, so the ledger never holds an unconverted amount masquerading as base.
+- All GL reporting - trial balance, income statement, balance sheet, cash flow - aggregates
+  `amount_in_base`, falling back to the native column only for pre-FX historic rows, instead of
+  summing native debit/credit across mixed currencies.
+- A **reversal re-converts at the original entry date**, not today, so base amounts offset to
+  exactly zero. Reversing at today's rate would leave a residual base-currency imbalance on any
+  multi-currency entry.
+
 ## Project structure
 
 ```
@@ -111,17 +204,25 @@ kaeos/
 |   |   |   +-- runtime.py           # THE 7-gate pipeline (AgentExecutor): compliance,
 |   |   |                            # fairness, confidence/HITL, debate, execute, audit
 |   |   +-- api/
-|   |   |   +-- routes/              # 34+ FastAPI route files
+|   |   |   +-- routes/              # 60+ FastAPI route files, incl. ops.py (operator
+|   |   |                            # console + public /status) and branding.py
+|   |   +-- compliance/              # Deterministic statutory checkers (see above)
+|   |   |   +-- base.py              # CheckResult / CheckStatus / Finding
+|   |   |   +-- registry.py          # @register, lazy discovery, fail-closed run_checks
+|   |   |   +-- checkers/            # One module per department, self-registering
 |   |   +-- core/
 |   |   |   +-- auth.py              # JWT + API key auth
 |   |   |   +-- config.py            # Settings (DEV_MODE, secret validation)
 |   |   |   +-- seed.py              # Startup seeder (skills, rules, departments)
-|   |   |   +-- middleware.py        # Rate limiting, tenant isolation, CORS
+|   |   |   +-- workforce_seed.py    # Org-graph backbone: real WorkforceGenerator per pack
+|   |   |   +-- middleware.py        # Rate limiting, tenant isolation, CORS, CSP
 |   |   |   +-- database.py          # Async SQLAlchemy setup
 |   |   |   +-- polystore/           # Dual-mode: VectorStore / GraphStore / CacheBus
 |   |   +-- models/
 |   |   |   +-- domain.py            # Core domain models (Skill, Rule, Execution, Signal...)
 |   |   |   +-- events.py            # SystemEvent, WebhookSubscription
+|   |   |   +-- metrics_ts.py        # MetricSample (ts_metric_samples)
+|   |   |   +-- branding.py          # TenantBranding (white-label theming)
 |   |   +-- services/
 |   |   |   +-- skill_executor.py    # Runs skill steps AFTER the gates clear; the gates
 |   |   |   |                        # themselves live in app/agents/runtime.py
@@ -133,6 +234,7 @@ kaeos/
 |   |   |   +-- llm_simulation.py    # Deterministic degraded-mode completions (split from llm_router)
 |   |   |   +-- model_probe.py       # BYOK self-calibration battery
 |   |   |   +-- json_utils.py        # Tolerant LLM JSON parsing (use everywhere)
+|   |   |   +-- metrics_timeseries.py # Leader-guarded hourly rollup into ts_metric_samples
 |   |   |   +-- live_connectors.py   # Credentialed live sync + encryption
 |   |   |   +-- vendor_adapters/     # 17 vendor adapters (+5 core in live_connectors = 22); package split by category: base/devops/itsm/hr_finance/collaboration/registry
 |   |   |   +-- precog_engine.py     # Zero-prompt ambient intelligence
@@ -145,7 +247,9 @@ kaeos/
 |   |   |   |   +-- state_machine.py # 11-state FSM
 |   |   |   |   +-- studio.py        # Deployment pipeline owner
 |   |   |   |   +-- integration_mapper.py
-|   |   |   +-- domain_packs/packs/  # hr.yaml, finance.yaml, legal.yaml...
+|   |   |   +-- domain_packs/packs/  # 10 packs: hr, finance, legal, sales, support,
+|   |   |   |                        # operations, engineering, healthcare,
+|   |   |   |                        # procurement, lending
 |   |   |   +-- runtime/
 |   |   |       +-- department_runtime.py
 |   |   +-- hr/                      # HR vertical (14 models, 7 agents, full API)
@@ -155,10 +259,23 @@ kaeos/
 |   |   +-- support/                 # Support vertical
 |   |   +-- operations/              # Operations vertical
 |   |   +-- engineering/             # Engineering & IT Ops vertical
-|   |       +-- models/              # core (services, engineers), delivery (PRs, deploys), incidents
-|   |       +-- agents/              # code_review, incident, deploy_risk (+ gated_runner)
-|   |       +-- api/v1/router.py
-|   |       +-- seed.py
+|   |   |   +-- models/              # core (services, engineers), delivery (PRs, deploys), incidents
+|   |   |   +-- agents/              # code_review, incident, deploy_risk (+ gated_runner)
+|   |   |   +-- api/v1/router.py
+|   |   |   +-- seed.py
+|   |   +-- healthcare/              # Healthcare vertical (HIPAA / 42 CFR Part 2)
+|   |   |   +-- models/core.py       # hlth_* encounters, disclosures, consent, tasks
+|   |   |   +-- agents/              # intake, coding, phi_guard, prior_auth (+ gated_runner)
+|   |   |   +-- services/            # phi_disclosure, analytics
+|   |   +-- lending/                 # Banking & Lending vertical (ECOA / TILA / FDCPA)
+|   |   |   +-- models/core.py       # lnd_* applications, decisions, adverse actions
+|   |   |   +-- agents/              # intake, underwriter, adverse_action (+ gated_runner)
+|   |   |   +-- services/            # underwriting, analytics
+|   |   +-- procurement/             # Procurement & Sourcing vertical (source-to-pay)
+|   |       +-- services/            # source_to_pay: the deterministic three-way match
+|   |       +-- agents/gated_runner.py  # Sourcing + SpendGuard, control work first, then gated LLM
+|   |       +-- api/v1/router.py     # Reuses operations.procurement + finance AP models
+|   +-- alembic/versions/            # Migration chain, head 0044 (see Data layer & migrations)
 |   +-- scripts/
 |   |   +-- seed_master.py           # Master seeder - the only entry point you need
 |   |   +-- seed_agent_factory.py    # Agent Factory blueprints + agents
@@ -173,8 +290,8 @@ kaeos/
 |   +-- pytest.ini
 +-- frontend/
 |   +-- src/
-|   |   +-- pages/                   # 40 page components (most lazy-loaded by views/)
-|   |   +-- views/                   # 7 department view composites
+|   |   +-- pages/                   # 52 page components (most lazy-loaded by views/)
+|   |   +-- views/                   # 10 department view composites + settings composites
 |   |   +-- hooks/                   # useWebSocket, useAuth, useTheme
 |   |   +-- api/                     # Typed API client: client.ts barrel re-exporting http.ts + types.ts + endpoints/ (split by domain)
 |   |   +-- context/                 # AuthContext, ThemeContext
@@ -192,6 +309,50 @@ kaeos/
 +-- NOTICE                           # Required attributions (Apache 2.0)
 +-- LICENSE
 ```
+
+## Data layer & migrations
+
+The schema is Alembic-managed and currently runs to **head 0044**. Recent additions, all
+additive and inspector-guarded (safe to re-run against a partially migrated database), with
+RLS enabled on PostgreSQL:
+
+| Revision | What it adds |
+|----------|--------------|
+| `0040_fin_fx_rates` | Multi-currency GL: `fin_fx_rates` + `fin_journal_lines.amount_in_base` |
+| `0041_healthcare_tables` | Healthcare vertical (`hlth_*`) |
+| `0042_lending_vertical` | Lending vertical (`lnd_*`) |
+| `0043_metrics_timeseries` | `ts_metric_samples` |
+| `0044_tenant_branding` | `brand_tenant_branding` |
+
+Two deployment lessons are baked into the chain and are worth knowing before you add a revision:
+
+- **Revision ids must stay at 32 characters or fewer.** `alembic_version.version_num` is
+  `VARCHAR(32)`. Two ids were renamed for exactly this reason; a longer id passes locally and
+  then fails on first upgrade against a real database.
+- **PostgreSQL will not compare a boolean to an integer.** A `boolean = integer` comparison in
+  `0025` was fixed because SQLite tolerated it and PostgreSQL rejected it outright.
+
+The chain is validated against a real pgvector / PostgreSQL 16 instance, not only against the
+SQLite dev database, precisely because those two divergences are invisible on SQLite.
+
+## Startup sequence - why the org graph is never empty
+
+The Neural Map, Reality Experience, Org Pulse, Departments hub and Command Center all render the
+organization graph. Without a backbone of capabilities and agents they render an empty
+organization, which reads as a broken product rather than an empty tenant.
+
+`app/core/workforce_seed.py` runs as a startup step, after the departments are seeded and the
+domain packs are synced. It does **not** fabricate rows. It drives the product's own deterministic
+deployment path - `WorkforceGenerator.generate_department_structure()` followed by
+`deploy_agents()` - against each synced pack, which is exactly what happens when a real customer
+deploys that department. Capabilities, agent names, personas and compliance tags therefore come
+from the pack YAML, so the demo organization and a customer organization are built the same way
+and cannot drift apart.
+
+It is LLM-free and fully deterministic, and idempotent at three levels: a department that already
+has agents is skipped by the generator, only missing capability slugs are created, and a
+deployment is reused per (tenant, pack). It never raises - failing to enrich the graph must not
+stop the application from booting.
 
 ## Performance & latency
 

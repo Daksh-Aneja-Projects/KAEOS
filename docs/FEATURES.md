@@ -3,11 +3,13 @@
 Back to the [README](../README.md). Related: [Architecture](ARCHITECTURE.md) |
 [API reference](API.md) | [BYOK](BYOK.md) | [Benchmarks](BENCHMARKS.md)
 
-## 7 AI-Powered Departments
+## 10 AI-Powered Departments
 
 Deploy any combination of these pre-built AI departments, built on a production-oriented,
 security-hardened architecture (RLS-isolated per tenant, gated agent pipeline). Agent counts
-are the agent modules under `backend/app/<department>/agents/`, 41 in total.
+are the agent modules under `backend/app/<department>/agents/`, 48 in total. Each department
+ships as a domain pack under `backend/app/workforce/domain_packs/packs/`, so deploying one
+brings its capabilities, agents, business processes and compliance frameworks with it.
 
 | Department | Agents | Key Automations |
 |-----------|--------|-----------------|
@@ -18,6 +20,21 @@ are the agent modules under `backend/app/<department>/agents/`, 41 in total.
 | **Customer Support** | 7 | Ticket triage, auto-resolution, SLA enforcement, knowledge base retrieval, resolution drafting, escalation routing, CSAT analysis |
 | **Operations** | 6 | Project tracking, resource allocation, vendor management, procurement workflows, facilities, QA automation |
 | **Engineering & IT Ops** | 3 | Code review risk assessment, incident triage with deploy correlation, deployment risk scoring |
+| **Healthcare & Clinical Ops** | 4 | Encounter intake and triage, medical coding, PHI disclosure governance, prior authorization |
+| **Banking & Lending** | 3 | Loan origination and intake, automated underwriting, adverse-action notices (fair-lending monitoring runs on the same decisions) |
+| **Procurement & Sourcing** | 2 | Purchase-order approval, three-way-match payment gate, vendor sanctions screening |
+
+Procurement's two agents (Sourcing, SpendGuard) live in
+`backend/app/procurement/agents/gated_runner.py` beside the runner rather than in one module
+each, because both are thin plain-English narrators over a deterministic source-to-pay service.
+The department reuses the existing `operations.procurement` and `finance` accounts-payable
+models rather than duplicating a second purchase-order schema.
+
+A freshly seeded tenant comes up with 10 departments, 45 capabilities, 51 deployed agents and
+31 business processes. That backbone is not fixture data: a startup step drives the product's
+own `WorkforceGenerator` against each synced domain pack, so the demo organization is built by
+exactly the code path a customer's deployment uses. See
+[Architecture](ARCHITECTURE.md#startup-sequence---why-the-org-graph-is-never-empty).
 
 **Why Engineering matters most.** Coding is ~55% of enterprise departmental AI spend and IT ops
 another ~10% ([Menlo Ventures, 2025 State of GenAI in the Enterprise](https://menlovc.com/perspective/2025-the-state-of-generative-ai-in-the-enterprise/),
@@ -34,6 +51,59 @@ Two behaviours are deliberate and enforced by tests:
   Without both filters an agent will confidently tell a commander to roll back a release that was
   never deployed.
 
+## Regulated verticals - where the gate is a statute, not a vibe
+
+Healthcare, Banking & Lending, and Procurement & Sourcing are the three regulated departments.
+They differ from the others in one structural way: their compliance gate does **not** ask a
+language model whether an action is lawful. It runs **deterministic statutory checkers** - pure
+Python functions in `backend/app/compliance/checkers/`, LLM-free, unit-testable, fail-closed,
+auto-discovered at import via a `@register` decorator.
+
+| Department | Deterministic checks | What they actually enforce |
+|-----------|---------------------|----------------------------|
+| **Healthcare** | `HIPAA_MINIMUM_NECESSARY`, `HIPAA_AUTHORIZATION`, `HIPAA_DEIDENTIFICATION`, `PART2` | Every protected-health-information disclosure is checked against the HIPAA Privacy Rule and 42 CFR Part 2 before it leaves the building: the fields disclosed must be the minimum necessary for the stated purpose, a purpose that needs authorization must have a live one, a de-identified payload must actually be de-identified, and substance-use-disorder records get their separate Part 2 consent |
+| **Banking & Lending** | `ECOA`, `FAIR_LENDING`, `TILA`, `FDCPA` | A declined application must carry a Reg B adverse-action notice with specific reasons; the decision cohort is run through a four-fifths disparate-impact test; disclosure terms are checked against TILA; collections conduct against FDCPA |
+| **Procurement & Sourcing** | `THREE_WAY_MATCH`, `SEGREGATION_OF_DUTIES`, `SPEND_AUTHORIZATION`, `OFAC_SANCTIONS` | An invoice pays only when purchase order, goods receipt and invoice reconcile; the approver cannot be the requester; spend must sit inside a real authorization limit; a vendor is screened against sanctions before money moves |
+
+Engineering gained the same treatment: `SOC2` (CC8.1 change management), `ISO27001` and
+`CHANGE_FREEZE` are now deterministic checkers rather than labels.
+
+Two properties make this honest rather than decorative:
+
+- **An unbacked compliance tag blocks.** If a skill claims a framework that has no checker behind
+  it, the gate returns `UNBACKED`, which is **blocking**. There is no silent pass. That was the
+  exact hole in a guess-based compliance path: a badge nobody verified reading as green.
+- **A broken control is not a passing control.** A checker that raises is treated as `BLOCK`.
+
+The pattern inside each vertical is the same: the **hard block lives in the deterministic
+service**, and the gated agent produces the plain-English "why" afterwards. The model explains
+the decision; it never makes it.
+
+Each vertical also ships its own API surface:
+
+- `/api/v1/healthcare/*` - encounters, disclosures, consent (including revocation), tasks,
+  dashboard, analytics
+- `/api/v1/lending/*` - applications, underwrite, adverse-action, dashboard
+- `/api/v1/procurement/*` - requisitions, purchase orders and approval, goods receipts,
+  three-way match, vendors and sanctions screening
+
+## Multi-currency general ledger
+
+A finance department that assumes one currency is a demo. The KAEOS general ledger posts real
+multi-currency entries:
+
+- Every journal line converts to the tenant's base currency **at post time** using a per-tenant
+  FX rate table. The base currency is a setting (`FINANCE_BASE_CURRENCY`, default `USD`).
+- A foreign line with no rate on or before its entry date is **refused**. The ledger never holds
+  an unconverted amount masquerading as base currency, which is how mixed-currency books quietly
+  stop balancing.
+- **All** GL reporting - trial balance, income statement, balance sheet, cash flow - aggregates
+  the converted base amount rather than summing native debit and credit columns across
+  currencies. Pre-FX historic rows fall back to their native amount, so old ledgers still read.
+- A reversal re-converts **at the original entry date**, not today, so the base amounts offset to
+  exactly zero. Reversing at today's rate looks right and leaves a residual imbalance on every
+  multi-currency entry.
+
 ## 7-Gate Skill Execution Pipeline
 
 Every AI action - regardless of source - is evaluated by the same 7-gate pipeline before execution.
@@ -46,7 +116,9 @@ to a human:
 Signal / Trigger
       |
       v
-  1. Compliance      <- SOX, GDPR, HIPAA, PCI, EEOC, CCPA enforcement
+  1. Compliance      <- Deterministic statutory checkers (SOX, GDPR, HIPAA, Part 2,
+      |                 ECOA, TILA, EEOC, CCPA, SOC2, three-way match...).
+      |                 An unbacked framework tag returns UNBACKED, which blocks.
       |
       v
   2. Fairness        <- Statistical 4/5ths disparate-impact test on cohort outcomes; LLM screening (labeled) when no cohort data
@@ -82,7 +154,8 @@ So KAEOS measures **safe autonomy rate**: the share of work completed without hu
 a fixed error budget, trending over time. It is computed live from real executions - a headline number
 at `GET /billing/roi`, and a fully broken-out view at `GET /metrics/safe-autonomy` (the rate, an
 explainable fallout breakdown of routed-to-human / overridden / edited / failed, a per-skill split
-showing where autonomy leaks, and a daily time-series). It rises as verified rules accumulate - the
+showing where autonomy leaks, and a daily time-series computed live; the recorded hourly history
+is at `GET /metrics/timeseries`). It rises as verified rules accumulate - the
 compounding loop in one number. In the app the **Dashboard** surfaces the rate, its trend, the
 earned-autonomy skills, and the fallout breakdown (where autonomy fell out) - all in one place, live.
 The loop closes under **Decisions -> Feedback & Evolution**, where an **Outcome Intelligence** panel
@@ -218,6 +291,58 @@ A guided, frontend-driven flow stands up a new client entirely through the produ
   governed decision, configure their model, invite their team, and watch their AI training dataset
   grow.
 
+## Operator Console - running the platform, not a tenant
+
+Once you host more than one customer you need a view above them, and that view is the most
+dangerous surface in the product, so it is the narrowest. `/api/v1/ops/*` (tenant list, tenant
+detail, platform overview) is gated by a dedicated super-admin dependency backed by
+`ADMIN_SECRET`, and it is the only place in the codebase that legitimately crosses the row-level
+security boundary, via the owner/maintenance session. It answers the questions an operator
+actually has: who is on the platform, what plan are they on, are they executing anything, and
+what is the blended safe-autonomy rate across all tenants. Where a metric has no data, the
+response carries a note saying so rather than a fabricated `0`.
+
+## Public status page - one honest endpoint, no auth
+
+`GET /status` is public and unauthenticated: database, Redis and LLM reachability, the app
+version, and uptime in seconds. It returns **503** when the database is unreachable, since that is
+the only genuinely critical dependency, so a load balancer or uptime checker can act on it
+directly. It reuses the same dependency probe the app already runs at startup rather than forking
+a second definition of "healthy" that can drift.
+
+What it deliberately does **not** carry is the platform safe-autonomy rate. That is a business
+metric, and its cross-tenant aggregate is an unindexed full table scan - exactly the kind of thing
+that turns an auth-free endpoint into a denial-of-service amplifier. It lives on the super-admin
+`/ops/overview` instead. There is a `/status` page in the app for humans as well.
+
+## White-label branding
+
+`/api/v1/branding` lets a tenant admin set the product name, primary and accent colour, logo and
+login subtitle; any authenticated user in the tenant can read it, so the login shell and app chrome
+theme themselves. A tenant that has never set a brand gets full KAEOS defaults rather than a blank
+theme.
+
+Validation is fail-closed, because branding is user-supplied content rendered into the login
+shell: colours must be exact `#rrggbb` hex, and `logo_url` must be an absolute `http(s)` URL with a
+host. Relative URLs, `data:` and `javascript:` are rejected, so a logo field can never smuggle a
+script or an inline payload into the page that runs before authentication.
+
+## Recorded metric history
+
+Metrics that are recomputed on every read cannot answer "what did this look like last Tuesday"
+after the underlying rows are archived. KAEOS therefore **records** them. A leader-guarded rollup
+runs on the existing scheduler, idempotent per bucket, snapshotting each active tenant's
+safe-autonomy rate, execution volume and LLM cost into a time-series table. The interval is a
+setting (`METRICS_ROLLUP_INTERVAL_MINUTES`, default 60), and
+`GET /api/v1/metrics/timeseries?metric=...&from=...&to=...&interval=hour|day` reads the stored
+series back.
+
+The honesty contract carries over: a metric with **no** underlying data in a bucket is not written
+at all. There is no fabricated zero, and querying an empty window returns an empty series with a
+note explaining why rather than a flat line at zero that looks like a real measurement. Cost is
+keyed off whether cost events exist rather than off execution volume, because a gate-blocked action
+burns real tokens without ever producing an execution row.
+
 ## Foresight - the machine picks the question
 
 Shock, What-if, Wargame and Replay are reactive: you pose a premise and watch the twin respond,
@@ -273,8 +398,10 @@ Write-back to the external system currently ships for Salesforce and generic RES
 read/sync-only and say so at runtime. Credentials are encrypted at rest and never returned by the
 API.</sub>
 
-### The seven AI departments
+### The AI departments
 ![Departments](screenshots/02-departments.png)
+<sub>Captured before the three regulated verticals shipped. Healthcare, Procurement & Sourcing and
+Banking & Lending now appear in the same hub, bringing the catalogue to ten.</sub>
 
 ### Department-as-a-Service - deploy a governed department in four steps
 ![Deploy Department](screenshots/23-deploy-department.png)

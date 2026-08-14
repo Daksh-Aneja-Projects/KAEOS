@@ -7,6 +7,23 @@ declare global { interface Window { __kaeos_reloading?: boolean; } }
 
 export const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`;
 
+// The app root, with the versioned "/api/v1" segment stripped. A couple of
+// endpoints (the public /status page) are mounted at the root, not under the
+// versioned API — see backend app/main.py.
+export const API_ORIGIN = API_BASE.replace(/\/api\/v\d+\/?$/, '');
+
+/**
+ * Unauthenticated GET against the app root (no bearer token, no tenant header).
+ * For public endpoints like /status. Returns the parsed JSON body even on a
+ * 503 — /status reports "degraded" with a 503 so a load balancer can act on it,
+ * and the public page still wants to render that degraded state. Only a genuine
+ * network failure (fetch rejects) propagates to the caller.
+ */
+export async function requestPublic<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_ORIGIN}${path}`);
+  return res.json() as Promise<T>;
+}
+
 async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('kaeos-token');
   const authHeaders: Record<string, string> = {
