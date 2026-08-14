@@ -180,6 +180,45 @@ export const departmentsApi = {
   runFinanceAPAgent: (invoiceId: string) => request<any>(`/finance/invoices/${invoiceId}/match`, { method: 'POST' }),
   runFinanceARAgent: (invoiceId: string) => request<any>(`/finance/receivables/${invoiceId}/dunning`, { method: 'POST' }),
 
+  // ─── General Ledger (real double-entry) ───
+  getTrialBalance: () => request<any>('/finance/gl/trial-balance'),
+  getIncomeStatement: (periodStart?: string, periodEnd?: string) => {
+    const q = new URLSearchParams();
+    if (periodStart) q.set('period_start', periodStart);
+    if (periodEnd) q.set('period_end', periodEnd);
+    const s = q.toString();
+    return request<any>(`/finance/gl/income-statement${s ? `?${s}` : ''}`);
+  },
+  getBalanceSheet: (asOf?: string) =>
+    request<any>(`/finance/gl/balance-sheet${asOf ? `?as_of=${asOf}` : ''}`),
+  listJournalEntries: (limit = 50) => request<any[]>(`/finance/gl/journal-entries?limit=${limit}`),
+  postJournalEntry: (entry: {
+    description: string;
+    lines: Array<{ account_id?: string; account_code?: string; debit?: number; credit?: number; description?: string; department?: string; cost_center?: string }>;
+    reference?: string;
+    source_module?: string;
+    source_document_id?: string;
+  }) => request<any>('/finance/gl/journal-entries', { method: 'POST', body: JSON.stringify(entry) }),
+  reverseJournalEntry: (entryId: string) =>
+    request<any>(`/finance/gl/journal-entries/${entryId}/reverse`, { method: 'POST' }),
+  listPeriods: () => request<any[]>('/finance/gl/periods'),
+  closePeriod: (body: { fiscal_year: number; fiscal_period: number; note?: string }) =>
+    request<any>('/finance/gl/periods/close', { method: 'POST', body: JSON.stringify(body) }),
+  reopenPeriod: (body: { fiscal_year: number; fiscal_period: number; note?: string }) =>
+    request<any>('/finance/gl/periods/reopen', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ─── Governed vendor payments (four-eyes, GL-posted) ───
+  listPayments: () => request<any[]>('/finance/payments'),
+  recordPayment: (body: { invoice_id: string; amount: number; method?: string; reference_number?: string; bank_account_id?: string }) =>
+    request<any>('/finance/payments', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ─── Governance: deterministic compliance checker ───
+  compliance: {
+    frameworks: () => request<any>('/compliance/frameworks'),
+    check: (body: { frameworks: string[]; context?: Record<string, any> }) =>
+      request<any>('/compliance/check', { method: 'POST', body: JSON.stringify(body) }),
+  },
+
   // ─── Executive Command Center APIs ───
   getExecutiveOverview: () => request<any>('/executive/overview'),
   getExecutiveHealth: () => request<any>('/executive/health'),

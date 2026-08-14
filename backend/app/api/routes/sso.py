@@ -214,6 +214,15 @@ def _serialize(conn: SSOConnection) -> dict:
         "idp_sso_url": conn.idp_sso_url,
         "idp_x509_cert_set": bool(conn.idp_x509_cert),
         "email_domain": conn.email_domain,
+        "domain_verified": conn.domain_verified,
+        # The DNS TXT record the tenant admin must publish to verify the domain
+        # (only meaningful while unverified). Not a credential.
+        "domain_challenge": (
+            {"name": f"{sso_svc._CHALLENGE_HOST}.{conn.email_domain}",
+             "value": sso_svc._CHALLENGE_PREFIX + conn.domain_verification_token}
+            if conn.email_domain and conn.domain_verification_token and not conn.domain_verified
+            else None
+        ),
         "default_role": conn.default_role,
         "is_enabled": conn.is_enabled,
     }
@@ -250,7 +259,15 @@ async def upsert_connection(data: SSOConnectionIn,
     conn = existing or SSOConnection(tenant_id=tenant_id, protocol=data.protocol)
     conn.provider_label = data.provider_label
     conn.issuer = data.issuer.rstrip("/")   # OIDC issuer URL / SAML IdP EntityID
-    conn.email_domain = (data.email_domain or "").strip().lower() or None
+    # A new or changed email_domain is UNVERIFIED until the tenant proves control
+    # (DNS TXT challenge); it does not route logins until then. Issue a token.
+    new_domain = (data.email_domain or "").strip().lower() or None
+    if new_domain != conn.email_domain:
+        conn.email_domain = new_domain
+        conn.domain_verified = False
+        conn.domain_verification_token = secrets.token_hex(16) if new_domain else None
+    elif new_domain and not conn.domain_verification_token:
+        conn.domain_verification_token = secrets.token_hex(16)
     conn.default_role = data.default_role
     conn.is_enabled = data.is_enabled
 
@@ -276,6 +293,19 @@ async def upsert_connection(data: SSOConnectionIn,
     await db.commit()
     await db.refresh(conn)
     return _serialize(conn)
+
+
+@router.post("/connections/{connection_id}/verify-domain")
+async def verify_connection_domain(connection_id: str,
+                                   user: dict = Depends(require_role("ADMIN")),
+                                   tenant_id: str = Depends(get_tenant_id)):
+    """Verify this tenant controls its SSO email_domain via the DNS TXT challenge.
+    Until verified the domain does not route logins, so a squatted claim is inert."""
+    result = await sso_svc.verify_domain(connection_id, tenant_id)
+    if not result.get("verified"):
+        code = 409 if result.get("error") == "domain_claimed_by_another_tenant" else 400
+        raise HTTPException(status_code=code, detail=result)
+    return result
 
 
 @router.delete("/connections/{conn_id}")

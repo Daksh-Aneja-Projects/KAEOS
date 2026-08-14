@@ -75,9 +75,10 @@ def _send_smtp_sync(cfg: Dict[str, Any], subject: str, body: str,
 
 
 async def _send_slack(cfg: Dict[str, Any], subject: str, body: str) -> None:
+    from app.core.outbound import guarded_async_client
     url = cfg["webhook_url"]
     payload = {"text": f"*{subject}*\n{body}"}
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
 
@@ -92,7 +93,8 @@ async def _send_webhook(cfg: Dict[str, Any], event: str, subject: str,
     if secret:
         headers["X-KAEOS-Signature"] = hmac.new(
             str(secret).encode(), raw, hashlib.sha256).hexdigest()
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+    from app.core.outbound import guarded_async_client
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
         resp = await client.post(url, content=raw, headers=headers)
         resp.raise_for_status()
 

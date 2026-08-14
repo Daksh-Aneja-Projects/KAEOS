@@ -20,6 +20,7 @@ from app.models.domain import (
 )
 from app.models.reality import RealityEvent, ShockOutcome
 from app.models.foundry import TrainingExample
+from app.models.tenant_data_key import TenantDataKey
 from app.models.settings import (
     TenantLLMConfig,
     MCPToolConfig,

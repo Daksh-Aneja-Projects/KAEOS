@@ -16,6 +16,8 @@ import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import TableCard from '../components/shared/TableCard';
+import { CountUp } from '../components/CountUp';
 
 type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
 
@@ -129,20 +131,12 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
     </button>
   );
 
-  const stats = dashboard ? [
+  const stats: { label: string; value: number | null; suffix?: string; icon: React.ElementType; color: string }[] = dashboard ? [
     { label: 'Services', value: dashboard.total_services, icon: Server, color: '#6366f1' },
     { label: 'Open PRs', value: dashboard.open_pull_requests, icon: GitPullRequest, color: '#8b5cf6' },
     { label: 'Open Incidents', value: dashboard.open_incidents, icon: Siren, color: dashboard.sev1_open > 0 ? '#ef4444' : '#f59e0b' },
-    {
-      label: 'Change Fail Rate',
-      value: dashboard.change_failure_rate_pct != null ? `${dashboard.change_failure_rate_pct}%` : '-',
-      icon: Rocket, color: '#ec4899',
-    },
-    {
-      label: 'MTTR',
-      value: dashboard.mttr_minutes != null ? `${dashboard.mttr_minutes}m` : '-',
-      icon: RefreshCw, color: '#06b6d4',
-    },
+    { label: 'Change Fail Rate', value: dashboard.change_failure_rate_pct ?? null, suffix: '%', icon: Rocket, color: '#ec4899' },
+    { label: 'MTTR', value: dashboard.mttr_minutes ?? null, suffix: 'm', icon: RefreshCw, color: '#06b6d4' },
     { label: 'On Call', value: dashboard.engineers_on_call, icon: ShieldAlert, color: '#22c55e' },
   ] : [];
 
@@ -178,13 +172,15 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
       {/* Live DORA posture */}
       {dashboard && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {stats.map(({ label, value, icon: Icon, color }) => (
+          {stats.map(({ label, value, suffix, icon: Icon, color }) => (
             <div key={label} style={card} className="p-3.5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.inkTertiary }}>{label}</span>
                 <Icon className="w-3.5 h-3.5" style={{ color }} />
               </div>
-              <div className="text-[22px] font-bold font-mono" style={{ color: colors.ink }}>{value ?? '-'}</div>
+              <div className="text-[22px] font-bold font-mono" style={{ color: colors.ink }}>
+                {value != null ? <CountUp value={value} suffix={suffix || ''} /> : '-'}
+              </div>
             </div>
           ))}
         </div>
@@ -238,7 +234,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
 
       {/* Service Catalog */}
       {!loading && tab === 'services' && (
-        <div style={card} className="overflow-hidden">
+        <TableCard>
           <table className="w-full text-[12px]" style={{ color: colors.ink }}>
             <thead>
               <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
@@ -281,12 +277,12 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               ))}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       {/* Pull Requests */}
       {!loading && tab === 'pull-requests' && (
-        <div style={card} className="overflow-hidden">
+        <TableCard>
           <table className="w-full text-[12px]" style={{ color: colors.ink }}>
             <thead>
               <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
@@ -333,12 +329,12 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               ))}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       {/* Deployments */}
       {!loading && tab === 'deployments' && (
-        <div style={card} className="overflow-hidden">
+        <TableCard>
           <table className="w-full text-[12px]" style={{ color: colors.ink }}>
             <thead>
               <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
@@ -379,7 +375,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               ))}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       {/* Incidents */}
@@ -388,7 +384,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
           <BulkActionBar domain="engineering" entityType="incident" noun="incident"
             ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
             onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
-        <div style={card} className="overflow-hidden">
+        <TableCard>
           <table className="w-full text-[12px]" style={{ color: colors.ink }}>
             <thead>
               <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
@@ -438,7 +434,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
               ))}
             </tbody>
           </table>
-        </div>
+        </TableCard>
         </div>
       )}
 

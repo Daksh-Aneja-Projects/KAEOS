@@ -3,6 +3,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Activity, Target, Zap, ArrowRight, ArrowUpRight, ArrowDownRight, Layers, Box, Cpu, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
 import { request } from '../api/client';
 import { PAGE_PAD } from '../lib/layout';
+import { Ring } from './shared/Ring';
 
 export default function EvolutionStudio() {
   const { colors } = useTheme();
@@ -68,10 +69,12 @@ export default function EvolutionStudio() {
       <div className="grid grid-cols-2 gap-6">
         <div style={card} className="flex flex-col items-center justify-center py-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-red-500" />
-          <div className="text-[12px] font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>Current Enterprise Fitness</div>
-          <div className="text-[64px] font-black font-mono leading-none" style={{ color: scoreColor(evolutionState.current_fitness ?? 0) }}>
-            {evolutionState.current_fitness != null ? (evolutionState.current_fitness * 100).toFixed(1) : '-'}%
-          </div>
+          <div className="text-[12px] font-bold uppercase tracking-wider mb-4" style={{ color: colors.inkSubtle }}>Current Enterprise Fitness</div>
+          {evolutionState.current_fitness != null ? (
+            <Ring value={evolutionState.current_fitness * 100} size={132} strokeWidth={11} color={scoreColor(evolutionState.current_fitness)} />
+          ) : (
+            <div className="text-[64px] font-black font-mono leading-none" style={{ color: colors.inkSubtle }}>-</div>
+          )}
           <div className="text-[13px] mt-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
             <AlertTriangle className="w-4 h-4 text-orange-500" /> {evolutionState.breaches ?? 0} Critical Threshold Breach{(evolutionState.breaches ?? 0) === 1 ? '' : 'es'} Detected
           </div>
@@ -79,10 +82,12 @@ export default function EvolutionStudio() {
 
         <div style={card} className="flex flex-col items-center justify-center py-8 relative overflow-hidden bg-gradient-to-br from-green-500/5 to-emerald-500/10">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-emerald-600" />
-          <div className="text-[12px] font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkSubtle }}>Simulated Optimized Fitness</div>
-          <div className="text-[64px] font-black font-mono leading-none text-green-500">
-            {evolutionState.future_fitness != null ? (evolutionState.future_fitness * 100).toFixed(1) : '-'}%
-          </div>
+          <div className="text-[12px] font-bold uppercase tracking-wider mb-4" style={{ color: colors.inkSubtle }}>Simulated Optimized Fitness</div>
+          {evolutionState.future_fitness != null ? (
+            <Ring value={evolutionState.future_fitness * 100} size={132} strokeWidth={11} color="#22c55e" />
+          ) : (
+            <div className="text-[64px] font-black font-mono leading-none" style={{ color: colors.inkSubtle }}>-</div>
+          )}
           <div className="text-[13px] mt-4 flex items-center gap-2 text-green-600 font-semibold">
             <ShieldCheck className="w-4 h-4" /> Projected after applying {evolutionState.optimizations?.length ?? 0} optimization{(evolutionState.optimizations?.length ?? 0) === 1 ? '' : 's'}
           </div>
@@ -92,7 +97,7 @@ export default function EvolutionStudio() {
       {/* Domain Fitness Breakdown */}
       <div style={card}>
         <h3 className="text-[14px] font-bold mb-4 uppercase tracking-wider" style={{ color: colors.inkSubtle }}>8-Dimensional Fitness Matrix</h3>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {Object.entries(evolutionState.subscores || {}).map(([key, val]: [string, any]) => (
             <div key={key} className="p-3 rounded-lg border flex items-center justify-between" style={{ borderColor: colors.hairline, background: colors.surface2 }}>
               <div className="text-[12px] font-semibold">{key.replace('_fitness', '').replace('_', ' ')}</div>

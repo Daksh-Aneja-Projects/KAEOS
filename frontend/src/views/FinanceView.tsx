@@ -5,9 +5,13 @@ import {
   CheckCircle2, XCircle, AlertCircle, Clock, DollarSign,
   FileText, TrendingUp, ShieldCheck
 } from 'lucide-react';
+import { useNavigate } from 'react-router';
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { CountUp } from '../components/CountUp';
+import TableCard from '../components/shared/TableCard';
+import StatCard from '../components/shared/StatCard';
 import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
@@ -28,6 +32,7 @@ const ACCOUNT_TYPE_ORDER = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'
 
 const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domain, defaultTab }) => {
   const { colors } = useTheme();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<FinanceTab>(() => {
     const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit', 'accounts', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as FinanceTab)) return defaultTab as FinanceTab;
@@ -269,27 +274,31 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {tab === 'ap' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Vendors', value: vendors.length, icon: Landmark, color: '#3b82f6' },
-                    { label: 'Open Invoices', value: invoices.filter(i => !['PAID','CANCELLED'].includes(i.status)).length, icon: Receipt, color: '#ec4899' },
-                    { label: 'Total AP', value: fmt(invoices.reduce((s: number, i: any) => s + (i.balance || 0), 0)), icon: DollarSign, color: '#f59e0b' },
-                    { label: 'Payments Made', value: payments.length, icon: CheckCircle2, color: '#22c55e' },
-                  ].map(kpi => (
-                    <div key={kpi.label} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="text-[22px] font-bold" style={{ color: colors.ink }}>{kpi.value}</span>
-                          <p className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</p>
-                        </div>
-                        <kpi.icon className="w-5 h-5" style={{ color: kpi.color }} />
-                      </div>
+                  <StatCard label="Vendors" value={vendors.length} icon={<Landmark className="w-4 h-4" />} accent="#3b82f6" />
+                  <StatCard label="Open Invoices" value={invoices.filter(i => !['PAID','CANCELLED'].includes(i.status)).length} icon={<Receipt className="w-4 h-4" />} accent="#ec4899" />
+                  <StatCard label="Total AP" value={invoices.reduce((s: number, i: any) => s + (i.balance || 0), 0)} format="currency" icon={<DollarSign className="w-4 h-4" />} accent="#f59e0b" />
+                  {/* Governed payments live in the General Ledger workspace, not as a dead count. */}
+                  <button type="button" onClick={() => navigate('/finance/gl?tab=payments')}
+                    className="rounded-xl p-5 text-left transition-shadow hover:shadow-md"
+                    style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-[12px] font-medium uppercase tracking-wide" style={{ color: colors.inkSubtle }}>Payments Made</span>
+                      <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#22c55e1f', color: '#22c55e' }}>
+                        <CheckCircle2 className="w-4 h-4" />
+                      </span>
                     </div>
-                  ))}
+                    <div className="mt-2">
+                      <CountUp value={payments.length} className="text-[26px] font-bold tabular-nums leading-none" />
+                    </div>
+                    <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: colors.primary }}>
+                      Open payments queue <ArrowUpRight className="w-3 h-3" />
+                    </div>
+                  </button>
                 </div>
                 <BulkActionBar domain="finance" entityType="invoice" noun="invoice"
                   ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
                   onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard minWidth={860}>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -336,7 +345,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {invoices.length === 0 && <EmptyState icon={Receipt} title="No invoices" sub="Invoices will appear here when created" />}
-                </div>
+                </TableCard>
               </div>
             )}
 
@@ -344,24 +353,12 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {tab === 'ar' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Customers', value: customers.length, icon: Landmark, color: '#3b82f6' },
-                    { label: 'Open Receivables', value: receivables.filter(r => !['PAID','CANCELLED'].includes(r.status)).length, icon: Receipt, color: '#ec4899' },
-                    { label: 'Total AR', value: fmt(receivables.reduce((s: number, r: any) => s + (r.balance || 0), 0)), icon: DollarSign, color: '#f59e0b' },
-                    { label: 'Avg DSO', value: customers.length > 0 ? Math.round(customers.reduce((s: number, c: any) => s + (c.dso || 0), 0) / customers.length) + 'd' : '-', icon: Clock, color: '#8b5cf6' },
-                  ].map(kpi => (
-                    <div key={kpi.label} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="text-[22px] font-bold" style={{ color: colors.ink }}>{kpi.value}</span>
-                          <p className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</p>
-                        </div>
-                        <kpi.icon className="w-5 h-5" style={{ color: kpi.color }} />
-                      </div>
-                    </div>
-                  ))}
+                  <StatCard label="Customers" value={customers.length} icon={<Landmark className="w-4 h-4" />} accent="#3b82f6" />
+                  <StatCard label="Open Receivables" value={receivables.filter(r => !['PAID','CANCELLED'].includes(r.status)).length} icon={<Receipt className="w-4 h-4" />} accent="#ec4899" />
+                  <StatCard label="Total AR" value={receivables.reduce((s: number, r: any) => s + (r.balance || 0), 0)} format="currency" icon={<DollarSign className="w-4 h-4" />} accent="#f59e0b" />
+                  <StatCard label="Avg DSO (days)" value={customers.length > 0 ? Math.round(customers.reduce((s: number, c: any) => s + (c.dso || 0), 0) / customers.length) : 0} icon={<Clock className="w-4 h-4" />} accent="#8b5cf6" />
                 </div>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -398,7 +395,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {receivables.length === 0 && <EmptyState icon={Landmark} title="No receivables" sub="Customer invoices will appear here" />}
-                </div>
+                </TableCard>
               </div>
             )}
 
@@ -445,7 +442,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                   {budgets.length === 0 && <EmptyState icon={BarChart3} title="No budgets" sub="Budget allocations appear here when created" />}
                 </div>
                 <h3 className="text-[14px] font-bold mt-6">Forecasts</h3>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -475,7 +472,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {forecasts.length === 0 && <EmptyState icon={TrendingUp} title="No forecasts" sub="Financial forecasts appear here" />}
-                </div>
+                </TableCard>
               </div>
             )}
 
@@ -483,18 +480,11 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {tab === 'expenses' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {[
-                    { label: 'Total Reports', value: expenseReports.length, color: '#22c55e' },
-                    { label: 'Pending Approval', value: expenseReports.filter(r => r.status === 'PENDING_APPROVAL').length, color: '#f59e0b' },
-                    { label: 'Total Amount', value: fmt(expenseReports.reduce((s: number, r: any) => s + (r.total || 0), 0)), color: '#8b5cf6' },
-                  ].map(kpi => (
-                    <div key={kpi.label} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                      <span className="text-[22px] font-bold" style={{ color: kpi.color }}>{kpi.value}</span>
-                      <p className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</p>
-                    </div>
-                  ))}
+                  <StatCard label="Total Reports" value={expenseReports.length} icon={<Wallet className="w-4 h-4" />} accent="#22c55e" />
+                  <StatCard label="Pending Approval" value={expenseReports.filter(r => r.status === 'PENDING_APPROVAL').length} icon={<Clock className="w-4 h-4" />} accent="#f59e0b" />
+                  <StatCard label="Total Amount" value={expenseReports.reduce((s: number, r: any) => s + (r.total || 0), 0)} format="currency" icon={<DollarSign className="w-4 h-4" />} accent="#8b5cf6" />
                 </div>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -531,7 +521,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {expenseReports.length === 0 && <EmptyState icon={Wallet} title="No expense reports" sub="Employee expense reports appear here" />}
-                </div>
+                </TableCard>
               </div>
             )}
 
@@ -539,7 +529,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {tab === 'tax' && (
               <div className="space-y-4">
                 <h3 className="text-[14px] font-bold">Tax Filings</h3>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -564,7 +554,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {taxFilings.length === 0 && <EmptyState icon={Scale} title="No tax filings" sub="Tax filings appear here when created" />}
-                </div>
+                </TableCard>
                 <h3 className="text-[14px] font-bold mt-6">Tax Rules</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {taxRules.map((r: any) => (
@@ -585,19 +575,12 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
             {tab === 'audit' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {[
-                    { label: 'Open Findings', value: auditFindings.filter(f => ['OPEN','IN_PROGRESS'].includes(f.status)).length, color: '#ef4444' },
-                    { label: 'SOX Controls', value: soxControls.length, color: '#8b5cf6' },
-                    { label: 'Financial Impact', value: fmt(auditFindings.reduce((s: number, f: any) => s + (f.impact || 0), 0)), color: '#f59e0b' },
-                  ].map(kpi => (
-                    <div key={kpi.label} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                      <span className="text-[22px] font-bold" style={{ color: kpi.color }}>{kpi.value}</span>
-                      <p className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>{kpi.label}</p>
-                    </div>
-                  ))}
+                  <StatCard label="Open Findings" value={auditFindings.filter(f => ['OPEN','IN_PROGRESS'].includes(f.status)).length} icon={<AlertCircle className="w-4 h-4" />} accent="#ef4444" />
+                  <StatCard label="SOX Controls" value={soxControls.length} icon={<ShieldCheck className="w-4 h-4" />} accent="#8b5cf6" />
+                  <StatCard label="Financial Impact" value={auditFindings.reduce((s: number, f: any) => s + (f.impact || 0), 0)} format="currency" icon={<DollarSign className="w-4 h-4" />} accent="#f59e0b" />
                 </div>
                 <h3 className="text-[14px] font-bold">Audit Findings</h3>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -622,9 +605,9 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {auditFindings.length === 0 && <EmptyState icon={ShieldAlert} title="No audit findings" sub="Audit findings appear here" />}
-                </div>
+                </TableCard>
                 <h3 className="text-[14px] font-bold mt-6">SOX Controls</h3>
-                <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <TableCard>
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
@@ -657,7 +640,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {soxControls.length === 0 && <EmptyState icon={ShieldCheck} title="No SOX controls" sub="SOX controls appear here" />}
-                </div>
+                </TableCard>
               </div>
             )}
 
@@ -681,7 +664,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                   ) : grouped.map(g => {
                     const total = g.rows.reduce((s, a) => s + (a.balance || 0), 0);
                     return (
-                      <div key={g.type} className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                      <TableCard key={g.type}>
                         <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                           <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>
                             {humanize(g.type)} accounts
@@ -713,7 +696,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </TableCard>
                     );
                   })}
                 </div>

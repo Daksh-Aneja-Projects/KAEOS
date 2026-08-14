@@ -42,8 +42,12 @@ class SSOConnection(Base):
     idp_sso_url = Column(String(512), nullable=True)
     idp_x509_cert = Column(Text, nullable=True)
 
-    # Domain-based routing: a user whose email domain matches is sent here.
+    # Domain-based routing: a user whose email domain matches is sent here - but
+    # ONLY once the tenant has proven it controls the domain (a DNS TXT challenge),
+    # so one tenant cannot claim another's domain to hijack its SSO discovery.
     email_domain = Column(String(256), nullable=True, index=True)
+    domain_verified = Column(Boolean, nullable=False, default=False)
+    domain_verification_token = Column(String(64), nullable=True)
     # Role granted to a just-in-time provisioned user on first SSO login.
     default_role = Column(String(16), nullable=False, default="VIEWER")
 

@@ -63,13 +63,48 @@ async def test_overview_aggregates_register_and_control_map(db):
 
 
 async def test_evidence_pack_reports_covered_controls(db):
+    import uuid as _uuid
+
+    from app.models.domain import ProvenanceLedger, SkillExecution
+
     t = "tenant_reg2"
     s = _skill("vendor_payment_approval", "finance", ["SOX"])
     s.tenant_id = t
     db.add(s)
+    # A hash-chained provenance row and a covered-control execution: without at
+    # least one such row the pack is an assertion, not evidence (complete=False).
+    chain_hash = _uuid.uuid4().hex
+    db.add(ProvenanceLedger(tenant_id=t, rule_id="vendor_payment_approval",
+                            event_type="AGENT_EXECUTION", chain_hash=chain_hash,
+                            actor_role="agent", reasoning="approved vendor payment"))
+    db.add(SkillExecution(id=str(_uuid.uuid4()), tenant_id=t,
+                          skill_id_name="vendor_payment_approval",
+                          status="SUCCESS_CLEAN", route_type="GATED_AGENT"))
     await db.commit()
 
     pack = await regulatory.evidence_pack(db, t, "SOX")
     assert pack["framework"] == "SOX"
     assert "vendor_payment_approval" in pack["controls"]
     assert pack["complete"] is True
+
+    # Sampled rows, not just counts: an auditor can spot-verify the hash chain.
+    assert pack["provenance_sample"], "evidence pack must carry sampled provenance rows"
+    assert len(pack["provenance_sample"]) <= regulatory._EVIDENCE_SAMPLE_CAP
+    assert pack["provenance_sample"][0]["chain_hash"] == chain_hash
+    assert pack["control_executions_sample"], "covered-control executions must be sampled"
+    assert all(r["skill_id_name"] == "vendor_payment_approval"
+               for r in pack["control_executions_sample"])
+
+
+async def test_evidence_pack_incomplete_without_rows(db):
+    """Covered controls but zero ledger rows is not evidence -> complete=False."""
+    t = "tenant_reg3"
+    s = _skill("vendor_payment_approval", "finance", ["SOX"])
+    s.tenant_id = t
+    db.add(s)
+    await db.commit()
+
+    pack = await regulatory.evidence_pack(db, t, "SOX")
+    assert "vendor_payment_approval" in pack["controls"]
+    assert pack["complete"] is False
+    assert pack["provenance_sample"] == []

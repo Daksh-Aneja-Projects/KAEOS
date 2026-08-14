@@ -21,6 +21,13 @@ from app.finance.models.tax import TaxFiling, FilingStatus
 from app.finance.models.reporting import FinancialReport, ReportType, ReportStatus
 from app.finance.models.audit import AuditFinding, FindingSeverity, FindingStatus
 from app.finance.models.compliance import FinanceComplianceRule, SOXControl, SOXControlStatus
+# Ops procurement models: the demo three-way-match chain (PO + lines + receipt)
+# is built here so the FK chain resolves in one transaction and the matcher
+# computes a GENUINE MATCHED and a GENUINE EXCEPTION.
+from app.operations.models.procurement import (
+    PurchaseOrder, POLineItem, GoodsReceipt, ProcurementStatus,
+)
+from app.finance.services.three_way_match import evaluate_three_way_match
 
 TENANT = "tenant_acme"  # demo tenant — matches seed_demo_user and dev-mode tenant
 
@@ -79,13 +86,55 @@ async def seed():
             db.add(v)
         await db.flush()
 
+        # ── Genuine three-way match demo chain ────────────────────────────
+        # PO-2026-081 (AWS): 10 units @ $3,545.00 = $35,450.00, fully received,
+        # invoice bills exactly the PO -> matcher computes MATCHED.
+        po_aws = PurchaseOrder(id=_id(), tenant_id=TENANT, po_number="PO-2026-081",
+                               vendor_name="Amazon Web Services", vendor_id=vendors[0].id,
+                               total_amount=35450.00, status=ProcurementStatus.RECEIVED)
+        # PO-2026-082 (GCP): 6 units @ $2,500.00 = $15,000.00, fully received,
+        # but the invoice bills $2,553.33/unit (overcharge past 2% tolerance)
+        # -> matcher computes EXCEPTION.
+        po_gcp = PurchaseOrder(id=_id(), tenant_id=TENANT, po_number="PO-2026-082",
+                               vendor_name="GCP Billing", vendor_id=vendors[1].id,
+                               total_amount=15000.00, status=ProcurementStatus.RECEIVED)
+        db.add_all([po_aws, po_gcp])
+        await db.flush()
+
+        line_aws = POLineItem(id=_id(), tenant_id=TENANT, purchase_order_id=po_aws.id,
+                              line_number=1, description="EC2 reserved compute",
+                              quantity=10, unit_price=3545.00, amount=35450.00)
+        line_gcp = POLineItem(id=_id(), tenant_id=TENANT, purchase_order_id=po_gcp.id,
+                              line_number=1, description="GCP committed use",
+                              quantity=6, unit_price=2500.00, amount=15000.00)
+        db.add_all([line_aws, line_gcp])
+        await db.flush()
+
+        db.add_all([
+            GoodsReceipt(id=_id(), tenant_id=TENANT, purchase_order_id=po_aws.id,
+                         po_line_item_id=line_aws.id, receiver_name="Dwight Schrute",
+                         received_quantity=10, status="SUCCESS"),
+            GoodsReceipt(id=_id(), tenant_id=TENANT, purchase_order_id=po_gcp.id,
+                         po_line_item_id=line_gcp.id, receiver_name="Dwight Schrute",
+                         received_quantity=6, status="SUCCESS"),
+        ])
+        await db.flush()
+
         invoices = [
-            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-AWS-2026-05", vendor_id=vendors[0].id, status=InvoiceStatus.APPROVED, subtotal=35450.00, total_amount=35450.00, tax_amount=0.00, balance_due=35450.00, invoice_date=date.today() - timedelta(days=10), due_date=date.today() + timedelta(days=20), currency="USD", po_number="PO-2026-081", three_way_match_status="MATCHED", ai_duplicate_flag=False),
-            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-GCP-2026-05", vendor_id=vendors[1].id, status=InvoiceStatus.PENDING_APPROVAL, subtotal=15320.00, total_amount=15320.00, tax_amount=0.00, balance_due=15320.00, invoice_date=date.today() - timedelta(days=5), due_date=date.today() + timedelta(days=10), currency="USD", po_number="PO-2026-082", three_way_match_status="PENDING_RECEIPT", ai_duplicate_flag=False),
-            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-RENT-2026-05", vendor_id=vendors[2].id, status=InvoiceStatus.OVERDUE, subtotal=10000.00, total_amount=10000.00, tax_amount=0.00, balance_due=10000.00, invoice_date=date.today() - timedelta(days=35), due_date=date.today() - timedelta(days=5), currency="USD", po_number=None, three_way_match_status="NOT_APPLICABLE", ai_duplicate_flag=False),
+            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-AWS-2026-05", vendor_id=vendors[0].id, purchase_order_id=po_aws.id, status=InvoiceStatus.APPROVED, subtotal=35450.00, total_amount=35450.00, tax_amount=0.00, balance_due=35450.00, invoice_date=date.today() - timedelta(days=10), due_date=date.today() + timedelta(days=20), currency="USD", po_number="PO-2026-081", line_items=[{"description": "EC2 reserved compute", "qty": 10, "unit_price": 3545.00, "amount": 35450.00, "po_line_item_id": line_aws.id}], ai_duplicate_flag=False),
+            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-GCP-2026-05", vendor_id=vendors[1].id, purchase_order_id=po_gcp.id, status=InvoiceStatus.PENDING_APPROVAL, subtotal=15320.00, total_amount=15320.00, tax_amount=0.00, balance_due=15320.00, invoice_date=date.today() - timedelta(days=5), due_date=date.today() + timedelta(days=10), currency="USD", po_number="PO-2026-082", line_items=[{"description": "GCP committed use", "qty": 6, "unit_price": 2553.33, "amount": 15320.00, "po_line_item_id": line_gcp.id}], ai_duplicate_flag=False),
+            Invoice(id=_id(), tenant_id=TENANT, invoice_number="INV-RENT-2026-05", vendor_id=vendors[2].id, status=InvoiceStatus.OVERDUE, subtotal=10000.00, total_amount=10000.00, tax_amount=0.00, balance_due=10000.00, invoice_date=date.today() - timedelta(days=35), due_date=date.today() - timedelta(days=5), currency="USD", po_number=None, ai_duplicate_flag=False),
         ]
         for inv in invoices:
             db.add(inv)
+        await db.flush()
+
+        # Badge reflects REAL reconciliation, not a hardcoded string.
+        for inv in invoices:
+            res = await evaluate_three_way_match(db, TENANT, inv)
+            inv.three_way_match_status = res["status"]
+            inv.po_matched = bool(res.get("po_matched"))
+            inv.receipt_matched = bool(res.get("receipt_matched"))
         await db.flush()
 
         # 4. Customers & AR Invoices

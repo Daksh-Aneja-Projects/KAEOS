@@ -235,8 +235,9 @@ class EventBus:
     async def _dispatch_webhooks(self, event_data: Dict, subs: List[Any]):
         """Background task to POST webhooks."""
         from app.core.database import AsyncSessionLocal
-        
-        async with httpx.AsyncClient() as client:
+        from app.core.outbound import guarded_async_client
+
+        async with guarded_async_client() as client:
             async with AsyncSessionLocal() as db:
                 for sub in subs:
                     # Handle both SQLAlchemy models and dictionary payloads from Redis

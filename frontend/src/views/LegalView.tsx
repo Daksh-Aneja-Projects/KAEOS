@@ -9,6 +9,8 @@ import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import TableCard from '../components/shared/TableCard';
+import StatCard from '../components/shared/StatCard';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -172,6 +174,18 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
           ))}
         </div>
 
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard label="Contracts" value={contracts.length} accent="#6366f1"
+            icon={<FileText className="w-4 h-4" />} />
+          <StatCard label="Obligations" value={obligations.length} accent="#22c55e"
+            icon={<ShieldCheck className="w-4 h-4" />} />
+          <StatCard label="Open Cases" value={cases.length} accent="#ef4444"
+            icon={<Landmark className="w-4 h-4" />} />
+          <StatCard label="Litigation Exposure" format="currency"
+            value={cases.reduce((s: number, c: any) => s + (c.exposure || 0), 0)}
+            accent="#f59e0b" icon={<Landmark className="w-4 h-4" />} />
+        </div>
+
         {actionMsg && (
           <div className="px-4 py-2.5 rounded-lg text-[12px] font-medium flex items-center gap-2"
             style={{ background: actionMsg.includes('failed') ? '#ef444415' : '#22c55e15', color: actionMsg.includes('failed') ? '#ef4444' : '#22c55e' }}>
@@ -202,7 +216,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                 <BulkActionBar domain="legal" entityType="contract" noun="contract"
                   ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
                   onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
-              <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <TableCard>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     <th className="px-3 py-3 w-8">
@@ -254,12 +268,12 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {contracts.length === 0 && <EmptyState icon={FileText} title="No contracts" sub="Contracts appear here when created" />}
-              </div>
+              </TableCard>
               </div>
             )}
 
             {tab === 'compliance' && (
-              <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <TableCard>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     {['Obligation', 'Description', 'Status', 'Owner', 'Due Date', 'AI Audit'].map(h => (
@@ -288,11 +302,11 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {obligations.length === 0 && <EmptyState icon={ShieldCheck} title="No obligations" sub="Compliance obligations appear here" />}
-              </div>
+              </TableCard>
             )}
 
             {tab === 'litigation' && (
-              <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <TableCard>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     {['Case Name', 'Stage', 'Opposing Party', 'Court', 'Exposure', 'AI Evaluate'].map(h => (
@@ -321,11 +335,11 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {cases.length === 0 && <EmptyState icon={Landmark} title="No cases" sub="Litigation cases appear here" />}
-              </div>
+              </TableCard>
             )}
 
             {tab === 'privacy' && (
-              <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <TableCard>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     {['Requestor', 'Email', 'Type', 'Status', 'Deadline', 'AI Validate'].map(h => (
@@ -354,11 +368,11 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {dsars.length === 0 && <EmptyState icon={Lock} title="No DSARs" sub="Data subject requests appear here" />}
-              </div>
+              </TableCard>
             )}
 
             {tab === 'ip' && (
-              <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <TableCard>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                     {['Title', 'Patent #', 'Status', 'Filing Date', 'Jurisdiction', 'AI Evaluate'].map(h => (
@@ -387,7 +401,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                   </tbody>
                 </table>
                 {patents.length === 0 && <EmptyState icon={Lightbulb} title="No patents" sub="IP portfolio appears here" />}
-              </div>
+              </TableCard>
             )}
 
             {/* ANALYTICS */}

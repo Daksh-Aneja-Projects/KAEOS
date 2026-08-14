@@ -407,8 +407,32 @@ class AgentExecutor:
         # Non-blocking WARNINGs are surfaced downstream (result + provenance).
         context["_compliance_warnings"] = warnings
 
-        if fairness_result is not None:
-            if not fairness_result["passed"]:
+        if fairness_result is not None and not fairness_result["passed"]:
+            # A human who already reviewed THIS paused execution's fairness
+            # finding (approved it via HITL) clears it on resume so the action
+            # proceeds. Scoped narrowly on BOTH signals: the keyword-only
+            # pre-approval flag (stripped from context at entry, so a request
+            # cannot forge it) AND the durable marker written by the pause path
+            # below (set only here, so a confidence-only pause that later flags
+            # fairness is NOT auto-cleared). The resume re-runs score_fairness,
+            # so we override THIS run's fresh audit row - the one attached to
+            # the resumed execution.
+            if hitl_pre_approved and context.get("fairness_review_log_id"):
+                approver = (context.get("has_human_approver")
+                            if isinstance(context.get("has_human_approver"), str)
+                            else "human-approver")
+                await self.fairness_engine.override_block(
+                    fairness_result["audit_log_id"],
+                    context.get("tenant_id", "default"),
+                    approver,
+                    "Fairness finding reviewed and approved via HITL",
+                )
+                logger.info(
+                    "[Fairness] override-on-resume: %s cleared by %s",
+                    context.get("execution_id"), approver,
+                )
+                await self._emit_gate(context, "fairness", "overridden")
+            else:
                 logger.warning(f"Fairness gate BLOCKED: {fairness_result['flagged_attributes']}")
                 from app.models.agent_factory import ActivityEventType, ActivitySeverity
                 await self.activity_feed.emit(
@@ -421,15 +445,28 @@ class AgentExecutor:
                     source_id=context.get("execution_id"),
                     requires_action=True,
                 )
+                # Route the block into the real HITL approval queue instead of
+                # dead-ending. Durable, NON-underscore markers survive
+                # _json_safe (which drops "_"-prefixed keys) into the
+                # PENDING_HITL context, so the approved resume can clear this
+                # exact finding above.
+                context["fairness_review_log_id"] = fairness_result["audit_log_id"]
+                context["fairness_review_flagged"] = fairness_result["flagged_attributes"]
+                gate_decision = await self.hitl.request_human_confirmation(skill, context)
+                await self._emit_gate(context, "fairness", "paused")
+                _flagged = ", ".join(fairness_result["flagged_attributes"]) or "protected attributes"
                 return {
-                    "status": "BLOCKED_FAIRNESS",
+                    "status": "PENDING_HITL",
+                    "execution_id": gate_decision.get("execution_id"),
+                    "reason": f"Fairness review required: adverse impact on {_flagged}",
                     "fairness_score": fairness_result["score"],
                     "flagged_attributes": fairness_result["flagged_attributes"],
                     "rationale": fairness_result["rationale"],
                     "audit_log_id": fairness_result["audit_log_id"],
+                    "cost": await self._gate_cost(context),
                 }
-
-        await self._emit_gate(context, "fairness", "passed")
+        else:
+            await self._emit_gate(context, "fairness", "passed")
 
         # ── Gate 3: Confidence → HITL Check ─────────────────────────────
         # A mission step or HITL-resume that carries a persisted human approval

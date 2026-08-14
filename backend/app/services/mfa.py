@@ -17,9 +17,11 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
-from app.services.live_connectors import encrypt_secrets, decrypt_secrets
+from app.services.live_connectors import (
+    encrypt_secrets_for_tenant, decrypt_secrets_for_tenant,
+)
 
 _DIGITS = 6
 _PERIOD = 30
@@ -46,16 +48,22 @@ def totp_now(secret_b32: str, at: Optional[float] = None) -> str:
     return _hotp(secret_b32, counter)
 
 
-def verify_code(secret_b32: str, code: str, *, window: int = _DEFAULT_WINDOW,
-                at: Optional[float] = None) -> bool:
+def matched_step(secret_b32: str, code: str, *, window: int = _DEFAULT_WINDOW,
+                 at: Optional[float] = None) -> Optional[int]:
+    """The absolute TOTP counter that `code` matches within the skew window, else None."""
     if not code or not str(code).strip().isdigit():
-        return False
+        return None
     code = str(code).strip()
     counter = int((at if at is not None else time.time()) // _PERIOD)
     for w in range(-window, window + 1):
         if hmac.compare_digest(_hotp(secret_b32, counter + w), code):
-            return True
-    return False
+            return counter + w
+    return None
+
+
+def verify_code(secret_b32: str, code: str, *, window: int = _DEFAULT_WINDOW,
+                at: Optional[float] = None) -> bool:
+    return matched_step(secret_b32, code, window=window, at=at) is not None
 
 
 def provisioning_uri(secret_b32: str, account: str, issuer: str = "KAEOS") -> str:
@@ -79,16 +87,18 @@ async def begin_enrollment(user_id: str, tenant_id: str, account: str) -> dict:
     from app.core.database import MaintenanceSessionLocal
     from app.models.mfa import UserMFA
     secret = generate_secret()
+    enc = await encrypt_secrets_for_tenant(tenant_id, {"s": secret})
     async with MaintenanceSessionLocal() as db:
         row = await _row(db, user_id)
         if row is None:
             row = UserMFA(user_id=user_id, tenant_id=tenant_id,
-                          secret_encrypted=encrypt_secrets({"s": secret}), enabled=False)
+                          secret_encrypted=enc, enabled=False)
             db.add(row)
         else:
-            row.secret_encrypted = encrypt_secrets({"s": secret})
+            row.secret_encrypted = enc
             row.enabled = False
             row.confirmed_at = None
+            row.last_used_step = None   # fresh secret resets the replay history
         await db.commit()
     return {"secret": secret, "otpauth_uri": provisioning_uri(secret, account)}
 
@@ -100,11 +110,13 @@ async def confirm_enrollment(user_id: str, code: str) -> dict:
         row = await _row(db, user_id)
         if row is None:
             return {"error": "no_enrollment"}
-        secret = decrypt_secrets(row.secret_encrypted).get("s", "")
-        if not verify_code(secret, code):
+        secret = (await decrypt_secrets_for_tenant(row.tenant_id, row.secret_encrypted)).get("s", "")
+        step = matched_step(secret, code)
+        if step is None:
             return {"error": "invalid_code"}
         row.enabled = True
         row.confirmed_at = datetime.now(timezone.utc)
+        row.last_used_step = step   # consume the step so the confirm code can't be replayed at login
         await db.commit()
     return {"enabled": True}
 
@@ -131,11 +143,28 @@ async def is_enabled(user_id: str) -> bool:
 
 
 async def verify_login_code(user_id: str, code: str) -> bool:
-    """Second-factor check at login (owner session — runs before tenant context)."""
+    """Second-factor check at login (owner session — runs before tenant context).
+
+    Replay-safe: a code is accepted only if its TOTP time-step advances past the
+    last consumed one, and the step is consumed with an ATOMIC conditional
+    UPDATE (WHERE last_used_step < step), so a captured code cannot be replayed
+    within its window and two concurrent submits of the same code cannot both
+    win (the loser's UPDATE matches no row)."""
     from app.core.database import MaintenanceSessionLocal
+    from app.models.mfa import UserMFA
     async with MaintenanceSessionLocal() as db:
         row = await _row(db, user_id)
-    if row is None or not row.enabled:
-        return True   # MFA not enabled for this user — nothing to check
-    secret = decrypt_secrets(row.secret_encrypted).get("s", "")
-    return verify_code(secret, code)
+        if row is None or not row.enabled:
+            return True   # MFA not enabled for this user — nothing to check
+        secret = (await decrypt_secrets_for_tenant(row.tenant_id, row.secret_encrypted)).get("s", "")
+        step = matched_step(secret, code)
+        if step is None:
+            return False
+        consumed = await db.execute(
+            update(UserMFA)
+            .where(UserMFA.user_id == user_id,
+                   (UserMFA.last_used_step.is_(None)) | (UserMFA.last_used_step < step))
+            .values(last_used_step=step)
+        )
+        await db.commit()
+        return consumed.rowcount == 1   # 0 = replay / lost the race

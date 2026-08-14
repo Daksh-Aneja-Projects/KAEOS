@@ -155,11 +155,14 @@ async def record_vendor_payment(
     reference_number: Optional[str] = None,
     bank_account_id: Optional[str] = None,
     recorded_by: Optional[str] = None,
+    match_override_by: Optional[str] = None,
 ) -> Payment:
     """Record a vendor payment and post it to the GL - one atomic commit.
 
     Raises PaymentError / GLPostingError with NOTHING recorded on any
-    control violation.
+    control violation. A ``three_way_match_status`` of EXCEPTION blocks the
+    payment unless ``match_override_by`` records a human who accepts the
+    exception (and who is not the person recording the payment).
     """
     invoice = (await db.execute(select(Invoice).where(
         Invoice.id == invoice_id, Invoice.tenant_id == tenant_id,
@@ -181,6 +184,24 @@ async def record_vendor_payment(
         raise PaymentError(
             "Four-eyes: the identity that approved this invoice cannot also "
             "pay it. Ask a different operator to record the payment."
+        )
+
+    # The three-way match is a real gate: an EXCEPTION invoice cannot be paid
+    # unless a human explicitly accepts the exception on the record.
+    if getattr(invoice, "three_way_match_status", None) == "EXCEPTION":
+        if not match_override_by or match_override_by == recorded_by:
+            raise PaymentError(
+                f"invoice {invoice.invoice_number} failed its three-way match "
+                "(EXCEPTION); resolve the match or record a distinct human "
+                "override before paying"
+            )
+        from app.core.audit import record_security_event
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            result="ESCALATED", actor=match_override_by,
+            resource_type="invoice", resource_id=invoice.id,
+            details={"control": "THREE_WAY_MATCH", "override": True,
+                     "recorded_by": recorded_by},
         )
 
     pay_amount = _money(amount)

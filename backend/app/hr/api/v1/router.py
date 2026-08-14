@@ -253,6 +253,48 @@ async def trigger_screening(
     }
 
 
+@router.post("/requisitions/{requisition_id}/fairness-sweep")
+async def run_requisition_fairness_sweep_route(
+    requisition_id: str,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the statistical disparate-impact sweep for a requisition's cohort.
+
+    Aggregates decided candidates' voluntary self-ID into cohort counts and runs
+    the four-fifths test through the gated executor. An adverse-impact finding
+    returns PENDING_HITL with an ``execution_id`` resolvable via the HITL API; a
+    sub-threshold cohort returns INSUFFICIENT_GROUPS (advisory, non-blocking).
+    """
+    tenant_id = tenant["tenant_id"]
+    req = (await db.execute(
+        select(JobRequisition).where(
+            JobRequisition.id == requisition_id,
+            JobRequisition.tenant_id == tenant_id,
+        )
+    )).scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+
+    from app.hr.services.fairness_sweep import run_requisition_fairness_sweep
+
+    result = await run_requisition_fairness_sweep(db, tenant_id, requisition_id)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="requisition", resource_id=requisition_id,
+        details={"sweep_status": result.get("status")},
+    )
+    return {
+        "requisition_id": requisition_id,
+        "status": result.get("status"),
+        "execution_id": result.get("execution_id"),
+        "flagged_attributes": result.get("flagged_attributes"),
+        "decided_total": result.get("decided_total"),
+        "reason": result.get("reason"),
+    }
+
+
 # Legal, non-skipping forward transitions for the recruiting funnel.
 _STAGE_ORDER = [
     CandidateStage.APPLIED, CandidateStage.AI_SCREENING, CandidateStage.RECRUITER_SCREEN,

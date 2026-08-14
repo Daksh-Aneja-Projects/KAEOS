@@ -5,7 +5,7 @@ is confirmed/enabled. Tenant-scoped (RLS on Postgres); the login-time verify run
 on the owner session because a second factor is checked before any tenant context
 exists — the same pre-auth carve-out as the user/api-key lookups.
 """
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, BigInteger
 from sqlalchemy.sql import func
 import uuid
 
@@ -25,6 +25,11 @@ class UserMFA(Base):
 
     secret_encrypted = Column(String, nullable=False)   # Fernet(base32 TOTP secret)
     enabled = Column(Boolean, nullable=False, default=False)  # True only after a code is confirmed
+
+    # Last consumed TOTP time-step. A code is accepted only if its step advances
+    # past this, so a captured code cannot be replayed within its validity window
+    # (nor a concurrent double-submit both succeed). NULL = never used.
+    last_used_step = Column(BigInteger, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     confirmed_at = Column(DateTime(timezone=True), nullable=True)

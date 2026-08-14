@@ -154,9 +154,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         # JWT session token (issued by /auth/login) — two-part "payload.signature"
         if not raw_key.startswith("kt_"):
-            from app.services.auth import decode_token
+            from app.services.auth import decode_token, is_jti_revoked
             payload = decode_token(raw_key)
             if not payload:
+                return _unauthorized("Invalid or expired token")
+            # Revocation (logout) is enforced here because decode_token is sync and
+            # the denylist is the shared (Redis) store checked asynchronously.
+            if await is_jti_revoked(payload.get("jti")):
                 return _unauthorized("Invalid or expired token")
             # Map user RBAC roles (ADMIN/ANALYST/VIEWER) onto tenant roles
             jwt_role_map = {"ADMIN": "admin", "ANALYST": "operator", "VIEWER": "viewer"}
@@ -189,11 +193,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
             logger.warning(f"[Tenant] Revoked key used: {raw_key[:12]}…")
             return _unauthorized("API key has been revoked")
 
-        # Check IP Allowlisting (L-07)
+        # Check IP Allowlisting (L-07). Resolve the real caller IP through any
+        # trusted proxy, so the allowlist compares the client, not the proxy.
+        from app.core.net import client_ip as _client_ip
         allowed_ips = key_meta.get("allowed_ips", [])
-        client_ip = request.client.host if request.client else None
-        if allowed_ips and client_ip and client_ip not in allowed_ips:
-            logger.warning(f"[Tenant] IP {client_ip} not allowed for tenant {key_meta['tenant_id']}")
+        caller_ip = _client_ip(request)
+        if allowed_ips and caller_ip and caller_ip not in allowed_ips:
+            logger.warning(f"[Tenant] IP {caller_ip} not allowed for tenant {key_meta['tenant_id']}")
             return _unauthorized("IP address not allowed for this tenant")
 
         # Check CORS Origin (L-06)

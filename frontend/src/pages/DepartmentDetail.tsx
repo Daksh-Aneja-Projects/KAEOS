@@ -20,6 +20,7 @@ import {
 import { DeptNetworkGraph } from '../components/neural/NeuralMap';
 import { humanize, measured, NOT_MEASURED } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import TableCard from '../components/shared/TableCard';
 
 export default function DepartmentDetail({ domain }: { domain?: string }) {
   const { colors } = useTheme();
@@ -234,8 +235,8 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
 
         {/* Processes Tab */}
         {activeTab === 'processes' && (
-          <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
-            <div className="grid grid-cols-8 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5" style={{ background: colors.surface1, color: colors.inkSubtle }}>
+          <TableCard minWidth={760}>
+            <div className="grid grid-cols-8 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5" style={{ background: colors.surface2, color: colors.inkSubtle }}>
               <div className="col-span-2">Process</div>
               <div>Status</div>
               <div>Trigger</div>
@@ -263,7 +264,7 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
                 <div className="text-center font-mono">{proc.sla_hours ? `${proc.sla_hours}h` : '-'}</div>
               </div>
             ))}
-          </div>
+          </TableCard>
         )}
       </div>
     </div>

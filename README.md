@@ -200,11 +200,13 @@ KAEOS/
 │   │   └── hr/ finance/ legal/ sales/ support/ operations/ engineering/
 │   │                         7 departments, 41 agents, each behind a gated_runner
 │   │                         (finance: real double-entry accrual GL + statements)
-│   ├── alembic/versions/     35 migrations
+│   ├── alembic/versions/     36 migrations
 │   ├── benchmark/            Real-data benchmark harness
 │   └── tests/                114 files, 900 tests (441 e2e + 459 unit)
 ├── frontend/                 React 19 + TypeScript + Vite + Tailwind
-│   └── src/                  99 components: 45 pages, 18 views, 34 shared
+│   └── src/                  pages + views + shared primitives (TableCard,
+│                             Ring, StatCard); Compliance Checker Studio +
+│                             General Ledger Workspace surfaces
 ├── deploy/helm/kaeos/        Helm chart
 ├── docs/                     Documentation (see docs/README.md)
 └── docker-compose.yml        Postgres, Redis, backend, frontend, Prometheus, Grafana

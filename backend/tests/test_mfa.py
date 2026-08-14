@@ -12,14 +12,20 @@ T = "tenant_mfa"
 
 @pytest.fixture(autouse=True)
 async def _mfa_table():
+    # The TOTP secret is now encrypted under a per-tenant data key, so the
+    # enroll/confirm/login flow reads+writes tenant_data_keys on the app engine.
+    from app.models.tenant_data_key import TenantDataKey
     async with app_engine.begin() as conn:
         await conn.run_sync(UserMFA.__table__.create, checkfirst=True)
+        await conn.run_sync(TenantDataKey.__table__.create, checkfirst=True)
         from sqlalchemy import text
         await conn.execute(text("DELETE FROM user_mfa"))
+        await conn.execute(text("DELETE FROM tenant_data_keys"))
     yield
     async with app_engine.begin() as conn:
         from sqlalchemy import text
         await conn.execute(text("DELETE FROM user_mfa"))
+        await conn.execute(text("DELETE FROM tenant_data_keys"))
 
 
 # ── pure TOTP ─────────────────────────────────────────────────────────────────
@@ -57,12 +63,18 @@ async def test_enroll_confirm_and_login_gate():
     # Wrong code does not enable.
     assert (await mfa.confirm_enrollment(U, "000000")).get("error") == "invalid_code"
 
-    # Correct code enables MFA.
+    # Correct code enables MFA (and consumes that time-step).
     assert (await mfa.confirm_enrollment(U, mfa.totp_now(secret)))["enabled"] is True
     assert await mfa.is_enabled(U) is True
 
-    # Now the login gate enforces a valid code.
-    assert await mfa.verify_login_code(U, mfa.totp_now(secret)) is True
+    # Replay guard: the code that confirmed enrollment cannot be reused at login.
+    assert await mfa.verify_login_code(U, mfa.totp_now(secret)) is False
+
+    # A code from the next time-step is accepted once, then rejected on reuse.
+    import time as _t
+    nxt = mfa.totp_now(secret, at=_t.time() + 30)
+    assert await mfa.verify_login_code(U, nxt) is True
+    assert await mfa.verify_login_code(U, nxt) is False   # replay of the same step
     assert await mfa.verify_login_code(U, "000000") is False
 
     # Disable removes the requirement.

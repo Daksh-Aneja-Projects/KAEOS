@@ -6,6 +6,7 @@ import { CountUp } from '../components/CountUp';
 import { humanize } from '../lib/format';
 import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import TableCard from '../components/shared/TableCard';
 import {
   Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
   Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart,
@@ -267,7 +268,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                     </div>
                   )}
                   {budget && (() => {
-                    const copy = BUDGET_COPY[budget.action] || { text: `Budget check returned ${budget.action}.`, tone: 'warn' as const };
+                    const copy = BUDGET_COPY[budget.action] || { text: `Budget check returned ${humanize(budget.action)}.`, tone: 'warn' as const };
                     const tone = copy.tone === 'ok' ? '#22c55e' : copy.tone === 'warn' ? '#f59e0b' : '#ef4444';
                     return (
                       <div className="p-3 rounded-xl" style={{ background: tone + '10', border: `1px solid ${tone}30` }}>
@@ -291,9 +292,9 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
             </div>
 
             {/* Model Table */}
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
+            <TableCard minWidth={880}>
               <div className="grid grid-cols-9 text-[11px] font-semibold uppercase tracking-wider px-4 py-2.5"
-                style={{ background: colors.surface1, color: colors.inkSubtle }}>
+                style={{ background: colors.surface2, color: colors.inkSubtle }}>
                 <div className="col-span-2">Model</div>
                 <div>Provider</div>
                 <div>Tier</div>
@@ -326,7 +327,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                   </div>
                 </div>
               ))}
-            </div>
+            </TableCard>
           </div>
         )}
 

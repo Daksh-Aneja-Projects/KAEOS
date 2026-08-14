@@ -118,13 +118,13 @@ class WebhookDestination(BaseDestination):
         return True
 
     async def write(self, records: list[dict], metadata: Optional[dict] = None) -> WriteResult:
-        import httpx
+        from app.core.outbound import guarded_async_client
         url = self.config.get("url", "")
         headers = self.config.get("headers", {"Content-Type": "application/json"})
         batch_size = self.config.get("batch_size", 100)
         written, errors = 0, []
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with guarded_async_client(timeout=30) as client:
             for i in range(0, len(records), batch_size):
                 batch = records[i:i + batch_size]
                 try:
@@ -140,9 +140,9 @@ class WebhookDestination(BaseDestination):
         return 0
 
     async def health_check(self) -> dict:
-        import httpx
+        from app.core.outbound import guarded_async_client
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with guarded_async_client(timeout=10) as client:
                 resp = await client.get(self.config.get("url", ""))
                 return {"status": "healthy" if resp.status_code < 500 else "unhealthy"}
         except Exception as e:

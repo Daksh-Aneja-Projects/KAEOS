@@ -52,9 +52,31 @@ class PurchaseOrder(Base):
     purchase_request_id = Column(String, ForeignKey("ops_purchase_requests.id"), nullable=True)
 
     po_number = Column(String(32), nullable=False)
-    vendor_name = Column(String(256), nullable=False)
+    vendor_name = Column(String(256), nullable=False)  # denormalized display / legacy
+    # Single vendor master: the ops PO now points at fin_vendors so a finance
+    # invoice can be joined to its PO. Nullable + backfilled by name match;
+    # unmatched rows stay NULL rather than mis-joining to another vendor.
+    vendor_id = Column(String, ForeignKey("fin_vendors.id"), nullable=True, index=True)
     total_amount = Column(Numeric(18, 2), default=0.00)
     status = Column(Enum(ProcurementStatus), default=ProcurementStatus.PENDING_APPROVAL)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class POLineItem(Base):
+    """One ordered line of a purchase order - the qty/price leg a 3-way match needs."""
+    __tablename__ = "ops_po_line_items"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+    purchase_order_id = Column(String, ForeignKey("ops_purchase_orders.id"), nullable=False, index=True)
+
+    line_number = Column(Integer, default=1)
+    description = Column(String(256), nullable=True)
+    # ponytail: Integer qty matches PurchaseRequest.quantity; switch to
+    # Numeric if bulk/weight-based vendors ever bill fractional units.
+    quantity = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(18, 2), nullable=False, default=0.00)
+    amount = Column(Numeric(18, 2), nullable=False, default=0.00)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -65,6 +87,9 @@ class GoodsReceipt(Base):
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
     purchase_order_id = Column(String, ForeignKey("ops_purchase_orders.id"), nullable=False, index=True)
+    # Optional per-line attribution; header-level receipts leave it NULL and
+    # are summed against the PO total.
+    po_line_item_id = Column(String, ForeignKey("ops_po_line_items.id"), nullable=True)
 
     receiver_name = Column(String(128), nullable=False)
     received_quantity = Column(Integer, default=1)
