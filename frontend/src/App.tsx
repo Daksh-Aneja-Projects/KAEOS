@@ -44,6 +44,7 @@ const WorkforceView = lazy(() => import('./views/WorkforceView'));
 // ─── FINANCE DEPARTMENT ─────────────────────────────────────────────
 const FinanceDashboard = lazy(() => import('./pages/FinanceDashboard'));
 const FinanceView = lazy(() => import('./views/FinanceView'));
+const GeneralLedger = lazy(() => import('./pages/GeneralLedger'));
 
 // ─── LEGAL DEPARTMENT ───────────────────────────────────────────────
 const LegalDashboard = lazy(() => import('./pages/LegalDashboard'));
@@ -66,6 +67,7 @@ const EngineeringView = lazy(() => import('./views/EngineeringView'));
 const KnowledgeView = lazy(() => import('./views/KnowledgeView'));
 const AgentsView = lazy(() => import('./views/AgentsView'));
 const DecisionsView = lazy(() => import('./views/DecisionsView'));
+const ComplianceChecker = lazy(() => import('./pages/ComplianceChecker'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 
@@ -111,6 +113,7 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/knowledge', label: 'Knowledge', icon: Database },
   { path: '/platform/agents', label: 'Agents', icon: Bot },
   { path: '/platform/decisions', label: 'Decisions', icon: Activity },
+  { path: '/platform/compliance-checker', label: 'Compliance Checker', icon: Scale },
   // Tooling next.
   { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
   { path: '/platform/reality', label: 'Reality Experience', icon: Rocket },
@@ -631,6 +634,7 @@ function Shell() {
                 <Route path="/departments/finance/expenses" element={<ThemeAdapter><FinanceView domain={domain} defaultTab="expenses" /></ThemeAdapter>} />
                 <Route path="/departments/finance/tax" element={<ThemeAdapter><FinanceView domain={domain} defaultTab="tax" /></ThemeAdapter>} />
                 <Route path="/departments/finance/audit" element={<ThemeAdapter><FinanceView domain={domain} defaultTab="audit" /></ThemeAdapter>} />
+                <Route path="/departments/finance/gl" element={<ThemeAdapter><GeneralLedger /></ThemeAdapter>} />
 
                 {/* LEGAL DEPARTMENT */}
                 <Route path="/departments/legal" element={<ThemeAdapter><LegalDashboard /></ThemeAdapter>} />
@@ -683,6 +687,7 @@ function Shell() {
                 <Route path="/platform/knowledge" element={<ThemeAdapter><KnowledgeView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />
+                <Route path="/platform/compliance-checker" element={<ThemeAdapter><ComplianceChecker /></ThemeAdapter>} />
                 {/* Company Brain merged into Knowledge; Trust merged into Decisions (Governance tab). */}
                 <Route path="/platform/brain" element={<Navigate to="/platform/knowledge" replace />} />
                 <Route path="/platform/trust" element={<Navigate to="/platform/decisions" replace />} />

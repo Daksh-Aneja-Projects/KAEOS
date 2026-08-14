@@ -10,7 +10,7 @@ import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   DollarSign, Briefcase, Landmark, ShieldAlert, Scale,
   BarChart3, Bot, Zap, ArrowRight, TrendingUp, CheckCircle,
-  FileSpreadsheet, ClipboardList, Wallet, Receipt
+  FileSpreadsheet, ClipboardList, Wallet, Receipt, BookOpen
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
@@ -142,6 +142,7 @@ export default function FinanceDashboard() {
   }
 
   const quickLinks = [
+    { label: 'General Ledger', path: '/departments/finance/gl', icon: BookOpen, color: '#14b8a6' },
     { label: 'AP Ledger', path: '/departments/finance/ap', icon: Receipt, color: '#ec4899' },
     { label: 'AR Ledger', path: '/departments/finance/ar', icon: Landmark, color: '#3b82f6' },
     { label: 'Budgets & Forecasts', path: '/departments/finance/budgets', icon: BarChart3, color: '#8b5cf6' },

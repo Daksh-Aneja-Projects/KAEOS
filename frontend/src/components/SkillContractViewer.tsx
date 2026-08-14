@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { Ring } from './shared/Ring';
 
 interface Props {
   skill: SkillItem;
@@ -82,12 +83,12 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
               style={{
                 background: skill.status === 'ACTIVE' ? 'rgba(39,166,68,0.12)' : 'rgba(245,166,35,0.12)',
                 color: skill.status === 'ACTIVE' ? colors.success : colors.warning,
-              }}>{skill.status}</span>
+              }}>{humanize(skill.status)}</span>
           </div>
           <div className="flex items-center gap-3 text-[12px]" style={{ color: colors.inkSubtle }}>
-            <span>{skill.department}</span>
+            <span>{humanize(skill.department)}</span>
             <span>·</span>
-            <span>{skill.domain}</span>
+            <span>{humanize(skill.domain)}</span>
             <span>·</span>
             <span>v{skill.version}</span>
             <span>·</span>
@@ -109,7 +110,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
             {humanize(skill.confidence_tier)}
           </span>
         </div>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
           {[
             { key: 'source_breadth', label: 'Breadth' },
             { key: 'source_authority', label: 'Authority' },
@@ -119,20 +120,9 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
           ].map(d => {
             const val = (confVector as any)[d.key] || 0;
             return (
-              <div key={d.key} className="text-center">
+              <div key={d.key} className="flex flex-col items-center text-center">
                 <div className="text-[11px] uppercase font-semibold mb-2" style={{ color: colors.inkTertiary }}>{d.label}</div>
-                <div className="relative mx-auto" style={{ width: 52, height: 52 }}>
-                  <svg width="52" height="52" viewBox="0 0 52 52">
-                    <circle cx="26" cy="26" r="22" fill="none" stroke={colors.surface3} strokeWidth="4" />
-                    <circle cx="26" cy="26" r="22" fill="none"
-                      stroke={confColor(val)} strokeWidth="4"
-                      strokeDasharray={`${val * 138.2} 138.2`}
-                      strokeLinecap="round" transform="rotate(-90 26 26)" />
-                    <text x="26" y="30" textAnchor="middle" fill={colors.ink} fontSize="12" fontWeight="700">
-                      {(val * 100).toFixed(0)}
-                    </text>
-                  </svg>
-                </div>
+                <Ring value={val * 100} size={52} strokeWidth={4} color={confColor(val)} />
               </div>
             );
           })}

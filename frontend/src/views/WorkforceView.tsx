@@ -17,6 +17,7 @@ import BulkActionBar from '../components/BulkActionBar';
 import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 import GateTrace from '../components/GateTrace';
+import TableCard from '../components/shared/TableCard';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
 interface HREmployee {
@@ -147,7 +148,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
       const execId = res?.provenance?.execution_id;
       if (execId) setProvenance(prev => ({ ...prev, [candidateId]: execId }));
       if (res?.screening === 'gated') {
-        setActionMsg(`Screening gated (${res.status}) - routed for human review.`);
+        setActionMsg(`Screening gated (${humanize(res.status)}) - routed for human review.`);
       } else {
         setActionMsg('AI screening complete.');
       }
@@ -277,7 +278,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
         {filtered.length === 0 ? (
           <EmptyState icon={Users} title="No employees found" sub={employees.length === 0 ? "Connect an HRIS (e.g., BambooHR) to sync employee data" : "Try adjusting your search or filters"} />
         ) : (
-          <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          <TableCard minWidth={560}>
             <table className="w-full">
               <thead>
                 <tr style={{ background: colors.surface2 }}>
@@ -317,7 +318,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableCard>
         )}
       </div>
     );
@@ -495,7 +496,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
       <BulkActionBar domain="hr" entityType="time_off_request" noun="request"
         ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
         onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
-      <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <TableCard minWidth={680}>
         <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
           <Calendar className="w-4 h-4" style={{ color: colors.primary }} />
           <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Time-Off Requests</span>
@@ -540,7 +541,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
             </tbody>
           </table>
         )}
-      </div>
+      </TableCard>
     </div>
   );
 
@@ -563,7 +564,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
           <MetricCard label="Avg Rating" value={reviews.length > 0 ? (reviews.reduce((a, r) => a + (r.manager_rating || 0), 0) / Math.max(reviews.filter(r => r.manager_rating != null).length, 1)).toFixed(1) : '-'} icon={TrendingUp} accent={colors.info} />
         </div>
 
-        <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+        <TableCard minWidth={560}>
           <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${colors.hairline}` }}>
             <Star className="w-4 h-4" style={{ color: colors.primary }} />
             <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Performance Reviews</span>
@@ -605,7 +606,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
               </tbody>
             </table>
           )}
-        </div>
+        </TableCard>
       </div>
     );
   };

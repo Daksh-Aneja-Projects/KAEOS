@@ -11,6 +11,23 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Premium frontend sprint
+- **Shared UI foundation** (`components/shared/`): `<TableCard>` encodes the
+  overflow-hidden > overflow-x-auto > min-width pattern ONCE so wide tables
+  scroll instead of clipping their rightmost columns on mobile/tablet (the
+  defect was ~30 hand-rolled tables split between clipping and scrolling
+  wrappers); `<Ring>`/`<StatCard>`/`<MiniDonut>` add rAF-tweened, reduced-motion-
+  aware live KPI visuals; `prefersReducedMotion()` is now exported from CountUp.
+- **Department views migrated** onto the foundation (Finance, Legal, Engineering,
+  Workforce, Infrastructure, DepartmentDetail, EvolutionStudio,
+  SkillContractViewer) - tables scroll cleanly at 375/768/1280, grids reflow.
+- **Two new premium surfaces** wired into the shell: **Compliance Checker Studio**
+  (`/platform/compliance-checker`) - the framework catalog grouped by department
+  plus a live pass/block/advisory/UNBACKED runner over `/compliance/check`; and
+  the **General Ledger Workspace** (`/departments/finance/gl`) - a tabbed hub
+  (Journal, Trial Balance, P&L, Balance Sheet, Periods, Payments) over the new
+  finance endpoints, with human-readable money and live figures.
+
 ### Department-as-a-Service: deterministic compliance expertise
 - **A statutory checker spine, fail-closed** (`app/compliance/`). KAEOS is
   Department-as-a-Service, and each department's real expertise is a
