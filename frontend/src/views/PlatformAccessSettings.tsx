@@ -108,9 +108,16 @@ const PlatformAccessSettings: React.FC = () => {
           <div className="flex flex-wrap gap-4">
             {stat('Skill executions', fmtInt(usage?.total_executions ?? usage?.executions))}
             {stat('LLM tokens', fmtInt(usage?.total_tokens ?? usage?.tokens))}
-            {stat('Est. cost', fmtMoney(usage?.total_cost_usd ?? usage?.cost_usd))}
+            {stat('Metered cost', fmtMoney(usage?.total_cost_usd ?? usage?.cost_usd))}
             {stat('Safe autonomous runs', fmtInt(roi?.safe_autonomous_executions))}
-            {stat('Value delivered', fmtMoney(roi?.value_delivered_usd ?? roi?.roi_usd))}
+            {stat(
+              'Value delivered',
+              // Null with note until a per-skill baseline is configured - we
+              // never invent a dollar figure. Show a hint instead of a broken '-'.
+              roi?.value_delivered_usd == null
+                ? 'Not configured'
+                : fmtMoney(roi.value_delivered_usd),
+            )}
           </div>
         )}
       </div>

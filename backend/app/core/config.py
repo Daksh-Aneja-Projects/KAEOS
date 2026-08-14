@@ -52,6 +52,17 @@ class Settings(BaseSettings):
     # Expose Prometheus /metrics. Off by default: it leaks per-endpoint traffic
     # and should be scraped over an internal network, not the public internet.
     EXPOSE_METRICS: bool = False
+
+    # Commercial surface (open-core + managed cloud). Self-host default = False:
+    # require_entitlement is a no-op and every feature is reachable (Apache-2.0
+    # open core). Managed cloud sets True so Tenant.plan gates managed/enterprise
+    # features (SSO, SCIM, webhooks, advanced connectors) and Stripe metering runs.
+    KAEOS_MANAGED_CLOUD: bool = False
+    STRIPE_API_KEY: str = ""          # sk_...; empty => Stripe provider is a no-op
+    STRIPE_WEBHOOK_SECRET: str = ""   # whsec_...; authenticates /billing/webhook
+    # Embedding model that drives the pgvector column width. Empty keeps the
+    # existing 1536-dim behaviour; change only alongside a dim migration + re-embed.
+    EMBEDDING_MODEL: str = ""
     # Force-enable/disable interactive API docs (/docs, /redoc, /openapi.json).
     # None = auto (on only in a development ENVIRONMENT). Set False for prod.
     ENABLE_DOCS: bool | None = None

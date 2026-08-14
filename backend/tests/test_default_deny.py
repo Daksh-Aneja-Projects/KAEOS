@@ -38,6 +38,13 @@ _ALLOWLIST = {
     # tests/test_security_response.py.
     "/api/v1/integrations/ingest/{connector_id}",
     "/api/v1/integrations/ingest/{connector_id}/security",
+    # Stripe billing webhook: public BY DESIGN (Stripe cannot hold a KAEOS
+    # session). Authenticated by the Stripe-Signature over the raw body
+    # (StripeBillingProvider.verify_webhook; bad/missing signature -> 400) with
+    # event-id idempotency; the tenant is resolved from OUR BillingAccount by
+    # customer id, never from the payload. Disabled entirely on self-host
+    # (returns 404). See app/api/routes/billing.py:stripe_webhook.
+    "/api/v1/billing/webhook",
     # Viewer-level self-actions (marking one's own items read — no privilege).
     "/api/v1/agents/activity-feed/mark-read",
     "/api/v1/org/notifications/read",

@@ -7,14 +7,15 @@ were fabricated. Everything below is derived from CostEvent rows written by the
 cost governor, with real token counts; where a figure genuinely cannot be
 derived it is returned as null and labelled, rather than guessed.
 """
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy import func, select, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, get_tenant
 from app.models.domain import SkillExecution
 from app.models.infrastructure import CostEvent
 
@@ -145,6 +146,11 @@ async def get_tenant_roi(
     sar = await compute_safe_autonomy(db, tenant_id, days=_ALL_TIME_DAYS)
     sar_rate = sar.get("safe_autonomy_rate")
 
+    # Value delivered is null unless a per-skill human baseline is configured.
+    # KAEOS never invents a dollar figure: value is only computed for skills the
+    # tenant has told us how long a person takes and what that person costs.
+    value_delivered, value_note, skills_priced = await _value_delivered(db, tenant_id)
+
     return {
         "tenant_id": tenant_id,
         "total_executions": total,
@@ -164,6 +170,11 @@ async def get_tenant_roi(
         ),
         "total_hours_saved": None,
         "total_cost_reduction": None,
+        # Honest ROI: a real number ONLY for skills with a configured baseline,
+        # null otherwise. The frontend tile reads value_delivered_usd.
+        "value_delivered_usd": value_delivered,
+        "value_delivered_note": value_note,
+        "priced_skills": skills_priced,
         "note": (
             "hours_saved and cost_reduction require a human-baseline duration and loaded "
             "hourly rate per skill, which are tenant inputs. They are null rather than estimated. "
@@ -172,3 +183,92 @@ async def get_tenant_roi(
         ),
         "currency": "USD",
     }
+
+
+async def _value_delivered(db: AsyncSession, tenant_id: str):
+    """(value_usd, note, priced_skill_count).
+
+    value is the sum over cleanly-succeeded executions of skills that HAVE a
+    baseline, of (baseline_minutes / 60 * loaded_hourly_rate). If no skill has a
+    baseline the value is None with an explanatory note — never fabricated.
+    """
+    from app.models.billing import SkillValueBaseline
+    baselines = (await db.execute(
+        select(SkillValueBaseline).where(SkillValueBaseline.tenant_id == tenant_id)
+    )).scalars().all()
+    if not baselines:
+        return None, (
+            "No per-skill baseline configured, so value delivered cannot be measured. "
+            "Configure baseline_minutes and a loaded hourly rate per skill to see it."
+        ), 0
+
+    by_skill = {b.skill_id_name: b for b in baselines}
+    counts = (await db.execute(
+        select(SkillExecution.skill_id_name, func.count(SkillExecution.id))
+        .where(
+            SkillExecution.tenant_id == tenant_id,
+            func.upper(SkillExecution.status).like("SUCCESS%"),
+            SkillExecution.skill_id_name.in_(list(by_skill.keys())),
+        )
+        .group_by(SkillExecution.skill_id_name)
+    )).all()
+
+    total = Decimal("0")
+    for skill_name, n in counts:
+        b = by_skill[skill_name]
+        per_run = (Decimal(b.baseline_minutes) / Decimal(60)) * Decimal(b.loaded_hourly_rate_usd)
+        total += per_run * Decimal(int(n))
+    return round(float(total), 2), (
+        f"Measured from {len(baselines)} configured skill baseline(s); "
+        f"skills without a baseline contribute nothing."
+    ), len(baselines)
+
+
+@router.get("/entitlements")
+async def get_entitlements(
+    tenant: dict = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """This tenant's plan, included features, and current-period metered usage
+    against the plan allowance."""
+    from app.core.entitlements import (
+        entitlements_for_plan, plan_for_tenant, FEATURES, _managed_cloud,
+    )
+    from app.services.usage_rating import rate_tenant_period
+    tenant_id = tenant["tenant_id"]
+    plan = await plan_for_tenant(db, tenant_id)
+    granted = entitlements_for_plan(plan)
+    rating = await rate_tenant_period(db, tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "plan": plan,
+        "managed_cloud": _managed_cloud(),
+        # Self-host: every feature is available regardless of plan.
+        "features": {f: (f in granted or not _managed_cloud()) for f in sorted(FEATURES)},
+        "usage": rating,
+    }
+
+
+@router.post("/webhook")
+async def stripe_webhook(request: Request):
+    """Inbound Stripe webhook. PUBLIC path (no tenant session — see the
+    /billing/webhook carve-out in TenantMiddleware); authenticity is the Stripe
+    signature over the raw body, never a tenant id from the payload."""
+    from app.core.database import MaintenanceSessionLocal
+    from app.services.stripe_bridge import get_billing_provider, handle_webhook_event
+    provider = get_billing_provider()
+    if not provider.enabled:
+        raise HTTPException(status_code=404, detail="Billing is not enabled on this install")
+    payload = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = provider.verify_webhook(payload, sig)
+    except Exception:
+        # Do not leak whether it was a bad signature vs malformed body.
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    # The webhook has no tenant context; billing_accounts is under RLS, so the
+    # tenant is resolved from OUR records by stripe_customer_id on the RLS-exempt
+    # owner session (an app-role session would set no app.tenant_id GUC and match
+    # zero rows - the tenant is never taken from the Stripe payload).
+    async with MaintenanceSessionLocal() as owner:
+        return await handle_webhook_event(owner, event)

@@ -440,6 +440,42 @@ async def run_audit_checkpoints():
         logger.error(f"[Scheduler] Audit checkpointing failed: {e}")
 
 
+async def run_usage_metering():
+    """Leader-guarded: rate each tenant's current-period governed executions and
+    push the overage to the billing provider (no-op self-host).
+
+    Per-tenant RLS context is set before each tenant's rating so the execution
+    count and report upsert stay tenant-isolated on Postgres. Idempotent: the
+    report is keyed on (tenant, period) and the provider push uses action=set,
+    so an overlapping run reports the same total instead of double-billing.
+    """
+    if not _is_leader():
+        return
+    from app.core.context import current_tenant_id
+    from app.core.database import AsyncSessionLocal
+    from app.models.domain import SkillExecution
+    from app.services.usage_rating import record_and_report
+
+    async with MaintenanceSessionLocal() as mdb:
+        tenant_ids = [t for t in (await mdb.execute(
+            select(SkillExecution.tenant_id).distinct()
+        )).scalars().all() if t]
+
+    rated = 0
+    for tid in tenant_ids:
+        token = current_tenant_id.set(tid)
+        try:
+            async with AsyncSessionLocal() as db:
+                await record_and_report(db, tid)
+                rated += 1
+        except Exception as e:
+            logger.warning("[Scheduler] usage metering failed for %s: %s", tid, e)
+        finally:
+            current_tenant_id.reset(token)
+    if rated:
+        logger.info("[Scheduler] usage metering rated %d tenant(s)", rated)
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -532,5 +568,12 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_deployment_reaper, 'interval', minutes=15,
         id='deployment_reaper_job', replace_existing=True
+    )
+    # Usage metering: rate governed executions per tenant and push overage to the
+    # billing provider (no-op self-host). Hourly is ample — Stripe bills on the
+    # period total (action=set), so cadence only affects freshness, not amount.
+    scheduler.add_job(
+        run_usage_metering, 'interval', hours=1,
+        id='usage_metering_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     return scheduler

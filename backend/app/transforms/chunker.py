@@ -149,7 +149,16 @@ class ChunkerNode(BaseTransformNode):
                 # Assume an embedding service is available for semantic chunking
                 # If not, fallback to recursive
                 from langchain_community.embeddings import HuggingFaceEmbeddings
-                embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                # Pin the HF-hub revision: an unpinned mutable tag downloads
+                # whatever 'main' points to at runtime, so an upstream weight
+                # update silently changes chunk boundaries (non-reproducible RAG).
+                # Pinned to the canonical all-MiniLM-L6-v2 commit.
+                _MINILM_REVISION = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
+                embeddings = HuggingFaceEmbeddings(
+                    model_name="sentence-transformers/all-MiniLM-L6-v2",
+                    model_kwargs={"revision": _MINILM_REVISION},
+                )
+                logger.info("[Chunker] semantic chunking via all-MiniLM-L6-v2 @ %s", _MINILM_REVISION)
                 splitter = SemanticChunker(embeddings)
                 return splitter.split_text(text)
             except ImportError:

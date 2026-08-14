@@ -78,9 +78,17 @@ class EnterpriseMemoryService:
         current_context: str,
         limit: int = 3,
     ) -> List[Dict[str, Any]]:
-        """Cosine semantic search over stored memories for the current context."""
+        """Cosine semantic search over stored memories for the current context.
+
+        Returns [] when embeddings are simulated: a seeded pseudo-vector recalls
+        random memories with a plausible-looking cosine, so we surface no recall
+        rather than fabricate 'similar situations' that are noise.
+        """
         try:
-            embedding, _ = await EnterpriseMemoryService._embed(current_context, tenant_id)
+            embedding, prov = await EnterpriseMemoryService._embed(current_context, tenant_id)
+            if prov.get("simulated"):
+                logger.info("[Memory] embeddings simulated; no semantic recall for %s", tenant_id)
+                return []
             store = get_vector_store()
             results = await store.search(
                 tenant_id=tenant_id,

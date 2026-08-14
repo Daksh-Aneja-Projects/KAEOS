@@ -110,6 +110,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if req_path.startswith("/api/v1/integrations/ingest/"):
             request.state.tenant = None
             return await call_next(request)
+        # Stripe billing webhook is PUBLIC BY DESIGN: Stripe cannot hold a KAEOS
+        # session. Each request is authenticated by the Stripe-Signature over the
+        # raw body (verified in billing.stripe_webhook); the tenant is resolved
+        # from OUR BillingAccount by customer id, never from the webhook payload.
+        if req_path == "/api/v1/billing/webhook":
+            request.state.tenant = None
+            return await call_next(request)
         # Pre-auth auth routes. SSO login/callback/discovery MUST be reachable
         # without a session (that is the whole point); the SSO *config* endpoints
         # (/auth/sso/connections) are deliberately NOT here — they require ADMIN.

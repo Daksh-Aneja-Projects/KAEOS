@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, MaintenanceSessionLocal
 from app.core.tenant import get_tenant_id
+from app.core.entitlements import require_entitlement
 from app.models.sso import SSOConnection
 from app.api.routes.auth import require_role
 from app.services import sso as sso_svc
@@ -238,7 +239,7 @@ async def list_connections(user: dict = Depends(require_role("ADMIN")),
     return {"connections": [_serialize(c) for c in rows]}
 
 
-@router.post("/connections")
+@router.post("/connections", dependencies=[Depends(require_entitlement("sso"))])
 async def upsert_connection(data: SSOConnectionIn,
                             user: dict = Depends(require_role("ADMIN")),
                             tenant_id: str = Depends(get_tenant_id),

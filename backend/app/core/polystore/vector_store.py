@@ -237,7 +237,15 @@ class PgVectorStore(VectorStore):
 
     backend_name = "pgvector"
 
-    def __init__(self, dim: int = 1536):
+    def __init__(self, dim: Optional[int] = None):
+        # Derive from the configured embedding model so a non-1536 model does not
+        # raise 'expected 1536 dimensions' on every insert.
+        if dim is None:
+            try:
+                from app.services.llm_support import configured_embedding_dim
+                dim = configured_embedding_dim()
+            except Exception:
+                dim = 1536
         self.dim = dim
 
     async def initialize(self) -> None:
@@ -265,6 +273,18 @@ class PgVectorStore(VectorStore):
             await session.execute(text(
                 f"CREATE INDEX IF NOT EXISTS ix_{_TABLE}_tenant ON {_TABLE}(tenant_id, namespace)"
             ))
+            # ANN index: without it every <=> query is an exact sequential scan,
+            # so recall latency grows linearly with corpus size. HNSW with cosine
+            # ops matches the search's <=> operator. IF NOT EXISTS keeps it
+            # idempotent; build failures (e.g. dim mismatch) must not brick the
+            # table, so this is best-effort.
+            try:
+                await session.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS ix_{_TABLE}_embedding_hnsw "
+                    f"ON {_TABLE} USING hnsw (embedding vector_cosine_ops)"
+                ))
+            except Exception as e:  # pragma: no cover - depends on pgvector version
+                logger.warning(f"[Polystore] HNSW index create skipped: {e}")
             await session.execute(text(f'ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY'))
             await session.execute(text(f'DROP POLICY IF EXISTS tenant_isolation ON {_TABLE}'))
             await session.execute(text(f"""

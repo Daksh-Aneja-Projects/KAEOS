@@ -14,6 +14,47 @@ logger = logging.getLogger(__name__)
 RECENT_STAGE_TIMINGS: deque = deque(maxlen=50)
 
 
+async def persist_blocked_execution(
+    execution_id: str, tenant_id: str, skill: Dict[str, Any],
+    status: str, reason: str, duration_ms: int = 0,
+) -> None:
+    """Record a SkillExecution row for a run BLOCKED early at Gate 1 (compliance).
+
+    A governed run the pipeline evaluated is a governed run whether or not it was
+    allowed to act; without this row, usage rating undercounts blocked runs while
+    CostEvent may still record the model call the gate made (see billing/usage).
+    Idempotent on execution_id, and never allowed to raise into the gate path.
+    """
+    try:
+        from datetime import datetime, timezone
+        from sqlalchemy import select
+        from app.core.database import AsyncSessionLocal
+        from app.models.domain import SkillExecution
+        async with AsyncSessionLocal() as session:
+            exists = (await session.execute(
+                select(SkillExecution.id).where(SkillExecution.id == execution_id)
+            )).scalar_one_or_none()
+            if exists:
+                return
+            session.add(SkillExecution(
+                id=execution_id,
+                skill_id_name=skill.get("skill_id", "unknown"),
+                tenant_id=tenant_id,
+                status=status,
+                route_type="GATED_AGENT",
+                agent_state="BLOCKED",
+                task_intent=reason[:500],
+                context={},
+                reasoning_chain=[],
+                completed_at=datetime.now(timezone.utc),
+                duration_ms=duration_ms,
+                outcome_type=status,
+                hitl_required=False,
+            ))
+            await session.commit()
+    except Exception as e:  # pragma: no cover - metering must never break a gate
+        logger.warning("[Usage] could not persist blocked execution %s: %s", execution_id, e)
+
 
 class SkillRouter:
     """L9 - Multi-Agent Skill Router"""
@@ -35,19 +76,12 @@ class SkillRouter:
             logger.warning(f"No skill match for intent: {task_intent}. Falling back to RAG.")
             return {"route_type": "RAG_EXEC", "skill": None}
 
-        # 2. LLM Intent Classification over candidates
-        prompt = f"""
-Given the following user task intent, choose the best matching skill from the candidates.
-If none are a strong match, return "NONE".
-Task Intent: {task_intent}
+        # 2. LLM Intent Classification over candidates (versioned, pinned prompt)
+        from app.services.prompts import render_prompt
+        prompt = render_prompt(
+            "skill_routing", version=1, task_intent=task_intent, candidates=candidates
+        )
 
-Candidates:
-"""
-        for i, c in enumerate(candidates):
-            prompt += f"{i+1}. {c['skill_id']} (Domain: {c['domain']})\n"
-        
-        prompt += "\nReturn ONLY valid JSON like: {\"selected_skill_id\": \"skill_name\", \"confidence\": 0.95}"
-        
         try:
             raw = await self.llm.complete(
                 prompt=prompt,
@@ -82,8 +116,11 @@ Candidates:
         except Exception as e:
             logger.error(f"Intent classification failed: {e}")
             
-        # 3. Fallback to vector search match
-        if candidates[0]['similarity'] > 0.85:
+        # 3. Fallback to vector search match — ONLY on a real cosine. A lexical
+        # (keyword) hit has similarity=None and must never auto-bind a skill on a
+        # fabricated threshold; it can only win via the LLM classifier above.
+        top = candidates[0]
+        if top.get("retrieval_mode") in ("semantic", "hybrid") and (top.get("similarity") or 0.0) > 0.85:
             from sqlalchemy import select
             from app.core.database import AsyncSessionLocal
             from app.models.domain import Skill
@@ -427,8 +464,16 @@ class AgentExecutor:
         blockers = [v for v in violations if v.get("severity") == "BLOCKER"]
         warnings = [v for v in violations if v.get("severity") != "BLOCKER"]
         if blockers:
-            await self._emit_gate(context, "compliance", "blocked",
-                                  "; ".join(v.get("reason", "") for v in blockers))
+            reason = "; ".join(v.get("reason", "") for v in blockers)
+            await self._emit_gate(context, "compliance", "blocked", reason)
+            # Count this governed run for usage even though it was blocked before
+            # execution: the pipeline evaluated it. Persisted here because the
+            # Gate-5 executor (which normally persists) is never reached.
+            _dur = int((time.perf_counter() - context.get("_gate_t_last", time.perf_counter())) * 1000)
+            await persist_blocked_execution(
+                context["execution_id"], context.get("tenant_id", "default"),
+                skill, "BLOCKED_COMPLIANCE", reason or "compliance blocker", _dur,
+            )
             return {
                 "status": "BLOCKED_COMPLIANCE",
                 "violations": blockers,

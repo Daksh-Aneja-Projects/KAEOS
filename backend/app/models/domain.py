@@ -13,6 +13,23 @@ except ImportError:
     Vector = None  # Fallback if pgvector is not installed locally
 
 
+def _embedding_dim() -> int:
+    """Vector column width, derived from the configured embedding model.
+
+    Hardcoding 1536 broke every non-1536 model (nomic 768, 3-large 3072) with an
+    'expected 1536 dimensions' error on insert. Derived here so the ORM column,
+    the PgVectorStore, and any migration agree on one number.
+    """
+    try:
+        from app.services.llm_support import configured_embedding_dim
+        return configured_embedding_dim()
+    except Exception:
+        return 1536
+
+
+_EMBED_DIM = _embedding_dim()
+
+
 Base = declarative_base()
 
 
@@ -101,7 +118,7 @@ class RuleEmbedding(Base):
     # text-embedding-3-small dimension is 1536
     # only define the column if pgvector is installed
     if Vector:
-        embedding = Column(Vector(1536))
+        embedding = Column(Vector(_EMBED_DIM))
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class SkillEmbedding(Base):
@@ -111,7 +128,7 @@ class SkillEmbedding(Base):
     skill_db_id = Column(String, primary_key=True)
     tenant_id = Column(String, nullable=False, index=True)
     if Vector:
-        embedding = Column(Vector(1536))
+        embedding = Column(Vector(_EMBED_DIM))
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
