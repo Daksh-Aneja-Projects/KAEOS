@@ -13,11 +13,13 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rls import is_postgres
 from app.models.domain import Skill
 from app.models.missions import Mission, MissionStep, MissionEvent
 from app.services import prompt_guard
@@ -215,13 +217,17 @@ def _recommendation_of(result: dict) -> Optional[str]:
     return None
 
 
-def _cost_of(result: dict) -> float:
+def _cost_of(result: dict) -> Decimal:
+    """Executor cost as an exact Decimal. via str() so a float like 0.1 becomes
+    Decimal('0.1'), not its binary-noise expansion, before it enters the ledger."""
     c = result.get("cost")
     if isinstance(c, dict):
-        return float(c.get("total_usd") or c.get("usd") or 0.0)
+        c = c.get("total_usd") or c.get("usd") or 0
+    if isinstance(c, Decimal):
+        return c
     if isinstance(c, (int, float)):
-        return float(c)
-    return 0.0
+        return Decimal(str(c))
+    return Decimal("0")
 
 
 def _finalize(db, mission, steps) -> None:
@@ -389,6 +395,28 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
             await db.refresh(mission)
             return _summary(mission, steps)
 
+        # Atomic step claim: two replicas both _load this PENDING/READY step and
+        # would both execute it (double governed run, double spent_usd, a Gate-5b
+        # actuation like a vendor payment fired twice). On Postgres, lock the exact
+        # row FOR UPDATE SKIP LOCKED, then re-check status: a concurrent worker
+        # holding the lock is skipped, and one that already flipped it to RUNNING
+        # fails the status predicate. On SQLite (single writer, single process) the
+        # in-process _RUNNING_MISSIONS guard + the RUNNING early-return above is the
+        # claim; there is no second replica to race.
+        prior_status = executable.status
+        if is_postgres(db):
+            won = (await db.execute(
+                select(MissionStep.id).where(
+                    MissionStep.id == executable.id,
+                    MissionStep.status == prior_status,
+                ).with_for_update(skip_locked=True)
+            )).scalar_one_or_none()
+            if won is None:
+                # Another replica claimed this step; do nothing this pass and let
+                # the runner loop re-pick. Roll back so we hold no lock/tx.
+                await db.rollback()
+                return _summary(mission, steps)
+
         # Persist RUNNING + execution id and COMMIT before executing, so this
         # session holds no write tx / dirty row while the executor writes from its
         # own session (on SQLite that would deadlock as "database is locked").
@@ -425,7 +453,7 @@ def _apply_step_result(db, mission, step, result: dict) -> None:
     status = result.get("status")
     cost = _cost_of(result)
     step.cost_usd = cost
-    mission.spent_usd = (mission.spent_usd or 0.0) + cost
+    mission.spent_usd = (mission.spent_usd or Decimal("0")) + cost
     if status == "SUCCESS_CLEAN":
         step.status = "DONE"
         step.completed_at = datetime.now(timezone.utc)
@@ -574,8 +602,8 @@ def _summary(mission: Mission, steps) -> dict:
         "status": mission.status,
         "narrative": mission.narrative,
         "departments": mission.departments,
-        "budget_usd": mission.budget_usd,
-        "spent_usd": round(mission.spent_usd or 0.0, 4),
+        "budget_usd": float(mission.budget_usd) if mission.budget_usd is not None else None,
+        "spent_usd": round(float(mission.spent_usd or 0), 4),
         "created_at": mission.created_at.isoformat() if mission.created_at else None,
         "completed_at": mission.completed_at.isoformat() if mission.completed_at else None,
         "steps": [
@@ -584,7 +612,7 @@ def _summary(mission: Mission, steps) -> dict:
                 "skill_id": s.skill_id, "confidence": round(s.confidence or 0.0, 3),
                 "depends_on": s.depends_on or [], "hitl_required": s.hitl_required,
                 "status": s.status, "execution_id": s.execution_id,
-                "result_summary": s.result_summary, "cost_usd": round(s.cost_usd or 0.0, 4),
+                "result_summary": s.result_summary, "cost_usd": round(float(s.cost_usd or 0), 4),
             }
             for s in steps
         ],

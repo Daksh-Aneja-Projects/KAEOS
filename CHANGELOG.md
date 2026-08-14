@@ -11,6 +11,35 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Wave 4: correctness cleanups + fixes from a review of the shipped work
+- **Mission money is exact.** `missions.budget_usd/spent_usd` and
+  `mission_steps.cost_usd` moved from Float to `Numeric(18,6)` with Decimal
+  accumulation, so the budget gate no longer compares binary-float-drifted sums;
+  the budget cap is coerced to Decimal at the API boundary (migration `0039`).
+- **Mission steps claim atomically.** Step execution now uses
+  `SELECT ... FOR UPDATE SKIP LOCKED` on Postgres (in-process fallback on
+  SQLite), so two replicas cannot double-execute a step, double-spend, or fire a
+  Gate 5b actuation twice.
+- **RLS closed on 4 tables.** `confidence_history` and `rule_guardrails` gained
+  `tenant_id` + row-level security; `domain_packs` and `marketplace_templates`
+  are declared global shared catalogs.
+- **The LLM-authored-Python engine is quarantined.** `polymorphic_engine`
+  refuses to compile or run generated code unless `ALLOW_POLYMORPHIC_CODEGEN` is
+  explicitly enabled (default off); the generated-code dir is gitignored. A dead
+  zero-caller engine was removed.
+- **Fixes found by reviewing the already-shipped milestones:**
+  - **Compliance gate no longer fails open.** A tagged framework with no
+    deterministic checker, no PCI raw-card guard, and no LLM screen now emits a
+    WARNING (never a silent pass), matching the registry's fail-closed posture;
+    the PCI raw-card guard recognizes the `PCI` / `PCI-DSS` / `PCI_DSS` family.
+  - **Voiding an invoice reverses its accrual.** Voiding an accrued AP invoice
+    now posts an append-only reversal of the `AP_ACCRUAL` entry, so the P&L and
+    balance sheet stop overstating expense and the payable (skipped, with a
+    warning, if the invoice already took a payment).
+  - **3-way match no longer truncates a fractional over-bill.** Invoice quantity
+    is compared as Decimal (an unparseable qty fails closed as an exception),
+    so billing 10.9 against 10 received can no longer round into tolerance.
+
 ### Wave 3: RAG honesty + entitlements/Stripe (open-core + managed cloud)
 - **RAG never launders a keyword hit as a semantic score.** When the embedding
   provider is unavailable the router returns hash-seeded pseudo-vectors; the

@@ -154,8 +154,27 @@ Include rigorous error handling and logging. Output strictly the python code. No
         """
         Full polymorphic workflow: Generates, Validates, Sandbox Scans, and Deploys.
         """
+        # QUARANTINE (arbitrary-code-execution risk): this compiles LLM-authored
+        # Python into the app import path guarded only by a bypassable AST
+        # denylist. It is OFF unless an operator has explicitly opted in AND a
+        # human-approval + real sandbox exist. Default (flag False/absent) =>
+        # refuse before any LLM call or disk write. The AST scan below is a
+        # defence-in-depth backstop, NOT the primary control.
+        from app.core.config import get_settings
+
+        if not getattr(get_settings(), "ALLOW_POLYMORPHIC_CODEGEN", False):
+            logger.warning(
+                "Polymorphic synthesis refused for '%s': ALLOW_POLYMORPHIC_CODEGEN "
+                "is disabled. Autonomous code generation into the app import path "
+                "requires an explicit opt-in plus a human-approval sandbox.",
+                integration_name,
+            )
+            return DynamicTool(
+                name=integration_name, source_code="", status="DISABLED_BY_CONFIG"
+            )
+
         logger.info(f"Initiating Polymorphic Synthesis for '{integration_name}' based on intent: '{intent}'")
-        
+
         # 1. Generate Code via LLM
         code = await PolymorphicEngine._generate_tool_code(intent, integration_name)
         
@@ -235,5 +254,12 @@ Include rigorous error handling and logging. Output strictly the python code. No
             await db.commit()
             
             return {"status": "SUCCESS", "skill_patched": skill_id, "tool_added": missing_integration}
-        
-        return {"status": "FAILED", "reason": "Could not synthesize safe code"}
+
+        if tool.status == "DISABLED_BY_CONFIG":
+            return {
+                "status": "DISABLED",
+                "reason": "Polymorphic code generation is disabled "
+                          "(ALLOW_POLYMORPHIC_CODEGEN is off).",
+            }
+
+        return {"status": "FAILED", "reason": "Could not synthesize safe code", "detail": tool.status}

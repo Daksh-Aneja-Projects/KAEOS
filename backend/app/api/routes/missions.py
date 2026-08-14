@@ -44,9 +44,14 @@ async def create_mission(
     if body.budget_usd is not None and body.budget_usd < 0:
         raise HTTPException(status_code=400, detail="budget_usd must be >= 0")
     tenant_id = tenant["tenant_id"]
+    # Coerce the budget cap to Decimal at the trust boundary: it is compared
+    # against Decimal-accumulated spent_usd, and asyncpg can round/raise on a
+    # raw float bound to a Numeric column.
+    from decimal import Decimal
+    budget = Decimal(str(body.budget_usd)) if body.budget_usd is not None else None
     mission = await plan_mission(
         db, tenant_id=tenant_id, goal=goal,
-        budget_usd=body.budget_usd, created_by=tenant.get("name"))
+        budget_usd=budget, created_by=tenant.get("name"))
     await record_security_event(
         tenant_id=tenant_id, event_type="MISSION", action="PLAN",
         actor=tenant.get("name"), actor_role=tenant.get("role"),

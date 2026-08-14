@@ -59,6 +59,13 @@ GLOBAL_TABLES = {
     # Per-tenant data keys are read on the owner session pre-tenant-context
     # (pre-auth MFA/SSO decrypt), so they must NOT be under RLS.
     "tenant_data_keys",
+    # Shared catalogs, not tenant data: the marketplace is a cross-tenant listing
+    # served to every tenant by design, and domain_packs are platform blueprints
+    # (built-in + marketplace). Per-tenant state lives in domain_pack_installations,
+    # which carries tenant_id and IS under RLS. Neither carries a tenant_id column;
+    # listed here to record the deliberate global scope (matches `tenants`).
+    "marketplace_templates",
+    "domain_packs",
 }
 
 

@@ -130,6 +130,31 @@ async def test_autonomous_mission_runs_to_completion(db, monkeypatch):
     assert all(s["status"] == "DONE" for s in res["steps"])
 
 
+async def test_spent_usd_is_exact_decimal_not_float_drift(db, monkeypatch):
+    """Money is exact: 0.1 accumulated three times must be exactly 0.3. Under the
+    old Float column spent_usd stored 0.30000000000000004, so this Decimal equality
+    (and any budget cap compared against it) fails; Numeric keeps it exact."""
+    from decimal import Decimal
+    from app.models.missions import Mission
+
+    t = "tenant_money"
+    for dept in ("support", "sales", "engineering"):
+        await _seed(db, t, dept)
+    _fake_exec(monkeypatch, cost=0.1)
+
+    m = await planner.plan_mission(
+        db, tenant_id=t,
+        goal="update support tickets, sales pipeline, and engineering release")
+    res = await _drive(db, t, m.id)
+    assert res["status"] == "COMPLETED"
+
+    mission = (await db.execute(select(Mission).where(Mission.id == m.id))).scalar_one()
+    assert mission.spent_usd == Decimal("0.3")            # exact, no binary drift
+    assert all(s.cost_usd == Decimal("0.1") for s in
+               (await db.execute(select(MissionStep)
+                                 .where(MissionStep.mission_id == m.id))).scalars().all())
+
+
 async def test_compliance_block_on_autonomous_step_escalates_to_human(db, monkeypatch):
     """A compliance block on an autonomous step escalates to a HITL checkpoint
     (not a hard failure); approval re-runs it to completion."""

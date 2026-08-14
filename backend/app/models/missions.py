@@ -6,11 +6,18 @@ budget gate, HITL checkpoints, and a shared mission ledger. A mission is the
 goal-level orchestration layer above per-skill execution and per-domain workflow.
 """
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, JSON, Integer, Float, Text, Boolean, Index
+from sqlalchemy import String, DateTime, JSON, Integer, Float, Numeric, Text, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
+
+# Mission money is exact decimal, not binary float: spent_usd accumulates per-step
+# LLM costs and the budget gate compares against a hard cap, so float drift could
+# fire a step early or let one extra paid step slip past the cap. Scale 6 matches
+# cost_events.cost_usd Numeric(12,6) so sub-cent per-call costs are not truncated.
+_MONEY = Numeric(18, 6)
 
 from app.core.database import Base
 
@@ -32,8 +39,8 @@ class Mission(Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="PLANNING", index=True)
 
-    budget_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # None = uncapped
-    spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    budget_usd: Mapped[Optional[Decimal]] = mapped_column(_MONEY, nullable=True)   # None = uncapped
+    spent_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
 
     narrative: Mapped[Optional[str]] = mapped_column(Text, nullable=True)        # why this plan
     departments: Mapped[list] = mapped_column(JSON, default=list)                # departments in scope
@@ -78,7 +85,7 @@ class MissionStep(Base):
 
     execution_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
 
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
