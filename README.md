@@ -2,13 +2,21 @@
 
 # KAEOS
 
-### The AI Operating System for Companies
+### The Governed AI Workforce
 
-**A living Company Brain that models the whole organization, then runs real
-departments on top of it. Every AI action passes a 7-gate governance pipeline,
-so autonomy is not granted, it is earned: the platform probes what your model
-can actually do, caps every decision's confidence at that measured ceiling, and
-routes anything below the bar (or high-consequence, always) to a human.**
+**It reads like chaos. It is the opposite.** KAEOS is knowledge-led, governed
+autonomy: it runs real AI departments - for every function and every regulated
+industry - that act on their own only when they've proven they can, with a
+signed audit trail for every decision. Every action passes a 7-gate governance
+pipeline, so autonomy is not granted, it is earned: the platform probes what
+your model can actually do, caps every decision's confidence at that measured
+ceiling, and routes anything below the bar (or high-consequence, always) to a
+human. Buy one governed department, keep it because it is governed, and expand
+into a living Company Brain. The number that runs it all: your safe-autonomy
+rate.
+
+> **Governed Autonomy** (the category) - **Department-as-a-Service** (what you
+> buy) - **Company Brain** (what you grow into). One story, three layers.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
