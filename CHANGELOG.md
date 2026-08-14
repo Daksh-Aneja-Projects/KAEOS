@@ -11,6 +11,31 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Pre-launch audit: blocking fixes (adversarial attack pass)
+An adversarial pre-launch audit attacked the codebase; these blockers are fixed:
+- **CRITICAL - SSO open-redirect token theft.** The freshly minted session token
+  was handed back in a redirect to an unvalidated `return_to`, so an
+  attacker-crafted SSO link would leak the token to their host (pre-auth account
+  takeover). `return_to` is now validated: only a site-relative path or an
+  allowlisted origin is honored, everything else falls back to the app root.
+- **HIGH - four-eyes bypass on vendor payments.** The approve path and the pay
+  path derived the actor identity two different ways, so for JWT (human) users
+  the segregation-of-duties check never matched and a person could approve then
+  pay their own invoice. Both now use the canonical `approver_identity`; proven
+  by a route-level integration test (the old isolated unit test had masked it).
+- **HIGH - authenticated arbitrary file read.** A caller-supplied `resume_path`
+  was opened with no confinement, so an operator could read any file the process
+  could (e.g. `.env` secrets) and have the screening echo it back. Reads are now
+  confined under a resume base directory (absolute paths and `..` escapes
+  rejected), protecting already-stored rows.
+- **HIGH - placeholder secrets could boot production.** The config gate accepted
+  a shipped `CHANGE_ME...` `SECRET_KEY` (world-known on a public repo, so admin
+  JWTs would be forgeable). It now rejects any placeholder secret and requires a
+  >=32-char `SECRET_KEY`, and rejects a placeholder/weak `ADMIN_PASSWORD`.
+- **MEDIUM - CSV formula injection.** Exported evidence cells starting with
+  `= + - @` (tab/CR) are now text-prefixed so a tenant-controlled value cannot
+  execute a formula when an auditor opens the file.
+
 ### Shipped-milestone review, batch 2 (security + billing + AP integrity)
 - **Payment can no longer bypass the ledger.** The manual `PAID` / `PARTIALLY_PAID`
   invoice transitions are removed: paying goes only through `record_vendor_payment`

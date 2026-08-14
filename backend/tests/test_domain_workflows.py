@@ -184,3 +184,40 @@ async def test_contract_activation_stamps_effective_date(async_client: AsyncClie
     assert r.status_code == 200, r.text
     await db.refresh(c)
     assert c.effective_date is not None
+
+
+@pytest.mark.asyncio
+async def test_four_eyes_enforced_across_approve_and_pay_routes(async_client: AsyncClient, db):
+    """Regression for the four-eyes wiring bug the pre-launch audit found: the
+    SAME principal that APPROVES an invoice via /transition must be refused when
+    it then PAYS via /payments. This drives the real routes (not hand-supplied
+    identity strings) so the actor-derivation mismatch cannot hide."""
+    from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor, VendorStatus
+    from app.finance.models.core import AccountType, ChartOfAccount
+    db.add_all([
+        ChartOfAccount(tenant_id=TENANT, account_code="1010", account_name="Cash",
+                       account_type=AccountType.ASSET, normal_balance="DEBIT", is_bank_account=True),
+        ChartOfAccount(tenant_id=TENANT, account_code="2000", account_name="AP",
+                       account_type=AccountType.LIABILITY, normal_balance="CREDIT"),
+        ChartOfAccount(tenant_id=TENANT, account_code="6000", account_name="Expense",
+                       account_type=AccountType.EXPENSE, normal_balance="DEBIT"),
+    ])
+    v = Vendor(tenant_id=TENANT, vendor_code="V-4E", name="Acme", status=VendorStatus.ACTIVE)
+    db.add(v)
+    await db.commit()
+    inv = Invoice(tenant_id=TENANT, vendor_id=v.id, invoice_number="INV-4E",
+                  invoice_date=date(2026, 7, 1), due_date=date(2026, 8, 1),
+                  status=InvoiceStatus.PENDING_APPROVAL, subtotal=100, total_amount=100,
+                  balance_due=100)
+    db.add(inv)
+    await db.commit()
+    inv_id = inv.id
+
+    r = await async_client.post(f"/api/v1/finance/invoices/{inv_id}/transition",
+                                json={"to_state": "APPROVED"})
+    assert r.status_code == 200, r.text
+    # The SAME principal cannot also pay it.
+    r = await async_client.post("/api/v1/finance/payments",
+                                json={"invoice_id": inv_id, "amount": 50})
+    assert r.status_code == 403, r.text
+    assert "Four-eyes" in r.text

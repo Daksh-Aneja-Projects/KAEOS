@@ -28,6 +28,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/sso", tags=["Authentication — SSO/OIDC"])
 
 
+def _safe_return_to(return_to: Optional[str]) -> str:
+    """The freshly minted session token is handed back in the redirect fragment,
+    so return_to MUST NOT be an attacker-controlled host (open redirect ->
+    token theft -> account takeover). Allow only a site-relative path or an
+    absolute URL whose origin is explicitly allowlisted in CORS_ORIGINS; anything
+    else falls back to the app root (token still delivered, same-origin)."""
+    from urllib.parse import urlparse
+    if not return_to:
+        return "/"
+    if return_to.startswith("/") and not return_to.startswith("//"):
+        return return_to   # site-relative (but not protocol-relative //evil.com)
+    try:
+        p = urlparse(return_to)
+    except Exception:
+        return "/"
+    if p.scheme in ("http", "https") and p.netloc:
+        from app.core.config import get_settings
+        allowed = {o.rstrip("/") for o in (getattr(get_settings(), "CORS_ORIGINS", []) or [])}
+        if f"{p.scheme}://{p.netloc}" in allowed:
+            return return_to
+    return "/"
+
+
 # ── public: discovery for the login page ──────────────────────────────────────
 
 @router.get("/discover")
@@ -115,8 +138,9 @@ async def oidc_callback(request: Request, code: Optional[str] = None,
     # (never the query string — fragments are not logged/forwarded). Otherwise
     # return JSON for API clients and tests.
     if return_to:
-        sep = "&" if "#" in return_to else "#"
-        return RedirectResponse(f"{return_to}{sep}token={result['access_token']}", status_code=302)
+        safe_rt = _safe_return_to(return_to)   # refuse open redirect -> token theft
+        sep = "&" if "#" in safe_rt else "#"
+        return RedirectResponse(f"{safe_rt}{sep}token={result['access_token']}", status_code=302)
     return result
 
 
@@ -182,8 +206,9 @@ async def saml_acs(request: Request,
 
     # Same hand-back contract as OIDC: fragment, never the query string.
     if return_to:
-        sep = "&" if "#" in return_to else "#"
-        return RedirectResponse(f"{return_to}{sep}token={result['access_token']}", status_code=302)
+        safe_rt = _safe_return_to(return_to)   # refuse open redirect -> token theft
+        sep = "&" if "#" in safe_rt else "#"
+        return RedirectResponse(f"{safe_rt}{sep}token={result['access_token']}", status_code=302)
     return result
 
 

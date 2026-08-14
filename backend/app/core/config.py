@@ -277,10 +277,25 @@ class Settings(BaseSettings):
         if self.DEV_MODE:
             return []
         problems: list[str] = []
-        if not self.SECRET_KEY or len(self.SECRET_KEY) < 16:
-            problems.append("SECRET_KEY must be set (>=16 chars) when DEV_MODE is off.")
-        if not self.ADMIN_SECRET or self.ADMIN_SECRET in ("", "dev_secret", "dev_admin_2026"):
-            problems.append("ADMIN_SECRET must be set to a unique value when DEV_MODE is off.")
+        # A shipped placeholder (e.g. the Helm chart's SECRET_KEY=CHANGE_ME...) is
+        # world-known on a public repo: an unrotated deploy would let anyone forge
+        # admin JWTs. Reject placeholders explicitly, not just short strings.
+        _PLACEHOLDERS = ("change_me", "changeme", "replace", "your-secret",
+                         "your_secret", "placeholder", "example", "dev_secret",
+                         "dev_admin_2026")
+
+        def _is_placeholder(v: str) -> bool:
+            low = (v or "").lower()
+            return any(p in low for p in _PLACEHOLDERS)
+
+        if not self.SECRET_KEY or len(self.SECRET_KEY) < 32 or _is_placeholder(self.SECRET_KEY):
+            problems.append("SECRET_KEY must be a real, unique value (>=32 chars, no placeholder) when DEV_MODE is off.")
+        if not self.ADMIN_SECRET or _is_placeholder(self.ADMIN_SECRET):
+            problems.append("ADMIN_SECRET must be set to a unique, non-placeholder value when DEV_MODE is off.")
+        if self.CONNECTOR_ENCRYPTION_KEY and _is_placeholder(self.CONNECTOR_ENCRYPTION_KEY):
+            problems.append("CONNECTOR_ENCRYPTION_KEY must not be a placeholder when DEV_MODE is off.")
+        if self.ADMIN_PASSWORD and (len(self.ADMIN_PASSWORD) < 12 or _is_placeholder(self.ADMIN_PASSWORD)):
+            problems.append("ADMIN_PASSWORD must be a strong, non-placeholder value (>=12 chars) when DEV_MODE is off.")
         problems.extend(self.validate_production_database())
         return problems
 

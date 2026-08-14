@@ -39,12 +39,26 @@ class RecruitingAgent:
         if candidate.resume_path:
             import os
             import aiofiles
-            if os.path.exists(candidate.resume_path):
+            # Confine the read: resume_path is caller-supplied, so an absolute path
+            # or a '..' escape would read any file the process can (e.g. .env
+            # secrets), and the screening reasoning would echo it back. Reject
+            # anything outside RESUME_BASE - protects already-stored rows too.
+            RESUME_BASE = os.path.abspath(os.environ.get("KAEOS_RESUME_DIR") or "data/resumes")
+            requested = str(candidate.resume_path)
+            safe_path = None
+            if requested and not os.path.isabs(requested):
+                cand = os.path.abspath(os.path.join(RESUME_BASE, requested))
+                if cand == RESUME_BASE or cand.startswith(RESUME_BASE + os.sep):
+                    safe_path = cand
+            if safe_path is None:
+                logger.warning("Rejected out-of-bounds resume_path for candidate %s",
+                               getattr(candidate, "id", "?"))
+            elif os.path.exists(safe_path):
                 try:
-                    async with aiofiles.open(candidate.resume_path, 'r') as f:
+                    async with aiofiles.open(safe_path, 'r') as f:
                         resume_text = await f.read()
                 except Exception as e:
-                    logger.warning(f"Failed to read resume {candidate.resume_path}: {e}")
+                    logger.warning(f"Failed to read resume: {e}")
         
         # NOTE: the prompt is not built here — the gated runner composes it from
         # `context` below, which carries the same fields (see json_utils.compact_context).

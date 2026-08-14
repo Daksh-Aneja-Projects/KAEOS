@@ -256,3 +256,14 @@ async def test_verified_domain_cannot_be_taken_over(_sso_table, monkeypatch):
     # Discovery resolves to the original owner and does NOT 500 on the duplicate.
     routed = await sso_svc.connection_for_email("u@shared.com")
     assert routed is not None and routed.tenant_id == "tenant_a"
+
+
+def test_safe_return_to_blocks_open_redirect():
+    """Regression for the CRITICAL: the session token is handed back in the
+    redirect, so return_to must never be an attacker host."""
+    from app.api.routes.sso import _safe_return_to
+    assert _safe_return_to("/app/callback") == "/app/callback"   # site-relative ok
+    assert _safe_return_to("https://evil.example/steal") == "/"  # external host refused
+    assert _safe_return_to("//evil.example") == "/"              # protocol-relative refused
+    assert _safe_return_to("javascript:alert(1)") == "/"         # non-http scheme refused
+    assert _safe_return_to(None) == "/"
