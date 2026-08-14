@@ -100,7 +100,7 @@ async def test_workflows_spec_endpoint_shape(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_invoice_paid_hook_zeroes_balance(async_client: AsyncClient, db):
+async def test_manual_paid_transition_is_refused(async_client: AsyncClient, db):
     from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor, VendorStatus
     v = Vendor(tenant_id=TENANT, vendor_code="V-1", name="Acme Paper",
                status=VendorStatus.ACTIVE)
@@ -116,12 +116,16 @@ async def test_invoice_paid_hook_zeroes_balance(async_client: AsyncClient, db):
     await db.commit()
     await db.refresh(inv)
 
+    # PAID is no longer a manual transition: paying must go through
+    # /finance/payments (GL settlement + four-eyes), not a lifecycle toggle that
+    # would zero the balance with no cash movement.
     r = await async_client.post(f"/api/v1/finance/invoices/{inv.id}/transition",
                                 json={"to_state": "PAID"})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 422, r.text   # PAID is not a lifecycle state at all
+    assert r.json()["detail"]["error"] == "unknown_state"
     await db.refresh(inv)
-    assert float(inv.balance_due) == 0
-    assert float(inv.amount_paid) == 110
+    assert float(inv.balance_due) == 110   # unchanged, not silently zeroed
+    assert float(inv.amount_paid or 0) == 0
 
 
 @pytest.mark.asyncio

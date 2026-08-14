@@ -278,7 +278,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                   <StatCard label="Open Invoices" value={invoices.filter(i => !['PAID','CANCELLED'].includes(i.status)).length} icon={<Receipt className="w-4 h-4" />} accent="#ec4899" />
                   <StatCard label="Total AP" value={invoices.reduce((s: number, i: any) => s + (i.balance || 0), 0)} format="currency" icon={<DollarSign className="w-4 h-4" />} accent="#f59e0b" />
                   {/* Governed payments live in the General Ledger workspace, not as a dead count. */}
-                  <button type="button" onClick={() => navigate('/finance/gl?tab=payments')}
+                  <button type="button" onClick={() => navigate('/departments/finance/gl?tab=payments')}
                     className="rounded-xl p-5 text-left transition-shadow hover:shadow-md"
                     style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                     <div className="flex items-start justify-between gap-3">

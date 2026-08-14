@@ -402,6 +402,11 @@ class AuthService:
         from app.services import mfa as mfa_svc
         if await mfa_svc.is_enabled(user.id):
             if not mfa_code or not await mfa_svc.verify_login_code(user.id, mfa_code):
+                # A WRONG code (not merely a missing one) is a second-factor guess:
+                # count it toward the lockout so the 6-digit TOTP cannot be
+                # brute-forced by an attacker who already has the password.
+                if mfa_code:
+                    await AuthService._record_failure(email)
                 await record_security_event(
                     tenant_id=user.tenant_id, event_type="AUTH_MFA", action="LOGIN",
                     result="BLOCKED", actor=user.email, ip_address=ip_address,

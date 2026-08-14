@@ -185,6 +185,13 @@ async def record_vendor_payment(
             "Four-eyes: the identity that approved this invoice cannot also "
             "pay it. Ask a different operator to record the payment."
         )
+    # Duplicate control (moved off the workflow, which no longer offers a manual
+    # PAID transition): an AI-flagged possible duplicate must be cleared first.
+    if getattr(invoice, "ai_duplicate_flag", False):
+        raise PaymentError(
+            "AI flagged this invoice as a possible duplicate; clear the flag "
+            "(route it through DISPUTED) before paying."
+        )
 
     # The three-way match is a real gate: an EXCEPTION invoice cannot be paid
     # unless a human explicitly accepts the exception on the record.

@@ -11,6 +11,21 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Shipped-milestone review, batch 2 (security + billing + AP integrity)
+- **Payment can no longer bypass the ledger.** The manual `PAID` / `PARTIALLY_PAID`
+  invoice transitions are removed: paying goes only through `record_vendor_payment`
+  (`POST /finance/payments`), which posts the GL settlement, enforces four-eyes,
+  the accrual, overpayment, and now the duplicate-flag control. A lifecycle
+  transition can no longer zero an invoice balance with no cash movement.
+- **TOTP cannot be brute-forced.** A wrong second-factor code at login now counts
+  toward the lockout, so an attacker who already has the password cannot grind
+  the 6-digit code.
+- **A dropped Stripe webhook is retried, not lost.** A known event that could not
+  complete (e.g. the subscription webhook arrived before the local billing
+  account existed) is left unprocessed and returns 503 so Stripe redelivers it,
+  instead of being marked processed and dropped permanently.
+- **The AP "Payments Made" tile links to the real General Ledger route.**
+
 ### Wave 4: correctness cleanups + fixes from a review of the shipped work
 - **Mission money is exact.** `missions.budget_usd/spent_usd` and
   `mission_steps.cost_usd` moved from Float to `Numeric(18,6)` with Decimal

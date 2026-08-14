@@ -271,4 +271,10 @@ async def stripe_webhook(request: Request):
     # owner session (an app-role session would set no app.tenant_id GUC and match
     # zero rows - the tenant is never taken from the Stripe payload).
     async with MaintenanceSessionLocal() as owner:
-        return await handle_webhook_event(owner, event)
+        result = await handle_webhook_event(owner, event)
+    # A recoverable miss (e.g. the subscription webhook arrived before we created
+    # the local BillingAccount) returns 503 so Stripe redelivers it, instead of a
+    # 200 that would drop the event permanently.
+    if result.get("status") == "retry":
+        raise HTTPException(status_code=503, detail="not ready, please retry")
+    return result

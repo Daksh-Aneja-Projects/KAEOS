@@ -13,18 +13,13 @@ def _invoice_approved(inv: Invoice, ctx: TransitionContext) -> None:
     inv.approved_at = ctx.now
 
 
-def _invoice_paid(inv: Invoice, ctx: TransitionContext) -> None:
-    inv.amount_paid = inv.total_amount
-    inv.balance_due = 0
-
-
-def _guard_pay_duplicate(inv: Invoice, ctx: TransitionContext):
-    if inv.ai_duplicate_flag:
-        return ("AI flagged this invoice as a possible duplicate - route it "
-                "through DISPUTED and clear the flag before paying.")
-    return None
-
-
+# There is deliberately NO manual PAID / PARTIALLY_PAID transition. Payment is a
+# financial event, not a lifecycle toggle: it MUST go through
+# record_vendor_payment (POST /finance/payments), which posts the GL settlement
+# (DR accounts-payable / CR cash), enforces four-eyes (payer != approver) plus
+# the accrual, overpayment and duplicate-flag controls, and only then sets the
+# status. A manual transition would zero balance_due with no cash movement and no
+# four-eyes, desyncing the books (AP inflated, cash overstated).
 INVOICE_WORKFLOW = WorkflowSpec(
     domain="finance",
     entity_type="invoice",
@@ -32,16 +27,13 @@ INVOICE_WORKFLOW = WorkflowSpec(
     transitions={
         "DRAFT": ["PENDING_APPROVAL", "VOIDED"],
         "PENDING_APPROVAL": ["APPROVED", "DISPUTED", "VOIDED"],
-        "APPROVED": ["PARTIALLY_PAID", "PAID", "DISPUTED", "VOIDED"],
-        "PARTIALLY_PAID": ["PAID", "DISPUTED"],
-        "OVERDUE": ["PARTIALLY_PAID", "PAID", "DISPUTED"],
+        "APPROVED": ["DISPUTED", "VOIDED"],
+        "OVERDUE": ["DISPUTED"],
         "DISPUTED": ["PENDING_APPROVAL", "VOIDED"],
     },
     on_enter={
         "APPROVED": _invoice_approved,
-        "PAID": _invoice_paid,
     },
-    guards={"PAID": _guard_pay_duplicate, "PARTIALLY_PAID": _guard_pay_duplicate},
     role_requirements={"VOIDED": "admin"},
     sla_hours={"PENDING_APPROVAL": 72, "DISPUTED": 240},
 )

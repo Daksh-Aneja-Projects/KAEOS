@@ -165,8 +165,9 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
         db.add(StripeWebhookEvent(event_id=event_id, event_type=event_type))
 
     obj = (event.get("data") or {}).get("object") or {}
+    _KNOWN = ("customer.subscription.created", "customer.subscription.updated")
     handled = False
-    if event_type in ("customer.subscription.created", "customer.subscription.updated"):
+    if event_type in _KNOWN:
         customer_id = obj.get("customer")
         acct = (await db.execute(
             select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id)
@@ -185,8 +186,15 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
                 acct.seats = qty
             handled = True
 
+    # A KNOWN event we could not complete (e.g. the local BillingAccount does not
+    # exist yet - a create/webhook race) must NOT be marked processed, or the
+    # linkage is lost forever (Stripe never redelivers a 200'd event). Leave it
+    # unprocessed and signal a retry; unknown types are acknowledged (processed).
+    recoverable_miss = (event_type in _KNOWN) and not handled
     mark = await db.get(StripeWebhookEvent, event_id)
-    if mark is not None:
+    if mark is not None and not recoverable_miss:
         mark.processed = True
     await db.commit()
+    if recoverable_miss:
+        return {"status": "retry", "event_id": event_id, "type": event_type}
     return {"status": "processed" if handled else "acknowledged", "event_id": event_id, "type": event_type}
