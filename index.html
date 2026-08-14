@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>KAEOS - The Governed AI Workforce</title>
-<meta name="description" content="It reads like chaos, it is the opposite. KAEOS is a knowledge-led, governed AI workforce: autonomous departments for every function and every regulated industry, that act on their own only when they have proven they can, with a signed audit trail for every decision." />
+<meta name="description" content="It reads like chaos, it is the opposite. KAEOS is a knowledge-led, governed AI workforce: ten autonomous departments for every function and every regulated industry, that act on their own only when they have proven they can, with a signed audit trail for every decision. The number that runs it: your safe-autonomy rate." />
 <meta property="og:title" content="KAEOS - The Governed AI Workforce" />
 <meta property="og:description" content="It reads like chaos. It is the opposite: knowledge-led, governed autonomy. Buy a governed department, grow into a living Company Brain. The number that runs it: your safe-autonomy rate." />
 <meta property="og:image" content="https://daksh-aneja-projects.github.io/KAEOS/01-dashboard.png" />
@@ -31,7 +31,9 @@
     --blue: #60a5fa;
     --rose: #fb7185;
     --orange: #fb923c;
+    --teal: #2dd4bf;
     --grad: linear-gradient(92deg, #818cf8 0%, #22d3ee 100%);
+    --grad-3: linear-gradient(92deg, #818cf8 0%, #22d3ee 55%, #34d399 100%);
     --radius: 16px;
     --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
@@ -60,24 +62,28 @@
   }
   .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.14em; font-size: 15px; }
   .nav .brand svg { flex: none; }
-  .nav .links { display: flex; gap: 22px; margin-left: auto; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+  .nav .links { display: flex; gap: 20px; margin-left: auto; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+  .nav .links a { position: relative; transition: color 0.2s ease; }
   .nav .links a:hover { color: var(--ink); }
   .nav .cta {
     font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 10px;
     background: var(--grad); color: #fff; white-space: nowrap; margin-left: auto;
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.28); transition: transform 0.18s ease, box-shadow 0.18s ease;
   }
+  .nav .cta:hover { transform: translateY(-1px); box-shadow: 0 8px 26px rgba(99, 102, 241, 0.4); }
   .nav .links + .cta { margin-left: 0; }
-  @media (max-width: 760px) { .nav .links { display: none; } }
+  @media (max-width: 860px) { .nav .links { display: none; } }
 
   /* ── Hero ────────────────────────────────────────── */
   .hero { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   #neural { position: absolute; inset: 0; width: 100%; height: 100%; }
   .hero-aurora {
-    position: absolute; left: 50%; top: 26%; width: 1100px; height: 620px;
+    position: absolute; left: 50%; top: 26%; width: 1100px; height: 620px; max-width: 130vw;
     transform: translate(-50%, -50%); pointer-events: none; filter: blur(70px);
     background:
-      radial-gradient(ellipse 42% 38% at 38% 52%, rgba(99, 102, 241, 0.16), transparent 70%),
-      radial-gradient(ellipse 38% 34% at 64% 44%, rgba(34, 211, 238, 0.10), transparent 70%);
+      radial-gradient(ellipse 42% 38% at 38% 52%, rgba(99, 102, 241, 0.18), transparent 70%),
+      radial-gradient(ellipse 38% 34% at 64% 44%, rgba(34, 211, 238, 0.12), transparent 70%),
+      radial-gradient(ellipse 30% 30% at 50% 70%, rgba(52, 211, 153, 0.08), transparent 70%);
     animation: aurora 14s ease-in-out infinite alternate;
   }
   @keyframes aurora {
@@ -86,30 +92,31 @@
   }
   .hero-veil { position: absolute; inset: 0; background: radial-gradient(ellipse 100% 88% at 50% 52%, transparent 52%, var(--bg) 100%); pointer-events: none; }
   .scroll-cue {
-    position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 3;
+    position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 3;
     display: flex; flex-direction: column; align-items: center; gap: 7px;
     color: var(--ink-3); font-size: 10.5px; font-weight: 700; letter-spacing: 0.22em;
     text-transform: uppercase; transition: opacity 0.4s ease;
   }
   .scroll-cue svg { animation: cueFloat 2.1s ease-in-out infinite; }
   @keyframes cueFloat { 0%, 100% { transform: translateY(0); opacity: 0.9; } 50% { transform: translateY(6px); opacity: 0.4; } }
-  .hero-inner { position: relative; z-index: 2; text-align: center; padding: 110px 24px 90px; max-width: 980px; }
+  .hero-inner { position: relative; z-index: 2; text-align: center; padding: 104px 24px 84px; max-width: 940px; }
   .hero .tag {
     display: inline-flex; align-items: center; gap: 8px;
     font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
     color: var(--cyan); border: 1px solid rgba(34, 211, 238, 0.3);
     background: rgba(34, 211, 238, 0.07);
-    padding: 6px 14px; border-radius: 999px; margin-bottom: 26px;
+    padding: 6px 14px; border-radius: 999px; margin-bottom: 24px;
   }
   .hero .tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); animation: blink 2.2s ease-in-out infinite; }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
   .hero h1 {
-    font-size: clamp(38px, 6.4vw, 74px); font-weight: 800; line-height: 1.06;
-    letter-spacing: -0.03em; margin-bottom: 22px;
+    font-size: clamp(37px, 6.2vw, 72px); font-weight: 800; line-height: 1.05;
+    letter-spacing: -0.03em; margin-bottom: 20px;
   }
   .hero h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .hero p.sub { font-size: clamp(15px, 2vw, 19px); color: var(--ink-2); max-width: 700px; margin: 0 auto 36px; }
-  .hero .btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 64px; }
+  .hero p.sub { font-size: clamp(15px, 1.9vw, 18.5px); color: var(--ink-2); max-width: 660px; margin: 0 auto 30px; }
+  .hero p.sub b { color: var(--ink); }
+  .hero .btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px; }
   .btn {
     display: inline-flex; align-items: center; gap: 9px;
     font-size: 14.5px; font-weight: 600; padding: 13px 26px; border-radius: 12px;
@@ -118,21 +125,62 @@
   .btn:hover { transform: translateY(-2px); }
   .btn.primary { background: var(--grad); color: #fff; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.35); }
   .btn.ghost { border: 1px solid var(--hair-strong); color: var(--ink); background: rgba(17, 23, 38, 0.6); }
-  .stats { display: flex; gap: clamp(18px, 4.5vw, 58px); justify-content: center; flex-wrap: wrap; }
-  .stat { text-align: center; min-width: 92px; }
-  .stat .num { font-family: var(--mono); font-size: clamp(26px, 3.4vw, 38px); font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .stat .lbl { font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin-top: 2px; }
+
+  /* Safe-autonomy console (living ring meter) */
+  .hero-console {
+    display: flex; align-items: center; justify-content: center; gap: 24px;
+    margin: 0 auto 30px; max-width: 560px; flex-wrap: wrap; text-align: left;
+    background: rgba(13, 18, 25, 0.5); border: 1px solid var(--hair); border-radius: 18px;
+    padding: 20px 24px; backdrop-filter: blur(8px);
+  }
+  .sa-ring-wrap { position: relative; width: 130px; height: 130px; flex: none; }
+  .sa-ring { width: 130px; height: 130px; transform: rotate(-90deg); }
+  .sa-track { fill: none; stroke: rgba(148, 163, 194, 0.12); stroke-width: 9; }
+  .sa-prog { fill: none; stroke: url(#saGrad); stroke-width: 9; stroke-linecap: round; }
+  .sa-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .sa-num { font-family: var(--mono); font-weight: 700; font-size: 29px; line-height: 1; background: var(--grad-3); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sa-num .pct { font-size: 15px; }
+  .sa-cap { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin-top: 6px; }
+  .sa-meta { flex: 1; min-width: 190px; }
+  .sa-live { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--emerald); margin-bottom: 9px; }
+  .sa-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); animation: blink 2.2s ease-in-out infinite; }
+  .sa-desc { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  @media (max-width: 520px) { .hero-console { flex-direction: column; text-align: center; gap: 16px; padding: 20px; } .sa-meta { text-align: center; } }
+
+  .stats { display: flex; gap: clamp(16px, 4.5vw, 54px); justify-content: center; flex-wrap: wrap; }
+  .stat { text-align: center; min-width: 84px; }
+  .stat .num { font-family: var(--mono); font-size: clamp(24px, 3.2vw, 34px); font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat .lbl { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin-top: 2px; }
 
   /* ── Sections ────────────────────────────────────── */
-  section { position: relative; padding: 96px 24px; max-width: 1160px; margin: 0 auto; }
+  section { position: relative; padding: 92px 24px; max-width: 1160px; margin: 0 auto; }
   .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #818cf8; margin-bottom: 14px; }
   .kicker.cy { color: var(--cyan); }
+  .kicker.em { color: var(--emerald); }
   h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; margin-bottom: 18px; }
   .lede { font-size: 16.5px; color: var(--ink-2); max-width: 780px; }
   .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s ease, transform 0.7s ease; }
   .reveal.in { opacity: 1; transform: none; }
 
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 46px; }
+  /* Category ladder */
+  .ladder { display: flex; align-items: stretch; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .ladder .step {
+    display: flex; align-items: center; gap: 11px; flex: 1 1 220px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--hair);
+    border-radius: 13px; padding: 13px 16px; transition: border-color 0.25s ease;
+  }
+  .ladder .step:hover { border-color: rgba(99, 102, 241, 0.4); }
+  .ladder .step .badge {
+    width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: #b6bafe;
+    background: rgba(99, 102, 241, 0.14); border: 1px solid rgba(99, 102, 241, 0.34);
+  }
+  .ladder .step .k { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .ladder .step .k small { display: block; font-size: 11.5px; font-weight: 500; color: var(--ink-3); margin-top: 1px; }
+  .ladder .arrow { align-self: center; color: var(--ink-3); flex: none; }
+  @media (max-width: 720px) { .ladder .arrow { display: none; } .ladder .step { flex-basis: 100%; } }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
   @media (max-width: 880px) { .cards { grid-template-columns: 1fr; } }
   .card {
     background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -147,34 +195,86 @@
   .card h3 { font-size: 17px; font-weight: 700; margin-bottom: 9px; }
   .card p { font-size: 14px; color: var(--ink-2); }
 
+  /* ── Departments ─────────────────────────────────── */
+  .dept-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 42px; }
+  @media (max-width: 1080px) { .dept-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 720px) { .dept-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 440px) { .dept-grid { grid-template-columns: 1fr; } }
+  .dept {
+    position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair); border-radius: 14px; padding: 18px 16px 16px; overflow: hidden;
+    transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+  .dept:hover { transform: translateY(-3px); border-color: rgba(99, 102, 241, 0.4); }
+  .dept .glow { position: absolute; inset: 0; opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+    background: radial-gradient(150px 100px at 26px 26px, var(--dc, rgba(99,102,241,0.14)), transparent 70%); }
+  .dept:hover .glow { opacity: 1; }
+  .dept .live { position: absolute; top: 15px; right: 15px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--emerald); animation: liveDot 2.6s ease-in-out infinite; }
+  @keyframes liveDot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.45); }
+    50% { opacity: 0.45; box-shadow: 0 0 0 5px rgba(52, 211, 153, 0); }
+  }
+  .dept .ico2 { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; margin-bottom: 13px; position: relative; }
+  .dept h3 { font-size: 14.5px; font-weight: 700; margin-bottom: 6px; }
+  .dept .role { font-size: 12px; color: var(--ink-3); line-height: 1.5; margin-bottom: 13px; }
+  .dept .checks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dept .checks span {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.01em; color: var(--ink-2);
+    border: 1px solid var(--hair-strong); background: rgba(148, 163, 194, 0.06); border-radius: 6px; padding: 3px 7px;
+  }
+  .dept-note {
+    margin-top: 26px; display: flex; gap: 12px; align-items: flex-start;
+    background: rgba(129, 140, 248, 0.05); border: 1px solid rgba(129, 140, 248, 0.2);
+    border-radius: 14px; padding: 16px 20px; font-size: 13.5px; color: var(--ink-2);
+  }
+  .dept-note svg { flex: none; margin-top: 2px; }
+  .dept-note strong { color: #b6bafe; font-weight: 700; }
+
   /* ── Gate rail ───────────────────────────────────── */
-  .rail-wrap { margin-top: 54px; position: relative; }
+  .rail-wrap { margin-top: 48px; position: relative; }
   .rail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; position: relative; }
   @media (max-width: 980px) { .rail { grid-template-columns: repeat(4, 1fr); } }
   @media (max-width: 640px) { .rail { grid-template-columns: repeat(2, 1fr); } }
   .rail::before {
     content: ""; position: absolute; top: 26px; left: 4%; right: 4%; height: 2px;
-    background: linear-gradient(90deg, rgba(99,102,241,0.0), rgba(99,102,241,0.45), rgba(34,211,238,0.45), rgba(34,211,238,0.0));
+    background: linear-gradient(90deg, rgba(99,102,241,0.0), rgba(99,102,241,0.45), rgba(34,211,238,0.45), rgba(52,211,153,0.0));
   }
   @media (max-width: 980px) { .rail::before { display: none; } }
+  .rail-packet {
+    position: absolute; top: 20px; left: 4%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; z-index: 3;
+    background: radial-gradient(circle, #ecfeff, #22d3ee 60%, transparent 72%);
+    box-shadow: 0 0 18px 4px rgba(34, 211, 238, 0.55);
+    transition: left 0.78s cubic-bezier(0.5, 0.05, 0.3, 1);
+  }
+  @media (max-width: 980px) { .rail-packet { display: none; } }
   .gate {
     position: relative; background: var(--panel);
     border: 1px solid var(--hair); border-radius: 14px; padding: 18px 14px 16px; text-align: center;
-    animation: gatePulse 7s ease-in-out infinite;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
   }
-  @keyframes gatePulse {
-    0%, 100% { border-color: rgba(148, 163, 194, 0.14); box-shadow: none; }
-    7%, 13% { border-color: rgba(34, 211, 238, 0.65); box-shadow: 0 0 24px rgba(34, 211, 238, 0.12); }
-  }
+  .gate.active { border-color: rgba(34, 211, 238, 0.6); box-shadow: 0 0 26px rgba(34, 211, 238, 0.14); }
   .gate .n {
     width: 26px; height: 26px; margin: 0 auto 10px; border-radius: 50%;
     display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 700;
     background: rgba(99, 102, 241, 0.16); border: 1px solid rgba(99, 102, 241, 0.4); color: #b6bafe;
+    transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
   }
+  .gate.done .n { background: rgba(52, 211, 153, 0.16); border-color: rgba(52, 211, 153, 0.5); color: var(--emerald); }
+  .gate.active .n { background: var(--cyan); color: #04121a; border-color: var(--cyan); box-shadow: 0 0 16px rgba(34, 211, 238, 0.55); }
   .gate h4 { font-size: 13.5px; font-weight: 700; margin-bottom: 5px; }
   .gate p { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+  .rail-status {
+    margin-top: 24px; display: flex; align-items: center; gap: 10px; font-family: var(--mono);
+    font-size: 12.5px; color: var(--ink-2); background: #05070b; border: 1px solid var(--hair);
+    border-radius: 10px; padding: 11px 15px; overflow: hidden;
+  }
+  .rail-status .gt { color: var(--emerald); flex: none; font-weight: 700; }
+  .rail-status .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-status .cursor { width: 7px; height: 14px; background: var(--cyan); display: inline-block; flex: none; animation: cursor 1.1s steps(1) infinite; }
+  @keyframes cursor { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
   .gate-note {
-    margin-top: 30px; display: flex; gap: 12px; align-items: flex-start;
+    margin-top: 22px; display: flex; gap: 12px; align-items: flex-start;
     background: rgba(34, 211, 238, 0.05); border: 1px solid rgba(34, 211, 238, 0.18);
     border-radius: 14px; padding: 18px 20px; font-size: 14px; color: var(--ink-2);
   }
@@ -187,8 +287,7 @@
   @media (max-width: 900px) { .split { grid-template-columns: 1fr; gap: 34px; } }
   .meter-panel {
     background: linear-gradient(180deg, var(--panel-2), var(--panel));
-    border: 1px solid var(--hair); border-radius: var(--radius); padding: 30px;
-    position: relative;
+    border: 1px solid var(--hair); border-radius: var(--radius); padding: 30px; position: relative;
   }
   .meter-row { margin-bottom: 22px; }
   .meter-row .top { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
@@ -213,8 +312,7 @@
 
   /* ── Shots gallery ───────────────────────────────── */
   .shot-hero {
-    margin-top: 48px; border-radius: 18px; overflow: hidden;
-    border: 1px solid var(--hair-strong);
+    margin-top: 46px; border-radius: 18px; overflow: hidden; border: 1px solid var(--hair-strong);
     box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(99, 102, 241, 0.08);
   }
   .grid-shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 46px; }
@@ -305,6 +403,7 @@
   </a>
   <div class="links">
     <a href="#product">Product</a>
+    <a href="#departments">Departments</a>
     <a href="#governance">Governance</a>
     <a href="#ceiling">Measured Ceiling</a>
     <a href="#screens">Screens</a>
@@ -322,12 +421,9 @@
     <a class="tag" href="https://github.com/Daksh-Aneja-Projects/KAEOS/releases/tag/v1.9.0" target="_blank" rel="noopener"><span class="dot"></span>v1.9.0 "Fast Lane" is live</a>
     <h1>The Governed<br /><span class="grad">AI Workforce</span></h1>
     <p class="sub">
-      <b>It reads like chaos. It is the opposite.</b> KAEOS is knowledge-led,
-      governed autonomy: autonomous AI departments for every function and every
-      regulated industry, that act on their own only when they have proven they
-      can, with a signed audit trail for every decision. Buy a governed
-      department, keep it because it is governed, and grow into a living Company
-      Brain. The number that runs it all: your safe-autonomy rate.
+      <b>It reads like chaos. It is the opposite.</b> Autonomous AI departments for
+      every function and every regulated industry, that act on their own only when
+      they have proven they can, with a signed audit trail for every decision.
     </p>
     <div class="btns">
       <a class="btn primary" href="https://github.com/Daksh-Aneja-Projects/KAEOS" target="_blank" rel="noopener">
@@ -339,9 +435,36 @@
         Release Notes
       </a>
     </div>
+    <div class="hero-console" aria-label="Safe-autonomy rate meter">
+      <div class="sa-ring-wrap">
+        <svg class="sa-ring" viewBox="0 0 130 130" aria-hidden="true">
+          <defs>
+            <linearGradient id="saGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#818cf8"/>
+              <stop offset="55%" stop-color="#22d3ee"/>
+              <stop offset="100%" stop-color="#34d399"/>
+            </linearGradient>
+          </defs>
+          <circle class="sa-track" cx="65" cy="65" r="52"/>
+          <circle class="sa-prog" id="saRing" cx="65" cy="65" r="52"/>
+        </svg>
+        <div class="sa-center">
+          <div class="sa-num"><span id="saNum">0.0</span><span class="pct">%</span></div>
+          <div class="sa-cap">Safe-autonomy</div>
+        </div>
+      </div>
+      <div class="sa-meta">
+        <div class="sa-live"><span class="dot"></span>LIVE &middot; SEEDED DEMO TENANT</div>
+        <div class="sa-desc">
+          The share of work that ran autonomously, with no human gate and a signed
+          audit trail. One north-star number, computed from real executions, that the
+          whole platform optimizes.
+        </div>
+      </div>
+    </div>
     <div class="stats">
-      <div class="stat"><div class="num" data-count="7">0</div><div class="lbl">AI Departments</div></div>
-      <div class="stat"><div class="num" data-count="33">0</div><div class="lbl">Agents on Duty</div></div>
+      <div class="stat"><div class="num" data-count="10">0</div><div class="lbl">AI Departments</div></div>
+      <div class="stat"><div class="num" data-count="48">0</div><div class="lbl">Agents on Duty</div></div>
       <div class="stat"><div class="num" data-count="7">0</div><div class="lbl">Governance Gates</div></div>
       <div class="stat"><div class="num" data-count="441">0</div><div class="lbl">E2E Tests</div></div>
       <div class="stat"><div class="num" data-count="0">0</div><div class="lbl">Invented Numbers</div></div>
@@ -355,13 +478,29 @@
 <!-- ═══════════ PRODUCT ═══════════ -->
 <section id="product" class="reveal">
   <div class="kicker">The Product</div>
-  <h2>One brain. Seven departments.<br />Zero blind trust.</h2>
+  <h2>One brain. Ten departments.<br />Zero blind trust.</h2>
   <p class="lede">
     Enterprise agent pilots fail for a predictable reason: nobody can say, with evidence, when
-    an agent should be allowed to act on its own. KAEOS answers that question with a live org
-    graph, pre-built AI departments for HR, Finance, Legal, Sales, Support, Operations and
-    Engineering, and a governance spine that turns "trust me" into a number you can audit.
+    an agent should be allowed to act on its own. KAEOS answers that with a live org graph,
+    pre-built AI departments spanning every business function and every regulated industry, and
+    a governance spine that turns "trust me" into a number you can audit.
   </p>
+  <div class="ladder" aria-label="Category ladder">
+    <div class="step">
+      <span class="badge">1</span>
+      <span class="k">Governed Autonomy<small>the category we define</small></span>
+    </div>
+    <svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    <div class="step">
+      <span class="badge">2</span>
+      <span class="k">Department-as-a-Service<small>what you buy first</small></span>
+    </div>
+    <svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    <div class="step">
+      <span class="badge">3</span>
+      <span class="k">Company Brain<small>what you grow into</small></span>
+    </div>
+  </div>
   <div class="cards">
     <div class="card">
       <div class="ico">
@@ -393,24 +532,152 @@
   </div>
 </section>
 
+<!-- ═══════════ DEPARTMENTS ═══════════ -->
+<section id="departments" class="reveal">
+  <div class="kicker em">The Governed Departments</div>
+  <h2>Ten departments. Every one born governed.</h2>
+  <p class="lede">
+    Department-as-a-Service is what you buy: a function that arrives with its own statutory
+    checkers already wired into the compliance gate. Banking-lending is only our internal
+    beachhead. The same spine governs every business function and every regulated industry.
+  </p>
+  <div class="dept-grid">
+
+    <div class="dept" style="--dc: rgba(167,139,250,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 8.2a3 3 0 0 1 0 5.6"/><path d="M18.5 19a5 5 0 0 0-3-4.6"/></svg>
+      </div>
+      <h3>HR</h3>
+      <p class="role">Hiring, reviews and policy, screened for adverse impact before any action lands.</p>
+      <div class="checks"><span>EEOC</span><span>Four-Fifths</span><span>ADA</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(52,211,153,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-3 2.5 2.5L20 8"/><path d="M20 8h-3"/><path d="M20 8v3"/></svg>
+      </div>
+      <h3>Finance</h3>
+      <p class="role">Close, accruals and reporting under SOX controls and segregation of duties.</p>
+      <div class="checks"><span>SOX</span><span>GAAP</span><span>SoD</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(251,191,36,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M6 21h12"/><path d="M4 7h16"/><path d="M8 5.5 4 7l-2 5a3 3 0 0 0 6 0z"/><path d="M16 5.5 20 7l2 5a3 3 0 0 1-6 0z"/></svg>
+      </div>
+      <h3>Legal</h3>
+      <p class="role">Contract review and retention with privilege preserved end to end.</p>
+      <div class="checks"><span>Privilege</span><span>Retention</span><span>Review</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(96,165,250,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="#60a5fa"/></svg>
+      </div>
+      <h3>Sales</h3>
+      <p class="role">Quotes, discounts and outreach inside anti-bribery and fair-dealing limits.</p>
+      <div class="checks"><span>FCPA</span><span>Fair-Dealing</span><span>Discount-Auth</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(34,211,238,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="2.5" y="13" width="4" height="6" rx="1.4"/><rect x="17.5" y="13" width="4" height="6" rx="1.4"/><path d="M20 19a4 4 0 0 1-4 3h-2"/></svg>
+      </div>
+      <h3>Support</h3>
+      <p class="role">Tickets and responses with PII redacted and consent respected.</p>
+      <div class="checks"><span>GDPR</span><span>CCPA</span><span>PII-Redact</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(251,146,60,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>
+      </div>
+      <h3>Operations</h3>
+      <p class="role">Change-control, SLAs and incidents, each with a full audit trail.</p>
+      <div class="checks"><span>Change-Control</span><span>SLA</span><span>Incident-Log</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(129,140,248,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(129,140,248,0.12); border: 1px solid rgba(129,140,248,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l-2 2 2 2"/><path d="M13 10l2 2-2 2"/></svg>
+      </div>
+      <h3>Engineering &amp; IT-Ops</h3>
+      <p class="role">Access reviews and changes evidenced against SOC 2 and ISO 27001.</p>
+      <div class="checks"><span>SOC 2</span><span>ISO 27001</span><span>Access-Review</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(251,113,133,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 8.6a5 5 0 0 0-8.8-3.2A5 5 0 0 0 3.2 8.6c0 4 4.5 7.2 8.8 10.4 4.3-3.2 8.8-6.4 8.8-10.4z"/><path d="M6.5 12h2.2l1.3-2.3L12.4 14l1.1-2h3"/></svg>
+      </div>
+      <h3>Healthcare</h3>
+      <p class="role">PHI workflows held to HIPAA and 42 CFR Part 2 minimum-necessary rules.</p>
+      <div class="checks"><span>HIPAA</span><span>42 CFR Part 2</span><span>Min-Necessary</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(45,212,191,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(45,212,191,0.12); border: 1px solid rgba(45,212,191,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M2.5 3h2.2l2 12.5A2 2 0 0 0 8.7 17H18l2-9H6"/></svg>
+      </div>
+      <h3>Procurement</h3>
+      <p class="role">Purchase orders through 3-way match, segregation of duties and OFAC screening.</p>
+      <div class="checks"><span>3-Way-Match</span><span>SoD</span><span>OFAC</span></div>
+    </div>
+
+    <div class="dept" style="--dc: rgba(192,132,252,0.16)">
+      <span class="glow"></span><span class="live" aria-hidden="true"></span>
+      <div class="ico2" style="background: rgba(192,132,252,0.12); border: 1px solid rgba(192,132,252,0.28)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5"/><path d="M4 9.5h16"/><path d="M5 10v7M9 10v7M15 10v7M19 10v7"/><path d="M3 20h18"/></svg>
+      </div>
+      <h3>Banking-Lending</h3>
+      <p class="role">Credit and collections under ECOA, TILA and FDCPA, tested for fair lending.</p>
+      <div class="checks"><span>ECOA</span><span>Four-Fifths</span><span>TILA</span><span>FDCPA</span></div>
+    </div>
+
+  </div>
+  <div class="dept-note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+    <div>
+      <strong>Every chip is a live checker.</strong> Each label is a statutory rule enforced at Gate 1,
+      the compliance gate, before an agent is allowed to act. Change the department and the checkers
+      change with it, the governance spine underneath stays identical.
+    </div>
+  </div>
+</section>
+
 <!-- ═══════════ GOVERNANCE ═══════════ -->
 <section id="governance" class="reveal">
   <div class="kicker cy">The Governance Spine</div>
   <h2>Seven gates. Now measured to the millisecond.</h2>
   <p class="lede">
-    Every decision walks this pipeline. As of v1.9.0 each gate records its wall-time lap,
-    independent gates run in parallel, and the adversarial debate earns its length: a second
-    round runs only when the arbiter is genuinely contested.
+    Every decision walks this pipeline, in order, every time. As of v1.9.0 each gate records its
+    wall-time lap, independent gates run in parallel, and the adversarial debate earns its length:
+    a second round runs only when the arbiter is genuinely contested.
   </p>
   <div class="rail-wrap">
-    <div class="rail">
-      <div class="gate" style="animation-delay: 0s"><div class="n">1</div><h4>Compliance</h4><p>Regulated tags checked before anything runs</p></div>
-      <div class="gate" style="animation-delay: 1s"><div class="n">2</div><h4>Fairness</h4><p>Protected attributes scored, in parallel with Gate 1</p></div>
-      <div class="gate" style="animation-delay: 2s"><div class="n">3</div><h4>Confidence</h4><p>Capped at the model's measured ceiling</p></div>
-      <div class="gate" style="animation-delay: 3s"><div class="n">4</div><h4>Human Gate</h4><p>High-consequence actions always reach a person</p></div>
-      <div class="gate" style="animation-delay: 4s"><div class="n">5</div><h4>Debate</h4><p>Proposer vs advocate, arbitrated; round two only if contested</p></div>
-      <div class="gate" style="animation-delay: 5s"><div class="n">6</div><h4>Execution</h4><p>Governed writes that fail closed if they don't land</p></div>
-      <div class="gate" style="animation-delay: 6s"><div class="n">7</div><h4>Audit</h4><p>Hash-chained provenance for every outcome</p></div>
+    <div class="rail" id="rail">
+      <div class="rail-packet" id="railPacket" aria-hidden="true"></div>
+      <div class="gate"><div class="n">1</div><h4>Compliance</h4><p>Regulated tags checked before anything runs</p></div>
+      <div class="gate"><div class="n">2</div><h4>Fairness</h4><p>Protected attributes scored, in parallel with Gate 1</p></div>
+      <div class="gate"><div class="n">3</div><h4>Confidence</h4><p>Capped at the model's measured ceiling</p></div>
+      <div class="gate"><div class="n">4</div><h4>Human Gate</h4><p>High-consequence actions always reach a person</p></div>
+      <div class="gate"><div class="n">5</div><h4>Debate</h4><p>Proposer vs advocate, arbitrated; round two only if contested</p></div>
+      <div class="gate"><div class="n">6</div><h4>Execution</h4><p>Governed writes that fail closed if they don't land</p></div>
+      <div class="gate"><div class="n">7</div><h4>Audit</h4><p>Hash-chained, signed provenance for every outcome</p></div>
+    </div>
+    <div class="rail-status" aria-hidden="true">
+      <span class="gt">&gt;</span>
+      <span class="msg" id="railStatus">decision walking the pipeline</span>
+      <span class="cursor"></span>
     </div>
     <div class="gate-note">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
@@ -431,7 +698,7 @@
       <div class="kicker">The Differentiator</div>
       <h2>Your model earns a ceiling. Every decision lives under it.</h2>
       <p class="lede" style="font-size: 15.5px;">
-        Bring any model - OpenAI, Anthropic, Mistral, Groq, Azure, or a self-hosted Ollama - and
+        Bring any model, OpenAI, Anthropic, Mistral, Groq, Azure, or a self-hosted Ollama, and
         KAEOS probes it: JSON discipline, multi-step reasoning, strict instruction following.
         The probe produces a confidence ceiling that caps every decision the platform makes on
         that model. A weaker model mechanically routes more work to humans. Model choice becomes
@@ -482,14 +749,14 @@
   <div class="kicker cy">Real Product, Real Data</div>
   <h2>Captured from a running instance.</h2>
   <p class="lede">
-    Every frame below is the live app on a seeded demo tenant against PostgreSQL - not a mockup,
+    Every frame below is the live app on a seeded demo tenant against PostgreSQL, not a mockup,
     not a design comp. The honesty of the numbers is the product.
   </p>
   <div class="shot-hero">
     <img src="01-dashboard.png" alt="KAEOS workforce dashboard: safe-autonomy rate, live departments, and skills that earned autonomy" loading="eager" />
   </div>
   <div class="grid-shots">
-    <figure class="shot"><img src="02-departments.png" alt="Seven AI departments with live health and agent rosters" loading="lazy" /><figcaption class="cap"><strong>AI Departments</strong>Seven departments with live health, agents and task counts</figcaption></figure>
+    <figure class="shot"><img src="02-departments.png" alt="Ten AI departments with live health and agent rosters" loading="lazy" /><figcaption class="cap"><strong>AI Departments</strong>Departments with live health, agents and task counts</figcaption></figure>
     <figure class="shot"><img src="06-decisions-hitl.png" alt="Human-in-the-loop decision queue" loading="lazy" /><figcaption class="cap"><strong>Decision Queue</strong>Every paused decision, waiting for a human verdict</figcaption></figure>
     <figure class="shot"><img src="22-knowledge-graph.png" alt="The knowledge graph of the company brain" loading="lazy" /><figcaption class="cap"><strong>Company Brain</strong>The org as a living knowledge graph</figcaption></figure>
     <figure class="shot"><img src="19-reality-twin-full.png" alt="Reality twin of the organization" loading="lazy" /><figcaption class="cap"><strong>Reality Twin</strong>A DB-backed twin of the whole organization</figcaption></figure>
@@ -660,7 +927,7 @@ docker compose up --build</div>
     brain.y = Math.min(H - 34, cy + RY + 132);
     brain.r = Math.max(20, Math.min(32, W * 0.024));
     for (var i = 0; i < n; i++) {
-      var deg = 168 - (i * (168 - 12) / (n - 1));   /* 168° → 12° */
+      var deg = 168 - (i * (168 - 12) / (n - 1));   /* 168 deg to 12 deg */
       var a = deg * Math.PI / 180;
       var hx = W / 2 + Math.cos(a) * RX;
       var hy = Math.min(H - 96, cy + Math.sin(a) * RY);
@@ -822,6 +1089,67 @@ docker compose up --build</div>
     mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
   });
   if (reduced) { draw(0); } else { requestAnimationFrame(loop); }
+
+  /* ── Safe-autonomy ring meter ───────────────────── */
+  var ring = document.getElementById("saRing");
+  var ringNum = document.getElementById("saNum");
+  var RING_TARGET = 68.4;
+  if (ring && ringNum) {
+    var C = 2 * Math.PI * 52;
+    ring.style.strokeDasharray = C;
+    ring.style.strokeDashoffset = C;
+    if (reduced) {
+      ring.style.strokeDashoffset = C * (1 - RING_TARGET / 100);
+      ringNum.textContent = RING_TARGET.toFixed(1);
+    } else {
+      var rt0 = null;
+      var ranRing = false;
+      var animRing = function (ts) {
+        if (!rt0) rt0 = ts;
+        var k = Math.min(1, (ts - rt0) / 1900);
+        k = 1 - Math.pow(1 - k, 3);
+        var val = RING_TARGET * k;
+        ring.style.strokeDashoffset = C * (1 - val / 100);
+        ringNum.textContent = val.toFixed(1);
+        if (k < 1) requestAnimationFrame(animRing);
+      };
+      /* run once the hero settles */
+      setTimeout(function () { if (!ranRing) { ranRing = true; requestAnimationFrame(animRing); } }, 450);
+    }
+  }
+
+  /* ── Gate pipeline sequencer ────────────────────── */
+  var railGates = document.querySelectorAll("#rail .gate");
+  var railStatus = document.getElementById("railStatus");
+  var railPacket = document.getElementById("railPacket");
+  var GATE_MSGS = [
+    "compliance: regulated tags checked, clear",
+    "fairness: protected attributes scored, within tolerance",
+    "confidence: capped at the model's measured ceiling",
+    "human gate: high-consequence check, not required",
+    "debate: proposer vs advocate, arbiter decisive",
+    "execution: governed write landed",
+    "audit: hash-chained provenance signed"
+  ];
+  if (railGates.length && !reduced) {
+    var gi = 0;
+    var stepGate = function () {
+      for (var x = 0; x < railGates.length; x++) {
+        railGates[x].classList.toggle("active", x === gi);
+        railGates[x].classList.toggle("done", x < gi);
+      }
+      if (railStatus) railStatus.textContent = GATE_MSGS[gi];
+      if (railPacket && railGates.length > 1) {
+        railPacket.style.left = (4 + (gi / (railGates.length - 1)) * 92) + "%";
+      }
+      gi = (gi + 1) % railGates.length;
+    };
+    stepGate();
+    setInterval(stepGate, 900);
+  } else if (railGates.length && railStatus) {
+    railStatus.textContent = GATE_MSGS[6];
+    for (var y = 0; y < railGates.length; y++) railGates[y].classList.add("done");
+  }
 
   /* ── Count-ups ──────────────────────────────────── */
   function countUp(el) {
