@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import httpx
+from app.core.outbound import guarded_async_client
 
 from .base import _RestAdapter, HTTP_TIMEOUT
 
@@ -122,7 +123,7 @@ class NotionAdapter(_RestAdapter):
         payload: Dict[str, Any] = {"page_size": int(config.get("batch_size", 25))}
         if config.get("query"):
             payload["query"] = config["query"]
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.post("https://api.notion.com/v1/search",
                              headers=self.headers(config, secrets), json=payload)
             r.raise_for_status()

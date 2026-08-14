@@ -199,9 +199,73 @@ async def connection_for_email(email: str) -> Optional[SSOConnection]:
             select(SSOConnection).where(
                 SSOConnection.email_domain == domain,
                 SSOConnection.is_enabled == True,  # noqa: E712
-            )
+                # Only a VERIFIED domain routes logins: an unverified (possibly
+                # squatted) claim must never send a victim's users to it.
+                SSOConnection.domain_verified == True,  # noqa: E712
+            ).order_by(SSOConnection.created_at.asc())
         )
-        return row.scalar_one_or_none()
+        # .first(), not scalar_one_or_none(): even with the partial-unique index a
+        # race could momentarily leave two verified rows, and a 500 on the login
+        # discovery path is itself a denial of service. Take the earliest.
+        return row.scalars().first()
+
+
+def _resolve_txt(name: str) -> list[str]:
+    """TXT records for a DNS name. Isolated in one function so tests monkeypatch
+    it instead of hitting real DNS; fail-closed (empty) on any resolver error."""
+    try:
+        import dns.resolver
+        answers = dns.resolver.resolve(name, "TXT", lifetime=5.0)
+    except Exception:
+        return []
+    out = []
+    for rdata in answers:
+        try:
+            out.append(b"".join(rdata.strings).decode("utf-8", "ignore"))
+        except Exception:
+            out.append(str(rdata).strip('"'))
+    return out
+
+
+_CHALLENGE_HOST = "_kaeos-challenge"
+_CHALLENGE_PREFIX = "kaeos-domain-verification="
+
+
+async def verify_domain(connection_id: str, tenant_id: str) -> dict:
+    """Prove the tenant controls its SSO email_domain via a DNS TXT record at
+    ``_kaeos-challenge.<domain>`` holding ``kaeos-domain-verification=<token>``.
+
+    Fail-closed: any DNS/resolver error is a non-verification. A domain already
+    verified by ANOTHER tenant cannot be taken over.
+    """
+    from app.core.database import MaintenanceSessionLocal
+    async with MaintenanceSessionLocal() as owner:
+        conn = (await owner.execute(select(SSOConnection).where(
+            SSOConnection.id == connection_id,
+            SSOConnection.tenant_id == tenant_id,
+        ))).scalar_one_or_none()
+        if conn is None:
+            return {"verified": False, "error": "connection_not_found"}
+        domain = (conn.email_domain or "").strip().lower()
+        if not domain:
+            return {"verified": False, "error": "no_domain_set"}
+        if not conn.domain_verification_token:
+            return {"verified": False, "error": "no_challenge_issued"}
+        other = (await owner.execute(select(SSOConnection).where(
+            SSOConnection.email_domain == domain,
+            SSOConnection.domain_verified == True,  # noqa: E712
+            SSOConnection.tenant_id != tenant_id,
+        ))).first()
+        if other is not None:
+            return {"verified": False, "error": "domain_claimed_by_another_tenant"}
+        want = _CHALLENGE_PREFIX + conn.domain_verification_token
+        records = _resolve_txt(f"{_CHALLENGE_HOST}.{domain}")
+        if want not in records:
+            return {"verified": False, "error": "txt_record_not_found",
+                    "add_dns_txt": {"name": f"{_CHALLENGE_HOST}.{domain}", "value": want}}
+        conn.domain_verified = True
+        await owner.commit()
+        return {"verified": True, "domain": domain}
 
 
 # ── provisioning + session mint ───────────────────────────────────────────────

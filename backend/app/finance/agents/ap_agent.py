@@ -14,6 +14,8 @@ from sqlalchemy import select
 
 from app.finance.agents.gated_runner import run_gated_finance_skill, extract_decision
 from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor
+from app.finance.services.three_way_match import evaluate_three_way_match, match_summary
+from app.services.provenance import append_ledger_event
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,24 @@ class APAgent:
 
         logger.info(f"APAgent processing invoice {invoice.invoice_number} from {vendor.name if vendor else 'unknown'}")
 
+        # DETERMINISTIC three-way match FIRST. The persisted status comes from a
+        # real reconciliation of PO/receipt/invoice quantities and prices, never
+        # from LLM output. The LLM only triages a genuine exception below.
+        match = await evaluate_three_way_match(db, tenant_id, invoice)
+        invoice.three_way_match_status = match["status"]
+        invoice.po_matched = bool(match.get("po_matched"))
+        invoice.receipt_matched = bool(match.get("receipt_matched"))
+        db.add(invoice)
+        # Signed provenance: the control leaves an evidence trail (PO + receipts
+        # + invoice) that a verifier can replay. commit=True lands the match
+        # status atomically.
+        await append_ledger_event(
+            db, tenant_id=tenant_id, event_type="THREE_WAY_MATCH",
+            reasoning=match_summary(match),
+            evidence_ids=match.get("evidence_ids") or [invoice.id],
+            scope=invoice.id,
+        )
+
         # Define the skill steps (LLM will evaluate this invoice)
         steps = [
             {
@@ -61,18 +81,22 @@ Check if math is correct.""",
                 "name": "Check Duplicates",
                 "prompt": f"Check for duplicate payment risk for invoice {invoice.invoice_number} from {vendor.name if vendor else 'Unknown'}",
             },
-            {
-                "step": 3,
-                "name": "PO Match Assessment",
-                # Honest inputs only: receipt status used to be hardcoded
-                # "CONFIRMED", fabricating a 3-way match KAEOS cannot verify
-                # (goods receipts are not linked to finance invoices yet).
-                "prompt": f"""Assess purchase-order matching readiness:
-Invoice PO: {invoice.po_number or 'No PO'}
-Receipt Status: NOT TRACKED (goods receipts are not linked to this invoice; a full 3-way match cannot be verified)
-Recommend: APPROVE, HOLD, or REJECT. If the PO or receipt cannot be verified, do not recommend APPROVE on matching grounds alone.""",
-            },
         ]
+        # Step 3 only exists to explain a REAL exception for a human reviewer -
+        # it is fed the deterministic per-line deltas, and it cannot change the
+        # match status (already persisted above).
+        if match["status"] == "EXCEPTION":
+            steps.append({
+                "step": 3,
+                "name": "Explain Match Exception",
+                "prompt": (
+                    f"The deterministic three-way match flagged invoice "
+                    f"{invoice.invoice_number} as an EXCEPTION for these reasons:\n"
+                    + "\n".join(f"- {r}" for r in (match.get("reasons") or []))
+                    + "\nWrite a short plain-English explanation for the human "
+                    "reviewer and recommend HOLD or REJECT. Never recommend APPROVE."
+                ),
+            })
 
         # Context for the gated pipeline
         context = {
@@ -133,15 +157,22 @@ Recommend: APPROVE, HOLD, or REJECT. If the PO or receipt cannot be verified, do
                 pass
             else:
                 invoice.ai_duplicate_flag = str(dup_risk).upper() != "LOW"
-            invoice.three_way_match_status = decision.get("three_way_match", "PENDING")
+            # NOTE: three_way_match_status is NOT taken from the LLM. It was set
+            # by the deterministic matcher above and must not be overwritten.
 
-            # Auto-approve only for low amounts with high confidence
-            if decision.get("recommendation") == "APPROVE" and float(invoice.total_amount) < 2000 and confidence_score > 0.88:
+            # An EXCEPTION match is a hard control: never auto-approve, route to
+            # DISPUTED for human resolution regardless of what the LLM recommends.
+            if invoice.three_way_match_status == "EXCEPTION":
+                invoice.status = InvoiceStatus.DISPUTED
+            # Auto-approve only for a clean match, low amounts, high confidence.
+            elif (decision.get("recommendation") == "APPROVE"
+                  and invoice.three_way_match_status == "MATCHED"
+                  and float(invoice.total_amount) < 2000 and confidence_score > 0.88):
                 invoice.status = InvoiceStatus.APPROVED
             elif decision.get("recommendation") == "REJECT":
                 invoice.status = InvoiceStatus.DISPUTED
             else:
-                # Medium amounts or lower confidence → hold for review
+                # Medium amounts, lower confidence, or unconfirmed match → hold.
                 invoice.status = InvoiceStatus.PENDING_APPROVAL
 
             db.add(invoice)

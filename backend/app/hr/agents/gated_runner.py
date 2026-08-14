@@ -44,7 +44,11 @@ async def run_gated_hr_skill(
     Returns the executor result dict. On ``SUCCESS_CLEAN`` it includes
     ``reasoning_chain`` so callers can extract the model decision.
     """
-    compliance_tags = compliance_tags or list(DEFAULT_HR_COMPLIANCE)
+    # `is None` (not truthiness): an explicit [] means "no compliance tags"
+    # (e.g. the fairness sweep, whose EEOC check IS the fairness gate) and must
+    # not silently fall back to the EEOC/GDPR default.
+    if compliance_tags is None:
+        compliance_tags = list(DEFAULT_HR_COMPLIANCE)
     execution_id = context.get("execution_id") or str(uuid.uuid4())
 
     skill_dict = {

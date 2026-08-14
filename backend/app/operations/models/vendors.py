@@ -17,7 +17,9 @@ class VendorContract(Base):
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
 
-    vendor_name = Column(String(256), nullable=False)
+    vendor_name = Column(String(256), nullable=False)  # denormalized display / legacy
+    # Roll ops vendor perf/risk up to the single finance master when resolvable.
+    vendor_id = Column(String, ForeignKey("fin_vendors.id"), nullable=True, index=True)
     service_provided = Column(String(256), nullable=False) # e.g. "Cloud Hosting", "Facility Cleaning"
     
     contract_value = Column(Numeric(18, 2), default=0.00)

@@ -15,7 +15,7 @@ from app.operations.models.core import OpsTeamMember, DepartmentConfig
 from app.operations.models.projects import Project, Milestone, Task, ProjectStatus
 from app.operations.models.resources import Resource, ResourceAllocation, CapacityPlan
 from app.operations.models.vendors import VendorContract, VendorPerformance
-from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, GoodsReceipt, ProcurementStatus
+from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, POLineItem, GoodsReceipt, ProcurementStatus
 from app.operations.models.quality import QualityStandard, Inspection, NonConformance, QualityStatus
 
 TENANT = "tenant_acme"  # demo tenant — matches seed_demo_user and dev-mode tenant
@@ -115,11 +115,17 @@ async def seed():
             db.add(req)
         await db.flush()
 
-        po = PurchaseOrder(id=_id(), tenant_id=TENANT, purchase_request_id=requests[1].id, po_number="PO-2026-9012", vendor_name="OfficeMax Business", total_amount=897.00, status=ProcurementStatus.APPROVED)
+        # vendor_id stays NULL: "OfficeMax Business" has no fin_vendors master,
+        # and an unmatched PO is left unlinked rather than mis-joined.
+        po = PurchaseOrder(id=_id(), tenant_id=TENANT, purchase_request_id=requests[1].id, po_number="PO-2026-9012", vendor_name="OfficeMax Business", total_amount=897.00, status=ProcurementStatus.RECEIVED)
         db.add(po)
         await db.flush()
 
-        receipt = GoodsReceipt(id=_id(), tenant_id=TENANT, purchase_order_id=po.id, receiver_name="Dwight Schrute", received_quantity=3, is_damaged=False, status="SUCCESS")
+        po_line = POLineItem(id=_id(), tenant_id=TENANT, purchase_order_id=po.id, line_number=1, description="Generic developer desk chairs", quantity=3, unit_price=299.00, amount=897.00)
+        db.add(po_line)
+        await db.flush()
+
+        receipt = GoodsReceipt(id=_id(), tenant_id=TENANT, purchase_order_id=po.id, po_line_item_id=po_line.id, receiver_name="Dwight Schrute", received_quantity=3, is_damaged=False, status="SUCCESS")
         db.add(receipt)
 
         # 8. Quality standards & Inspections

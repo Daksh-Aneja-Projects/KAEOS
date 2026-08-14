@@ -101,6 +101,12 @@ async def seed():
                   CandidateStage.RECRUITER_SCREEN, CandidateStage.HM_INTERVIEW,
                   CandidateStage.PANEL_INTERVIEW, CandidateStage.OFFER_EXTENDED,
                   CandidateStage.HIRED, CandidateStage.REJECTED]
+        # Voluntary self-ID (EEOC) — isolated on the candidate, only ever read to
+        # build cohort selection rates for the disparate-impact sweep, and nulled
+        # on erasure. Never used in screening.
+        _GENDERS = ["female", "male", "nonbinary"]
+        _ETHNICITIES = ["asian", "black", "hispanic", "white", "two_or_more"]
+        _AGE_BANDS = ["under_40", "40_plus"]
         for first, last in cand_names:
             cand = Candidate(
                 id=_id(),
@@ -112,6 +118,11 @@ async def seed():
                 stage=random.choice(stages),
                 ai_score=round(random.uniform(25, 98), 1),
                 ai_summary=f"{first} shows strong alignment with role requirements.",
+                eeoc_data={
+                    "gender": random.choice(_GENDERS),
+                    "ethnicity": random.choice(_ETHNICITIES),
+                    "age_band": random.choice(_AGE_BANDS),
+                },
             )
             db.add(cand)
 

@@ -92,21 +92,60 @@ _JWT_ALG = "HS256"
 _JWT_ISS = "kaeos"
 _JWT_AUD = "kaeos-api"
 
-# In-process session/lockout state. NOTE: single-instance only — a multi-replica
-# deployment must move both of these to Redis (a shared denylist + a shared
-# failed-attempt counter), same caveat as the rate limiter. Documented in
-# docs/DEPLOYMENT.md. Kept in-memory here so single-instance dev/demo works with
-# no extra infra.
+# Shared session/lockout state. Redis is the source of truth so a logout or a
+# lockout is seen by EVERY worker (start-prod.sh runs 4). When Redis is
+# unreachable these in-process structures are the fallback, so single-instance
+# dev/demo works with no extra infra (the per-process caveat then applies again).
 _revoked_jti: set[str] = set()
 _failed_logins: dict[str, list[float]] = {}   # email -> [failure epoch seconds]
 
+_JTI_KEY = "jwt:revoked:{jti}"
+_FAIL_KEY = "login:fail:{email}"
 
-def revoke_token(token: str) -> bool:
-    """Add a token's jti to the denylist (logout). Returns True if revoked."""
+
+async def _redis():
+    try:
+        from app.core.redis import get_redis
+        return await get_redis()
+    except Exception:
+        return None
+
+
+async def revoke_token(token: str) -> bool:
+    """Add a token's jti to the shared denylist (logout). Returns True if revoked.
+
+    Writes to Redis (seen by all workers) AND the local set (dev fallback). The
+    Redis key expires when the token would have expired anyway, so the denylist
+    cannot grow without bound.
+    """
     payload = decode_token(token)
-    if payload and payload.get("jti"):
-        _revoked_jti.add(payload["jti"])
+    if not (payload and payload.get("jti")):
+        return False
+    jti = payload["jti"]
+    _revoked_jti.add(jti)
+    r = await _redis()
+    if r is not None:
+        import time
+        ttl = int((payload.get("exp") or 0) - time.time())
+        try:
+            await r.set(_JTI_KEY.format(jti=jti), "1", ex=max(ttl, 1))
+        except Exception:
+            pass  # fallback set already holds it on this worker
+    return True
+
+
+async def is_jti_revoked(jti: str) -> bool:
+    """True if this token's jti has been revoked (checked at the async boundaries)."""
+    if not jti:
+        return False
+    if jti in _revoked_jti:
         return True
+    r = await _redis()
+    if r is not None:
+        try:
+            return bool(await r.exists(_JTI_KEY.format(jti=jti)))
+        except Exception:
+            return False
     return False
 
 
@@ -152,9 +191,11 @@ def decode_token(token: str) -> Optional[dict]:
             audience=_JWT_AUD,
             issuer=_JWT_ISS,
         )
-        # Revocation (logout): a token whose jti was revoked is no longer valid.
-        if claims.get("jti") in _revoked_jti:
-            return None
+        # Revocation is enforced at the async auth boundaries (get_current_user,
+        # TenantMiddleware's JWT branch, the WS handshake) via is_jti_revoked(),
+        # not here: decode_token is synchronous and the shared denylist lives in
+        # Redis (an async client). Keeping the check out of this hot sync path also
+        # avoids a Redis round-trip on every token parse.
         return claims
     except jwt.PyJWTError:
         # Not a valid current-format JWT. This is NOT a bypass: control falls
@@ -275,19 +316,51 @@ class AuthService:
             )
 
     @staticmethod
-    def _is_locked_out(email: str) -> bool:
-        """True if this email has too many recent failures (brute-force guard)."""
-        import time
+    async def _is_locked_out(email: str) -> bool:
+        """True if this email has too many recent failures (brute-force guard).
+
+        Redis-backed so the counter is shared across workers; falls back to the
+        in-process window when Redis is down.
+        """
         s = get_settings()
+        r = await _redis()
+        if r is not None:
+            try:
+                val = await r.get(_FAIL_KEY.format(email=email))
+                return int(val or 0) >= s.LOGIN_MAX_FAILURES
+            except Exception:
+                pass
+        import time
         window_start = time.time() - s.LOGIN_LOCKOUT_SECONDS
         recent = [t for t in _failed_logins.get(email, []) if t >= window_start]
         _failed_logins[email] = recent  # prune
         return len(recent) >= s.LOGIN_MAX_FAILURES
 
     @staticmethod
-    def _record_failure(email: str) -> None:
+    async def _record_failure(email: str) -> None:
+        s = get_settings()
+        r = await _redis()
+        if r is not None:
+            try:
+                key = _FAIL_KEY.format(email=email)
+                n = await r.incr(key)
+                if n == 1:
+                    await r.expire(key, s.LOGIN_LOCKOUT_SECONDS)
+                return
+            except Exception:
+                pass
         import time
         _failed_logins.setdefault(email, []).append(time.time())
+
+    @staticmethod
+    async def _clear_failures(email: str) -> None:
+        _failed_logins.pop(email, None)
+        r = await _redis()
+        if r is not None:
+            try:
+                await r.delete(_FAIL_KEY.format(email=email))
+            except Exception:
+                pass
 
     @staticmethod
     async def login(db: AsyncSession, email: str, password: str,
@@ -301,7 +374,7 @@ class AuthService:
         from app.core.audit import record_security_event
         _tenant_for_audit = get_settings().ADMIN_TENANT  # best-effort tenant for pre-auth events
 
-        if AuthService._is_locked_out(email):
+        if await AuthService._is_locked_out(email):
             await record_security_event(
                 tenant_id=_tenant_for_audit, event_type="AUTH_FAILURE", action="LOGIN",
                 result="BLOCKED", actor=email, ip_address=ip_address,
@@ -313,15 +386,15 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
         if not user or not await _verify_password(password, user.hashed_password):
-            AuthService._record_failure(email)
+            await AuthService._record_failure(email)
             await record_security_event(
                 tenant_id=(user.tenant_id if user else _tenant_for_audit),
                 event_type="AUTH_FAILURE", action="LOGIN", result="BLOCKED",
                 actor=email, ip_address=ip_address, details={"reason": "bad_credentials"})
             return None
 
-        # Success — clear the failure counter.
-        _failed_logins.pop(email, None)
+        # Success — clear the failure counter (shared + local).
+        await AuthService._clear_failures(email)
 
         # Second factor: if MFA is enabled for this user, a valid TOTP code is
         # required before a session is issued. Missing/invalid code returns a

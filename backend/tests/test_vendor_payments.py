@@ -144,6 +144,47 @@ async def test_four_eyes_the_approver_cannot_pay(db):
         Payment.tenant_id == tenant))).scalars().all() == []
 
 
+async def test_match_exception_blocks_payment(db):
+    """An EXCEPTION three-way match refuses payment and posts NOTHING."""
+    tenant = _t()
+    _, _, _, _, invoice = await _fixture(db, tenant)
+    invoice.three_way_match_status = "EXCEPTION"
+    db.add(invoice)
+    await db.commit()
+    invoice_id = invoice.id
+
+    with pytest.raises(PaymentError, match="three-way match"):
+        await record_vendor_payment(db, tenant, invoice_id=invoice_id,
+                                    amount=100, recorded_by="ap-clerk@acme")
+    await db.rollback()
+    assert (await db.execute(select(Payment).where(
+        Payment.tenant_id == tenant))).scalars().all() == []
+    assert (await db.execute(select(JournalEntry).where(
+        JournalEntry.tenant_id == tenant))).scalars().all() == []
+
+
+async def test_match_exception_pays_with_distinct_override(db):
+    """A recorded human override (distinct from the payer) releases the payment."""
+    tenant = _t()
+    _, _, _, _, invoice = await _fixture(db, tenant)
+    invoice.three_way_match_status = "EXCEPTION"
+    db.add(invoice)
+    await db.commit()
+    invoice_id = invoice.id
+
+    # Same identity as payer is not a valid override.
+    with pytest.raises(PaymentError, match="three-way match"):
+        await record_vendor_payment(db, tenant, invoice_id=invoice_id, amount=100,
+                                    recorded_by="ap-clerk@acme",
+                                    match_override_by="ap-clerk@acme")
+    await db.rollback()
+
+    payment = await record_vendor_payment(
+        db, tenant, invoice_id=invoice_id, amount=100,
+        recorded_by="ap-clerk@acme", match_override_by="controller@acme")
+    assert payment.journal_entry_id
+
+
 async def test_accrual_is_idempotent(db):
     """Accruing at approval then paying must not double-book the expense."""
     tenant = _t()

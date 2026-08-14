@@ -22,6 +22,7 @@ import logging
 from typing import Any, Dict, List
 
 import httpx
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class _RestAdapter:
         return "Connected"
 
     async def test(self, config, secrets):
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, auth=self.auth(config, secrets)) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=self.auth(config, secrets)) as c:
             r = await c.get(
                 f"{self.base_url(config, secrets).rstrip('/')}{self.test_path(config)}",
                 headers=self.headers(config, secrets),
@@ -94,7 +95,7 @@ class _RestAdapter:
                     "detail": f"{type(self).__name__} responded {r.status_code}: {r.text[:120]}"}
 
     async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, auth=self.auth(config, secrets)) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=self.auth(config, secrets)) as c:
             r = await c.get(
                 f"{self.base_url(config, secrets).rstrip('/')}{self.fetch_path(config)}",
                 headers=self.headers(config, secrets),

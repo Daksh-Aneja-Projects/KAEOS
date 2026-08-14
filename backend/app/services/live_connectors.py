@@ -35,8 +35,10 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +110,71 @@ def decrypt_secrets(token: str) -> Dict[str, Any]:
         raise ValueError("Stored credentials cannot be decrypted (SECRET_KEY changed?)") from e
 
 
+# ── Per-tenant envelope encryption ────────────────────────────────────────────
+# Each tenant gets a random Fernet DATA key, wrapped by the master KEK (_fernet)
+# and stored in tenant_data_keys. Secrets encrypt under the tenant key, so one
+# leaked key no longer opens every tenant, and deleting the row crypto-shreds
+# that tenant. The master remains the wrap key AND the legacy read path.
+
+_tenant_fernet_cache: Dict[str, Fernet] = {}
+
+
+def evict_tenant_key(tenant_id: str) -> None:
+    """Drop the cached data key for a tenant (call after rotate/delete)."""
+    _tenant_fernet_cache.pop(tenant_id, None)
+
+
+async def _fernet_for_tenant(tenant_id: str) -> Fernet:
+    cached = _tenant_fernet_cache.get(tenant_id)
+    if cached is not None:
+        return cached
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.tenant_data_key import TenantDataKey
+    master = _fernet()
+    async with MaintenanceSessionLocal() as db:
+        row = (await db.execute(
+            select(TenantDataKey).where(TenantDataKey.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        if row is None:
+            data_key = Fernet.generate_key()
+            db.add(TenantDataKey(tenant_id=tenant_id,
+                                 wrapped_key=master.encrypt(data_key).decode()))
+            try:
+                await db.commit()
+            except Exception:
+                # Lost a create race with a concurrent caller — read theirs.
+                await db.rollback()
+                row = (await db.execute(
+                    select(TenantDataKey).where(TenantDataKey.tenant_id == tenant_id)
+                )).scalar_one()
+                data_key = master.decrypt(row.wrapped_key.encode())
+        else:
+            data_key = master.decrypt(row.wrapped_key.encode())
+    f = Fernet(data_key)
+    _tenant_fernet_cache[tenant_id] = f
+    return f
+
+
+async def encrypt_secrets_for_tenant(tenant_id: str, secrets: Dict[str, Any]) -> str:
+    f = await _fernet_for_tenant(tenant_id)
+    return f.encrypt(json.dumps(secrets).encode()).decode()
+
+
+async def decrypt_secrets_for_tenant(tenant_id: str, token: str) -> Dict[str, Any]:
+    """Decrypt under the tenant key, falling back to the legacy master key.
+
+    The fallback is mandatory: secrets written before this change were encrypted
+    under the global master key, and must still decrypt after deploy. The next
+    write re-encrypts under the tenant key (lazy migration, no bulk pass).
+    """
+    try:
+        f = await _fernet_for_tenant(tenant_id)
+        return json.loads(f.decrypt(token.encode()).decode())
+    except (InvalidToken, ValueError):
+        # Legacy global-key ciphertext (or a crypto-shredded/rotated tenant key).
+        return decrypt_secrets(token)
+
+
 # ── Provider inference ────────────────────────────────────────────────────────
 
 _NAME_HINTS = {
@@ -162,7 +229,7 @@ class JiraAdapter:
     @staticmethod
     def _client(config, secrets) -> httpx.AsyncClient:
         base = config["base_url"].rstrip("/")
-        return httpx.AsyncClient(
+        return guarded_async_client(
             base_url=base, timeout=HTTP_TIMEOUT,
             auth=(secrets.get("email", ""), secrets.get("api_token", "")),
         )
@@ -202,7 +269,7 @@ class SalesforceAdapter:
         instance = config["instance_url"].rstrip("/")
         if secrets.get("access_token"):
             return instance, secrets["access_token"]
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.post(f"{instance}/services/oauth2/token", data={
                 "grant_type": "client_credentials",
                 "client_id": secrets.get("client_id", ""),
@@ -217,7 +284,7 @@ class SalesforceAdapter:
             instance, token = await self._token(config, secrets)
         except httpx.HTTPStatusError as e:
             return {"ok": False, "detail": f"OAuth failed: {e.response.status_code} {e.response.text[:120]}"}
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.get(f"{instance}/services/data/", headers={"Authorization": f"Bearer {token}"})
             if r.status_code == 200:
                 return {"ok": True, "detail": f"Connected — {len(r.json())} API versions available"}
@@ -227,7 +294,7 @@ class SalesforceAdapter:
         instance, token = await self._token(config, secrets)
         soql = config.get("soql", "SELECT Id, Name, StageName, Amount FROM Opportunity ORDER BY LastModifiedDate DESC LIMIT 25")
         version = config.get("api_version", "v59.0")
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.get(
                 f"{instance}/services/data/{version}/query",
                 params={"q": soql}, headers={"Authorization": f"Bearer {token}"},
@@ -253,7 +320,7 @@ class WorkdayAdapter:
     domain = "hr"
 
     async def test(self, config, secrets):
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT,
+        async with guarded_async_client(timeout=HTTP_TIMEOUT,
                                      auth=(secrets.get("username", ""), secrets.get("password", ""))) as c:
             r = await c.get(config["report_url"], params={"format": "json"})
             if r.status_code == 200:
@@ -261,7 +328,7 @@ class WorkdayAdapter:
             return {"ok": False, "detail": f"Workday responded {r.status_code}"}
 
     async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT,
+        async with guarded_async_client(timeout=HTTP_TIMEOUT,
                                      auth=(secrets.get("username", ""), secrets.get("password", ""))) as c:
             r = await c.get(config["report_url"], params={"format": "json"})
             r.raise_for_status()
@@ -297,7 +364,7 @@ class SAPAdapter:
 
     async def test(self, config, secrets):
         url = config["service_url"].rstrip("/")
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, auth=self._auth(secrets)) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=self._auth(secrets)) as c:
             r = await c.get(f"{url}/$metadata", headers=self._headers(secrets))
             if r.status_code == 200:
                 return {"ok": True, "detail": "OData service metadata reachable"}
@@ -306,7 +373,7 @@ class SAPAdapter:
     async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
         url = config["service_url"].rstrip("/")
         entity_set = config.get("entity_set", "A_SupplierInvoice")
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, auth=self._auth(secrets)) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT, auth=self._auth(secrets)) as c:
             r = await c.get(f"{url}/{entity_set}", headers=self._headers(secrets),
                             params={"$top": config.get("batch_size", 25), "$format": "json"})
             r.raise_for_status()
@@ -341,14 +408,14 @@ class GenericRESTAdapter:
         return config["base_url"].rstrip("/") + "/" + config.get("endpoint", "").lstrip("/")
 
     async def test(self, config, secrets):
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.get(self._url(config), headers=self._headers(secrets))
             if 200 <= r.status_code < 300:
                 return {"ok": True, "detail": f"Endpoint reachable ({r.status_code})"}
             return {"ok": False, "detail": f"Endpoint responded {r.status_code}"}
 
     async def fetch(self, config, secrets) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as c:
+        async with guarded_async_client(timeout=HTTP_TIMEOUT) as c:
             r = await c.get(self._url(config), headers=self._headers(secrets))
             r.raise_for_status()
             body = r.json()

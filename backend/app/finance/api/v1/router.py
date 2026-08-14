@@ -764,12 +764,21 @@ async def create_invoice(
     if not vendor_q.scalar_one_or_none():
         raise HTTPException(404, "Vendor not found")
     total = body.subtotal + body.tax_amount
+    # Resolve the entered PO reference to the real ops PO so the 3-way match
+    # can run off the FK, not a free-text string. Unknown PO -> NULL, no error.
+    purchase_order_id = None
+    if body.po_number:
+        from app.operations.models.procurement import PurchaseOrder
+        purchase_order_id = (await db.execute(select(PurchaseOrder.id).where(
+            PurchaseOrder.po_number == body.po_number,
+            PurchaseOrder.tenant_id == tenant_id))).scalar_one_or_none()
     inv = Invoice(
         tenant_id=tenant_id, vendor_id=body.vendor_id,
         invoice_number=body.invoice_number or f"INV-{_uuid_mod.uuid4().hex[:8].upper()}",
         invoice_date=body.invoice_date, due_date=body.due_date,
         subtotal=body.subtotal, tax_amount=body.tax_amount,
         total_amount=total, balance_due=total, po_number=body.po_number,
+        purchase_order_id=purchase_order_id,
     )
     db.add(inv)
     await db.commit()

@@ -196,3 +196,63 @@ async def test_saml_upsert_requires_idp_fields(db):
     assert out["idp_sso_url"] == "https://idp.example/sso"
     assert out["idp_x509_cert_set"] is True
     assert "idp_x509_cert" not in out
+
+
+# ── domain-ownership challenge (DNS TXT) ──────────────────────────────────────
+
+@pytest.fixture
+async def _sso_table():
+    from app.core.database import engine as app_engine
+    from app.models.sso import SSOConnection
+    from sqlalchemy import text
+    async with app_engine.begin() as conn:
+        await conn.run_sync(SSOConnection.__table__.create, checkfirst=True)
+        await conn.execute(text("DELETE FROM sso_connections"))
+    yield
+    async with app_engine.begin() as conn:
+        await conn.execute(text("DELETE FROM sso_connections"))
+
+
+async def _add_conn(tenant, domain, *, verified=False, token="tok"):
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.sso import SSOConnection
+    async with MaintenanceSessionLocal() as db:
+        c = SSOConnection(tenant_id=tenant, protocol="OIDC", issuer="https://idp",
+                          email_domain=domain, domain_verified=verified,
+                          domain_verification_token=token, is_enabled=True)
+        db.add(c)
+        await db.commit()
+        return c.id
+
+
+async def test_unverified_domain_does_not_route_logins(_sso_table):
+    await _add_conn("tenant_a", "victim.com", verified=False)
+    # An unverified (possibly squatted) domain claim must not send anyone's users to it.
+    assert await sso_svc.connection_for_email("bob@victim.com") is None
+
+
+async def test_domain_verification_via_dns_txt(_sso_table, monkeypatch):
+    cid = await _add_conn("tenant_a", "acme.com", verified=False, token="abc123")
+    monkeypatch.setattr(sso_svc, "_resolve_txt", lambda name: [])
+    r = await sso_svc.verify_domain(cid, "tenant_a")
+    assert r["verified"] is False and r["error"] == "txt_record_not_found"
+    assert await sso_svc.connection_for_email("x@acme.com") is None
+
+    monkeypatch.setattr(sso_svc, "_resolve_txt",
+                        lambda name: ["kaeos-domain-verification=abc123"])
+    r = await sso_svc.verify_domain(cid, "tenant_a")
+    assert r["verified"] is True
+    routed = await sso_svc.connection_for_email("x@acme.com")
+    assert routed is not None and routed.tenant_id == "tenant_a"
+
+
+async def test_verified_domain_cannot_be_taken_over(_sso_table, monkeypatch):
+    await _add_conn("tenant_a", "shared.com", verified=True, token="a")
+    b = await _add_conn("tenant_b", "shared.com", verified=False, token="b")
+    monkeypatch.setattr(sso_svc, "_resolve_txt",
+                        lambda name: ["kaeos-domain-verification=b"])
+    r = await sso_svc.verify_domain(b, "tenant_b")
+    assert r["verified"] is False and r["error"] == "domain_claimed_by_another_tenant"
+    # Discovery resolves to the original owner and does NOT 500 on the duplicate.
+    routed = await sso_svc.connection_for_email("u@shared.com")
+    assert routed is not None and routed.tenant_id == "tenant_a"

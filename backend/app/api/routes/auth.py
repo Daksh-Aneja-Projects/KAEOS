@@ -35,6 +35,10 @@ async def get_current_user(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    from app.services.auth import is_jti_revoked
+    if await is_jti_revoked(payload.get("jti")):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     user = await AuthService.get_user_by_id(db, payload["user_id"])
     if not user or not user.get("is_active"):
         raise HTTPException(status_code=401, detail="User not found or inactive")
@@ -62,7 +66,8 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     if not email or not password:
         raise HTTPException(status_code=400, detail="Email and password required")
 
-    ip = request.client.host if request.client else None
+    from app.core.net import client_ip
+    ip = client_ip(request)
     result = await AuthService.login(db, email, password, ip_address=ip, mfa_code=data.mfa_code)
     if not result:
         # Same message for bad credentials and lockout — don't reveal which.
@@ -82,7 +87,7 @@ async def logout(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.removeprefix("Bearer ").strip()
-    revoked = revoke_token(token)
+    revoked = await revoke_token(token)
     return {"revoked": revoked}
 
 @router.get("/me")

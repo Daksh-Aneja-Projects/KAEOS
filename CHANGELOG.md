@@ -11,6 +11,38 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Wave 1 hardening: security, fairness-to-HITL, real 3-way match
+- **Multi-worker session security.** JWT revocation (logout) and login lockout
+  are now backed by Redis so a logout or lockout is seen by every worker (prod
+  runs 4), with an in-process fallback for single-instance dev. Revocation is
+  enforced at every async auth boundary (`get_current_user`, tenant middleware,
+  the WebSocket handshake) via `is_jti_revoked`.
+- **TOTP replay is blocked.** A one-time code's time-step is consumed with an
+  atomic conditional UPDATE, so a captured code cannot be replayed within its
+  window and two concurrent submits cannot both win (migration `0036`,
+  `user_mfa.last_used_step`).
+- **Per-tenant envelope encryption.** At-rest secrets (MFA TOTP secrets, SSO
+  client secrets, connector credentials) are encrypted under a per-tenant data
+  key wrapped by the master key, so one key leak no longer decrypts every tenant
+  and deleting a tenant crypto-shreds its secrets (`tenant_data_keys`).
+- **SSO domain-ownership challenge.** A tenant must prove it controls an email
+  domain (a DNS TXT record `_kaeos-challenge.<domain>`) before that domain
+  routes SSO logins; an unverified or squatted claim is inert, and a verified
+  domain cannot be taken over. Login discovery no longer 500s on a duplicate.
+- **SSRF connect-time pinning + trusted-proxy IP** on outbound calls and the
+  per-tenant IP allowlist / audit trail.
+- **Fairness blocks reach a human.** A fairness BLOCK (and the mission
+  equivalent) now routes into the real HITL approval queue instead of
+  dead-ending, and approval clears the finding on resume.
+- **Real deterministic 3-way match.** Ops vendor identity is unified onto the
+  single `fin_vendors` master (FK), PO line items carry quantity + unit price,
+  and the invoice->PO->receipt chain is linked. A deterministic matcher
+  (`invoice_qty <= min(po, received)`, overcharge-only price block) decides the
+  status; the LLM only triages genuine exceptions and can never flip it. Payment
+  is refused on an EXCEPTION match unless a distinct human override is recorded,
+  and the seed shows a genuine matched invoice and a genuine exception (no more
+  hardcoded MATCHED against a non-existent PO).
+
 ### Premium frontend sprint
 - **Shared UI foundation** (`components/shared/`): `<TableCard>` encodes the
   overflow-hidden > overflow-x-auto > min-width pattern ONCE so wide tables

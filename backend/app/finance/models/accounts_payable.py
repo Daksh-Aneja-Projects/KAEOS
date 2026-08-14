@@ -89,7 +89,10 @@ class Invoice(Base):
     vendor_id = Column(String, ForeignKey("fin_vendors.id"), nullable=False, index=True)
 
     invoice_number = Column(String(64), nullable=False)
-    po_number = Column(String(64), nullable=True)            # Purchase Order reference
+    po_number = Column(String(64), nullable=True)            # human-entered PO reference
+    # Resolved FK to the ops purchase order (from po_number). The 3-way match
+    # runs off this link, not the free-text po_number.
+    purchase_order_id = Column(String, ForeignKey("ops_purchase_orders.id"), nullable=True, index=True)
     invoice_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False)
     received_date = Column(Date, nullable=True)

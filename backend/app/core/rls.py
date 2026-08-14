@@ -56,6 +56,9 @@ GLOBAL_TABLES = {
     "alembic_version",
     # The tenant registry itself is platform-global, not tenant-scoped.
     "tenants",
+    # Per-tenant data keys are read on the owner session pre-tenant-context
+    # (pre-auth MFA/SSO decrypt), so they must NOT be under RLS.
+    "tenant_data_keys",
 }
 
 
