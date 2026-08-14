@@ -13,6 +13,7 @@ import io
 from app.core.admin import verify_admin_secret
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
+from app.core.entitlements import require_entitlement
 from app.core.audit import record_security_event
 from app.models.domain import (
     Rule, Skill, SkillExecution, Signal, Workflow, Employee,
@@ -102,7 +103,7 @@ class WebhookCreate(BaseModel):
     endpoint: str
     events: List[str]
 
-@router.post("/webhooks")
+@router.post("/webhooks", dependencies=[Depends(require_entitlement("webhooks"))])
 async def create_webhook(body: WebhookCreate, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     from app.services.event_bus import event_bus, EventType
     from app.core.outbound import check_outbound_url

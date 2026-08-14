@@ -70,6 +70,9 @@ class PolystoreEngine:
 
     def __init__(self, llm: Optional[LLMRouter] = None):
         self.llm = llm or LLMRouter()
+        # Set by _generate_embedding_for_text: True when the last query embedding
+        # was a non-semantic seeded pseudo-vector (no provider reachable).
+        self._last_query_simulated: bool = False
 
     async def write_knowledge(
         self, rule: Rule, tenant_id: str, db: Optional[AsyncSession] = None
@@ -172,6 +175,14 @@ class PolystoreEngine:
             )
             router = await get_tenant_router(rule.tenant_id)
             vectors = await router.embed([text_to_embed])
+            if getattr(router, "embeddings_simulated", False):
+                # Never PERSIST a pseudo-vector: a stored fake would later match a
+                # REAL query and fabricate a 'semantic' similarity, breaking the
+                # contract that a similarity is always a true cosine. Skip the
+                # write; the rule stays lexically searchable.
+                logger.info("[Polystore] embeddings simulated - not persisting a "
+                            "pseudo-vector for rule %s", rule.id)
+                return None
             return vectors[0] if vectors else None
         except Exception as exc:
             logger.warning(f"[Polystore] Embedding generation skipped: {exc}")
@@ -350,10 +361,16 @@ class PolystoreEngine:
         """
         Vector similarity search over the rule embeddings.
         Returns top-k rules ranked by cosine similarity to the query.
-        Requires pgvector and text-embedding-3-small to be configured.
+        Requires pgvector and a real (non-simulated) embedding model.
+
+        When embeddings are simulated (no provider reachable), the query vector is
+        a seeded hash with no semantic meaning, so any "match" it produces is noise
+        dressed as a cosine score. The rule store has no lexical index to fall back
+        to, so we return NOTHING rather than launder pseudo-vector noise as
+        semantic recall.
         """
-        query_embedding = await self._generate_embedding_for_text(query_text)
-        if not query_embedding:
+        query_embedding = await self._generate_embedding_for_text(query_text, tenant_id)
+        if not query_embedding or self._last_query_simulated:
             return []
 
         domain_clause = "AND r.domain = :domain" if domain_filter else ""
@@ -383,6 +400,7 @@ class PolystoreEngine:
                     "domain": row.domain,
                     "confidence": row.confidence_scalar,
                     "similarity": float(row.similarity),
+                    "retrieval_mode": "semantic",
                 }
                 for row in rows.fetchall()
             ]
@@ -395,12 +413,21 @@ class PolystoreEngine:
         domain_filter: Optional[str] = None,
     ) -> list[dict]:
         """
-        Vector similarity search over the skill embeddings.
-        Falls back to lexical matching if pgvector is unavailable.
-        """
-        query_embedding = await self._generate_embedding_for_text(query_text)
+        Skill retrieval with an HONEST score contract.
 
-        async def fallback_search():
+        Every returned dict carries ``retrieval_mode``:
+          * ``"hybrid"``  — a real cosine (``similarity``) AND a lexical rank were
+            fused via Reciprocal Rank Fusion; ``fused_score`` is the ranking key.
+          * ``"lexical"`` — no usable semantic vector (simulated embeddings or no
+            pgvector); ranked by ``lexical_score`` (BM25-lite, [0,1]).
+            ``similarity`` is ``None`` — a keyword hit is NEVER reported as cosine.
+
+        This replaces the old fallback that fabricated ``similarity: 0.85`` for a
+        substring match, laundering a keyword coincidence as a high cosine score.
+        """
+        from app.services.retrieval import lexical_score, reciprocal_rank_fusion
+
+        async def lexical_matches() -> list[dict]:
             from app.models.domain import Skill
             async with AsyncSessionLocal() as session:
                 stmt = select(Skill).where(Skill.tenant_id == tenant_id, Skill.status == "ACTIVE")
@@ -408,28 +435,39 @@ class PolystoreEngine:
                     stmt = stmt.where(Skill.domain == domain_filter)
                 result = await session.execute(stmt)
                 skills = result.scalars().all()
-                matched = []
-                q_lower = query_text.lower()
-                for skill in skills:
-                    score = 0.0
-                    for t in (skill.triggers or []):
-                        if isinstance(t, dict) and "pattern" in t:
-                            if q_lower in str(t["pattern"]).lower() or str(t["pattern"]).lower() in q_lower:
-                                score = max(score, 0.85)
-                        elif isinstance(t, str):
-                            if q_lower in t.lower() or t.lower() in q_lower:
-                                score = max(score, 0.85)
-                    if score > 0:
-                        matched.append({"skill_id": skill.skill_id, "skill_db_id": skill.id, "similarity": score, "domain": skill.domain})
-                matched.sort(key=lambda x: x["similarity"], reverse=True)
-                return matched[:top_k]
+            matched = []
+            for skill in skills:
+                # Searchable text = skill id + all trigger patterns.
+                parts = [str(skill.skill_id or "")]
+                for t in (skill.triggers or []):
+                    if isinstance(t, dict) and "pattern" in t:
+                        parts.append(str(t["pattern"]))
+                    elif isinstance(t, str):
+                        parts.append(t)
+                score = lexical_score(query_text, " ".join(parts))
+                if score > 0:
+                    matched.append({
+                        "skill_id": skill.skill_id,
+                        "skill_db_id": skill.id,
+                        "domain": skill.domain,
+                        "lexical_score": score,
+                    })
+            matched.sort(key=lambda x: x["lexical_score"], reverse=True)
+            return matched
 
-        if not query_embedding:
-            return await fallback_search()
+        query_embedding = await self._generate_embedding_for_text(query_text, tenant_id)
+        lexical = await lexical_matches()
+
+        # No usable semantic vector -> honest lexical-only results.
+        if not query_embedding or self._last_query_simulated:
+            for m in lexical:
+                m["similarity"] = None
+                m["retrieval_mode"] = "lexical"
+            return lexical[:top_k]
 
         domain_clause = "AND s.domain = :domain" if domain_filter else ""
-        params = {"tenant_id": tenant_id, "embedding": query_embedding, "top_k": top_k}
-        if domain_filter: 
+        params = {"tenant_id": tenant_id, "embedding": query_embedding, "top_k": max(top_k * 4, 20)}
+        if domain_filter:
             params["domain"] = domain_filter
 
         _skill_sim_sql = (
@@ -443,22 +481,58 @@ class PolystoreEngine:
         try:
             async with AsyncSessionLocal() as session:
                 rows = await session.execute(text(_skill_sim_sql), params)
-                return [{"skill_id": row.skill_id, "skill_db_id": row.skill_db_id, "domain": row.domain, "similarity": float(row.similarity)} for row in rows.fetchall()]
+                vector_hits = [
+                    {"skill_id": r.skill_id, "skill_db_id": r.skill_db_id,
+                     "domain": r.domain, "similarity": float(r.similarity)}
+                    for r in rows.fetchall()
+                ]
         except Exception as e:
             logger.warning(f"Vector search failed (likely sqlite), falling back to lexical: {e}")
-            return await fallback_search()
+            for m in lexical:
+                m["similarity"] = None
+                m["retrieval_mode"] = "lexical"
+            return lexical[:top_k]
+
+        # Hybrid: fuse the two rankings by RRF over skill_db_id.
+        by_id: dict[str, dict] = {}
+        for h in vector_hits:
+            by_id[h["skill_db_id"]] = {**h, "lexical_score": 0.0}
+        for m in lexical:
+            if m["skill_db_id"] in by_id:
+                by_id[m["skill_db_id"]]["lexical_score"] = m["lexical_score"]
+            else:
+                by_id[m["skill_db_id"]] = {**m, "similarity": None}
+        fused = reciprocal_rank_fusion([
+            [h["skill_db_id"] for h in vector_hits],
+            [m["skill_db_id"] for m in lexical],
+        ])
+        out = []
+        for sid, score in sorted(fused.items(), key=lambda kv: kv[1], reverse=True):
+            rec = by_id[sid]
+            rec["fused_score"] = round(score, 6)
+            rec["retrieval_mode"] = "hybrid"
+            out.append(rec)
+        return out[:top_k]
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _generate_embedding_for_text(self, text_: str) -> Optional[list]:
+    async def _generate_embedding_for_text(self, text_: str,
+                                            tenant_id: Optional[str] = None) -> Optional[list]:
         """Embed a plain text string (used for semantic_search queries).
 
-        Through LLMRouter.embed (ambient tenant router) - see
-        ``_generate_embedding`` for why the direct litellm call was a
-        governance bypass."""
+        Sets ``self._last_query_simulated`` from the router provenance so callers
+        can tell a real cosine-capable vector from a seeded pseudo-vector.
+
+        The query is embedded with the SAME tenant router the stored vectors were
+        written with (so a BYOK tenant whose embedding model differs from the
+        platform default produces a comparable query vector); pass tenant_id from
+        the caller rather than relying on the ambient contextvar, which a
+        background job may not have set."""
+        self._last_query_simulated = False
         try:
             from app.services.llm_router import get_tenant_router
-            router = await get_tenant_router()
+            router = await get_tenant_router(tenant_id)
             vectors = await router.embed([text_])
+            self._last_query_simulated = bool(router.embeddings_simulated)
             return vectors[0] if vectors else None
         except Exception as exc:
             logger.warning(f"[Polystore] Query embedding failed: {exc}")

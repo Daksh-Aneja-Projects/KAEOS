@@ -74,6 +74,12 @@ class HRKnowledgeBase:
             store = get_vector_store()
             router = await get_tenant_router(tenant_id)
             query_embedding = (await router.embed([query]))[0]
+            # Simulated embeddings are seeded hashes: a vector "match" would be
+            # noise dressed as a policy hit. Skip the vector layer and let the
+            # honest keyword fallback below run instead.
+            if router.embeddings_simulated:
+                logger.info("[KB] embeddings simulated; using keyword fallback for query=%r", query)
+                raise RuntimeError("simulated embeddings — skip vector search")
             results = await store.search(
                 tenant_id=tenant_id,
                 query_embedding=query_embedding,

@@ -11,6 +11,7 @@ from app.models.domain import Connector, ConnectorCredential
 
 router = APIRouter(prefix="/connectors", tags=["Connectors - L0 Data Fabric"])
 from app.core.tenant import get_tenant_id, require_role
+from app.core.entitlements import require_entitlement
 from app.core.audit import record_security_event
 
 
@@ -246,7 +247,8 @@ async def test_connection(
     return {"connector": conn.name, "provider": cred.provider, **result}
 
 
-@router.post("/{connector_id}/connect")
+@router.post("/{connector_id}/connect",
+             dependencies=[Depends(require_entitlement("advanced_connectors"))])
 async def connect_connector(
     connector_id: str,
     body: Optional[CredentialsBody] = None,

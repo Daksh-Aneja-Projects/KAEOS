@@ -124,6 +124,26 @@ def embedding_dim(model: str) -> int:
     return _EMBEDDING_DIMS.get(model, 1536)
 
 
+def configured_embedding_model() -> str:
+    """The embedding model the deployment intends to store vectors with.
+
+    Read from the ``EMBEDDING_MODEL`` setting (referenced via getattr so config.py
+    needs no edit) and falls back to the historical default. Used to size the
+    pgvector column so a non-1536 model (nomic 768, text-embedding-3-large 3072)
+    does not raise 'expected 1536 dimensions' on every insert.
+    """
+    try:
+        from app.core.config import get_settings
+        return getattr(get_settings(), "EMBEDDING_MODEL", None) or "text-embedding-3-small"
+    except Exception:
+        return "text-embedding-3-small"
+
+
+def configured_embedding_dim() -> int:
+    """pgvector column width derived from the configured embedding model."""
+    return embedding_dim(configured_embedding_model())
+
+
 def pseudo_embedding(text: str, dim: int) -> list[float]:
     """Deterministic, unit-normalized pseudo-embedding seeded from a hash."""
     seed = hashlib.sha256((text or "").encode("utf-8")).digest()

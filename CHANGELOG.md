@@ -11,6 +11,31 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Wave 3: RAG honesty + entitlements/Stripe (open-core + managed cloud)
+- **RAG never launders a keyword hit as a semantic score.** When the embedding
+  provider is unavailable the router returns hash-seeded pseudo-vectors; the
+  search callers no longer treat those as real cosine. `search_skills` returns
+  lexical results with `retrieval_mode:"lexical"` and a real bounded lexical
+  score (never a fabricated `similarity:0.85`); `semantic_search` and memory
+  recall return empty when simulated; and a pseudo-vector is never *persisted*,
+  so a later real query cannot match a fake stored one. Added a versioned
+  **prompt registry**, **hybrid retrieval** (BM25-lite + reciprocal-rank-fusion
+  with an honest fused score), a deterministic **RAG eval** harness (recall@k +
+  grounding, CI-runnable), adaptive pgvector dimension, **HNSW ANN indexes**
+  (migration `0038`), and a pinned chunker revision.
+- **Entitlements + Stripe (open-core + managed cloud).** The platform is fully
+  usable self-hosted with billing off (`require_entitlement` is a no-op). In
+  managed mode (`KAEOS_MANAGED_CLOUD=true`) `Tenant.plan` gates the managed and
+  enterprise features (SSO, SCIM, webhooks, advanced connectors); governed agent
+  executions are metered and rated (early-blocked runs are now persisted so
+  usage is counted), and an optional **Stripe** bridge (behind an interface,
+  no-op without keys) pushes metered+seat usage with signature-verified,
+  idempotent webhooks. The webhook processes on the RLS-exempt owner session and
+  resolves the tenant from our own records, never the payload. The ROI tile is
+  honest: it stays null-with-note unless a per-skill baseline is configured
+  (KAEOS never invents a dollar value); the metered-cost tile is a recorded sum,
+  not an estimate.
+
 ### Wave 2: observability + write-back reliability
 - **Reliable system-of-record write-back.** The outbound queue no longer
   head-of-line-blocks: each write is delivered and committed on its own, so one

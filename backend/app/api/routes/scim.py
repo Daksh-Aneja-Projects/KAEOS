@@ -21,11 +21,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.tenant import require_role
+from app.core.entitlements import require_entitlement
 from app.models.auth import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/scim/v2", tags=["SCIM 2.0 Provisioning"])
+# SCIM provisioning is a managed/enterprise feature: gate the whole surface on
+# the plan entitlement (no-op for self-host). Every endpoint already resolves a
+# tenant via require_role, so the entitlement check has tenant context.
+router = APIRouter(
+    prefix="/scim/v2", tags=["SCIM 2.0 Provisioning"],
+    dependencies=[Depends(require_entitlement("scim"))],
+)
 
 _USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
 _LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"

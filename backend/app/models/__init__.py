@@ -40,6 +40,12 @@ from app.models.infrastructure import (
     TenantOnboarding,
     SchemaMapping,
 )
+from app.models.billing import (
+    BillingAccount,
+    UsageMeterReport,
+    SkillValueBaseline,
+    StripeWebhookEvent,
+)
 
 __all__ = [
     "Base",
@@ -78,4 +84,8 @@ __all__ = [
     "OnboardingStage",
     "TenantOnboarding",
     "SchemaMapping",
+    "BillingAccount",
+    "UsageMeterReport",
+    "SkillValueBaseline",
+    "StripeWebhookEvent",
 ]
