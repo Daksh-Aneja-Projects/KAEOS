@@ -49,6 +49,11 @@ _ALLOWLIST = {
     "/api/v1/auth/mfa/disable",
     # Read-like: explains an existing skill, produces no state change.
     "/api/v1/skills/{skill_id}/explain",
+    # Read-like: runs deterministic compliance checkers against a supplied
+    # context and returns the verdict. POST only to carry a JSON body; it is a
+    # pure evaluation (no DB write, no external call), reachable by any
+    # authenticated tenant. See app/api/routes/compliance_checks.py.
+    "/api/v1/compliance/check",
     # Conversational Q&A copilot — read-only, answers questions, never mutates
     # state; must be reachable by every authenticated user (incl. viewers).
     "/api/v1/chat/stream",

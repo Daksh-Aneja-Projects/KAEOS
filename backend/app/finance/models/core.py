@@ -129,3 +129,34 @@ class JournalLine(Base):
     line_number = Column(Integer, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class FiscalPeriodStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class FiscalPeriod(Base):
+    """A tenant's accounting period lock. Absence of a row means OPEN - only an
+    explicitly CLOSED period blocks posting, so no one has to pre-create every
+    month. Closing is a control, not a data migration: it stops back-dated
+    entries into a reported period."""
+    __tablename__ = "fin_fiscal_periods"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "fiscal_year", "fiscal_period",
+                         name="uq_fin_period_tenant_year_period"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    tenant_id = Column(String, nullable=False, index=True)
+
+    fiscal_year = Column(Integer, nullable=False)
+    fiscal_period = Column(Integer, nullable=False)   # 1-12 calendar month
+    status = Column(Enum(FiscalPeriodStatus), default=FiscalPeriodStatus.OPEN, nullable=False)
+
+    closed_by = Column(String, nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    note = Column(String(256), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

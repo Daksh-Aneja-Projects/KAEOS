@@ -11,15 +11,60 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Department-as-a-Service: deterministic compliance expertise
+- **A statutory checker spine, fail-closed** (`app/compliance/`). KAEOS is
+  Department-as-a-Service, and each department's real expertise is a
+  deterministic statutory checker, not an LLM guess. A framework->checker
+  registry judges each `compliance_tag` by statute; a tag with **no** backing
+  checker returns `UNBACKED` (blocking) instead of silently passing, closing the
+  hole where an unrecognized compliance tag sailed through Gate 1.
+  `ComplianceEngine.check_before_execution` now runs the deterministic checker
+  first and only falls back to a labeled LLM screen where none exists.
+  `GET /compliance/frameworks` and `POST /compliance/check` expose it.
+- **27 deterministic checkers across 9 departments**, each pure and unit-tested,
+  built and then adversarially hardened (false-PASS/false-BLOCK defects found by
+  a reviewer pass and fixed with regression tests):
+  HR (EEOC four-fifths, FLSA overtime, I-9), Finance (SOX segregation-of-duties),
+  Lending/banking (ECOA/Reg B adverse-action), Legal (conflict of interest,
+  legal hold, retention, contract clauses), Healthcare (HIPAA minimum-necessary,
+  authorization with 164.512 permitted-disclosure carve-outs, Safe-Harbor
+  de-identification, 42 CFR Part 2), Procurement (deterministic 3-way match,
+  segregation of duties, spend authorization, OFAC sanctions), CRM/Sales
+  (GDPR lawful basis, CCPA, TCPA, DSAR deadlines), Support (PAN redaction via
+  sliding-window Luhn, SSN, call-recording consent), Operations (SOX ITGC change
+  management, incident postmortem, backup retention).
+
 ### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
-- **Vendor payments reach the ledger.** `POST /finance/payments` is the first
-  P2P money event wired end to end: the invoice must be APPROVED with a
-  recorded approver, the payer may not be that approver (four-eyes),
+- **Vendor payments reach the ledger, on accrual basis.** `POST /finance/payments`
+  is the first P2P money event wired end to end: the invoice must be APPROVED
+  with a recorded approver, the payer may not be that approver (four-eyes),
   overpayment is refused, and the Payment row + invoice balance + journal
   entry + account balances + signed provenance event land in ONE commit
-  through the GL keystone (cash basis: DR expense / CR cash; the accrual
-  upgrade belongs with the invoice-approval hook). `Payment.journal_entry_id`
-  existed since the schema was written; this is the first code to set it.
+  through the GL keystone. `Payment.journal_entry_id` existed since the schema
+  was written; this is the first code to set it.
+- **Accrual accounting: the liability is booked when the invoice is approved.**
+  Approving an AP invoice now accrues it (`accrue_invoice`: DR expense /
+  CR accounts-payable for the full amount) so the P&L and balance sheet reflect
+  approved-but-unpaid invoices, and a payment settles the payable (DR
+  accounts-payable / CR cash) instead of expensing cash. Accrual is idempotent
+  (each invoice books once, guarded by its `AP_ACCRUAL` entry) and is retried
+  at payment time for invoices approved before the hook existed, so the ledger
+  is correct regardless of history. Wired into the invoice-approval transition
+  (`POST /finance/invoices/{id}/transition` -> APPROVED).
+- **Financial statements derive from the ledger.** `GET /finance/gl/income-statement`
+  (P&L: revenue - expenses = net income, inception-to-date or bounded by
+  period_start/period_end) and `GET /finance/gl/balance-sheet` (assets,
+  liabilities, equity, as-of a date). Both aggregate POSTED journal lines and
+  sign each account by its TYPE - not the mutable `normal_balance` string - so
+  a mis-seeded account can never flip a P&L or unbalance the sheet.
+  Current-period earnings close into equity so the balance sheet always
+  balances (Assets = Liabilities + Equity) without formal period-close entries.
+- **Fiscal period lock.** Closing a period (`POST /finance/gl/periods/close`,
+  admin-only) refuses back-dated postings into a reported month - the GL
+  keystone checks `fin_fiscal_periods` on every post and raises
+  `PeriodClosedError`. Absence of a row means OPEN, so months need not be
+  pre-created; reopen (`.../periods/reopen`) restores posting for corrections.
+  Migration `0035`. Completes Phase 3.1.
 - **Embeddings obey the same governance as every other model call.** The
   Polystore embedded rule text via a direct litellm call with a hardcoded
   OpenAI model - bypassing the data-residency filter (a local-only tenant's

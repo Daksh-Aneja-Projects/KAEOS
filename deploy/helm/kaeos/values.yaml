@@ -36,10 +36,12 @@ backend:
     minReplicas: 2
     maxReplicas: 8
     targetCPUUtilizationPercentage: 70
-  # Both probes hit /health, which returns 503 when the primary datastore is
-  # unreachable (fail-closed), so a broken pod is pulled from the Service.
+  # Liveness = is the PROCESS alive (/health/live, always 200). Readiness =
+  # process up AND the primary datastore reachable (/health, 503 on DB loss).
+  # Liveness must NOT hit /health: a transient DB blip would 503 every pod and
+  # k8s would restart-storm all containers exactly while the DB is recovering.
   livenessProbe:
-    httpGet: { path: /health, port: 8001 }
+    httpGet: { path: /health/live, port: 8001 }
     initialDelaySeconds: 20
     periodSeconds: 20
   readinessProbe:

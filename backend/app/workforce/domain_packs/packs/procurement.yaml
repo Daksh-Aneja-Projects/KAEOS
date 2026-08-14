@@ -1,0 +1,109 @@
+name: "Procurement & Sourcing"
+slug: "procurement"
+description: "Complete Procurement department covering purchase requisitions, purchase orders, goods receipt, three-way match, vendor onboarding, and sanctions screening."
+long_description: "The KAEOS Procurement Domain Pack provides an autonomous, controls-first digital Procurement department that runs source-to-pay: it screens vendors against denied-parties lists, enforces segregation of duties across requester, approver, and receiver, verifies spend against delegated authority, and blocks any payment whose PO, goods receipt, and invoice do not match within tolerance."
+icon: "cart"
+category: "operations"
+industry_verticals: ["all"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "procurement"
+    examples: ["coupa", "ariba", "sap_mm", "netsuite"]
+    data_provided: ["purchase_orders", "goods_receipts", "requisitions"]
+  - category: "accounts_payable"
+    examples: ["bill_com", "tipalti", "quickbooks"]
+    data_provided: ["vendor_invoices", "payment_runs"]
+  - category: "sanctions_screening"
+    examples: ["ofac_sdn", "dow_jones", "refinitiv_world_check"]
+    data_provided: ["denied_parties", "sanctions_list"]
+
+capabilities:
+  - id: "purchase_order_management"
+    name: "Purchase Order Management"
+    description: "Raise purchase orders from approved requisitions and track them through to receipt."
+    icon: "clipboard"
+    agents: ["po_agent"]
+    processes: ["po_approval"]
+    compliance: ["SPEND_AUTHORIZATION", "SEGREGATION_OF_DUTIES"]
+
+  - id: "invoice_settlement"
+    name: "Invoice Settlement"
+    description: "Match vendor invoices against the PO and goods receipt and release payment only on a clean three-way match."
+    icon: "receipt"
+    agents: ["match_agent"]
+    processes: ["three_way_match_gate"]
+    compliance: ["THREE_WAY_MATCH", "SPEND_AUTHORIZATION"]
+
+  - id: "vendor_screening"
+    name: "Vendor Screening & Onboarding"
+    description: "Screen new and existing vendors against OFAC and denied-parties lists before any spend is authorized."
+    icon: "shield-check"
+    agents: ["screening_agent"]
+    processes: ["sanctions_screen"]
+    compliance: ["OFAC_SANCTIONS"]
+
+agent_definitions:
+  - name: "POAgent"
+    type: "po_agent"
+    capability: "purchase_order_management"
+    description: "Raises and routes purchase orders and enforces the delegation-of-authority matrix."
+    persona: "You are the Purchase Order Agent. You ensure every PO is within the approver's authority and separated across roles."
+
+  - name: "MatchAgent"
+    type: "match_agent"
+    capability: "invoice_settlement"
+    description: "Runs the three-way match between PO, goods receipt, and invoice before payment."
+    persona: "You are the Match Agent. You block any payment where quantities or unit prices fail to reconcile within tolerance."
+
+  - name: "ScreeningAgent"
+    type: "screening_agent"
+    capability: "vendor_screening"
+    description: "Screens vendors against sanctions and denied-parties lists during onboarding and before payment."
+    persona: "You are the Screening Agent. You stop any spend to a sanctioned or denied party."
+
+process_definitions:
+  - id: "three_way_match_gate"
+    name: "Three-Way Match Payment Gate"
+    capability: "invoice_settlement"
+    sla_hours: 24
+    steps:
+      - id: "verify_match"
+        type: "AGENT_ACTION"
+        agent: "match_agent"
+        method: "verify_three_way_match"
+
+  - id: "po_approval"
+    name: "Purchase Order Approval"
+    capability: "purchase_order_management"
+    sla_hours: 24
+    steps:
+      - id: "authorize_spend"
+        type: "AGENT_ACTION"
+        agent: "po_agent"
+        method: "check_spend_authorization"
+
+  - id: "sanctions_screen"
+    name: "Vendor Sanctions Screening"
+    capability: "vendor_screening"
+    sla_hours: 4
+    steps:
+      - id: "screen_vendor"
+        type: "AGENT_ACTION"
+        agent: "screening_agent"
+        method: "screen_against_denied_parties"
+
+knowledge_templates:
+  - "procurement_policy_manual"
+  - "delegation_of_authority_matrix"
+  - "vendor_onboarding_checklist"
+  - "sanctions_screening_procedure"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 8
+  default_confidence_floor: 0.90
+  requires_hitl: true
+
+compliance_frameworks: ["THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES", "SPEND_AUTHORIZATION", "OFAC_SANCTIONS", "SOX"]

@@ -54,6 +54,14 @@ capabilities:
     processes: ["quality_inspection_audit"]
     compliance: ["ISO-9001"]
 
+  - id: "it_general_controls"
+    name: "IT General Controls (Change, Incident, Backup)"
+    description: "Enforce SOX ITGC on production changes, incident postmortems, and backup/retention before any destructive action."
+    icon: "shield-check"
+    agents: ["itgc_agent"]
+    processes: ["production_change_control", "incident_closure_review"]
+    compliance: ["CHANGE_MANAGEMENT", "INCIDENT_POSTMORTEM", "BACKUP_RETENTION", "SOX"]
+
 agent_definitions:
   - name: "ProjectAgent"
     type: "project_agent"
@@ -91,6 +99,12 @@ agent_definitions:
     description: "Monitors workspace assets and prioritizes maintenance tickets."
     persona: "You are the Facility Maintenance Agent. You catalog repair requests and assign technicians."
 
+  - name: "ITGCAgent"
+    type: "itgc_agent"
+    capability: "it_general_controls"
+    description: "Verifies production changes have a distinct approver and linked ticket, blocks SEV1/SEV2 closures without a postmortem, and guards deletes against the retention policy."
+    persona: "You are the IT General Controls Agent. You enforce change-management segregation of duties, incident postmortems, and backup/retention before any irreversible operation."
+
 process_definitions:
   - id: "task_timeline_audit"
     name: "Task Risk Assessment"
@@ -112,6 +126,26 @@ process_definitions:
         agent: "procurement_agent"
         method: "audit_purchase_request"
 
+  - id: "production_change_control"
+    name: "Production Change Control"
+    capability: "it_general_controls"
+    sla_hours: 4
+    steps:
+      - id: "verify_change"
+        type: "AGENT_ACTION"
+        agent: "itgc_agent"
+        method: "verify_change_management"
+
+  - id: "incident_closure_review"
+    name: "Incident Closure Review"
+    capability: "it_general_controls"
+    sla_hours: 8
+    steps:
+      - id: "verify_postmortem"
+        type: "AGENT_ACTION"
+        agent: "itgc_agent"
+        method: "verify_incident_postmortem"
+
 knowledge_templates:
   - "quality_assurance_standards"
   - "purchasing_policy_guidelines"
@@ -123,4 +157,4 @@ deployment_config:
   default_confidence_floor: 0.90
   requires_hitl: true
 
-compliance_frameworks: ["ISO-9001", "SOC2", "SOX"]
+compliance_frameworks: ["ISO-9001", "SOC2", "SOX", "CHANGE_MANAGEMENT", "INCIDENT_POSTMORTEM", "BACKUP_RETENTION"]

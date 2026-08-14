@@ -20,8 +20,12 @@ from app.finance.models.core import (
 )
 from app.finance.services.gl import (
     GLPostingError,
+    PeriodClosedError,
+    balance_sheet,
+    income_statement,
     post_journal_entry,
     reverse_journal_entry,
+    set_period_status,
     trial_balance,
 )
 from sqlalchemy import select
@@ -185,6 +189,64 @@ async def test_entry_numbers_are_sequential_per_tenant(db):
     n1 = int(e1.entry_number.rsplit("-", 1)[1])
     n2 = int(e2.entry_number.rsplit("-", 1)[1])
     assert n2 == n1 + 1
+
+
+async def test_statements_derive_from_the_ledger_and_balance_sheet_balances(db):
+    tenant = _t()
+    cash, revenue, expense = await _accounts(db, tenant)
+    ap = ChartOfAccount(tenant_id=tenant, account_code="2000",
+                        account_name="Accounts Payable",
+                        account_type=AccountType.LIABILITY, normal_balance="CREDIT")
+    db.add(ap)
+    await db.commit()
+
+    # Earn 2000 cash revenue, incur 750 of expense on credit (unpaid payable).
+    await post_journal_entry(db, tenant, lines=[
+        {"account_code": "1010", "debit": 2000},
+        {"account_code": "4000", "credit": 2000}], description="sale")
+    await post_journal_entry(db, tenant, lines=[
+        {"account_code": "6000", "debit": 750},
+        {"account_code": "2000", "credit": 750}], description="accrue expense")
+
+    pnl = await income_statement(db, tenant)
+    assert pnl["total_revenue"] == "2000.00"
+    assert pnl["total_expenses"] == "750.00"
+    assert pnl["net_income"] == "1250.00"
+
+    bs = await balance_sheet(db, tenant)
+    assert bs["balanced"] is True                 # Assets = Liabilities + Equity
+    assert bs["total_assets"] == "2000.00"        # cash
+    assert bs["total_liabilities"] == "750.00"    # unpaid payable
+    assert bs["total_equity"] == "1250.00"        # current-period earnings
+    # Net income closes into equity as a synthetic line.
+    assert any(e["account_name"] == "Current period earnings" for e in bs["equity"])
+
+
+async def test_closed_period_refuses_back_dated_postings(db):
+    from datetime import date
+    tenant = _t()
+    cash, revenue, _ = await _accounts(db, tenant)
+    cash_id, revenue_id = cash.id, revenue.id  # capture before any rollback expires them
+
+    def _post(d):
+        return post_journal_entry(db, tenant, lines=[
+            {"account_id": cash_id, "debit": 100},
+            {"account_id": revenue_id, "credit": 100}],
+            description="sale", entry_date=d)
+
+    # Open period posts fine.
+    await _post(date(2026, 3, 15))
+    # Close March 2026, then a back-dated entry into it is refused, nothing posts.
+    await set_period_status(db, tenant, 2026, 3, close=True, actor="cfo@acme")
+    with pytest.raises(PeriodClosedError, match="CLOSED"):
+        await _post(date(2026, 3, 20))
+    await db.rollback()
+    # A different (open) month still posts.
+    await _post(date(2026, 4, 1))
+    # Reopen March and the correction posts.
+    await set_period_status(db, tenant, 2026, 3, close=False, actor="cfo@acme")
+    entry = await _post(date(2026, 3, 25))
+    assert entry.status == JournalEntryStatus.POSTED
 
 
 async def test_posting_lands_in_the_signed_provenance_ledger(db):

@@ -31,6 +31,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.models.core import (
     ChartOfAccount,
+    FiscalPeriod,
+    FiscalPeriodStatus,
     JournalEntry,
     JournalEntryStatus,
     JournalLine,
@@ -44,6 +46,21 @@ _NUMBER_RETRIES = 5
 
 class GLPostingError(ValueError):
     """The entry violates double-entry rules and was NOT posted."""
+
+
+class PeriodClosedError(GLPostingError):
+    """The entry falls in a CLOSED fiscal period and was NOT posted."""
+
+
+async def _period_is_closed(db: AsyncSession, tenant_id: str, entry_date: date) -> bool:
+    """A period blocks posting only if an explicit CLOSED row exists (absence =
+    OPEN, so months need not be pre-created)."""
+    status = (await db.execute(select(FiscalPeriod.status).where(
+        FiscalPeriod.tenant_id == tenant_id,
+        FiscalPeriod.fiscal_year == entry_date.year,
+        FiscalPeriod.fiscal_period == entry_date.month,
+    ))).scalar_one_or_none()
+    return status == FiscalPeriodStatus.CLOSED
 
 
 def _money(value) -> Decimal:
@@ -105,6 +122,11 @@ async def post_journal_entry(
         raise GLPostingError("double entry requires at least two lines")
 
     entry_date = entry_date or datetime.now(timezone.utc).date()
+    if await _period_is_closed(db, tenant_id, entry_date):
+        raise PeriodClosedError(
+            f"fiscal period {entry_date.year}-{entry_date.month:02d} is CLOSED; "
+            "post to an open period or reopen it before back-dating an entry"
+        )
 
     # Resolve accounts (id or code), tenant-scoped, active only.
     ids = {str(l["account_id"]) for l in lines if l.get("account_id")}
@@ -343,4 +365,209 @@ async def trial_balance(db: AsyncSession, tenant_id: str,
         "note": ("Derived from POSTED journal lines - the ledger is the "
                  "source of truth. balance_cache_drift lists accounts whose "
                  "cached running balance disagrees with the ledger."),
+    }
+
+
+# Account types whose balance sits on the debit side (a debit increases them).
+# Statements sign by account TYPE, not the mutable normal_balance string, so a
+# mis-seeded normal_balance can never flip a P&L or unbalance a balance sheet.
+_DEBIT_NORMAL_TYPES = {"ASSET", "EXPENSE", "CONTRA_ASSET"}
+
+
+async def _posted_balances(
+    db: AsyncSession, tenant_id: str,
+    date_from: Optional[date] = None, date_to: Optional[date] = None,
+) -> list[dict]:
+    """Per-account net balance over POSTED lines in [date_from, date_to],
+    tenant-scoped. ``balance`` is signed by account type (positive = the
+    account's natural side). Accounts with no activity in the window return a
+    zero balance."""
+    filters = [
+        JournalLine.tenant_id == tenant_id,
+        JournalEntry.status == JournalEntryStatus.POSTED,
+    ]
+    if date_from:
+        filters.append(JournalEntry.entry_date >= date_from)
+    if date_to:
+        filters.append(JournalEntry.entry_date <= date_to)
+    agg = (
+        select(
+            JournalLine.account_id.label("account_id"),
+            sqlfunc.sum(JournalLine.debit).label("debits"),
+            sqlfunc.sum(JournalLine.credit).label("credits"),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(*filters)
+        .group_by(JournalLine.account_id)
+        .subquery()
+    )
+    q = (
+        select(
+            ChartOfAccount.account_code,
+            ChartOfAccount.account_name,
+            ChartOfAccount.account_type,
+            sqlfunc.coalesce(agg.c.debits, 0).label("debits"),
+            sqlfunc.coalesce(agg.c.credits, 0).label("credits"),
+        )
+        .outerjoin(agg, agg.c.account_id == ChartOfAccount.id)
+        .where(ChartOfAccount.tenant_id == tenant_id)
+        .order_by(ChartOfAccount.account_code)
+    )
+    rows = []
+    for r in (await db.execute(q)).all():
+        atype = getattr(r.account_type, "value", r.account_type)
+        debits = Decimal(str(r.debits or 0)).quantize(_CENT)
+        credits = Decimal(str(r.credits or 0)).quantize(_CENT)
+        natural = (debits - credits) if atype in _DEBIT_NORMAL_TYPES else (credits - debits)
+        rows.append({"account_code": r.account_code, "account_name": r.account_name,
+                     "account_type": atype, "balance": natural})
+    return rows
+
+
+def _line(r: dict) -> dict:
+    return {"account_code": r["account_code"], "account_name": r["account_name"],
+            "amount": str(r["balance"])}
+
+
+async def income_statement(
+    db: AsyncSession, tenant_id: str,
+    period_start: Optional[date] = None, period_end: Optional[date] = None,
+) -> dict:
+    """Profit & loss derived from POSTED lines. With no dates it is
+    inception-to-date; period_start/period_end bound it to a reporting window.
+    Net income = revenue - expenses."""
+    rows = await _posted_balances(db, tenant_id, date_from=period_start, date_to=period_end)
+    revenue, expense = [], []
+    total_rev = Decimal("0")
+    total_exp = Decimal("0")
+    for r in rows:
+        t = r["account_type"]
+        if t in ("REVENUE", "CONTRA_REVENUE"):
+            total_rev += r["balance"]
+            if r["balance"] != 0:
+                revenue.append(_line(r))
+        elif t == "EXPENSE":
+            total_exp += r["balance"]
+            if r["balance"] != 0:
+                expense.append(_line(r))
+    net = (total_rev - total_exp).quantize(_CENT)
+    return {
+        "period_start": period_start.isoformat() if period_start else None,
+        "period_end": period_end.isoformat() if period_end else None,
+        "revenue": revenue,
+        "total_revenue": str(total_rev.quantize(_CENT)),
+        "expenses": expense,
+        "total_expenses": str(total_exp.quantize(_CENT)),
+        "net_income": str(net),
+        "note": ("Derived from POSTED journal lines. A period with no posted "
+                 "activity reads as zero - opening balances that were never "
+                 "posted as journal entries do not appear here."),
+    }
+
+
+async def balance_sheet(
+    db: AsyncSession, tenant_id: str, as_of: Optional[date] = None,
+) -> dict:
+    """Balance sheet derived from POSTED lines as of a date (inception-to-date
+    by default). Current-period earnings (revenue - expenses) close into equity
+    so the sheet balances without formal closing entries: Assets = Liabilities
+    + Equity."""
+    rows = await _posted_balances(db, tenant_id, date_to=as_of)
+    assets, liabilities, equity = [], [], []
+    ta = tl = te = tr = tx = Decimal("0")
+    for r in rows:
+        t, bal = r["account_type"], r["balance"]
+        if t in ("ASSET", "CONTRA_ASSET"):
+            ta += bal
+            if bal != 0:
+                assets.append(_line(r))
+        elif t in ("LIABILITY", "CONTRA_LIABILITY"):
+            tl += bal
+            if bal != 0:
+                liabilities.append(_line(r))
+        elif t == "EQUITY":
+            te += bal
+            if bal != 0:
+                equity.append(_line(r))
+        elif t in ("REVENUE", "CONTRA_REVENUE"):
+            tr += bal
+        elif t == "EXPENSE":
+            tx += bal
+    net_income = (tr - tx).quantize(_CENT)
+    equity.append({"account_code": "", "account_name": "Current period earnings",
+                   "amount": str(net_income)})
+    te = (te + net_income).quantize(_CENT)
+    ta = ta.quantize(_CENT)
+    tl = tl.quantize(_CENT)
+    return {
+        "as_of": as_of.isoformat() if as_of else None,
+        "assets": assets,
+        "total_assets": str(ta),
+        "liabilities": liabilities,
+        "total_liabilities": str(tl),
+        "equity": equity,
+        "total_equity": str(te),
+        "balanced": ta == (tl + te),
+        "note": ("Derived from POSTED journal lines. Current-period earnings "
+                 "close into equity so Assets = Liabilities + Equity without "
+                 "formal period-close entries."),
+    }
+
+
+def _valid_period(year: int, period: int) -> None:
+    if not (1 <= int(period) <= 12):
+        raise GLPostingError(f"fiscal_period must be 1-12 (got {period})")
+    if not (1900 <= int(year) <= 2200):
+        raise GLPostingError(f"fiscal_year out of range (got {year})")
+
+
+async def set_period_status(
+    db: AsyncSession, tenant_id: str, year: int, period: int, *,
+    close: bool, actor: Optional[str] = None, note: Optional[str] = None,
+) -> dict:
+    """Close or reopen a fiscal period (idempotent). Closing stops back-dated
+    postings into a reported period; reopening restores them. The row is
+    created on first close - absence means OPEN."""
+    _valid_period(year, period)
+    row = (await db.execute(select(FiscalPeriod).where(
+        FiscalPeriod.tenant_id == tenant_id,
+        FiscalPeriod.fiscal_year == year,
+        FiscalPeriod.fiscal_period == period,
+    ))).scalar_one_or_none()
+    new_status = FiscalPeriodStatus.CLOSED if close else FiscalPeriodStatus.OPEN
+    if row is None:
+        row = FiscalPeriod(tenant_id=tenant_id, fiscal_year=year, fiscal_period=period)
+        db.add(row)
+    row.status = new_status
+    row.note = note
+    if close:
+        row.closed_by = actor
+        row.closed_at = datetime.now(timezone.utc)
+    else:
+        row.closed_by = None
+        row.closed_at = None
+    await db.commit()
+    logger.info("[GL] period %s-%02d %s by %s", year, period,
+                new_status.value, actor or "system")
+    return {"fiscal_year": year, "fiscal_period": period,
+            "status": new_status.value,
+            "closed_by": row.closed_by,
+            "closed_at": row.closed_at.isoformat() if row.closed_at else None}
+
+
+async def list_periods(db: AsyncSession, tenant_id: str) -> dict:
+    """Explicitly-tracked periods (closed ones, plus any reopened). Periods
+    with no row are OPEN by default and not listed."""
+    rows = (await db.execute(select(FiscalPeriod).where(
+        FiscalPeriod.tenant_id == tenant_id
+    ).order_by(FiscalPeriod.fiscal_year.desc(),
+               FiscalPeriod.fiscal_period.desc()))).scalars().all()
+    return {
+        "periods": [{
+            "fiscal_year": r.fiscal_year, "fiscal_period": r.fiscal_period,
+            "status": r.status.value if hasattr(r.status, "value") else r.status,
+            "closed_by": r.closed_by,
+            "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        } for r in rows],
+        "note": "Periods without a row are OPEN. Only closed/reopened periods are tracked.",
     }

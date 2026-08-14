@@ -20,7 +20,7 @@ capabilities:
     icon: "📜"
     agents: ["contract_agent"]
     processes: ["contract_review"]
-    compliance: ["GAAP", "SOX"]
+    compliance: ["CONTRACT_CLAUSE", "GAAP", "SOX"]
 
   - id: "regulatory_compliance"
     name: "Regulatory Compliance"
@@ -36,7 +36,7 @@ capabilities:
     icon: "🧑‍⚖️"
     agents: ["litigation_agent"]
     processes: ["exposure_evaluation"]
-    compliance: ["SOX"]
+    compliance: ["CONFLICT_OF_INTEREST", "LEGAL_HOLD", "RETENTION_SCHEDULE", "SOX"]
 
   - id: "privacy_operations"
     name: "Privacy & Data Protection"
@@ -123,4 +123,4 @@ deployment_config:
   default_confidence_floor: 0.95
   requires_hitl: true
 
-compliance_frameworks: ["GDPR", "CCPA", "SOC2", "ISO-27001", "HIPAA", "SOX"]
+compliance_frameworks: ["CONFLICT_OF_INTEREST", "LEGAL_HOLD", "RETENTION_SCHEDULE", "CONTRACT_CLAUSE", "GDPR", "CCPA", "SOC2", "ISO-27001", "HIPAA", "SOX"]
