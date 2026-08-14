@@ -121,4 +121,4 @@ deployment_config:
   # Production changes are gated: engineering_deploy_approval is an always-HITL skill.
   requires_hitl: true
 
-compliance_frameworks: ["SOC2", "ISO-27001", "CHANGE_MANAGEMENT"]
+compliance_frameworks: ["SOC2", "ISO27001", "CHANGE_FREEZE", "CHANGE_MANAGEMENT"]

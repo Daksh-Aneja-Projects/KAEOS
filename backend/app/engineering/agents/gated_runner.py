@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ENGINEERING_COMPLIANCE = ["SOC2", "CHANGE_MANAGEMENT"]
 
+# Production deploys carry the full change-management control set: SOC2 CC8.1
+# (peer review + change record + CI), ISO 27001 change control (rollback +
+# approval), and change-freeze enforcement. These have deterministic checkers in
+# app/compliance/checkers/engineering.py.
+DEPLOY_COMPLIANCE = ["SOC2", "ISO27001", "CHANGE_FREEZE"]
+
 # Skills that mutate production always route to a human, regardless of the
 # model's confidence. Below the 0.82 HITL threshold on purpose.
 ALWAYS_HITL_SKILLS = {"engineering_deploy_approval"}
@@ -37,7 +43,13 @@ async def run_gated_engineering_skill(
     domain: str = "engineering",
 ) -> Dict[str, Any]:
     """Run an Engineering skill through the gated ``AgentExecutor``."""
-    compliance_tags = compliance_tags or list(DEFAULT_ENGINEERING_COMPLIANCE)
+    if compliance_tags is None:
+        # Deploy skills default to the full change-management control set; all
+        # other engineering skills keep the lighter default.
+        compliance_tags = list(
+            DEPLOY_COMPLIANCE if skill_id in ALWAYS_HITL_SKILLS
+            else DEFAULT_ENGINEERING_COMPLIANCE
+        )
     execution_id = context.get("execution_id") or str(uuid.uuid4())
 
     if skill_id in ALWAYS_HITL_SKILLS:

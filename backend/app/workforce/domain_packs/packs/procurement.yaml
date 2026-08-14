@@ -22,77 +22,68 @@ required_integrations:
 capabilities:
   - id: "purchase_order_management"
     name: "Purchase Order Management"
-    description: "Raise purchase orders from approved requisitions and track them through to receipt."
+    description: "Assess requisitions and raise purchase orders, tracked through to receipt."
     icon: "clipboard"
-    agents: ["po_agent"]
+    agents: ["sourcing_agent"]
     processes: ["po_approval"]
     compliance: ["SPEND_AUTHORIZATION", "SEGREGATION_OF_DUTIES"]
 
-  - id: "invoice_settlement"
-    name: "Invoice Settlement"
-    description: "Match vendor invoices against the PO and goods receipt and release payment only on a clean three-way match."
-    icon: "receipt"
-    agents: ["match_agent"]
-    processes: ["three_way_match_gate"]
-    compliance: ["THREE_WAY_MATCH", "SPEND_AUTHORIZATION"]
-
-  - id: "vendor_screening"
-    name: "Vendor Screening & Onboarding"
-    description: "Screen new and existing vendors against OFAC and denied-parties lists before any spend is authorized."
+  - id: "spend_control"
+    name: "Spend Control & Settlement"
+    description: "Enforce the four source-to-pay controls (spend authority, segregation of duties, three-way match, sanctions) before a PO is approved or an invoice is settled."
     icon: "shield-check"
-    agents: ["screening_agent"]
-    processes: ["sanctions_screen"]
-    compliance: ["OFAC_SANCTIONS"]
+    agents: ["spend_guard_agent"]
+    processes: ["po_approval", "three_way_match_gate", "sanctions_screen"]
+    compliance: ["THREE_WAY_MATCH", "SPEND_AUTHORIZATION", "SEGREGATION_OF_DUTIES", "OFAC_SANCTIONS"]
 
+# Two real runners in app/procurement/agents/gated_runner.py. sourcing_agent
+# assesses requisitions; spend_guard_agent runs the deterministic four-control
+# gate chain (via app/procurement/services/source_to_pay) plus a gated rationale.
 agent_definitions:
-  - name: "POAgent"
-    type: "po_agent"
+  - name: "SourcingAgent"
+    type: "sourcing_agent"
     capability: "purchase_order_management"
-    description: "Raises and routes purchase orders and enforces the delegation-of-authority matrix."
-    persona: "You are the Purchase Order Agent. You ensure every PO is within the approver's authority and separated across roles."
+    runner: "app.procurement.agents.gated_runner:sourcing_agent"
+    description: "Assesses purchase requisitions for policy fit and price reasonableness before a PO is raised."
+    persona: "You are the Sourcing Agent. You check every requisition against policy and price before it becomes a purchase order."
 
-  - name: "MatchAgent"
-    type: "match_agent"
-    capability: "invoice_settlement"
-    description: "Runs the three-way match between PO, goods receipt, and invoice before payment."
-    persona: "You are the Match Agent. You block any payment where quantities or unit prices fail to reconcile within tolerance."
-
-  - name: "ScreeningAgent"
-    type: "screening_agent"
-    capability: "vendor_screening"
-    description: "Screens vendors against sanctions and denied-parties lists during onboarding and before payment."
-    persona: "You are the Screening Agent. You stop any spend to a sanctioned or denied party."
+  - name: "SpendGuardAgent"
+    type: "spend_guard_agent"
+    capability: "spend_control"
+    runner: "app.procurement.agents.gated_runner:spend_guard_agent"
+    description: "Runs the four source-to-pay controls (spend authority, segregation of duties, three-way match, OFAC) and blocks any PO that fails one."
+    persona: "You are the Spend Guard Agent. You stop any purchase order that breaks spend authority, separation of duties, three-way match, or sanctions screening."
 
 process_definitions:
   - id: "three_way_match_gate"
     name: "Three-Way Match Payment Gate"
-    capability: "invoice_settlement"
+    capability: "spend_control"
     sla_hours: 24
     steps:
       - id: "verify_match"
         type: "AGENT_ACTION"
-        agent: "match_agent"
-        method: "verify_three_way_match"
+        agent: "spend_guard_agent"
+        method: "run_three_way_match"
 
   - id: "po_approval"
     name: "Purchase Order Approval"
-    capability: "purchase_order_management"
+    capability: "spend_control"
     sla_hours: 24
     steps:
       - id: "authorize_spend"
         type: "AGENT_ACTION"
-        agent: "po_agent"
-        method: "check_spend_authorization"
+        agent: "spend_guard_agent"
+        method: "approve_purchase_order"
 
   - id: "sanctions_screen"
     name: "Vendor Sanctions Screening"
-    capability: "vendor_screening"
+    capability: "spend_control"
     sla_hours: 4
     steps:
       - id: "screen_vendor"
         type: "AGENT_ACTION"
-        agent: "screening_agent"
-        method: "screen_against_denied_parties"
+        agent: "spend_guard_agent"
+        method: "screen_vendor"
 
 knowledge_templates:
   - "procurement_policy_manual"

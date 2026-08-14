@@ -49,6 +49,9 @@ from app.support.api.v1.router import router as support_router
 from app.engineering.api.v1.router import router as engineering_router
 from app.sales.api.v1.router import router as sales_router
 from app.operations.api.v1.router import router as operations_router
+from app.healthcare.api.v1.router import router as healthcare_router
+from app.lending.api.v1.router import router as lending_router
+from app.procurement.api.v1.router import router as procurement_router
 
 # ── Workforce Layer API routers ────────────────────────────────────────────────
 from app.workforce.api.departments import router as wf_departments_router
@@ -451,6 +454,12 @@ app.include_router(sales_router,           prefix=PREFIX,
                    dependencies=[_Depends(_req_dept("sales"))])
 app.include_router(operations_router,      prefix=PREFIX,
                    dependencies=[_Depends(_req_dept("operations"))])
+app.include_router(healthcare_router,      prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("healthcare"))])
+app.include_router(lending_router,         prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("lending"))])
+app.include_router(procurement_router,     prefix=PREFIX,
+                   dependencies=[_Depends(_req_dept("procurement"))])
 
 from app.api.routes import org_pulse  # noqa: E402 — cross-domain pulse layer
 app.include_router(org_pulse.router,       prefix=PREFIX)
