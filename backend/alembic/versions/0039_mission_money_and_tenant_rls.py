@@ -13,7 +13,7 @@ from alembic import op
 
 from app.core.rls import rls_enable_statements
 
-revision = "0039_mission_money_and_tenant_rls"
+revision = "0039_mission_money_tenant_rls"  # <=32 chars (alembic_version VARCHAR(32); Postgres-safe)
 down_revision = "0038_entitlements_and_rag_ann"
 branch_labels = None
 depends_on = None

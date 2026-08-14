@@ -8,7 +8,7 @@ new table is Postgres-only. SQLite dev builds the table from the ORM via
 create_all, so this is a no-op there.
 
 Revision ID: 0040_fin_fx_rates
-Revises: 0039_mission_money_and_tenant_rls
+Revises: 0039_mission_money_tenant_rls
 Create Date: 2026-08-14
 """
 import sqlalchemy as sa
@@ -17,7 +17,7 @@ from alembic import op
 from app.core.rls import rls_enable_statements
 
 revision = "0040_fin_fx_rates"
-down_revision = "0039_mission_money_and_tenant_rls"
+down_revision = "0039_mission_money_tenant_rls"
 branch_labels = None
 depends_on = None
 

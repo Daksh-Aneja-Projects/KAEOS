@@ -57,10 +57,12 @@ def upgrade() -> None:
     params = {f"t{i}": f"%{t.lower()}%" for i, t in enumerate(_tags())}
 
     # Escalate only: never unset an explicitly flagged skill.
+    # Boolean literals (true/false), not 1/0: Postgres rejects `boolean = integer`
+    # (SQLite tolerates it). Both dialects accept the true/false keywords.
     bind.execute(
         sa.text(
-            f"UPDATE skills SET always_hitl = 1 "
-            f"WHERE (always_hitl = 0 OR always_hitl IS NULL) AND ({clauses})"
+            f"UPDATE skills SET always_hitl = true "
+            f"WHERE (always_hitl = false OR always_hitl IS NULL) AND ({clauses})"
         ),
         params,
     )
