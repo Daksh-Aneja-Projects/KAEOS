@@ -67,6 +67,8 @@ _model_modules = [
     # whole department with NO tenant isolation. init_db now re-sweeps after
     # create_all as a backstop, but every model module still belongs here.
     "app.engineering.models",
+    "app.healthcare.models",
+    "app.lending.models",
 ]
 for _mod in _model_modules:
     try:

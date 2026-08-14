@@ -1,0 +1,117 @@
+name: "Banking & Lending"
+slug: "lending"
+description: "Governed consumer-lending department: origination, underwriting, adverse-action, and continuous fair-lending monitoring."
+long_description: "The KAEOS Lending Domain Pack provides an autonomous, compliance-first digital lending department for banks and non-bank lenders. Every credit decision runs through deterministic policy underwriting and hard, fail-closed statutory gates (ECOA/Reg B, fair-lending disparate impact, TILA/Reg Z, FDCPA). No decision ships that fails a gate."
+icon: "🏦"
+category: "banking"
+industry_verticals: ["banking", "financial_services"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "core_banking"
+    examples: ["fis", "fiserv", "jack_henry"]
+    data_provided: ["loan_applications", "account_balances"]
+  - category: "credit_bureau"
+    examples: ["experian", "equifax", "transunion"]
+    data_provided: ["credit_scores", "trade_lines"]
+  - category: "loan_origination"
+    examples: ["encompass", "blend", "meridianlink"]
+    data_provided: ["applications", "disclosures"]
+
+capabilities:
+  - id: "origination"
+    name: "Loan Origination & Intake"
+    description: "Validate incoming applications, capture disclosures, and compute a triage readiness score."
+    icon: "📝"
+    agents: ["intake_agent"]
+    processes: ["application_intake"]
+    compliance: ["TILA"]
+
+  - id: "underwriting"
+    name: "Automated Underwriting"
+    description: "Deterministic credit-policy decisioning with fail-closed ECOA, fair-lending, and TILA gates."
+    icon: "⚖️"
+    agents: ["underwriter_agent"]
+    processes: ["underwrite_application"]
+    compliance: ["ECOA", "FAIR_LENDING", "TILA"]
+
+  - id: "adverse_action"
+    name: "Adverse-Action Notices"
+    description: "Generate Reg B compliant adverse-action notices with specific principal reasons, within 30 days."
+    icon: "✉️"
+    agents: ["adverse_action_agent"]
+    processes: ["issue_adverse_action"]
+    compliance: ["ECOA"]
+
+  - id: "fair_lending_monitoring"
+    name: "Fair-Lending Monitoring"
+    description: "Continuous four-fifths disparate-impact analysis of approval rates by protected class."
+    icon: "🛡️"
+    agents: ["underwriter_agent"]
+    processes: ["fair_lending_scan"]
+    compliance: ["FAIR_LENDING"]
+
+agent_definitions:
+  - name: "IntakeAgent"
+    type: "intake_agent"
+    capability: "origination"
+    description: "Validates and scores incoming loan applications."
+    persona: "You are the KAEOS Lending Intake Agent. You validate applications and compute a triage readiness score."
+
+  - name: "UnderwriterAgent"
+    type: "underwriter_agent"
+    capability: "underwriting"
+    description: "Makes deterministic credit decisions behind fail-closed compliance gates and explains them in plain English."
+    persona: "You are the KAEOS Underwriter Agent. You explain a deterministic credit decision for a human reviewer and never introduce a prohibited basis."
+
+  - name: "AdverseActionAgent"
+    type: "adverse_action_agent"
+    capability: "adverse_action"
+    description: "Generates ECOA compliant adverse-action notices with specific reasons."
+    persona: "You are the KAEOS Adverse Action Agent. You draft compliant denial notices with specific principal reasons."
+
+process_definitions:
+  - id: "application_intake"
+    name: "Application Intake & Scoring"
+    capability: "origination"
+    sla_hours: 4
+    steps:
+      - id: "validate_score"
+        type: "AGENT_ACTION"
+        agent: "intake_agent"
+        method: "validate_and_score"
+
+  - id: "underwrite_application"
+    name: "Automated Underwriting"
+    capability: "underwriting"
+    sla_hours: 24
+    steps:
+      - id: "underwrite"
+        type: "AGENT_ACTION"
+        agent: "underwriter_agent"
+        method: "underwrite"
+
+  - id: "issue_adverse_action"
+    name: "Adverse-Action Notice"
+    capability: "adverse_action"
+    sla_hours: 24
+    steps:
+      - id: "issue_notice"
+        type: "AGENT_ACTION"
+        agent: "adverse_action_agent"
+        method: "issue"
+
+knowledge_templates:
+  - "credit_policy_manual"
+  - "fair_lending_program"
+  - "adverse_action_reason_codes"
+  - "tila_disclosure_templates"
+
+deployment_config:
+  min_agents: 3
+  max_agents: 10
+  default_confidence_floor: 0.90
+  requires_hitl: true
+
+compliance_frameworks: ["ECOA", "FAIR_LENDING", "TILA", "FDCPA"]

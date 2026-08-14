@@ -11,6 +11,29 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Every department to production depth (8+): Healthcare, Lending, Procurement, Engineering
+Brought the three thin departments up to the Finance/HR standard and closed
+Engineering's one gap. Each built on a disjoint file tree, then adversarially
+verified; central migrations/wiring integrated and validated on real Postgres.
+- **Healthcare** is now a full department (`app/healthcare/`): patient encounters,
+  PHI disclosures, consent records (42 CFR Part 2), and clinical tasks. A PHI
+  disclosure is gated by the existing HIPAA minimum-necessary + authorization
+  checkers and is refused (never recorded) on a statutory violation or a hard
+  governance block. Migration `0041` (RLS on all four `hlth_` tables).
+- **Banking-lending** is now a real vertical (`app/lending/`): loan applications,
+  underwriting decisions, adverse-action notices, and credit policy. Underwriting
+  runs ECOA/Reg B + fair-lending (four-fifths) as real fail-closed gates; adverse
+  action carries specific reasons within 30 days. New FAIR_LENDING / TILA / FDCPA
+  compliance checkers and a lending domain pack. Migration `0042` (RLS on `lnd_`).
+- **Procurement** is promoted to a first-class department (`app/procurement/`): a
+  source-to-pay router + service that binds the existing four checkers (3-way
+  match, segregation of duties, spend authorization, OFAC) as gates over the
+  operations P2P models - no schema duplication.
+- **Engineering** gained its missing deterministic compliance checker: SOC2 CC8.1
+  change management, ISO-27001 change control, and change-freeze enforcement -
+  fail-closed, auto-discovered, and scoped so a normal code review of a red-CI PR
+  is advised, not blocked.
+
 ### Campaign closeout: finance FX, transport CSP, prompt-injection fences, connectors
 Integration of a multi-agent closeout batch, each finding adversarially verified
 before landing:

@@ -61,9 +61,13 @@ bad autonomous action ends the pilot).
 KAEOS starts with the **org graph**: a live model of departments, capabilities,
 agents, processes, employees, vendors, projects, customers, accounts, tickets,
 contracts, incidents and purchase orders, built from the tenant's own records.
-That is the Company Brain. On top of it run seven pre-built AI departments (HR,
-Finance, Legal, Sales, Support, Operations, Engineering & IT Ops) with 41 agents
-between them, reading the real work and acting on it.
+That is the Company Brain. On top of it run ten pre-built AI departments (HR,
+Finance, Legal, Sales, Support, Operations, Engineering & IT Ops, Healthcare,
+Procurement and Banking-Lending) with 48 agents between them, reading the real
+work and acting on it. Regulated departments ship with deterministic statutory
+checkers (HIPAA and 42 CFR Part 2 for Healthcare; ECOA, fair-lending, TILA and
+FDCPA for Lending; SOX 3-way-match, segregation-of-duties and OFAC for
+Procurement) that gate every action fail-closed.
 
 The **Neural Map** renders all of it as one living force graph: department
 brains in sequence, their agents and tasks in motion above them, shared systems

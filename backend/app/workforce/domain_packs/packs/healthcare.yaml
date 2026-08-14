@@ -17,50 +17,84 @@ required_integrations:
     data_provided: ["claims", "member_eligibility", "remittances"]
 
 capabilities:
+  - id: "encounter_intake"
+    name: "Encounter Intake & Triage"
+    description: "Triage a patient encounter for urgency and completeness before clinical work begins."
+    icon: "clipboard-list"
+    agents: ["intake_agent"]
+    processes: ["encounter_triage"]
+    compliance: []
+
+  - id: "medical_coding"
+    name: "Medical Coding"
+    description: "Suggest ICD-10 / CPT codes for an encounter for a human coder to review (never auto-finalized)."
+    icon: "hash"
+    agents: ["coding_agent"]
+    processes: ["coding_suggestion"]
+    compliance: ["HIPAA_MINIMUM_NECESSARY"]
+
   - id: "phi_disclosure_governance"
     name: "PHI Disclosure Governance"
-    description: "Enforce minimum-necessary scope and patient authorization on every PHI disclosure before release."
+    description: "Enforce minimum-necessary scope, patient authorization, Safe Harbor de-identification, and 42 CFR Part 2 consent on every PHI disclosure before release."
     icon: "shield-check"
-    agents: ["phi_governance_agent"]
+    agents: ["phi_guard_agent"]
     processes: ["phi_disclosure_review"]
-    compliance: ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION"]
+    compliance: ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "HIPAA_DEIDENTIFICATION", "PART2"]
 
-  - id: "deidentification"
-    name: "De-identification & Research Release"
-    description: "Verify Safe Harbor de-identification before any dataset is released for research or secondary use."
-    icon: "eye-off"
-    agents: ["deid_agent"]
-    processes: ["safe_harbor_review"]
-    compliance: ["HIPAA_DEIDENTIFICATION"]
-
-  - id: "part2_records"
-    name: "Substance-Use Records (42 CFR Part 2)"
-    description: "Gate substance-use-disorder record disclosures behind specific patient consent."
-    icon: "lock-closed"
-    agents: ["part2_agent"]
-    processes: ["part2_consent_check"]
-    compliance: ["PART2"]
+  - id: "prior_authorization"
+    name: "Prior Authorization"
+    description: "Assemble a payer prior-authorization request for human review and submission."
+    icon: "file-check"
+    agents: ["prior_auth_agent"]
+    processes: ["prior_auth_prep"]
+    compliance: ["HIPAA_MINIMUM_NECESSARY"]
 
 agent_definitions:
-  - name: "PHIGovernanceAgent"
-    type: "phi_governance_agent"
+  - name: "IntakeAgent"
+    type: "intake_agent"
+    capability: "encounter_intake"
+    description: "Triages encounters for urgency and completeness."
+    persona: "You are the KAEOS Healthcare Intake Agent. You triage encounters for urgency and completeness before clinical work begins."
+
+  - name: "CodingAgent"
+    type: "coding_agent"
+    capability: "medical_coding"
+    description: "Suggests ICD-10 / CPT codes for a human coder to review."
+    persona: "You are the KAEOS Medical Coding Agent. You suggest ICD-10 and CPT codes from an encounter's documented reason. You never finalize a claim; a certified human coder reviews every suggestion."
+
+  - name: "PHIGuardAgent"
+    type: "phi_guard_agent"
     capability: "phi_disclosure_governance"
-    description: "Reviews PHI disclosures for minimum-necessary scope and valid authorization."
-    persona: "You are the PHI Governance Agent. You ensure every disclosure is limited to the minimum necessary fields and backed by a valid patient authorization when required."
+    description: "Reviews PHI disclosures against the HIPAA minimum-necessary, authorization, de-identification and 42 CFR Part 2 checkers as real gates."
+    persona: "You are the KAEOS PHI Governance Agent. You ensure every disclosure is limited to the minimum necessary fields and backed by a valid patient authorization or specific Part 2 consent when required."
 
-  - name: "DeidentificationAgent"
-    type: "deid_agent"
-    capability: "deidentification"
-    description: "Validates Safe Harbor de-identification before dataset release."
-    persona: "You are the De-identification Agent. You confirm no HIPAA identifier survives in any dataset claimed to be de-identified."
-
-  - name: "Part2Agent"
-    type: "part2_agent"
-    capability: "part2_records"
-    description: "Guards substance-use-disorder record disclosures behind specific consent."
-    persona: "You are the Part 2 Agent. You block disclosure of substance-use-disorder records unless specific written patient consent is on file."
+  - name: "PriorAuthAgent"
+    type: "prior_auth_agent"
+    capability: "prior_authorization"
+    description: "Prepares payer prior-authorization requests for human submission."
+    persona: "You are the KAEOS Prior Authorization Agent. You assemble the clinical justification a payer needs to authorize a procedure. A human reviews and submits; you never file with a payer directly."
 
 process_definitions:
+  - id: "encounter_triage"
+    name: "Encounter Triage"
+    capability: "encounter_intake"
+    sla_hours: 2
+    steps:
+      - id: "triage_encounter"
+        type: "AGENT_ACTION"
+        agent: "intake_agent"
+        method: "triage_encounter"
+
+  - id: "coding_suggestion"
+    name: "Coding Suggestion"
+    capability: "medical_coding"
+    sla_hours: 8
+    steps:
+      - id: "suggest_codes"
+        type: "AGENT_ACTION"
+        agent: "coding_agent"
+        method: "suggest_codes"
+
   - id: "phi_disclosure_review"
     name: "PHI Disclosure Review"
     capability: "phi_disclosure_governance"
@@ -68,28 +102,18 @@ process_definitions:
     steps:
       - id: "review_disclosure"
         type: "AGENT_ACTION"
-        agent: "phi_governance_agent"
-        method: "review_phi_disclosure"
+        agent: "phi_guard_agent"
+        method: "review_disclosure"
 
-  - id: "safe_harbor_review"
-    name: "Safe Harbor De-identification Review"
-    capability: "deidentification"
+  - id: "prior_auth_prep"
+    name: "Prior Authorization Prep"
+    capability: "prior_authorization"
     sla_hours: 8
     steps:
-      - id: "scan_identifiers"
+      - id: "prepare_prior_auth"
         type: "AGENT_ACTION"
-        agent: "deid_agent"
-        method: "scan_safe_harbor_identifiers"
-
-  - id: "part2_consent_check"
-    name: "Part 2 Consent Check"
-    capability: "part2_records"
-    sla_hours: 4
-    steps:
-      - id: "verify_consent"
-        type: "AGENT_ACTION"
-        agent: "part2_agent"
-        method: "verify_part2_consent"
+        agent: "prior_auth_agent"
+        method: "prepare_prior_auth"
 
 knowledge_templates:
   - "hipaa_privacy_policy"
