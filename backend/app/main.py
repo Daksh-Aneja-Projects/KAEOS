@@ -349,6 +349,8 @@ app.include_router(marketplace.router,     prefix=PREFIX)
 app.include_router(security.router,        prefix=PREFIX)
 from app.api.routes import ai_inventory as ai_inventory_routes
 app.include_router(ai_inventory_routes.router, prefix=PREFIX)
+from app.api.routes import compliance_checks as compliance_checks_routes
+app.include_router(compliance_checks_routes.router, prefix=PREFIX)
 app.include_router(pipeline.router,        prefix=PREFIX)
 app.include_router(predictive.router,      prefix=PREFIX)
 app.include_router(polymorphic.router,     prefix=PREFIX)

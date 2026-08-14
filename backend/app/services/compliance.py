@@ -27,28 +27,56 @@ class ComplianceEngine:
         if not skill_tags:
             return violations
 
-        # Tenant-aware router (from the ambient request context) so a tenant's
-        # fine-tuned compliance model is used when configured.
-        router = await get_tenant_router()
-
-        # Hardcoded critical checks that don't need LLM
+        # 1) Deterministic statutory checkers first (no LLM). A framework with a
+        # registered checker is judged by real rules, not a model's opinion; a
+        # BLOCK becomes a blocker, an ADVISORY a warning. Tags without a checker
+        # fall through to the hardcoded/LLM paths below.
+        from app.compliance.base import CheckResult, CheckStatus
+        from app.compliance.registry import get as _get_checker
+        deterministic_tags = set()
         for tag in skill_tags:
-            if tag == "SOX" and not context.get("has_human_approver"):
-                violations.append({
-                    "framework": "SOX",
-                    "severity": "BLOCKER",
-                    "reason": "SOX requires explicit human approval for this financial action."
-                })
-            elif tag == "PCI" and "raw_card_data" in context:
+            entry = _get_checker(tag)
+            if entry is None:
+                continue
+            deterministic_tags.add(tag)
+            try:
+                res = entry.fn(context or {})
+                if not isinstance(res, CheckResult):
+                    raise TypeError("checker did not return CheckResult")
+            except Exception as e:  # a broken control fails closed
+                logger.exception("Deterministic %s checker failed", tag)
+                violations.append({"framework": tag, "severity": "BLOCKER",
+                                   "reason": f"{tag} control failed to evaluate: {e}",
+                                   "method": "deterministic"})
+                continue
+            reason = "; ".join(f.message for f in res.findings)
+            if res.status == CheckStatus.BLOCK:
+                violations.append({"framework": tag, "severity": "BLOCKER",
+                                   "reason": reason or f"{tag} violation",
+                                   "method": "deterministic", "citations": res.citations})
+            elif res.status == CheckStatus.ADVISORY:
+                violations.append({"framework": tag, "severity": "WARNING",
+                                   "reason": reason or f"{tag} advisory",
+                                   "method": "deterministic", "citations": res.citations})
+
+        # 2) Hardcoded critical checks for tags without a deterministic checker.
+        for tag in skill_tags:
+            if tag in deterministic_tags:
+                continue
+            if tag == "PCI" and "raw_card_data" in context:
                 violations.append({
                     "framework": "PCI",
                     "severity": "BLOCKER",
                     "reason": "PCI blocks raw card data handling in agent context."
                 })
 
-        # LLM-powered contextual checks for complex frameworks (EEOC, GDPR, HIPAA)
-        complex_tags = [t for t in skill_tags if t in ["EEOC", "GDPR", "HIPAA", "CCPA", "I9"]]
+        # 3) LLM-screening fallback ONLY for complex frameworks that have no
+        # deterministic checker yet (labeled as screening, not a statutory test).
+        complex_tags = [t for t in skill_tags
+                        if t in ["GDPR", "HIPAA", "CCPA"] and t not in deterministic_tags]
         if complex_tags:
+            # Tenant-aware router so a tenant's fine-tuned compliance model is used.
+            router = await get_tenant_router()
             framework_descriptions = "\\n".join([f"- {t}: {self.COMPLIANCE_FRAMEWORKS[t]}" for t in complex_tags])
             prompt = f"""
             You are the KAEOS Compliance Engine. Evaluate the following planned agent action for regulatory violations.
