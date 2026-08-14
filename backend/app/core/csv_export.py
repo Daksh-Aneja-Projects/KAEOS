@@ -43,5 +43,13 @@ def csv_response(rows: Sequence[dict], filename: str, columns: list[str] | None 
 def _cell(v: Any) -> Any:
     if isinstance(v, (dict, list)):
         import json
-        return json.dumps(v, separators=(",", ":"), default=str)
-    return "" if v is None else v
+        v = json.dumps(v, separators=(",", ":"), default=str)
+    if v is None:
+        return ""
+    # CSV/formula-injection neutralization: a tenant-controlled value that starts
+    # with a formula trigger (=,+,-,@,tab,CR) would execute in Excel/LibreOffice
+    # when an admin opens an exported evidence file. Prefix a single quote so the
+    # cell is treated as text, never a formula.
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v

@@ -192,9 +192,14 @@ async def apply_transition(
                 "caller_role": tenant.get("role"),
             })
 
+    # Use the CANONICAL actor identity so the value stamped here (e.g.
+    # invoice.approved_by) is byte-identical to the one payments/HITL compare
+    # against (approver_identity). A different derivation broke four-eyes for JWT
+    # users: approve stamped the email, pay compared the user_id -> never equal.
+    from app.core.tenant import approver_identity
     ctx = TransitionContext(
         tenant_id=tenant_id,
-        actor=tenant.get("name") or tenant.get("email"),
+        actor=approver_identity(tenant),
         actor_role=tenant.get("role"),
         note=note,
         now=datetime.now(timezone.utc),
