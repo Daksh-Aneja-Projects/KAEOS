@@ -12,10 +12,16 @@ import { governanceApi } from './endpoints/governance';
 import { enterpriseApi } from './endpoints/enterprise';
 import { departmentsApi } from './endpoints/departments';
 import { operationsApi } from './endpoints/operations';
+import { healthcareApi } from './endpoints/healthcare';
+import { lendingApi } from './endpoints/lending';
+import { procurementApi } from './endpoints/procurement';
 
 export const api = {
   ...governanceApi,
   ...enterpriseApi,
   ...departmentsApi,
   ...operationsApi,
+  ...healthcareApi,
+  ...lendingApi,
+  ...procurementApi,
 };

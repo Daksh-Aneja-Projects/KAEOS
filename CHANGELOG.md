@@ -11,6 +11,27 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### New department UIs + comprehensive demo data (Healthcare, Lending, Procurement)
+- **Premium frontend for the three new departments**, matching the existing
+  Finance/Sales view pattern and bound to the real routers: each leads with a
+  live overview (rAF-animated ring + count-ups + donut, 20s refresh) and surfaces
+  the governance story in plain English - Healthcare renders each PHI disclosure's
+  HIPAA minimum-necessary / authorization / 42 CFR Part 2 checks; Lending shows the
+  four-fifths fair-lending ratios (and flags adverse impact), ECOA specific-reason
+  decisions and adverse-action notices; Procurement shows the four source-to-pay
+  controls (spend auth, segregation of duties, three-way match, OFAC) per PO.
+  Registered in the department nav; responsive to 375px; SVG icons only.
+- **Comprehensive seed data** so every new surface is populated and the governance
+  monitors have real spread: Healthcare (8 encounters across acuities, 5 PHI
+  disclosures incl. a Part 2 case, consents incl. a revoked one, clinical tasks);
+  Lending (14 applications over 4 products/policies with pre-computed underwriting
+  decisions + TILA disclosures and ECOA adverse-action notices, protected-class
+  distribution that makes the four-fifths monitor detect real adverse impact);
+  Procurement (vendors incl. a sanctions-flag demo, requisitions, POs, and goods
+  receipts spanning full-match / short-shipment / damaged for the 3-way match).
+- Dropped `frame-ancestors` from the SPA `<meta>` CSP (ignored there by browsers;
+  enforced via the backend header + `X-Frame-Options`) to clean console noise.
+
 ### Commercial + observability backend: operator console, status, metrics store, white-label
 - **Super-admin operator console** (`/api/v1/ops/*`, gated by the existing
   ADMIN_SECRET super-admin dependency, fail-closed): cross-tenant `/ops/tenants`,

@@ -63,6 +63,11 @@ const OperationsDashboard = lazy(() => import('./pages/OperationsDashboard'));
 const OperationsView = lazy(() => import('./views/OperationsView'));
 const EngineeringView = lazy(() => import('./views/EngineeringView'));
 
+// ─── REGULATED VERTICALS (Healthcare · Lending · Procurement) ───────
+const HealthcareView = lazy(() => import('./views/HealthcareView'));
+const LendingView = lazy(() => import('./views/LendingView'));
+const ProcurementView = lazy(() => import('./views/ProcurementView'));
+
 // ─── PLATFORM (Secondary) ─────────────────────────────────────────
 const KnowledgeView = lazy(() => import('./views/KnowledgeView'));
 const AgentsView = lazy(() => import('./views/AgentsView'));
@@ -249,6 +254,9 @@ function Shell() {
     { path: '/integrations', label: 'Integrations', keywords: 'connectors sync schema mapper' },
     { path: '/analytics', label: 'Analytics', keywords: 'roi metrics hours saved' },
     { path: '/departments/hr', label: 'HR Department', keywords: 'hr employees recruiting benefits payroll' },
+    { path: '/departments/healthcare', label: 'Healthcare Department', keywords: 'healthcare clinical encounters phi disclosure consent hipaa part2 patient' },
+    { path: '/departments/lending', label: 'Lending Department', keywords: 'lending loan credit underwriting ecoa fair-lending adverse action banking' },
+    { path: '/departments/procurement', label: 'Procurement Department', keywords: 'procurement purchase order requisition vendor three-way match ofac sod spend' },
     { path: '/platform/knowledge', label: 'Knowledge', keywords: 'rules skills topology extraction connectors' },
     { path: '/platform/agents', label: 'Agents', keywords: 'deploy blueprint ooda llm mcp marketplace' },
     { path: '/platform/decisions', label: 'Decisions', keywords: 'cockpit compliance provenance redteam hitl fairness debates governance trust' },
@@ -306,6 +314,9 @@ function Shell() {
     { slug: 'sales', label: 'Sales & CRM', color: '#f59e0b' },
     { slug: 'operations', label: 'Operations', color: '#ef4444' },
     { slug: 'engineering', label: 'Engineering & IT Ops', color: '#6366f1' },
+    { slug: 'healthcare', label: 'Healthcare', color: '#14b8a6' },
+    { slug: 'lending', label: 'Lending & Credit', color: '#d97706' },
+    { slug: 'procurement', label: 'Procurement', color: '#8b5cf6' },
   ];
   const activeDepartment = DEPARTMENT_CONTEXT.find(
     d => location.pathname.startsWith(`/departments/${d.slug}`),
@@ -672,6 +683,26 @@ function Shell() {
                 <Route path="/departments/operations/vendors" element={<ThemeAdapter><OperationsView domain={domain} defaultTab="vendors" /></ThemeAdapter>} />
                 <Route path="/departments/operations/procurement" element={<ThemeAdapter><OperationsView domain={domain} defaultTab="procurement" /></ThemeAdapter>} />
                 <Route path="/departments/operations/quality" element={<ThemeAdapter><OperationsView domain={domain} defaultTab="quality" /></ThemeAdapter>} />
+
+                {/* HEALTHCARE DEPARTMENT */}
+                <Route path="/departments/healthcare" element={<ThemeAdapter><HealthcareView domain={domain} defaultTab="overview" /></ThemeAdapter>} />
+                <Route path="/departments/healthcare/encounters" element={<ThemeAdapter><HealthcareView domain={domain} defaultTab="encounters" /></ThemeAdapter>} />
+                <Route path="/departments/healthcare/disclosures" element={<ThemeAdapter><HealthcareView domain={domain} defaultTab="disclosures" /></ThemeAdapter>} />
+                <Route path="/departments/healthcare/consent" element={<ThemeAdapter><HealthcareView domain={domain} defaultTab="consent" /></ThemeAdapter>} />
+                <Route path="/departments/healthcare/tasks" element={<ThemeAdapter><HealthcareView domain={domain} defaultTab="tasks" /></ThemeAdapter>} />
+
+                {/* LENDING DEPARTMENT */}
+                <Route path="/departments/lending" element={<ThemeAdapter><LendingView domain={domain} defaultTab="overview" /></ThemeAdapter>} />
+                <Route path="/departments/lending/applications" element={<ThemeAdapter><LendingView domain={domain} defaultTab="applications" /></ThemeAdapter>} />
+                <Route path="/departments/lending/underwriting" element={<ThemeAdapter><LendingView domain={domain} defaultTab="underwriting" /></ThemeAdapter>} />
+                <Route path="/departments/lending/adverse-action" element={<ThemeAdapter><LendingView domain={domain} defaultTab="adverse" /></ThemeAdapter>} />
+
+                {/* PROCUREMENT DEPARTMENT */}
+                <Route path="/departments/procurement" element={<ThemeAdapter><ProcurementView domain={domain} defaultTab="overview" /></ThemeAdapter>} />
+                <Route path="/departments/procurement/requisitions" element={<ThemeAdapter><ProcurementView domain={domain} defaultTab="requisitions" /></ThemeAdapter>} />
+                <Route path="/departments/procurement/purchase-orders" element={<ThemeAdapter><ProcurementView domain={domain} defaultTab="purchase-orders" /></ThemeAdapter>} />
+                <Route path="/departments/procurement/goods-receipts" element={<ThemeAdapter><ProcurementView domain={domain} defaultTab="goods-receipts" /></ThemeAdapter>} />
+                <Route path="/departments/procurement/vendors" element={<ThemeAdapter><ProcurementView domain={domain} defaultTab="vendors" /></ThemeAdapter>} />
 
 
                 {/* DEPARTMENT DETAIL (dynamic) */}
