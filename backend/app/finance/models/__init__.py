@@ -13,6 +13,7 @@ from app.finance.models.core import (
     ChartOfAccount, AccountType,
     JournalEntry, JournalEntryStatus,
     JournalLine,
+    FiscalPeriod, FiscalPeriodStatus,
 )
 from app.finance.models.accounts_payable import (
     Vendor, VendorStatus,

@@ -240,6 +240,68 @@ async def get_balance_sheet(
     return await balance_sheet(db, tenant_id, as_of=as_of)
 
 
+@router.get("/gl/periods")
+async def get_fiscal_periods(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Closed/reopened fiscal periods. Periods without a row are OPEN."""
+    from app.finance.services.gl import list_periods
+    return await list_periods(db, tenant_id)
+
+
+class PeriodActionIn(BaseModel):
+    fiscal_year: int
+    fiscal_period: int
+    note: Optional[str] = None
+
+
+@router.post("/gl/periods/close")
+async def close_fiscal_period(
+    body: PeriodActionIn,
+    tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db),
+):
+    """Close a fiscal period - back-dated postings into it are then refused.
+    Admin-only: closing a period is a reporting control."""
+    from app.core.tenant import approver_identity
+    from app.finance.services.gl import GLPostingError, set_period_status
+    tenant_id = tenant["tenant_id"]
+    try:
+        result = await set_period_status(
+            db, tenant_id, body.fiscal_year, body.fiscal_period,
+            close=True, actor=approver_identity(tenant), note=body.note)
+    except GLPostingError as e:
+        raise HTTPException(400, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="fiscal_period", resource_id=f"{body.fiscal_year}-{body.fiscal_period:02d}",
+        details={"status": "CLOSED"},
+    )
+    return result
+
+
+@router.post("/gl/periods/reopen")
+async def reopen_fiscal_period(
+    body: PeriodActionIn,
+    tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db),
+):
+    """Reopen a closed fiscal period (admin-only) so corrections can post."""
+    from app.core.tenant import approver_identity
+    from app.finance.services.gl import GLPostingError, set_period_status
+    tenant_id = tenant["tenant_id"]
+    try:
+        result = await set_period_status(
+            db, tenant_id, body.fiscal_year, body.fiscal_period,
+            close=False, actor=approver_identity(tenant), note=body.note)
+    except GLPostingError as e:
+        raise HTTPException(400, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="fiscal_period", resource_id=f"{body.fiscal_year}-{body.fiscal_period:02d}",
+        details={"status": "OPEN"},
+    )
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Accounts Payable
 # ═══════════════════════════════════════════════════════════════════════

@@ -36,6 +36,12 @@ All notable changes to KAEOS are documented here. This project adheres to
   a mis-seeded account can never flip a P&L or unbalance the sheet.
   Current-period earnings close into equity so the balance sheet always
   balances (Assets = Liabilities + Equity) without formal period-close entries.
+- **Fiscal period lock.** Closing a period (`POST /finance/gl/periods/close`,
+  admin-only) refuses back-dated postings into a reported month - the GL
+  keystone checks `fin_fiscal_periods` on every post and raises
+  `PeriodClosedError`. Absence of a row means OPEN, so months need not be
+  pre-created; reopen (`.../periods/reopen`) restores posting for corrections.
+  Migration `0035`. Completes Phase 3.1.
 - **Embeddings obey the same governance as every other model call.** The
   Polystore embedded rule text via a direct litellm call with a hardcoded
   OpenAI model - bypassing the data-residency filter (a local-only tenant's

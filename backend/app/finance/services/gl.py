@@ -31,6 +31,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.models.core import (
     ChartOfAccount,
+    FiscalPeriod,
+    FiscalPeriodStatus,
     JournalEntry,
     JournalEntryStatus,
     JournalLine,
@@ -44,6 +46,21 @@ _NUMBER_RETRIES = 5
 
 class GLPostingError(ValueError):
     """The entry violates double-entry rules and was NOT posted."""
+
+
+class PeriodClosedError(GLPostingError):
+    """The entry falls in a CLOSED fiscal period and was NOT posted."""
+
+
+async def _period_is_closed(db: AsyncSession, tenant_id: str, entry_date: date) -> bool:
+    """A period blocks posting only if an explicit CLOSED row exists (absence =
+    OPEN, so months need not be pre-created)."""
+    status = (await db.execute(select(FiscalPeriod.status).where(
+        FiscalPeriod.tenant_id == tenant_id,
+        FiscalPeriod.fiscal_year == entry_date.year,
+        FiscalPeriod.fiscal_period == entry_date.month,
+    ))).scalar_one_or_none()
+    return status == FiscalPeriodStatus.CLOSED
 
 
 def _money(value) -> Decimal:
@@ -105,6 +122,11 @@ async def post_journal_entry(
         raise GLPostingError("double entry requires at least two lines")
 
     entry_date = entry_date or datetime.now(timezone.utc).date()
+    if await _period_is_closed(db, tenant_id, entry_date):
+        raise PeriodClosedError(
+            f"fiscal period {entry_date.year}-{entry_date.month:02d} is CLOSED; "
+            "post to an open period or reopen it before back-dating an entry"
+        )
 
     # Resolve accounts (id or code), tenant-scoped, active only.
     ids = {str(l["account_id"]) for l in lines if l.get("account_id")}
@@ -489,4 +511,63 @@ async def balance_sheet(
         "note": ("Derived from POSTED journal lines. Current-period earnings "
                  "close into equity so Assets = Liabilities + Equity without "
                  "formal period-close entries."),
+    }
+
+
+def _valid_period(year: int, period: int) -> None:
+    if not (1 <= int(period) <= 12):
+        raise GLPostingError(f"fiscal_period must be 1-12 (got {period})")
+    if not (1900 <= int(year) <= 2200):
+        raise GLPostingError(f"fiscal_year out of range (got {year})")
+
+
+async def set_period_status(
+    db: AsyncSession, tenant_id: str, year: int, period: int, *,
+    close: bool, actor: Optional[str] = None, note: Optional[str] = None,
+) -> dict:
+    """Close or reopen a fiscal period (idempotent). Closing stops back-dated
+    postings into a reported period; reopening restores them. The row is
+    created on first close - absence means OPEN."""
+    _valid_period(year, period)
+    row = (await db.execute(select(FiscalPeriod).where(
+        FiscalPeriod.tenant_id == tenant_id,
+        FiscalPeriod.fiscal_year == year,
+        FiscalPeriod.fiscal_period == period,
+    ))).scalar_one_or_none()
+    new_status = FiscalPeriodStatus.CLOSED if close else FiscalPeriodStatus.OPEN
+    if row is None:
+        row = FiscalPeriod(tenant_id=tenant_id, fiscal_year=year, fiscal_period=period)
+        db.add(row)
+    row.status = new_status
+    row.note = note
+    if close:
+        row.closed_by = actor
+        row.closed_at = datetime.now(timezone.utc)
+    else:
+        row.closed_by = None
+        row.closed_at = None
+    await db.commit()
+    logger.info("[GL] period %s-%02d %s by %s", year, period,
+                new_status.value, actor or "system")
+    return {"fiscal_year": year, "fiscal_period": period,
+            "status": new_status.value,
+            "closed_by": row.closed_by,
+            "closed_at": row.closed_at.isoformat() if row.closed_at else None}
+
+
+async def list_periods(db: AsyncSession, tenant_id: str) -> dict:
+    """Explicitly-tracked periods (closed ones, plus any reopened). Periods
+    with no row are OPEN by default and not listed."""
+    rows = (await db.execute(select(FiscalPeriod).where(
+        FiscalPeriod.tenant_id == tenant_id
+    ).order_by(FiscalPeriod.fiscal_year.desc(),
+               FiscalPeriod.fiscal_period.desc()))).scalars().all()
+    return {
+        "periods": [{
+            "fiscal_year": r.fiscal_year, "fiscal_period": r.fiscal_period,
+            "status": r.status.value if hasattr(r.status, "value") else r.status,
+            "closed_by": r.closed_by,
+            "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        } for r in rows],
+        "note": "Periods without a row are OPEN. Only closed/reopened periods are tracked.",
     }
