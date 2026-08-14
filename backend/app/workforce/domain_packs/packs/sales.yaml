@@ -46,6 +46,14 @@ capabilities:
     processes: ["payout_calculation"]
     compliance: ["SOX"]
 
+  - id: "data_privacy_governance"
+    name: "Outreach & Data Privacy Governance"
+    description: "Enforce lawful basis, sale opt-outs, do-not-contact lists, and data-subject request deadlines before any outreach or data action runs."
+    icon: "shield-check"
+    agents: ["privacy_agent"]
+    processes: ["outreach_privacy_check"]
+    compliance: ["GDPR", "CCPA", "TCPA", "DSAR"]
+
 agent_definitions:
   - name: "PipelineAgent"
     type: "pipeline_agent"
@@ -83,6 +91,12 @@ agent_definitions:
     description: "Deal desk auditor reviewing customized quotes and requested discounts."
     persona: "You are the CPQ Deal Desk Agent. You protect corporate margins by auditing pricing configurations."
 
+  - name: "PrivacyAgent"
+    type: "privacy_agent"
+    capability: "data_privacy_governance"
+    description: "Screens every outreach and data action against GDPR, CCPA, TCPA, and DSAR deadlines before it runs."
+    persona: "You are the Data Privacy Guardian Agent. You verify a lawful basis, honor sale opt-outs and do-not-contact lists, and track data-subject request deadlines."
+
 process_definitions:
   - id: "deal_coaching"
     name: "Sales Deal Coaching Audit"
@@ -104,6 +118,16 @@ process_definitions:
         agent: "lead_scoring_agent"
         method: "score_lead"
 
+  - id: "outreach_privacy_check"
+    name: "Outreach Privacy Pre-Check"
+    capability: "data_privacy_governance"
+    sla_hours: 1
+    steps:
+      - id: "screen"
+        type: "AGENT_ACTION"
+        agent: "privacy_agent"
+        method: "screen_outreach"
+
 knowledge_templates:
   - "sales_playbook"
   - "commission_comp_plan"
@@ -115,4 +139,4 @@ deployment_config:
   default_confidence_floor: 0.90
   requires_hitl: true
 
-compliance_frameworks: ["ASC-606", "GDPR", "SOX"]
+compliance_frameworks: ["ASC-606", "GDPR", "CCPA", "TCPA", "DSAR", "SOX"]

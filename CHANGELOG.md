@@ -11,6 +11,29 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Department-as-a-Service: deterministic compliance expertise
+- **A statutory checker spine, fail-closed** (`app/compliance/`). KAEOS is
+  Department-as-a-Service, and each department's real expertise is a
+  deterministic statutory checker, not an LLM guess. A framework->checker
+  registry judges each `compliance_tag` by statute; a tag with **no** backing
+  checker returns `UNBACKED` (blocking) instead of silently passing, closing the
+  hole where an unrecognized compliance tag sailed through Gate 1.
+  `ComplianceEngine.check_before_execution` now runs the deterministic checker
+  first and only falls back to a labeled LLM screen where none exists.
+  `GET /compliance/frameworks` and `POST /compliance/check` expose it.
+- **27 deterministic checkers across 9 departments**, each pure and unit-tested,
+  built and then adversarially hardened (false-PASS/false-BLOCK defects found by
+  a reviewer pass and fixed with regression tests):
+  HR (EEOC four-fifths, FLSA overtime, I-9), Finance (SOX segregation-of-duties),
+  Lending/banking (ECOA/Reg B adverse-action), Legal (conflict of interest,
+  legal hold, retention, contract clauses), Healthcare (HIPAA minimum-necessary,
+  authorization with 164.512 permitted-disclosure carve-outs, Safe-Harbor
+  de-identification, 42 CFR Part 2), Procurement (deterministic 3-way match,
+  segregation of duties, spend authorization, OFAC sanctions), CRM/Sales
+  (GDPR lawful basis, CCPA, TCPA, DSAR deadlines), Support (PAN redaction via
+  sliding-window Luhn, SSN, call-recording consent), Operations (SOX ITGC change
+  management, incident postmortem, backup retention).
+
 ### Trust artifacts (10/10 hardening, Phase 1 completion + Phase 2 start + Phase 3 keystone)
 - **Vendor payments reach the ledger, on accrual basis.** `POST /finance/payments`
   is the first P2P money event wired end to end: the invoice must be APPROVED

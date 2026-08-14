@@ -46,6 +46,14 @@ capabilities:
     processes: ["feedback_sentiment_audit"]
     compliance: ["SOC2"]
 
+  - id: "communications_compliance"
+    name: "Communications Compliance Guard"
+    description: "Deterministically screen outbound replies for unredacted PII (cards, SSNs, API keys), verify two-party call-recording consent, and flag SLA breaches before an action leaves the platform."
+    icon: "ShieldCheckIcon"
+    agents: ["compliance_agent"]
+    processes: ["outbound_compliance_scan"]
+    compliance: ["PII_REDACTION", "CALL_RECORDING_CONSENT", "SLA_BREACH", "PCI-DSS"]
+
 agent_definitions:
   - name: "TriageAgent"
     type: "triage_agent"
@@ -83,6 +91,12 @@ agent_definitions:
     description: "Prepares detailed summary dossiers for escalated cases."
     persona: "You are the Escalation Agent. You package case histories so technicians can fix issues quickly."
 
+  - name: "ComplianceAgent"
+    type: "compliance_agent"
+    capability: "communications_compliance"
+    description: "Runs deterministic PII, call-recording-consent, and SLA checks on support actions."
+    persona: "You are the Communications Compliance Agent. You block outbound messages that carry unredacted card numbers, SSNs, or secrets, and you verify recording consent."
+
 process_definitions:
   - id: "ticket_triage"
     name: "Inbound Ticket Classification"
@@ -104,6 +118,16 @@ process_definitions:
         agent: "resolution_agent"
         method: "solve_ticket"
 
+  - id: "outbound_compliance_scan"
+    name: "Outbound Communications Compliance Scan"
+    capability: "communications_compliance"
+    sla_hours: 1
+    steps:
+      - id: "screen"
+        type: "AGENT_ACTION"
+        agent: "compliance_agent"
+        method: "screen_outbound_action"
+
 knowledge_templates:
   - "support_escalation_playbook"
   - "customer_comms_style_guide"
@@ -114,4 +138,4 @@ deployment_config:
   default_confidence_floor: 0.85
   requires_hitl: false
 
-compliance_frameworks: ["SOC2", "ISO-27001", "GDPR"]
+compliance_frameworks: ["SOC2", "ISO-27001", "GDPR", "PCI-DSS", "PII_REDACTION", "CALL_RECORDING_CONSENT", "SLA_BREACH"]

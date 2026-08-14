@@ -1,0 +1,106 @@
+name: "Healthcare & Clinical Operations"
+slug: "healthcare"
+description: "Healthcare department covering PHI disclosure governance, patient authorization, Safe Harbor de-identification, and 42 CFR Part 2 substance-use records."
+long_description: "The KAEOS Healthcare Domain Pack provides an autonomous, compliance-first clinical operations department that enforces the HIPAA Privacy Rule and 42 CFR Part 2 on every protected-health-information disclosure before it leaves the building."
+icon: "heart-pulse"
+category: "healthcare"
+industry_verticals: ["healthcare", "life_sciences", "payers", "providers"]
+version: "1.0.0"
+author: "KAEOS"
+
+required_integrations:
+  - category: "ehr"
+    examples: ["epic", "cerner", "athenahealth"]
+    data_provided: ["patient_records", "encounters", "diagnosis_codes"]
+  - category: "claims"
+    examples: ["change_healthcare", "availity"]
+    data_provided: ["claims", "member_eligibility", "remittances"]
+
+capabilities:
+  - id: "phi_disclosure_governance"
+    name: "PHI Disclosure Governance"
+    description: "Enforce minimum-necessary scope and patient authorization on every PHI disclosure before release."
+    icon: "shield-check"
+    agents: ["phi_governance_agent"]
+    processes: ["phi_disclosure_review"]
+    compliance: ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION"]
+
+  - id: "deidentification"
+    name: "De-identification & Research Release"
+    description: "Verify Safe Harbor de-identification before any dataset is released for research or secondary use."
+    icon: "eye-off"
+    agents: ["deid_agent"]
+    processes: ["safe_harbor_review"]
+    compliance: ["HIPAA_DEIDENTIFICATION"]
+
+  - id: "part2_records"
+    name: "Substance-Use Records (42 CFR Part 2)"
+    description: "Gate substance-use-disorder record disclosures behind specific patient consent."
+    icon: "lock-closed"
+    agents: ["part2_agent"]
+    processes: ["part2_consent_check"]
+    compliance: ["PART2"]
+
+agent_definitions:
+  - name: "PHIGovernanceAgent"
+    type: "phi_governance_agent"
+    capability: "phi_disclosure_governance"
+    description: "Reviews PHI disclosures for minimum-necessary scope and valid authorization."
+    persona: "You are the PHI Governance Agent. You ensure every disclosure is limited to the minimum necessary fields and backed by a valid patient authorization when required."
+
+  - name: "DeidentificationAgent"
+    type: "deid_agent"
+    capability: "deidentification"
+    description: "Validates Safe Harbor de-identification before dataset release."
+    persona: "You are the De-identification Agent. You confirm no HIPAA identifier survives in any dataset claimed to be de-identified."
+
+  - name: "Part2Agent"
+    type: "part2_agent"
+    capability: "part2_records"
+    description: "Guards substance-use-disorder record disclosures behind specific consent."
+    persona: "You are the Part 2 Agent. You block disclosure of substance-use-disorder records unless specific written patient consent is on file."
+
+process_definitions:
+  - id: "phi_disclosure_review"
+    name: "PHI Disclosure Review"
+    capability: "phi_disclosure_governance"
+    sla_hours: 4
+    steps:
+      - id: "review_disclosure"
+        type: "AGENT_ACTION"
+        agent: "phi_governance_agent"
+        method: "review_phi_disclosure"
+
+  - id: "safe_harbor_review"
+    name: "Safe Harbor De-identification Review"
+    capability: "deidentification"
+    sla_hours: 8
+    steps:
+      - id: "scan_identifiers"
+        type: "AGENT_ACTION"
+        agent: "deid_agent"
+        method: "scan_safe_harbor_identifiers"
+
+  - id: "part2_consent_check"
+    name: "Part 2 Consent Check"
+    capability: "part2_records"
+    sla_hours: 4
+    steps:
+      - id: "verify_consent"
+        type: "AGENT_ACTION"
+        agent: "part2_agent"
+        method: "verify_part2_consent"
+
+knowledge_templates:
+  - "hipaa_privacy_policy"
+  - "minimum_necessary_matrix"
+  - "authorization_form_library"
+  - "part2_consent_manual"
+
+deployment_config:
+  min_agents: 2
+  max_agents: 8
+  default_confidence_floor: 0.95
+  requires_hitl: true
+
+compliance_frameworks: ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "HIPAA_DEIDENTIFICATION", "PART2"]

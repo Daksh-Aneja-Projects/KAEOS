@@ -103,7 +103,7 @@ Every department agent routes through it via its `gated_runner`.
 
 | # | Gate | What it does | Terminal status on failure |
 |---|------|--------------|----------------------------|
-| 1 | **Compliance** | Evaluates the action's `compliance_tags` (EEOC, GDPR, SOX, ...). BLOCKER severity stops it; WARNINGs flow downstream into the result and provenance. | `BLOCKED_COMPLIANCE` |
+| 1 | **Compliance** | Runs the action's `compliance_tags` through the **deterministic statutory checker registry** (`app/compliance/`) - real rules, no LLM guess. A tag with a backing checker is judged by statute (EEOC four-fifths, SOX segregation-of-duties, ECOA, HIPAA, GDPR, OFAC, ...); a tag with **no** backing checker returns `UNBACKED` and fails closed instead of silently passing. Only frameworks with no deterministic checker fall back to a labeled LLM screen. BLOCKER stops the action; WARNINGs flow downstream into the result and provenance. | `BLOCKED_COMPLIANCE` |
 | 2 | **Fairness** | Scores bias on decisions touching people. Runs *concurrently* with Gate 1 (the two are independent), with compliance verdict ordering preserved. | `BLOCKED_FAIRNESS` |
 | 3 | **Confidence to HITL** | Caps the skill's confidence at the probed BYOK `tier_ceiling`; below-threshold and always-HITL actions pause for a human. Fails closed. | `PENDING_HITL` |
 | 4 | **Debate** | Adversarial multi-turn challenge of the proposed decision; a contested decision gets a second turn. | routed to HITL or blocked |
@@ -134,6 +134,19 @@ measurable, the platform returns nothing rather than something invented.
   old heuristic had already persisted, so nothing stale gets re-served as though
   a tenant had supplied it. Configure a per-skill baseline and the real figures
   appear.
+- **Compliance is checked by statute, not guessed by a model.** Every department
+  ships **deterministic statutory checkers** (`app/compliance/`) - EEOC four-fifths,
+  FLSA, I-9, SOX segregation-of-duties, ECOA/Reg B, HIPAA, GDPR/CCPA/TCPA, OFAC,
+  3-way match, legal hold, and more (27 across 9 departments). The registry is
+  **fail-closed**: a compliance tag with no backing checker returns `UNBACKED`
+  rather than silently passing, closing the old hole where an unrecognized tag
+  sailed through the gate. Checkers are pure and unit-tested; the LLM is a labeled
+  fallback only where no deterministic checker exists yet.
+- **The General Ledger will not post an unbalanced entry.** Finance runs real
+  double-entry accrual accounting (`app/finance/services/gl.py`): debits must
+  equal credits (Decimal, fail-closed), the invoice liability is accrued on
+  approval, statements (trial balance, P&L, balance sheet) derive from posted
+  lines, and a closed fiscal period refuses back-dated postings.
 - **Benchmarks publish losses as well as wins.** On the real-data benchmark some
   domains land at or below the naive baseline, and those results are reported as
   they came out ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
@@ -179,12 +192,15 @@ KAEOS/
 │   │   ├── api/routes/       56 route modules, 316 endpoints
 │   │   ├── connectors/       Connector base + CSV/REST adapters
 │   │   ├── core/             Config, auth, RLS, tenancy, seeding, telemetry
+│   │   ├── compliance/        Deterministic statutory checker spine + registry
+│   │   │                      (27 checkers across 9 departments, fail-closed)
 │   │   ├── models/           Platform SQLAlchemy models
 │   │   ├── services/         76 domain services (gates, LLM router, provenance)
 │   │   ├── workforce/        Department lifecycle, deployment, analytics
 │   │   └── hr/ finance/ legal/ sales/ support/ operations/ engineering/
 │   │                         7 departments, 41 agents, each behind a gated_runner
-│   ├── alembic/versions/     29 migrations
+│   │                         (finance: real double-entry accrual GL + statements)
+│   ├── alembic/versions/     35 migrations
 │   ├── benchmark/            Real-data benchmark harness
 │   └── tests/                114 files, 900 tests (441 e2e + 459 unit)
 ├── frontend/                 React 19 + TypeScript + Vite + Tailwind
