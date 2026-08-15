@@ -109,3 +109,75 @@ A backup on the same disk as the database does not survive disk loss. After each
 - keep at least the 3-2-1 baseline: 3 copies, 2 media, 1 offsite
 
 Periodically test restores against a scratch database. A backup that has never been restored is not a backup.
+
+## 5. Recovery objectives (RPO / RTO)
+
+These are the platform's stated recovery targets. Backup cadence and rollback
+procedure below are sized to meet them.
+
+| Objective | Target | How it is met |
+|---|---|---|
+| **RPO** (max acceptable data loss) | **24 hours** | Nightly scheduled `backup_db.py` (section 1). Tighten to 1h with hourly WAL archiving / a managed-Postgres PITR tier when the workload warrants it. |
+| **RTO** (max acceptable downtime) | **1 hour** | Restore drill below completes well inside this on a single-node deploy; the previous image tag stays pullable for an app-only rollback in minutes. |
+
+Persistent state that MUST be in the backup set (see `docker-compose.prod.yml`
+volumes): `pgdata` (the database), `applogs` (the `audit-fallback.jsonl`
+tamper-evidence sink), and `appdata` (locally-stored blobs such as candidate
+resumes, when object storage is not configured). Prefer S3/GCS blob URIs in
+production so blob durability does not depend on a single node's volume.
+
+### Restore drill (run quarterly)
+
+An untested backup is not a backup. Once a quarter, prove the whole path end to
+end against a scratch target, not the live database:
+
+1. Stand up a scratch Postgres (a throwaway container is fine).
+2. Restore the most recent backup into it with `python -m scripts.restore_db`.
+3. Point a backend at it with `DATABASE_URL` and run `alembic current` — confirm
+   it reports the expected head (currently `0049_ops_work_orders`).
+4. Boot the backend and hit `/health`; spot-check one tenant's data.
+5. Re-run journaled erasures against the restored DB
+   (`POST /api/v1/privacy/erasure/replay`, section on erasure) so PII a caller
+   deleted before the backup's cutoff cannot silently return after a restore.
+6. Record the date and the measured restore time; if it exceeded the RTO, either
+   raise the target or speed up the path.
+
+## 6. Application rollback (bad release)
+
+Distinct from a data restore: when a deploy ships a broken app but the database
+is fine, roll the code back without touching data.
+
+1. **Identify the last good image tag** (CI publishes one per merge to `main`;
+   keep the previous few pullable).
+2. **Roll back the code**: repoint the `backend` service to the previous image
+   tag and redeploy (`docker compose -f docker-compose.prod.yml up -d backend`),
+   or `helm rollback kaeos <previous-revision>` on the Helm path.
+3. **Migrations are the one-way door.** If the bad release ran a migration, the
+   older image will not boot against the newer schema. Options, in order of
+   preference:
+   - Prefer forward-fix (ship a corrective migration) over downgrading.
+   - If you must downgrade, `alembic downgrade <target>` FIRST, then deploy the
+     older image. Every migration `0045`+ has a tested `downgrade()`
+     (`tests/test_prelaunch_fixes.py::test_recent_migrations_downgrade_and_reupgrade`),
+     but a downgrade that drops a column is destructive - take a backup first.
+4. **Verify**: `/health` is 200, `alembic current` is the expected head, and the
+   symptom that triggered the rollback is gone.
+
+## 7. Email deliverability (SPF / DKIM / DMARC)
+
+KAEOS sends transactional and governance email (password reset, HITL approval
+links, alerts) from the configured SMTP sender. Without sender authentication,
+those land in spam or are spoofable. Configure all three on the sending domain
+before enabling outbound email in production:
+
+- **SPF**: publish a TXT record on the sending domain authorising your relay,
+  e.g. `v=spf1 include:<your-esp-include> -all` (use `-all`, hard fail, once the
+  list of senders is confirmed).
+- **DKIM**: enable DKIM signing at the relay/ESP and publish the public key at
+  `<selector>._domainkey.<domain>`. Verify a test message shows `dkim=pass`.
+- **DMARC**: publish `_dmarc.<domain>` starting at
+  `v=DMARC1; p=none; rua=mailto:dmarc@<domain>` to collect reports, then move to
+  `p=quarantine` and finally `p=reject` once SPF and DKIM align cleanly.
+- The notifier fails closed on a TLS-configured SMTP relay that cannot STARTTLS
+  (it will not send governance mail in cleartext) unless
+  `allow_plaintext_fallback` is set on the channel - keep that off in production.

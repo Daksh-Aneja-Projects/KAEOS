@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 
 HTTP_TIMEOUT = 15.0
 SMTP_TIMEOUT = 15.0
+_DELIVERY_ATTEMPTS = 3        # total tries per channel before giving up
+_DELIVERY_BACKOFF_S = 0.5     # base backoff, doubles each retry
+
+
+class _UnknownChannel(Exception):
+    """Non-retryable: the channel kind is not one we can deliver to."""
+    def __init__(self, kind: str):
+        self.kind = kind
+        super().__init__(kind)
 
 
 # ── Channel senders (each returns None on success, raises on failure) ─────────
@@ -60,15 +69,23 @@ def _send_smtp_sync(cfg: Dict[str, Any], subject: str, body: str,
     msg["From"] = from_addr
     msg["To"] = ", ".join(to_addrs)
 
+    # Fail closed by default: if the config asked for TLS and the server cannot
+    # do STARTTLS, do NOT quietly send the alert (which may name a governed
+    # decision) in cleartext. A dev relay can opt into plaintext with
+    # allow_plaintext_fallback=true.
+    allow_plaintext = bool(cfg.get("allow_plaintext_fallback", False))
     with smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT) as server:
         if use_tls:
             try:
                 server.starttls()
             except smtplib.SMTPNotSupportedError:
-                # Local/dev relays often speak plain SMTP; the config asked for
-                # TLS but the server cannot - proceed unencrypted rather than
-                # silently dropping the message, and log loudly.
-                logger.warning("[Notifier] SMTP server %s does not support STARTTLS", host)
+                if not allow_plaintext:
+                    raise RuntimeError(
+                        f"SMTP server {host} does not support STARTTLS and "
+                        "allow_plaintext_fallback is off; refusing to send cleartext.")
+                logger.warning(
+                    "[Notifier] SMTP server %s does not support STARTTLS; sending "
+                    "in cleartext because allow_plaintext_fallback is on", host)
         if username and password:
             server.login(username, password)
         server.sendmail(from_addr, to_addrs, msg.as_string())
@@ -109,7 +126,7 @@ async def _deliver_one(channel: NotificationChannel, event: str, subject: str,
         cfg = decrypt_secrets(channel.config_encrypted)
     except Exception as e:
         return f"config decrypt failed: {e}"
-    try:
+    async def _attempt() -> None:
         if channel.kind == "smtp":
             await asyncio.to_thread(_send_smtp_sync, cfg, subject, body, to_override)
         elif channel.kind == "slack":
@@ -117,10 +134,23 @@ async def _deliver_one(channel: NotificationChannel, event: str, subject: str,
         elif channel.kind == "webhook":
             await _send_webhook(cfg, event, subject, body, data)
         else:
-            return f"unknown channel kind '{channel.kind}'"
-        return None
-    except Exception as e:
-        return str(e)[:900]
+            raise _UnknownChannel(channel.kind)
+
+    # Governance alerts (hitl.pending, etc.) must not drop on one transient
+    # SMTP/HTTP blip, so retry with a short backoff. A delivery is at-least-once;
+    # an alert arriving twice is acceptable, silently vanishing is not.
+    last_err: Optional[str] = None
+    for attempt in range(_DELIVERY_ATTEMPTS):
+        try:
+            await _attempt()
+            return None
+        except _UnknownChannel as e:
+            return f"unknown channel kind '{e.kind}'"  # not retryable
+        except Exception as e:
+            last_err = str(e)[:900]
+            if attempt < _DELIVERY_ATTEMPTS - 1:
+                await asyncio.sleep(_DELIVERY_BACKOFF_S * (2 ** attempt))
+    return last_err
 
 
 async def notify(tenant_id: str, event: str, subject: str, body: str,

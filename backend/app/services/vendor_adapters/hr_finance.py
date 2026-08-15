@@ -31,7 +31,7 @@ class BambooHRAdapter(_RestAdapter):
         return {
             "external_id": str(e.get("id", "")),
             "entity": "employee",
-            "summary": f"{e.get('displayName', '')} — {e.get('jobTitle', '?')} "
+            "summary": f"{e.get('displayName', '')} - {e.get('jobTitle', '?')} "
                        f"in {e.get('department', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": True,
         }
@@ -65,7 +65,7 @@ class GreenhouseAdapter(_RestAdapter):
         return {
             "external_id": str(c.get("id", "")),
             "entity": "candidate",
-            "summary": f"{c.get('first_name', '')} {c.get('last_name', '')} — stage={stage}",
+            "summary": f"{c.get('first_name', '')} {c.get('last_name', '')} - stage={stage}",
             "domain": self.domain, "authority": self.authority, "pii": True,
         }
 
@@ -104,7 +104,7 @@ class StripeAdapter(_RestAdapter):
         return {
             "external_id": str(i.get("id", "")),
             "entity": "invoice",
-            "summary": f"Invoice {i.get('number') or i.get('id')} — status={i.get('status', '?')} "
+            "summary": f"Invoice {i.get('number') or i.get('id')} - status={i.get('status', '?')} "
                        f"amount={amount} {str(i.get('currency', '')).upper()}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }
@@ -143,7 +143,7 @@ class DocuSignAdapter(_RestAdapter):
         return {
             "external_id": str(e.get("envelopeId", "")),
             "entity": "envelope",
-            "summary": f"Envelope '{e.get('emailSubject', '')}' — status={e.get('status', '?')} "
+            "summary": f"Envelope '{e.get('emailSubject', '')}' - status={e.get('status', '?')} "
                        f"sent={e.get('sentDateTime', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": True,
         }

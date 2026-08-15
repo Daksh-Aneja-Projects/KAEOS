@@ -33,7 +33,7 @@ class GitHubAdapter(_RestAdapter):
         return {
             "external_id": str(pr.get("number", pr.get("id", ""))),
             "entity": "pull_request",
-            "summary": f"PR #{pr.get('number')} {pr.get('title', '')} — "
+            "summary": f"PR #{pr.get('number')} {pr.get('title', '')} - "
                        f"{pr.get('state')} by {(pr.get('user') or {}).get('login', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }
@@ -65,7 +65,7 @@ class GitLabAdapter(_RestAdapter):
         return {
             "external_id": str(mr.get("iid", mr.get("id", ""))),
             "entity": "merge_request",
-            "summary": f"MR !{mr.get('iid')} {mr.get('title', '')} — {mr.get('state')}",
+            "summary": f"MR !{mr.get('iid')} {mr.get('title', '')} - {mr.get('state')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }
 
@@ -102,7 +102,7 @@ class PagerDutyAdapter(_RestAdapter):
         return {
             "external_id": str(i.get("id", "")),
             "entity": "incident",
-            "summary": f"[{i.get('incident_number')}] {i.get('title', '')} — "
+            "summary": f"[{i.get('incident_number')}] {i.get('title', '')} - "
                        f"{i.get('status')} urgency={i.get('urgency')} "
                        f"service={(i.get('service') or {}).get('summary', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
@@ -137,7 +137,7 @@ class DatadogAdapter(_RestAdapter):
         return {
             "external_id": str(m.get("id", "")),
             "entity": "monitor",
-            "summary": f"Monitor '{m.get('name', '')}' — state={m.get('overall_state', '?')} "
+            "summary": f"Monitor '{m.get('name', '')}' - state={m.get('overall_state', '?')} "
                        f"type={m.get('type', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }
@@ -171,7 +171,7 @@ class SentryAdapter(_RestAdapter):
         return {
             "external_id": str(i.get("id", "")),
             "entity": "error_issue",
-            "summary": f"{i.get('title', '')} — {i.get('count', 0)} events, "
+            "summary": f"{i.get('title', '')} - {i.get('count', 0)} events, "
                        f"level={i.get('level', '?')}, culprit={i.get('culprit', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
         }

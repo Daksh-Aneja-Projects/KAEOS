@@ -133,6 +133,31 @@ async def test_erasure_tombstones_lending_applicant_and_borrower(db):
     assert bname != "Jane Borrower"
 
 
+def test_recent_migrations_downgrade_and_reupgrade(tmp_path):
+    """The 0045-0049 downgrades are exercised (they were never run by any test).
+
+    Full round trip on a scratch SQLite DB: upgrade to head, downgrade back to
+    the pre-session head, then re-upgrade. A broken downgrade fails here instead
+    of during a production rollback.
+    """
+    import subprocess, sys, os, pathlib
+    backend = pathlib.Path(__file__).resolve().parents[1]
+    db = tmp_path / "mig_roundtrip.db"
+    env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{db}", "DEV_MODE": "true"}
+
+    def alembic(*args):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", *args],
+            cwd=str(backend), env=env, capture_output=True, text=True, timeout=300)
+
+    up = alembic("upgrade", "head")
+    assert up.returncode == 0, f"upgrade failed: {up.stderr[-800:]}"
+    down = alembic("downgrade", "0044_tenant_branding")
+    assert down.returncode == 0, f"downgrade failed: {down.stderr[-800:]}"
+    reup = alembic("upgrade", "head")
+    assert reup.returncode == 0, f"re-upgrade failed: {reup.stderr[-800:]}"
+
+
 def test_rate_limiter_runs_after_tenant_resolution():
     """TenantMiddleware must be OUTER of RateLimitMiddleware so the limiter can
     key per-tenant. In Starlette user_middleware, index 0 is outermost, so the
@@ -149,6 +174,35 @@ def test_rate_limiter_runs_after_tenant_resolution():
         "TenantMiddleware must run before RateLimitMiddleware, or the limiter "
         "never sees request.state.tenant and silently keys by IP."
     )
+
+
+def test_smtp_fails_closed_when_starttls_unsupported():
+    """A TLS-configured SMTP send refuses cleartext unless explicitly allowed."""
+    import smtplib
+    from unittest.mock import MagicMock, patch
+    from app.services import notifier
+
+    def make_ctx():
+        server = MagicMock()
+        server.starttls.side_effect = smtplib.SMTPNotSupportedError()
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=server)
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx, server
+
+    ctx, server = make_ctx()
+    with patch.object(notifier.smtplib, "SMTP", return_value=ctx):
+        with pytest.raises(RuntimeError):
+            notifier._send_smtp_sync(
+                {"host": "h", "to_addrs": ["a@b.c"], "use_tls": True}, "s", "b")
+        server.sendmail.assert_not_called()
+
+    ctx2, server2 = make_ctx()
+    with patch.object(notifier.smtplib, "SMTP", return_value=ctx2):
+        notifier._send_smtp_sync(
+            {"host": "h", "to_addrs": ["a@b.c"], "use_tls": True,
+             "allow_plaintext_fallback": True}, "s", "b")
+        server2.sendmail.assert_called_once()
 
 
 def test_brain_ingest_scrubs_untrusted_upload():
