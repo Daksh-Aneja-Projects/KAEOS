@@ -54,28 +54,33 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
   const load = useCallback(async (showSpinner = false) => {
     if (showSpinner) { setLoading(true); setError(null); }
     let anchorFailed: any = null;
+    let depsFailed = false;
     const [ov, deps, activity, trendData, grads, sarData] = await Promise.all([
       api.getWorkforceOverview().catch((e) => { anchorFailed = e; return null; }),
-      api.getWorkforceDepartments().catch(() => ({ departments: [] })),
-      api.getOODAEvents().catch(() => ({ events: [] })),
+      api.getWorkforceDepartments().catch(() => { depsFailed = true; return null; }),
+      api.getOODAEvents().catch(() => null),
       api.getAutonomyTrend(30).catch(() => null),
       api.getGraduations().catch(() => null),
       api.getSafeAutonomy(30).catch(() => null),
     ]);
     // Only the initial (spinner) load flips to an error screen; a failed
-    // background refresh keeps the last good data on screen.
+    // background refresh keeps the last good data on screen - and only
+    // commits state for calls that actually resolved, so a transient
+    // failure on one background poll can't blank out the rest.
     if (anchorFailed && showSpinner) {
       setError(anchorFailed?.message || 'Workforce services are unreachable');
       setLoading(false);
       return;
     }
-    setOverview(ov);
-    setDepartments(deps?.departments || []);
-    setRecentActivity(activity?.events?.slice(0, 8) || []);
-    setTrend(trendData);
-    setGraduations(grads);
-    setSar(sarData);
-    setSyncedAt(Date.now());
+    if (!anchorFailed) {
+      setOverview(ov);
+      setSyncedAt(Date.now()); // only advance "last synced" when the anchor call actually succeeded
+    }
+    if (!depsFailed) setDepartments(deps?.departments || []);
+    if (activity) setRecentActivity(activity.events?.slice(0, 8) || []);
+    if (trendData) setTrend(trendData);
+    if (grads) setGraduations(grads);
+    if (sarData) setSar(sarData);
     setLoading(false);
   }, []);
 
@@ -361,6 +366,8 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {departments.map(dept => (
                   <div key={dept.id} onClick={() => navigate(`/departments/${dept.slug || dept.id}`)}
+                    role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/departments/${dept.slug || dept.id}`); } }}
                     className="cursor-pointer transition-all hover:shadow-lg group" style={card}>
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">

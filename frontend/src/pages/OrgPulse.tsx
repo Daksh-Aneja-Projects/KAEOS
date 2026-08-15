@@ -423,6 +423,8 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
         <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {(pulse?.domains || []).map(d => (
             <div key={d.domain} onClick={() => navigate(domainRoute(d.domain))}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(domainRoute(d.domain)); } }}
               className="rounded-xl p-4 block transition-transform hover:-translate-y-0.5 cursor-pointer"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
               <div className="flex items-center justify-between mb-2">
@@ -471,6 +473,8 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               return (
                 <div key={i}
                   onClick={() => navigate(domainRoute(ins.domain))}
+                  role="button" tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(domainRoute(ins.domain)); } }}
                   className="flex items-start gap-2.5 px-3 py-2 rounded-lg text-[12px] cursor-pointer transition-colors hover:brightness-110"
                   style={{ background: `${color}10` }}
                   title={`Open ${ins.domain} department`}>
@@ -561,6 +565,8 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                 {stale.slice(0, 15).map(b => (
                   <tr key={`${b.entity_type}-${b.entity_id}`}
                     onClick={() => navigate(domainRoute(b.domain))}
+                    role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(domainRoute(b.domain)); } }}
                     className="cursor-pointer transition-colors hover:brightness-110"
                     style={{ borderBottom: `1px solid ${colors.hairline}` }}
                     title={`Open ${b.domain} department`}>

@@ -90,19 +90,20 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
           });
         });
 
-        // Score trend
+        // Score trend - backend/app/schemas/dashboard.py declares this a
+        // categorical string ("up" | "down" | "stable"), not a number to parse.
+        // The backend has no numeric delta for this field, so `delta` stays
+        // undefined rather than fabricating a plausible-looking percentage.
         if (hv.score_trend) {
-          const trendNum = parseFloat(hv.score_trend);
-          const hasDelta = Number.isFinite(trendNum) && trendNum !== 0;
-          const title = !hasDelta
-            ? 'KB overall score held steady'
-            : `KB overall score ${trendNum > 0 ? 'improved' : 'declined'}`;
+          const dir = String(hv.score_trend).toLowerCase();
+          const title = dir === 'up' ? 'KB overall score improved'
+            : dir === 'down' ? 'KB overall score declined'
+            : 'KB overall score held steady';
           synthesized.push({
             id: 'score-trend',
             type: 'confidence_update',
             title,
-            description: `Overall knowledge base health is ${hv.overall_score}/100${hasDelta ? ` (moved ${hv.score_trend})` : ' (stable)'}.`,
-            delta: hasDelta ? trendNum / 100 : undefined,
+            description: `Overall knowledge base health is ${hv.overall_score}/100 (${dir}).`,
             timestamp: now.toISOString(),
           });
         }

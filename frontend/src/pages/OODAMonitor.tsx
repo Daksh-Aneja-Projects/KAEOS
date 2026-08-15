@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { usePolling } from '../hooks/usePolling';
 import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
 import {
   Eye, Compass, Brain, Zap, ArrowRight, CheckCircle, Clock, AlertTriangle,
@@ -26,40 +26,18 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
   const { colors } = useTheme();
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
-  const [events, setEvents] = useState<OODAEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const { status, lastMessage } = useWebSocket();
-
-  // Load initial events from API
-  useEffect(() => {
-    api.getOODAEvents()
-      .then(d => {
-        if (d && d.events) {
-          setEvents(d.events);
-        }
-        setLoading(false);
-      })
-      .catch(e => {
-        console.error(e);
-        setError("Failed to fetch initial events");
-        setLoading(false);
-      });
-  }, []);
-
-  // Listen to WebSocket for live events
-  useEffect(() => {
-    if (lastMessage && lastMessage.type === "ooda_event" && lastMessage.event) {
-      setEvents(prev => [lastMessage.event as OODAEvent, ...prev].slice(0, 100));
-    }
-  }, [lastMessage]);
-
+  // The backend has no WS broadcast for OODA events (GET /dashboard/ooda-events
+  // recomputes fresh from SkillExecution/Signal on every call) - poll it on the
+  // same cadence as the rest of the cognitive-loop streams (STREAM_INTERVALS.OODA)
+  // instead of listening for a "ooda_event" WS message the server never sends.
+  const { data, loading, error: pollError, isLive, staleness, refresh } =
+    usePolling(() => api.getOODAEvents(), STREAM_INTERVALS.OODA);
+  const events = data?.events || [];
   const empty = events.length === 0;
-  const isLive = status === 'connected';
-  const staleness = 0;
-
-  const resume = () => { /* WebSocket auto-reconnects */ };
+  // Only treat a poll failure as fatal (full-page error) when there's nothing
+  // to show yet; a transient failure after data has loaded should not blank
+  // out an otherwise-live timeline.
+  const error = pollError && empty ? pollError : null;
 
   const phases = [
     { id: 'OBSERVE', label: 'Observe', icon: Eye, color: '#3b82f6', desc: 'Signals + External Intelligence' },
@@ -73,7 +51,7 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
 
   // ── COGNITIVE STATES ──
   if (loading) return <BrainLoading message="Connecting to OODA cognitive loop…" />;
-  if (error) return <BrainError message={error} onRetry={() => window.location.reload()} />;
+  if (error) return <BrainError message={error} onRetry={refresh} />;
 
   return (
     <div className={`${PAGE_PAD} space-y-5`} style={{ background: colors.canvas, color: colors.ink }}>

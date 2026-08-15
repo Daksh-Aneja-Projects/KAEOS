@@ -529,6 +529,8 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                     <td className="px-4 py-3">
                       {r.active
                         ? <Badge text="On call now" color="#22c55e" />
+                        : !r.starts_at
+                        ? <Badge text="Unscheduled" color="#6b7280" />
                         : <Badge text={new Date(r.starts_at) > new Date() ? 'Upcoming' : 'Completed'} color="#6b7280" />}
                     </td>
                   </tr>

@@ -212,14 +212,14 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
             onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
 
-        <div className="flex gap-1 p-1 rounded-xl" role="tablist" aria-label="Sales sections" style={{ background: colors.surface1 }}>
+        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" role="tablist" aria-label="Sales sections" style={{ background: colors.surface1 }}>
           {TABS.map((t, i) => (
             <button key={t.key} id={`sales-tab-${t.key}`} role="tab"
               aria-selected={tab === t.key}
               tabIndex={tab === t.key ? 0 : -1}
               onClick={() => setTab(t.key)}
               onKeyDown={e => moveTab(e, i)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all whitespace-nowrap shrink-0"
               style={{ background: tab === t.key ? colors.canvas : 'transparent', color: tab === t.key ? t.color : colors.inkSubtle, boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
               <t.icon className="w-3.5 h-3.5" /> {t.label}
             </button>
@@ -439,17 +439,22 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3 font-mono">${(f.best_case || 0).toLocaleString()}</td>
                         <td className="px-4 py-3 font-mono">${(f.pipeline || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[11px]">
-                              <span>${(f.quota || 0).toLocaleString()}</span>
-                              <span style={{ color: (f.committed / f.quota) > 0.8 ? '#22c55e' : '#f59e0b' }}>
-                                {f.quota ? Math.round((f.committed / f.quota) * 100) : 0}%
-                              </span>
-                            </div>
-                            <div className="h-1 rounded-full w-24" style={{ background: colors.hairline }}>
-                              <div className="h-full rounded-full" style={{ width: `${Math.min(100, f.quota ? Math.round((f.committed / f.quota) * 100) : 0)}%`, background: '#22c55e' }} />
-                            </div>
-                          </div>
+                          {(() => {
+                            const pct = f.quota ? f.committed / f.quota : 0;
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[11px]">
+                                  <span>${(f.quota || 0).toLocaleString()}</span>
+                                  <span style={{ color: pct > 0.8 ? '#22c55e' : '#f59e0b' }}>
+                                    {Math.round(pct * 100)}%
+                                  </span>
+                                </div>
+                                <div className="h-1 rounded-full w-24" style={{ background: colors.hairline }}>
+                                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.round(pct * 100))}%`, background: '#22c55e' }} />
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3">
                           <button onClick={() => runAgent('Forecast predict', f.id, api.runSalesForecastAgent)}

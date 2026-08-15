@@ -5,6 +5,7 @@ import type { AutomationRule, WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
+import TableCard from '../components/shared/TableCard';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
@@ -171,29 +172,35 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
       </div>
 
       {/* Rule list */}
-      <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        {loading ? (
-          <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: colors.primary }} /></div>
-        ) : error ? (
+      {loading ? (
+        <div className="rounded-xl flex items-center justify-center py-12" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: colors.primary }} />
+        </div>
+      ) : error ? (
+        <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
           <BrainError message={error} onRetry={() => { setLoading(true); loadRules(); }} />
-        ) : rules.length === 0 ? (
+        </div>
+      ) : rules.length === 0 ? (
+        <div className="rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
           <p className="text-[12px] py-10 text-center" style={{ color: colors.inkTertiary }}>No automation rules yet.</p>
-        ) : (
+        </div>
+      ) : (
+        <TableCard minWidth={640}>
           <table className="w-full text-[12px]">
             <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
               {['Rule', 'When', 'Action', 'Fired', 'Active', ''].map(h => (
-                <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                <th key={h} className="text-left px-4 py-3 font-semibold whitespace-nowrap" style={{ color: colors.inkSubtle }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {rules.map(r => (
                 <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                  <td className="px-4 py-3 font-medium">{r.name}</td>
-                  <td className="px-4 py-3 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
+                  <td className="px-4 py-3 font-medium whitespace-nowrap">{r.name}</td>
+                  <td className="px-4 py-3 font-mono text-[11px] whitespace-nowrap" style={{ color: colors.inkSubtle }}>
                     {humanize(r.entity_type)} in {humanize(r.trigger_state)} &gt; {r.dwell_hours}h
                   </td>
                   <td className="px-4 py-3">
-                    <span className="flex items-center gap-1"><Bot className="w-3 h-3" style={{ color: colors.primary }} />
+                    <span className="flex items-center gap-1 whitespace-nowrap"><Bot className="w-3 h-3" style={{ color: colors.primary }} />
                       {r.action_type === 'transition' ? `Move to ${humanize(r.action_to_state)}`
                         : r.action_type === 'assign' ? `Assign to ${r.action_assignee}` : 'Escalate'}
                     </span>
@@ -201,7 +208,7 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
                   <td className="px-4 py-3 font-mono">{r.times_fired}</td>
                   <td className="px-4 py-3">
                     <button onClick={() => toggle(r)}
-                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
                       style={{ background: r.is_active ? '#22c55e18' : colors.surface2, color: r.is_active ? '#22c55e' : colors.inkSubtle }}>
                       {r.is_active ? 'active' : 'paused'}
                     </button>
@@ -213,8 +220,8 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </TableCard>
+      )}
     </div>
   );
 };

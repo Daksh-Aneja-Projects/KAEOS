@@ -21,6 +21,7 @@ const DataGovernanceSettings: React.FC = () => {
   const [usage, setUsage] = useState<any>(null);
   const [wh, setWh] = useState({ name: '', endpoint: '', events: '' });
   const [whBusy, setWhBusy] = useState(false);
+  const [whMsg, setWhMsg] = useState('');
 
   const load = () => {
     api.getRetention().then(setRetention).catch(() => setRetention(null));
@@ -48,12 +49,17 @@ const DataGovernanceSettings: React.FC = () => {
 
   const addWebhook = async () => {
     if (!wh.name || !wh.endpoint) return;
-    setWhBusy(true);
+    setWhBusy(true); setWhMsg('');
     try {
       await api.createWebhook({ name: wh.name, endpoint: wh.endpoint, events: wh.events.split(',').map(s => s.trim()).filter(Boolean) });
       setWh({ name: '', endpoint: '', events: '' });
       await load();
-    } catch { /* surfaced below via reload */ } finally { setWhBusy(false); }
+    } catch (e: any) { setWhMsg(e?.message || 'Failed to add webhook.'); } finally { setWhBusy(false); }
+  };
+
+  const deleteWebhook = (id: string) => {
+    setWhMsg('');
+    api.deleteWebhook(id).then(load).catch((e: any) => setWhMsg(e?.message || 'Failed to delete webhook.'));
   };
 
   const card: React.CSSProperties = { background: colors.surface1, border: `1px solid ${colors.hairline}`, borderRadius: 14 };
@@ -69,7 +75,7 @@ const DataGovernanceSettings: React.FC = () => {
         </div>
         {usage ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[['Calls', usage.call_count], ['Total cost (USD)', usage.total_cost != null ? `$${Number(usage.total_cost).toFixed(4)}` : '-'],
+            {[['Calls', usage.metered_calls], ['Total cost (USD)', usage.total_cost_usd != null ? `$${Number(usage.total_cost_usd).toFixed(4)}` : '-'],
               ['Input tokens', usage.input_tokens], ['Output tokens', usage.output_tokens]].map(([label, val]) => (
               <div key={String(label)} className="p-3 rounded-lg" style={{ background: colors.surface2 }}>
                 <div className="text-[18px] font-bold tabular-nums" style={{ color: colors.ink }}>{val ?? '-'}</div>
@@ -132,7 +138,7 @@ const DataGovernanceSettings: React.FC = () => {
                   <span className="font-medium">{w.name}</span>
                   <span className="ml-2" style={{ color: colors.inkSubtle }}>{w.endpoint} · {(w.events || []).map((e: string) => humanize(e)).join(', ')} · {w.delivery_count ?? 0} sent</span>
                 </div>
-                <button onClick={() => api.deleteWebhook(w.id).then(load)} className="p-1.5 rounded" style={{ color: colors.error }}
+                <button onClick={() => deleteWebhook(w.id)} className="p-1.5 rounded" style={{ color: colors.error }}
                   aria-label={`Delete webhook ${w.name}`} title="Delete webhook"><Trash2 className="w-4 h-4" /></button>
               </div>
             ))}
@@ -148,6 +154,7 @@ const DataGovernanceSettings: React.FC = () => {
           style={{ background: colors.primary, color: '#fff' }}>
           {whBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add webhook
         </button>
+        {whMsg && <p className="text-[11px] mt-2" style={{ color: colors.error }}>{whMsg}</p>}
       </div>
     </div>
   );

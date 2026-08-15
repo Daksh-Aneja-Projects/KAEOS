@@ -4,6 +4,8 @@ import { api, downloadFile } from '../api/client';
 import { Shield, CheckCircle, AlertTriangle, XCircle, Check, ShieldAlert, FileCheck, Gauge, Loader2, ScrollText, Trash2, RotateCcw, Lock, Download } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { StatCard } from '../components/shared/StatCard';
+import { CountUp } from '../components/CountUp';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
@@ -127,14 +129,9 @@ const ComplianceDashboard = () => {
       </div>
      </div>
      <div className="flex gap-3 items-center">
-      <div className="px-4 py-2 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-       <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.inkSubtle }}>Tagged Rules</div>
-       <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.ink }}>{data.total_tagged_rules}</div>
-      </div>
-      <div className="px-4 py-2 rounded-xl" style={{ background: colors.warning + '14', border: `1px solid ${colors.warning}33` }}>
-       <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: colors.warning }}>Untagged</div>
-       <div className="text-[20px] font-bold tabular-nums" style={{ color: colors.warning }}>{data.untagged_rules}</div>
-      </div>
+      <StatCard label="Tagged Rules" value={data.total_tagged_rules} accent={colors.primary} className="!p-3 min-w-[104px]" />
+      <StatCard label="Untagged" value={data.untagged_rules} accent={colors.warning} className="!p-3 min-w-[104px]"
+        style={{ background: colors.warning + '14', border: `1px solid ${colors.warning}33` }} />
       <button onClick={exportCompliance} disabled={exporting}
         title="Download framework coverage, violations, and last-audit dates as a CSV"
         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium self-stretch disabled:opacity-50"
@@ -200,13 +197,13 @@ const ComplianceDashboard = () => {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
        {([['HIGH', reg.risk_summary?.HIGH ?? 0], ['LIMITED', reg.risk_summary?.LIMITED ?? 0], ['MINIMAL', reg.risk_summary?.MINIMAL ?? 0]] as const).map(([tier, n]) => (
         <div key={tier} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-         <div className="text-[22px] font-bold" style={{ color: TIER_COLOR[tier] }}>{n}</div>
+         <div style={{ color: TIER_COLOR[tier] }}><CountUp value={n} className="text-[22px] font-bold tabular-nums block" /></div>
          <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{tier} risk</div>
         </div>
        ))}
        {([['compliance_blocks', 'Blocks'], ['audit_failures', 'Audit fails'], ['human_overrides', 'Overrides']] as const).map(([k, label]) => (
         <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-         <div className="text-[22px] font-bold" style={{ color: (reg.monitor?.[k] ?? 0) > 0 ? colors.warning : colors.ink }}>{reg.monitor?.[k] ?? 0}</div>
+         <div style={{ color: (reg.monitor?.[k] ?? 0) > 0 ? colors.warning : colors.ink }}><CountUp value={reg.monitor?.[k] ?? 0} className="text-[22px] font-bold tabular-nums block" /></div>
          <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label} (30d)</div>
         </div>
        ))}
@@ -267,7 +264,7 @@ const ComplianceDashboard = () => {
          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {([['control_count', 'Controls'], ['control_executions', 'Control runs'], ['provenance_entries', 'Ledger entries'], ['actions_recorded', 'Actions']] as const).map(([k, label]) => (
            <div key={k} className="text-center p-2 rounded-lg" style={{ background: colors.surface1 }}>
-            <div className="text-[18px] font-bold" style={{ color: colors.ink }}>{evidence[k] ?? 0}</div>
+            <CountUp value={evidence[k] ?? 0} className="text-[18px] font-bold tabular-nums block" />
             <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{label}</div>
            </div>
           ))}
@@ -294,7 +291,7 @@ const ComplianceDashboard = () => {
        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {([['implemented', 'Implemented', colors.success], ['operational', 'Operational', colors.warning], ['external', 'External', colors.inkSubtle]] as const).map(([k, label, c]) => (
          <div key={k} className="p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
-          <div className="text-[22px] font-bold tabular-nums" style={{ color: c }}>{controls.summary?.[k] ?? 0}</div>
+          <div style={{ color: c }}><CountUp value={controls.summary?.[k] ?? 0} className="text-[22px] font-bold tabular-nums block" /></div>
           <div className="text-[11px] uppercase tracking-wide" style={{ color: colors.inkSubtle }}>{label}</div>
          </div>
         ))}

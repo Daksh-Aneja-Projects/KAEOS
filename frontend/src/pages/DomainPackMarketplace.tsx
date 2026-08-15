@@ -10,8 +10,8 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
-  Package, Search, Star, Download, Shield, Zap, Bot,
-  CheckCircle, ArrowRight, Filter, TrendingUp, Loader2, Trash2, XCircle
+  Package, Search, Download, Shield, Zap, Bot,
+  CheckCircle, ArrowRight, Filter, Loader2, Trash2, XCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { humanize } from '../lib/format';
@@ -236,16 +236,6 @@ export default function DomainPackMarketplace({ domain }: { domain?: string }) {
                       <Bot className="w-3 h-3" style={{ color: '#8b5cf6' }} />
                       <span>{(pack.agent_definitions || []).length} agents</span>
                     </div>
-                    {pack.rating > 0 && (
-                      <div className="flex items-center gap-1 text-[11px]" style={{ color: '#f59e0b' }}>
-                        <Star className="w-3 h-3 fill-current" /> {pack.rating.toFixed(1)}
-                      </div>
-                    )}
-                    {(pack.install_count || 0) > 0 && (
-                      <div className="flex items-center gap-1 text-[11px]" style={{ color: colors.inkSubtle }}>
-                        <TrendingUp className="w-3 h-3" /> {pack.install_count} installs
-                      </div>
-                    )}
                   </div>
 
                   {/* Compliance */}

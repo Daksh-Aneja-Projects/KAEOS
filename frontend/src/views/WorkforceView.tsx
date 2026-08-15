@@ -706,6 +706,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.inkTertiary }} />
             <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
               placeholder="Search employees by name or email…"
+              aria-label="Search employees by name or email"
               className="w-full pl-10 pr-4 py-2.5 rounded-lg text-[13px] outline-none transition-all"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }}
               onFocus={e => (e.target.style.borderColor = colors.primary)}
@@ -746,10 +747,8 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
               </thead>
               <tbody>
                 {filtered.map((emp, i) => (
-                  <tr key={emp.id} className="transition-colors hover:cursor-pointer"
-                    style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}
-                    onMouseEnter={e => (e.currentTarget.style.background = colors.surface2)}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <tr key={emp.id}
+                    style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold"

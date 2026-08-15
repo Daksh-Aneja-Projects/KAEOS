@@ -98,6 +98,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
             <input
               type="text"
+              aria-label="Search intents"
               placeholder="Search intents…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -174,7 +175,7 @@ export default function HITLQueue({ domain = 'All Domains' }: { domain?: string 
                 <div className="mt-6 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
                   <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.inkSubtle }}>Agent Reasoning Chain</h4>
                   <div className="space-y-2">
-                    {(item.reasoning_chain as ReasoningStep[]).map((step, idx: number) => (
+                    {((item.reasoning_chain as ReasoningStep[]) || []).map((step, idx: number) => (
                       <div key={idx} className="flex items-center gap-3 text-[13px]">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] shrink-0"
                           style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>

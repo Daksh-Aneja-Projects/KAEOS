@@ -27,6 +27,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
   const [feedData, setFeedData] = useState<any[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [mappingError, setMappingError] = useState(false);
+  const [schemaUnavailable, setSchemaUnavailable] = useState(false);
   const [catalog, setCatalog] = useState<any>(null);
 
   useEffect(() => {
@@ -62,24 +63,19 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
     return '#ef4444';
   };
 
-  const openMapper = async (c: any) => {
+  const openMapper = (c: any) => {
     setSelectedConnector(c);
-    // Fetch real schema fields from connector, fall back to connector's stored fields
-    let sourceFields = c.source_fields || c.schema_fields || [];
+    setMappingError(false);
+    // Source fields must come from the connector's own record - there is no
+    // backend endpoint that discovers/introspects a connector's schema on demand
+    // (connector_health only returns sync metrics, not field definitions).
+    const sourceFields = c.source_fields || c.schema_fields || [];
     if (!sourceFields.length) {
-      try {
-        const schemaResp = await api.getConnectorHealth(c.id);
-        sourceFields = schemaResp?.source_fields || schemaResp?.schema || [];
-      } catch { /* use fallback */ }
+      setSchemaUnavailable(true);
+      setScreen('mapper');
+      return;
     }
-    // Minimal fallback only if connector has no schema at all
-    if (!sourceFields.length) {
-      sourceFields = [
-        { field_name: 'id', object_type: 'Record', data_type: 'string' },
-        { field_name: 'name', object_type: 'Record', data_type: 'string' },
-        { field_name: 'email', object_type: 'Record', data_type: 'string' },
-      ];
-    }
+    setSchemaUnavailable(false);
     api.proposeSchemaMappings(c.id, sourceFields)
       .then(r => { setMappings(r || []); setMappingError(false); setScreen('mapper'); })
       .catch(() => {
@@ -272,13 +268,16 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
         )}
 
         {/* Screen 2: Schema Mapper (AI-First) */}
-        {screen === 'mapper' && mappingError && (
+        {screen === 'mapper' && schemaUnavailable && (
+          <BrainEmpty title="Schema not available" action="This connector does not expose discoverable source fields yet, so AI mapping cannot run." />
+        )}
+        {screen === 'mapper' && !schemaUnavailable && mappingError && (
           <BrainError message="Schema analysis unavailable. Connect the data source and retry." onRetry={() => selectedConnector && openMapper(selectedConnector)} />
         )}
-        {screen === 'mapper' && !mappingError && mappings.length === 0 && (
+        {screen === 'mapper' && !schemaUnavailable && !mappingError && mappings.length === 0 && (
           <BrainEmpty title="No schema mappings available" action="Connect a data source to enable AI-powered schema mapping" />
         )}
-        {screen === 'mapper' && !mappingError && mappings.length > 0 && (
+        {screen === 'mapper' && !schemaUnavailable && !mappingError && mappings.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -390,7 +389,7 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                   { id: 'scheduled', label: 'Scheduled Batch', desc: 'Cron-based', icon: Clock, color: '#f59e0b' },
                   { id: 'manual', label: 'Manual Trigger', desc: 'On-demand', icon: Upload, color: colors.primary },
                 ].map(mode => (
-                  <div key={mode.id} className="p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md"
+                  <div key={mode.id} className="p-3 rounded-lg border"
                     style={{ borderColor: colors.hairline, background: colors.canvas }}>
                     <div className="flex items-center gap-2 mb-1">
                       <mode.icon className="w-4 h-4" style={{ color: mode.color }} />
@@ -423,8 +422,9 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
                   <h3 className="text-[13px] font-semibold">Change Data Capture (CDC)</h3>
                   <p className="text-[11px]" style={{ color: colors.inkSubtle }}>Delta-only sync after initial full load via Debezium</p>
                 </div>
-                <div className="w-10 h-5 rounded-full relative cursor-pointer" style={{ background: '#22c55e' }}>
-                  <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white shadow" />
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0"
+                  style={{ background: '#22c55e15', color: '#22c55e' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-current" /> Enabled
                 </div>
               </div>
             </div>

@@ -9,6 +9,7 @@ import {
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from '../lib/departments';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { TableCard } from '../components/shared/TableCard';
 
 interface UserRecord {
   id: string;
@@ -313,7 +314,7 @@ export default function UserManagement() {
           </button>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden" style={{ borderColor: colors.hairline }}>
+        <TableCard minWidth={880}>
           <div className="grid grid-cols-12 text-[11px] font-semibold uppercase tracking-wider px-5 py-3"
             style={{ background: colors.surface1, color: colors.inkSubtle }}>
             <div className="col-span-2">User</div>
@@ -403,7 +404,7 @@ export default function UserManagement() {
               </div>
             );
           })}
-        </div>
+        </TableCard>
       )}
     </div>
   );

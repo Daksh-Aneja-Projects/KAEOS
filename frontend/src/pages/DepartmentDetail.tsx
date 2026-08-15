@@ -129,14 +129,14 @@ export default function DepartmentDetail({ domain }: { domain?: string }) {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1 border-b" role="tablist" aria-label="Department sections" style={{ borderColor: colors.hairline }}>
+        <div className="flex items-center gap-1 border-b overflow-x-auto no-scrollbar" role="tablist" aria-label="Department sections" style={{ borderColor: colors.hairline }}>
           {tabs.map((tab, i) => (
             <button key={tab.id} id={`dept-tab-${tab.id}`} role="tab"
               aria-selected={activeTab === tab.id}
               tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={e => moveTab(e, i)}
-              className="flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all border-b-2"
+              className="flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all border-b-2 whitespace-nowrap shrink-0"
               style={{
                 borderColor: activeTab === tab.id ? colors.primary : 'transparent',
                 color: activeTab === tab.id ? colors.primary : colors.inkSubtle,

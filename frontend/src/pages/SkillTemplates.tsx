@@ -16,6 +16,8 @@ const Marketplace = () => {
  const [error, setError] = useState<string | null>(null);
  const [isModalOpen, setIsModalOpen] = useState(false);
  const [formData, setFormData] = useState({ name: '', category: 'Sales', description: '', tags: '' });
+ const [publishError, setPublishError] = useState<string | null>(null);
+ const [publishing, setPublishing] = useState(false);
 
  const loadData = () => {
   setError(null);
@@ -28,6 +30,8 @@ const Marketplace = () => {
 
  const handleSubmit = async (e: React.FormEvent) => {
    e.preventDefault();
+   setPublishing(true);
+   setPublishError(null);
    try {
      await api.createMarketplaceTemplate({
        ...formData,
@@ -38,8 +42,10 @@ const Marketplace = () => {
      setFormData({ name: '', category: 'Sales', description: '', tags: '' });
      setLoading(true);
      loadData();
-   } catch (err) {
-     console.error(err);
+   } catch (err: any) {
+     setPublishError(err?.message || 'Failed to publish template');
+   } finally {
+     setPublishing(false);
    }
  };
 
@@ -71,7 +77,7 @@ const Marketplace = () => {
        <p className="text-[13px] mt-1" style={{ color: colors.inkSubtle }}>Knowledge templates and agent integrations</p>
       </div>
      </div>
-     <button onClick={() => setIsModalOpen(true)}
+     <button onClick={() => { setPublishError(null); setIsModalOpen(true); }}
        className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:opacity-90"
        style={{ background: colors.primary, color: '#fff' }}>
       <Plus className="w-4 h-4" /> Publish Template
@@ -144,6 +150,11 @@ const Marketplace = () => {
         <h2 className="text-[18px] font-semibold" style={{ color: colors.ink }}>Publish New Template</h2>
         <button onClick={() => setIsModalOpen(false)} aria-label="Close publish template dialog" className="transition-opacity hover:opacity-70" style={{ color: colors.inkSubtle }}><X className="w-5 h-5" /></button>
        </div>
+       {publishError && (
+        <div className="mb-4 px-3 py-2 rounded-lg text-[12px] font-medium" style={{ background: colors.error + '15', color: colors.error }}>
+         {publishError}
+        </div>
+       )}
        <form onSubmit={handleSubmit} className="space-y-4">
         <div>
          <label className="block text-[13px] font-medium mb-1" style={{ color: colors.inkMuted }}>Name</label>
@@ -171,9 +182,9 @@ const Marketplace = () => {
          <button type="button" onClick={() => setIsModalOpen(false)}
            className="px-4 py-2 text-[13px] font-medium rounded-lg transition-all hover:opacity-80"
            style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>Cancel</button>
-         <button type="submit"
-           className="px-4 py-2 text-[13px] font-semibold rounded-lg transition-all hover:opacity-90"
-           style={{ background: colors.primary, color: '#fff' }}>Publish</button>
+         <button type="submit" disabled={publishing}
+           className="px-4 py-2 text-[13px] font-semibold rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+           style={{ background: colors.primary, color: '#fff' }}>{publishing ? 'Publishing…' : 'Publish'}</button>
         </div>
        </form>
       </div>

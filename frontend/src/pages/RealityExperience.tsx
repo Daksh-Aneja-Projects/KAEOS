@@ -393,13 +393,13 @@ export default function RealityExperience() {
 
       {/* ── HERO: the living enterprise twin. Full-bleed and tall - this is the IP.
           Simulation controls sit to its left so a shock visibly pulses the graph. */}
-      <div className={`grid grid-cols-12 gap-6 ${PAGE_PAD_X} pt-6`}>
-        <div className="col-span-3 flex flex-col gap-6 overflow-y-auto pr-1" style={{ height: 640 }}>
+      <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 ${PAGE_PAD_X} pt-6`}>
+        <div className="lg:col-span-3 flex flex-col gap-6 overflow-y-auto pr-1 lg:h-[640px]">
           {simControls}
           <LearningState learningStats={learningStats} colors={colors} card={card} />
         </div>
 
-        <div className="col-span-9 rounded-xl border shadow-sm p-4 relative flex flex-col min-h-0" style={{ ...card, height: 640 }}>
+        <div className="lg:col-span-9 rounded-xl border shadow-sm p-4 relative flex flex-col min-h-0" style={{ ...card, height: 640 }}>
           <div className="flex items-start justify-between mb-2 gap-4">
             <div>
               <h2 className="text-sm font-bold uppercase flex items-center gap-2" style={{ color: colors.inkSubtle }}>
@@ -435,7 +435,7 @@ export default function RealityExperience() {
           </div>
 
           {selectedNode && (
-            <div className="absolute right-6 top-14 bottom-6 w-64 p-4 border rounded-xl shadow-xl overflow-y-auto z-10" style={{ background: colors.surface1, borderColor: colors.hairline }}>
+            <div className="absolute right-6 top-14 bottom-6 w-64 max-w-[calc(100%-2rem)] p-4 border rounded-xl shadow-xl overflow-y-auto z-10" style={{ background: colors.surface1, borderColor: colors.hairline }}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-bold text-sm truncate">{selectedNode.name}</h3>
                 <button onClick={() => setSelectedNode(null)} aria-label="Close node details"
@@ -475,9 +475,9 @@ export default function RealityExperience() {
         </div>
       </div>
 
-      <div className={`grid grid-cols-12 gap-6 ${PAGE_PAD_X} py-6`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 ${PAGE_PAD_X} py-6`}>
         {/* Left: Scenario/What-If results + Decisions */}
-        <div className="col-span-8 flex flex-col gap-6">
+        <div className="lg:col-span-8 flex flex-col gap-6">
           {mode === 'shock' && scenarios.length > 0 && (
             <div className="rounded-xl border shadow-sm p-5" style={card}>
               <div className="flex items-center justify-between mb-4">
@@ -691,7 +691,7 @@ export default function RealityExperience() {
         </div>
 
         {/* Right Column: Provenance & Live Feed */}
-        <div className="col-span-4 flex flex-col gap-6">
+        <div className="lg:col-span-4 flex flex-col gap-6">
           <div className="rounded-xl border shadow-sm p-4 overflow-y-auto" style={{ ...card, minHeight: 280 }}>
             <h2 className="text-sm font-bold uppercase mb-4 flex items-center gap-2" style={{ color: colors.inkSubtle }}>
               <GitPullRequest className="w-4 h-4" /> Why Panel

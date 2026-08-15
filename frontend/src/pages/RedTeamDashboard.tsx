@@ -14,6 +14,7 @@ const RedTeamDashboard = () => {
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState<string | null>(null);
  const [scanning, setScanning] = useState<string | null>(null);
+ const [scanError, setScanError] = useState<string | null>(null);
 
  const load = () => {
   setError(null);
@@ -23,9 +24,15 @@ const RedTeamDashboard = () => {
 
  const handleScan = async (skillId: string) => {
   setScanning(skillId);
-  await api.runScan(skillId);
-  setScanning(null);
-  load();
+  setScanError(null);
+  try {
+   await api.runScan(skillId);
+   load();
+  } catch (e: any) {
+   setScanError(e?.message || 'Scan failed to run');
+  } finally {
+   setScanning(null);
+  }
  };
 
  const statusColor = (s: string) => s === 'PASSED' ? colors.success : s === 'WARNING' ? colors.warning : colors.error;
@@ -80,6 +87,14 @@ const RedTeamDashboard = () => {
       </div>
      )}
     </div>
+
+    {scanError && (
+     <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-medium" style={{ background: colors.error + '15', color: colors.error }}>
+      <XCircle className="w-4 h-4 shrink-0" />
+      <span>{scanError}</span>
+      <button onClick={() => setScanError(null)} className="ml-auto text-[11px] opacity-70">dismiss</button>
+     </div>
+    )}
 
     {scans.length === 0 ? (
      <BrainEmpty title="No scans yet" action="Run an adversarial scan on a skill to surface vulnerabilities." icon={Shield} />

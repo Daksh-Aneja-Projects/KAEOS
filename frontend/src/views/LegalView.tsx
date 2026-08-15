@@ -284,6 +284,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
           <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
             placeholder={`Search ${activeTab.label.toLowerCase()}...`}
+            aria-label={`Search ${activeTab.label.toLowerCase()}`}
             className="w-full pl-9 pr-4 py-2 rounded-lg border text-[12px] focus:outline-none focus:ring-1"
             style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.ink }} />
         </div>

@@ -286,14 +286,14 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl" role="tablist" aria-label="Finance sections" style={{ background: colors.surface1 }}>
+        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" role="tablist" aria-label="Finance sections" style={{ background: colors.surface1 }}>
           {TABS.map((t, i) => (
             <button key={t.key} id={`finance-tab-${t.key}`} role="tab"
               aria-selected={tab === t.key}
               tabIndex={tab === t.key ? 0 : -1}
               onClick={() => setTab(t.key)}
               onKeyDown={e => moveTab(e, i)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all whitespace-nowrap shrink-0"
               style={{
                 background: tab === t.key ? colors.canvas : 'transparent',
                 color: tab === t.key ? t.color : colors.inkSubtle,
@@ -330,6 +330,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
           <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
             placeholder={`Search ${activeTab.label.toLowerCase()}...`}
+            aria-label={`Search ${activeTab.label.toLowerCase()}`}
             className="w-full pl-9 pr-4 py-2 rounded-lg border text-[12px] focus:outline-none focus:ring-1"
             style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.ink }} />
         </div>
