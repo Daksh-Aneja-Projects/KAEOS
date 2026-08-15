@@ -54,6 +54,15 @@ services:
       - ENVIRONMENT=production
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set for production}
       - ADMIN_SECRET=${ADMIN_SECRET:?ADMIN_SECRET must be set for production}
+    volumes:
+      # Persist local-disk state so a container restart does not lose it:
+      #  - logs/  holds audit-fallback.jsonl, the tamper-evidence sink written
+      #    when the DB is unreachable (losing it blinds the audit trail).
+      #  - data/  holds locally-stored blobs (e.g. candidate resumes) when object
+      #    storage is not configured. In production prefer S3/GCS blob URIs for
+      #    durability; this volume is the floor, and it must be in the backup set.
+      - appdata:/app/data
+      - applogs:/app/logs
     ports:
       - "8001:8001"
     depends_on:
@@ -75,3 +84,5 @@ services:
 volumes:
   pgdata:
   redisdata:
+  appdata:    # local blobs (resumes, exports) — include in the backup set
+  applogs:    # audit-fallback.jsonl tamper-evidence sink — include in the backup set

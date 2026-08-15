@@ -117,7 +117,7 @@ async def install_domain_pack(
         db.add(existing)
         await db.commit()
         return {"status": "success", "installation_id": existing.id,
-                "message": f"Pack '{pack.name}' already installed — refreshed to v{pack.version}"}
+                "message": f"Pack '{pack.name}' already installed, refreshed to v{pack.version}"}
 
     install = DomainPackInstallation(
         tenant_id=tenant_id,

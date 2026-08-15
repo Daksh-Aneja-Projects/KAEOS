@@ -72,10 +72,10 @@ async def operations_analytics(db: AsyncSession, tenant_id: str,
                          "message": f"{pending_requests} purchase requests are waiting for approval."})
     if damage_rate is not None and damage_rate > 5:
         insights.append({"severity": "critical",
-                         "message": f"Goods damage rate is {damage_rate:.1f}% — above the 5% threshold."})
+                         "message": f"Goods damage rate is {damage_rate:.1f}%, above the 5% threshold."})
     if avg_utilization is not None and float(avg_utilization) > 90:
         insights.append({"severity": "warning",
-                         "message": f"Average resource utilization is {float(avg_utilization):.0f}% — capacity is tight."})
+                         "message": f"Average resource utilization is {float(avg_utilization):.0f}%, capacity is tight."})
     if not insights:
         insights.append({"severity": "info", "message": "Operations pipeline is running clean."})
 

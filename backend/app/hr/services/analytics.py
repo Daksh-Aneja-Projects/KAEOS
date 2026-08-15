@@ -76,12 +76,12 @@ async def hr_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) ->
                          "message": f"{pending_to} time-off requests are waiting for a decision."})
     if open_reqs and stage_counts.get("OFFER_EXTENDED", 0) == 0 and total_candidates:
         insights.append({"severity": "info",
-                         "message": f"{open_reqs} open requisitions with no offers extended yet — funnel may be top-heavy."})
+                         "message": f"{open_reqs} open requisitions with no offers extended yet; funnel may be top-heavy."})
     if status_counts.get("ONBOARDING", 0):
         insights.append({"severity": "info",
                          "message": f"{status_counts['ONBOARDING']} employees are in onboarding."})
     if not insights:
-        insights.append({"severity": "info", "message": "HR pipeline is clear — no pending queues."})
+        insights.append({"severity": "info", "message": "HR pipeline is clear; no pending queues."})
 
     return {
         "domain": "hr",

@@ -82,7 +82,7 @@ async def support_analytics(db: AsyncSession, tenant_id: str, charts: bool = Tru
                          "message": f"{unassigned} open tickets have no assigned agent."})
     if avg_first_response is not None and avg_first_response > 24:
         insights.append({"severity": "warning",
-                         "message": f"Average first response is {avg_first_response:.1f}h — over the 24h target."})
+                         "message": f"Average first response is {avg_first_response:.1f}h, over the 24h target."})
     if not insights:
         insights.append({"severity": "info", "message": "Support queue is healthy."})
 

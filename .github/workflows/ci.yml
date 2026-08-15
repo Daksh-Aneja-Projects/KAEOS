@@ -34,7 +34,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
     - name: Run unit tests
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
@@ -94,7 +94,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
     - name: Boot backend + seed + run non-Ollama e2e (on Postgres+pgvector)
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"

@@ -232,7 +232,7 @@ async def mcp_endpoint(
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {
                 "name": "kaeos",
-                "title": "KAEOS — governed enterprise actions for AI agents",
+                "title": "KAEOS: governed enterprise actions for AI agents",
                 "version": "1.0.0",
             },
             "instructions": (
