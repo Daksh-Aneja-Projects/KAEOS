@@ -59,7 +59,12 @@ class BenefitEnrollment(Base):
     employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
     plan_id = Column(String, ForeignKey("hr_benefit_plans.id"), nullable=False)
     
-    status = Column(Enum(EnrollmentStatus), default=EnrollmentStatus.PENDING)
+    # Distinct Postgres type name: hr.models.learning also has an EnrollmentStatus,
+    # and without explicit names both collapse to one "enrollmentstatus" type whose
+    # values are whichever table create_all builds first (SQLite ignores this, so
+    # it only broke on Postgres: "invalid input value for enum ... ENROLLED").
+    status = Column(Enum(EnrollmentStatus, name="benefit_enrollment_status"),
+                    default=EnrollmentStatus.PENDING)
     coverage_level = Column(String(32), default="INDIVIDUAL") # INDIVIDUAL, INDIVIDUAL_PLUS_ONE, FAMILY
     
     # Dependent tracking

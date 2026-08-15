@@ -4,7 +4,6 @@ significance check replaces LLM opinion whenever cohort outcome data exists.
 import asyncio
 import uuid
 
-import pytest
 
 from app.services.disparate_impact import four_fifths_test
 

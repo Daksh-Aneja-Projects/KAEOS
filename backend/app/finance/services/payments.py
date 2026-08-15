@@ -40,7 +40,7 @@ from app.finance.models.core import (
     JournalEntry,
     JournalEntryStatus,
 )
-from app.finance.services.gl import GLPostingError, _money, post_journal_entry
+from app.finance.services.gl import _money, post_journal_entry
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,6 @@ import hmac
 import json
 import uuid
 import logging
-import httpx
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select

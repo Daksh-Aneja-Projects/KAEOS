@@ -11,7 +11,6 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from app.core.database import get_db
 from app.core.tenant import get_tenant_id
 from app.main import app
 from app.models.domain import SkillExecution

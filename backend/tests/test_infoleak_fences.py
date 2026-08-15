@@ -25,7 +25,6 @@ def test_debate_context_fences_intent():
 # ── (3) skill step ACTION is fenced ─────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_skill_step_action_is_fenced():
-    from app.services import skill_executor
     from app.services.skill_executor import (
         SkillExecutionEngine, _UNTRUSTED_OPEN, _UNTRUSTED_CLOSE,
     )

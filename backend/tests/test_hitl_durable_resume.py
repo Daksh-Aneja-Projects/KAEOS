@@ -123,8 +123,7 @@ def test_backstop_recovers_a_crashed_resume():
 
         # Approve but simulate the process dying before the in-process task
         # ran: capture the durable payload exactly as resolve_hitl stored it.
-        record = await mgr._get_record(exec_id)
-        import app.services.hitl_manager as hm
+        _record = await mgr._get_record(exec_id)
 
         async def _crashed(self, execution_id, fallback_record=None):
             return False  # the in-process attempt never happens

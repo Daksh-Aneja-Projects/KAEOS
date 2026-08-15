@@ -231,6 +231,10 @@ async def seed():
                     id=dec_id, tenant_id=TENANT, application_id=app_id, decision="DENY",
                     reasons=reasons, confidence=Decimal("0.95"), decided_by="underwriter_agent",
                     decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN"))
+                # Persist the application + decision before the notice references
+                # them: on Postgres the FK is enforced, so the parent rows must
+                # exist first (SQLite defers FK checks, which hid this).
+                await db.flush()
                 db.add(AdverseActionNotice(
                     id=_id(), tenant_id=TENANT, application_id=app_id, decision_id=dec_id,
                     specific_reasons=reasons,
@@ -254,6 +258,10 @@ async def seed():
                                    term, score, decided_ago, delinquent_days)
             db.add(loan)
             loans_by_number[num] = (loan, dpd)
+
+        # Persist the serviced loans before the collection cases reference them
+        # (Postgres enforces the serviced_loan_id FK; SQLite defers it).
+        await db.flush()
 
         # LN-1002: 30-59-day DPD bucket, an open collections case with a short
         # contact history - validation notice mailed, one call, one follow-up.

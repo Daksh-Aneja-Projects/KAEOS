@@ -11,7 +11,6 @@ from sqlalchemy import select
 from app.engineering.agents.deploy_risk_agent import DeployRiskAgent
 from app.engineering.connectors.issue_tracker import GitHubIssueTrackerConnector
 from app.engineering.models.core import Engineer, Service, ServiceHealth, ServiceTier
-from app.engineering.models.delivery import PullRequest
 from app.engineering.models.ops import OnCallRole, OnCallRotation, PipelineRun, PipelineStatus
 
 TENANT = "tenant_acme"

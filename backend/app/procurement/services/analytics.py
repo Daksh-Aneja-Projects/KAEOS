@@ -19,7 +19,7 @@ from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.operations.models.procurement import (
-    ProcurementStatus, PurchaseOrder, PurchaseRequest,
+    PurchaseOrder, PurchaseRequest,
 )
 from app.operations.models.vendors import VendorContract, VendorPerformance
 

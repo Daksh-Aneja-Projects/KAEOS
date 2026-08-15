@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from app.lending.models.core import (CreditPolicy, LoanApplication, LoanStatus,
+from app.lending.models.core import (LoanApplication, LoanStatus,
                                      UnderwritingDecision)
 from app.lending.services.underwriting import (UnderwritingGateError,
                                                evaluate_policy,

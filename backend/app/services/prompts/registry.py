@@ -102,7 +102,7 @@ def _demo() -> None:
     assert get_prompt("skill_routing", 1).version == 1
     try:
         get_prompt("skill_routing", 99)
-        assert False, "expected KeyError for missing version"
+        raise AssertionError("expected KeyError for missing version")
     except KeyError:
         pass
     print("prompts registry demo OK")

@@ -8,7 +8,6 @@ render populated and balance_cache_drift is empty for every account.
 """
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 
 from app.finance.models.core import ChartOfAccount

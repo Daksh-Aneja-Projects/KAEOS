@@ -3,7 +3,6 @@
 Derived from live registries - the tenant's routed tier->model map, probe
 ceilings, and real oversight counts - not prose.
 """
-import pytest
 
 
 async def test_inventory_derives_from_live_registries(async_client):

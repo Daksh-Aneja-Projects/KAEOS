@@ -37,7 +37,6 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -472,7 +471,10 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
             # the record. Marker charset excludes SOQL LIKE wildcards (% _) and
             # quotes, so it is safe to inline into the query literal.
             marker = "kaeos:" + re.sub(r"[^A-Za-z0-9.-]", "-", idem)[:60]
-            soql = f"SELECT Id FROM {sobject} WHERE Description LIKE '%{marker}%' LIMIT 1"
+            # nosec B608 - not attacker-controlled: sobject is one of two hardcoded
+            # literals (Account/Opportunity, else an early return above) and marker
+            # is sanitized to [A-Za-z0-9.-] so it cannot carry SOQL wildcards/quotes.
+            soql = f"SELECT Id FROM {sobject} WHERE Description LIKE '%{marker}%' LIMIT 1"  # nosec B608
             probe = await client.get(f"{instance}/services/data/{api}/query",
                                      headers=headers, params={"q": soql})
             if probe.status_code < 400 and (probe.json().get("records") or []):
@@ -719,8 +721,6 @@ async def dispatch_outbound(tenant_id: Optional[str] = None, limit: int = 25) ->
     ``tenant_id``.
     """
     from app.core.database import MaintenanceSessionLocal
-    from app.models.domain import Connector, ConnectorCredential
-    from app.services.live_connectors import decrypt_secrets
 
     sent = failed = skipped = dead = 0
     async with MaintenanceSessionLocal() as db:

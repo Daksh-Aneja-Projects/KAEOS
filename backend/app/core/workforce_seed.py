@@ -24,7 +24,6 @@ import logging
 
 from sqlalchemy import func as sqlfunc, select
 
-from app.core.database import AsyncSessionLocal
 from app.workforce.models.core import Capability, Department, DepartmentAgent
 from app.workforce.models.domain_pack import DomainPack
 

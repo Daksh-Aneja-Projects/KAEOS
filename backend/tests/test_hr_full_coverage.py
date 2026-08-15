@@ -13,7 +13,7 @@ in tests/test_hr_api_gated.py (monkeypatch provider_available + init_db +
 skip under KAEOS_FAKE_LLM) so they run deterministically offline.
 """
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -358,7 +358,7 @@ async def test_headcount_plan_workflow(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_payroll_run_and_payslip_generation(async_client: AsyncClient, db: AsyncSession):
     emp1 = await _mk_employee(db)
-    emp2 = await _mk_employee(db)
+    _emp2 = await _mk_employee(db)
     await async_client.post("/api/v1/hr/compensation", json={
         "employee_id": emp1.id, "base_amount": 100000, "effective_date": "2024-01-01",
     })
@@ -442,7 +442,7 @@ async def test_compliance_violation_resolve(async_client: AsyncClient, db: Async
 
 @pytest.mark.asyncio
 async def test_hr_metric_snapshot_generation_and_upsert(async_client: AsyncClient, db: AsyncSession):
-    emp = await _mk_employee(db)
+    _emp = await _mk_employee(db)
 
     r = await async_client.post("/api/v1/hr/hr-metrics/snapshot")
     assert r.status_code == 201, r.text

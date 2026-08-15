@@ -48,7 +48,11 @@ class CourseEnrollment(Base):
     employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
     course_id = Column(String, ForeignKey("hr_learning_courses.id"), nullable=False)
     
-    status = Column(Enum(EnrollmentStatus), default=EnrollmentStatus.ENROLLED)
+    # Distinct Postgres type name: hr.models.benefits also defines an
+    # EnrollmentStatus; sharing the default "enrollmentstatus" type made Postgres
+    # reject this table's ENROLLED value (see the note in benefits.py).
+    status = Column(Enum(EnrollmentStatus, name="learning_enrollment_status"),
+                    default=EnrollmentStatus.ENROLLED)
     progress_pct = Column(Float, default=0.0)
     
     assigned_by_id = Column(String, ForeignKey("hr_employees.id"), nullable=True) # Who assigned this

@@ -9,7 +9,7 @@ app.lending.services.underwriting's ECOA/FAIR_LENDING gate.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.compliance import run_checks
-from app.lending.models.servicing import CollectionCase, CollectionCaseStatus, ServicedLoan
+from app.lending.models.servicing import CollectionCase, CollectionCaseStatus
 from app.lending.services.underwriting import LendingError
 from app.services.provenance import append_ledger_event
 

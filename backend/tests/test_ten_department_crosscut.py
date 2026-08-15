@@ -8,7 +8,6 @@ folded into "operations" the way procurement used to be aliased.
 import uuid
 from datetime import date, datetime, timezone
 
-import pytest
 from sqlalchemy import select
 
 from app.models.domain import Skill

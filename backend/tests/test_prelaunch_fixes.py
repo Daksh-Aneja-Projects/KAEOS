@@ -53,7 +53,7 @@ def test_plan_from_items_reads_price_tier():
 async def test_stripe_subscription_deleted_falls_tenant_back_to_free(db):
     """A cancelled subscription resets Tenant.plan and drops the metered linkage."""
     from app.models.auth import Tenant
-    from app.models.billing import BillingAccount, StripeWebhookEvent
+    from app.models.billing import BillingAccount
     from app.services.stripe_bridge import handle_webhook_event
 
     db.add(Tenant(tenant_id="tenant_cancel", name="Cancelme", plan="business"))
@@ -140,7 +140,10 @@ def test_recent_migrations_downgrade_and_reupgrade(tmp_path):
     the pre-session head, then re-upgrade. A broken downgrade fails here instead
     of during a production rollback.
     """
-    import subprocess, sys, os, pathlib
+    import subprocess
+    import sys
+    import os
+    import pathlib
     backend = pathlib.Path(__file__).resolve().parents[1]
     db = tmp_path / "mig_roundtrip.db"
     env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{db}", "DEV_MODE": "true"}

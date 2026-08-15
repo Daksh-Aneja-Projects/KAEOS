@@ -67,5 +67,6 @@ def test_ast_scan_catches_rce_and_introspection_escapes():
 
 
 if __name__ == "__main__":
-    import pytest, sys
+    import pytest
+    import sys
     sys.exit(pytest.main([__file__, "-q"]))
