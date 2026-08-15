@@ -223,7 +223,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         from app.core.config import get_settings
-        csp = getattr(get_settings(), "CONTENT_SECURITY_POLICY", None) or self.DEFAULT_CSP
+        settings = get_settings()
+        csp = getattr(settings, "CONTENT_SECURITY_POLICY", None)
+        if not csp:
+            csp = self.DEFAULT_CSP
+            # In production the default's wildcard `https:/wss:` connect-src would
+            # let any injected script exfiltrate anywhere. Scope it to self plus
+            # the configured API origin so an un-customised deploy is still tight.
+            if not settings.DEV_MODE:
+                base = (getattr(settings, "PUBLIC_BASE_URL", "") or "").rstrip("/")
+                connect = "connect-src 'self'"
+                if base:
+                    ws = base.replace("https://", "wss://").replace("http://", "ws://")
+                    connect += f" {base} {ws}"
+                csp = "; ".join(
+                    connect if part.strip().startswith("connect-src") else part
+                    for part in self.DEFAULT_CSP.split("; ")
+                )
         response.headers.setdefault("Content-Security-Policy", csp)
         if not get_settings().DEV_MODE:
             response.headers.setdefault(

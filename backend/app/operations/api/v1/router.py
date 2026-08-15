@@ -77,32 +77,54 @@ async def operations_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
 async def list_projects(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(Project).where(Project.tenant_id == tenant_id).limit(200))
     projects = q.scalars().all()
-    
+
+    # Batch the lookups instead of querying per project / per allocation (was an
+    # N+1 that fired hundreds of round-trips for one page). Four queries total.
+    project_ids = [p.id for p in projects]
+    manager_ids = {p.project_manager_id for p in projects if p.project_manager_id}
+
+    managers: dict[str, str] = {}
+    if manager_ids:
+        managers = {
+            m.id: m.name for m in (await db.execute(
+                select(OpsTeamMember).where(
+                    OpsTeamMember.tenant_id == tenant_id,
+                    OpsTeamMember.id.in_(manager_ids))
+            )).scalars().all()
+        }
+
+    allocs_by_project: dict[str, list] = {}
+    resource_ids: set[str] = set()
+    if project_ids:
+        for a in (await db.execute(
+            select(ResourceAllocation).where(
+                ResourceAllocation.tenant_id == tenant_id,
+                ResourceAllocation.project_id.in_(project_ids))
+        )).scalars().all():
+            allocs_by_project.setdefault(a.project_id, []).append(a)
+            if a.resource_id:
+                resource_ids.add(a.resource_id)
+
+    resource_rate: dict[str, float] = {}
+    if resource_ids:
+        resource_rate = {
+            r.id: float(r.cost_per_hour or 0) for r in (await db.execute(
+                select(Resource).where(
+                    Resource.tenant_id == tenant_id, Resource.id.in_(resource_ids))
+            )).scalars().all()
+        }
+
     project_list = []
     for p in projects:
-        manager_name = None
-        if p.project_manager_id:
-            mgr_q = await db.execute(select(OpsTeamMember).where(
-                OpsTeamMember.id == p.project_manager_id, OpsTeamMember.tenant_id == tenant_id))
-            mgr = mgr_q.scalar_one_or_none()
-            manager_name = mgr.name if mgr else None
+        manager_name = managers.get(p.project_manager_id) if p.project_manager_id else None
 
-        # Labor cost to date — allocated hours × the resource's hourly rate.
+        # Labor cost to date - allocated hours x the resource's hourly rate.
         # The Project model carries no budget column, so budget stays None
-        # and the UI renders "—" rather than a fake $0.
-        allocs = (await db.execute(
-            select(ResourceAllocation).where(
-                ResourceAllocation.project_id == p.id,
-                ResourceAllocation.tenant_id == tenant_id)
-        )).scalars().all()
-        spent = 0.0
-        for a in allocs:
-            res = (await db.execute(
-                select(Resource).where(
-                    Resource.id == a.resource_id, Resource.tenant_id == tenant_id)
-            )).scalar_one_or_none()
-            if res:
-                spent += float(a.allocated_hours or 0) * float(res.cost_per_hour or 0)
+        # and the UI renders a dash rather than a fake $0.
+        spent = sum(
+            float(a.allocated_hours or 0) * resource_rate.get(a.resource_id, 0.0)
+            for a in allocs_by_project.get(p.id, [])
+        )
 
         project_list.append({
             "id": p.id,

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Eye, EyeOff, Loader2, ArrowRight, Sun, Moon } from 'lucide-react';
 import KaeosLogo from '../components/KaeosLogo';
+import { announce } from '../components/a11y/LiveRegion';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -20,7 +21,11 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     const result = await login(email.trim(), password);
-    if (!result.ok) setError(result.error || 'Login failed');
+    if (!result.ok) {
+      const msg = result.error || 'Login failed';
+      setError(msg);
+      announce(msg, 'assertive');
+    }
     setLoading(false);
   };
 
@@ -28,7 +33,12 @@ export default function LoginPage() {
   // configured for it, hand off to the IdP's authorization endpoint.
   const handleSSO = async () => {
     setError('');
-    if (!email.trim()) { setError('Enter your work email to continue with SSO.'); return; }
+    if (!email.trim()) {
+      const msg = 'Enter your work email to continue with SSO.';
+      setError(msg);
+      announce(msg, 'assertive');
+      return;
+    }
     setSsoBusy(true);
     try {
       const { api } = await import('../api/client');
@@ -40,9 +50,13 @@ export default function LoginPage() {
         window.location.href = `${res.authorize_url}${sep}return_to=${returnTo}`;
         return;
       }
-      setError('No SSO is configured for this email domain. Use your password.');
+      const msg = 'No SSO is configured for this email domain. Use your password.';
+      setError(msg);
+      announce(msg, 'assertive');
     } catch (err: any) {
-      setError(err?.message || 'SSO lookup failed.');
+      const msg = err?.message || 'SSO lookup failed.';
+      setError(msg);
+      announce(msg, 'assertive');
     } finally {
       setSsoBusy(false);
     }
@@ -60,7 +74,8 @@ export default function LoginPage() {
       }} />
 
       {/* Theme toggle */}
-      <button onClick={toggle} className="absolute top-6 right-6 p-2 rounded-lg transition-colors"
+      <button onClick={toggle} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        className="absolute top-6 right-6 p-2 rounded-lg transition-colors"
         style={{ color: colors.inkSubtle, background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
       </button>
@@ -124,6 +139,7 @@ export default function LoginPage() {
                 style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }}
                 placeholder="••••••" />
               <button type="button" onClick={() => setShowPw(!showPw)}
+                aria-label={showPw ? 'Hide password' : 'Show password'}
                 className="absolute right-3 top-1/2 -translate-y-1/2"
                 style={{ color: colors.inkSubtle }}>
                 {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

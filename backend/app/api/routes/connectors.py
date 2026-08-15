@@ -13,6 +13,9 @@ router = APIRouter(prefix="/connectors", tags=["Connectors - L0 Data Fabric"])
 from app.core.tenant import get_tenant_id, require_role
 from app.core.entitlements import require_entitlement
 from app.core.audit import record_security_event
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CredentialsBody(BaseModel):
@@ -401,6 +404,7 @@ async def connector_feed(
     tenant_id: str = Depends(get_tenant_id)
 ):
     """Recent ingestion events for a connector - replaces Array.from fake feed."""
+    limit = max(1, min(limit, 200))  # clamp caller-supplied page size
     result = await db.execute(select(Connector).where(Connector.id == connector_id, Connector.tenant_id == tenant_id))
     conn = result.scalar_one_or_none()
     if not conn:
@@ -464,7 +468,11 @@ async def sync_connector(
         except Exception as e:
             conn.error_count += 1
             await db.commit()
-            raise HTTPException(502, f"Live sync failed ({cred.provider}): {str(e)[:200]}")
+            # Log the detail server-side; return only the provider name so a raw
+            # decrypt/HTTP exception (which can carry key material or internal
+            # hostnames) never reaches the client.
+            logger.warning("[Connectors] live sync failed for %s: %s", cred.provider, e)
+            raise HTTPException(502, f"Live sync failed for {cred.provider}.")
 
         signals = LiveConnectorService.records_to_signals(records, conn.tenant_id, conn.name)
         stats = await LiveConnectorService.persist_signals(db, signals)

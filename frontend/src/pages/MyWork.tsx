@@ -108,9 +108,9 @@ const MyWork: React.FC<{ domain?: string }> = () => {
         ) : (
           <div className="space-y-1.5">
             {items.map(it => (
-              <div key={`${it.entity_type}-${it.entity_id}`}
+              <button type="button" key={`${it.entity_type}-${it.entity_id}`}
                 onClick={() => navigate(DOMAIN_ROUTE[it.domain] || '/pulse')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors hover:brightness-110 text-[12px]"
+                className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors hover:brightness-110 text-[12px]"
                 style={{ background: colors.canvas }}>
                 <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
                   style={{ background: `${colors.primary}15`, color: colors.primary }}>{it.domain}</span>
@@ -121,7 +121,7 @@ const MyWork: React.FC<{ domain?: string }> = () => {
                     style={{ background: colors.surface2, color: colors.inkSubtle }}>{humanize(it.state)}</span>
                 )}
                 <span className="ml-auto whitespace-nowrap shrink-0" style={{ color: colors.inkTertiary }}>{timeAgo(it.at)}</span>
-              </div>
+              </button>
             ))}
           </div>
         )}

@@ -32,6 +32,25 @@ async def ensure_tenant(db: AsyncSession, tenant_id: str, name: str = "",
         db.add(Tenant(tenant_id=tenant_id, name=name or tenant_id, plan=plan))
         await db.commit()
         logger.info("[TenantRegistry] registered tenant %s", tenant_id)
+        # Managed cloud: give every new tenant a default LLM spend ceiling up
+        # front, so an un-provisioned tenant can never burn tokens unbounded
+        # (check_budget ALLOWs when no budget row exists). Self-host stays
+        # uncapped by design. Best-effort: a budget failure must not block
+        # registration.
+        from app.core.config import get_settings
+        settings = get_settings()
+        if settings.KAEOS_MANAGED_CLOUD:
+            try:
+                from app.services.cost_governor import CostGovernorService
+                await CostGovernorService.create_budget(
+                    db, tenant_id,
+                    token_limit=settings.DEFAULT_TENANT_TOKEN_LIMIT,
+                    cost_limit_usd=settings.DEFAULT_TENANT_COST_LIMIT_USD,
+                )
+            except Exception as be:
+                logger.warning(
+                    "[TenantRegistry] default budget not provisioned for %s: %s",
+                    tenant_id, be)
     except Exception as e:  # pragma: no cover - registry is best-effort
         logger.warning("[TenantRegistry] could not register %s: %s", tenant_id, e)
         try:

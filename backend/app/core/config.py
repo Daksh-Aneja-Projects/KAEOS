@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # open core). Managed cloud sets True so Tenant.plan gates managed/enterprise
     # features (SSO, SCIM, webhooks, advanced connectors) and Stripe metering runs.
     KAEOS_MANAGED_CLOUD: bool = False
+    # Default LLM spend ceiling provisioned for a new managed-cloud tenant, so a
+    # tenant that never visits the budgets screen still has a real cap instead of
+    # unlimited token burn. Self-host (managed cloud off) stays uncapped - the
+    # operator runs their own inference and pays for it directly.
+    DEFAULT_TENANT_TOKEN_LIMIT: int = 20_000_000
+    DEFAULT_TENANT_COST_LIMIT_USD: float = 200.0
     STRIPE_API_KEY: str = ""          # sk_...; empty => Stripe provider is a no-op
     STRIPE_WEBHOOK_SECRET: str = ""   # whsec_...; authenticates /billing/webhook
     # Embedding model that drives the pgvector column width. Empty keeps the

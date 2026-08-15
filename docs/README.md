@@ -51,7 +51,7 @@ is `http://localhost:8001/api/v1`, and the live Swagger UI is at
 
 | Document | Covers |
 |----------|--------|
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploying KAEOS, the Alembic chain (currently head `0044`), and the Helm chart under `deploy/helm/kaeos` |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploying KAEOS, the Alembic chain (currently head `0049`), and the Helm chart under `deploy/helm/kaeos` |
 | [OPS_RUNBOOK.md](OPS_RUNBOOK.md) | Day-2 operations, monitoring, incident procedures |
 | [RUNBOOK.md](RUNBOOK.md) | Model and LLM operations, including local Ollama troubleshooting |
 

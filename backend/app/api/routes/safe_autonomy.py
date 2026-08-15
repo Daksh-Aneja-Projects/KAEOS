@@ -95,6 +95,10 @@ async def get_timeseries(
 
     to = to or datetime.now(timezone.utc)
     from_ = from_ or (to - timedelta(days=30))
+    # Bound the window so a caller cannot request years of hourly samples in one
+    # shot. Clamp the span to 400 days and cap the row count.
+    if (to - from_) > timedelta(days=400):
+        from_ = to - timedelta(days=400)
 
     rows = (await db.execute(
         select(MetricSample.bucket_start, MetricSample.value)
@@ -104,6 +108,7 @@ async def get_timeseries(
                MetricSample.bucket_start >= from_,
                MetricSample.bucket_start <= to)
         .order_by(MetricSample.bucket_start)
+        .limit(10000)
     )).all()
 
     series = [{"captured_at": bucket.isoformat(), "value": float(value)}

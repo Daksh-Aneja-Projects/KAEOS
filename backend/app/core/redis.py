@@ -29,7 +29,20 @@ async def init_redis():
         logger.info(f"[Redis] Connected: {settings.REDIS_URL}")
     except Exception as e:
         redis_client = None
-        logger.warning(f"[Redis] Unreachable ({e}) - falling back to in-memory queues")
+        # In a production-like deploy this is more than a queue fallback: the
+        # rate-limit counter degrades to per-worker in-memory, so each uvicorn
+        # worker enforces its own separate budget and the real ceiling multiplies
+        # by the worker count. Surface it loudly so operators wire Redis.
+        try:
+            if settings.is_production_like:
+                logger.error(
+                    "[Redis] UNREACHABLE in production (%s). Rate limiting and other "
+                    "shared counters are now PER-WORKER in-memory, not cluster-wide. "
+                    "Configure a reachable REDIS_URL before serving traffic.", e)
+            else:
+                logger.warning(f"[Redis] Unreachable ({e}) - falling back to in-memory queues")
+        except Exception:
+            logger.warning(f"[Redis] Unreachable ({e}) - falling back to in-memory queues")
 
 
 async def get_redis():

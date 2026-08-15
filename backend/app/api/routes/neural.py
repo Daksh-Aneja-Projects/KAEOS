@@ -41,6 +41,7 @@ router = APIRouter(prefix="/neural", tags=["Neural Map"])
 # accept rather than trusting the browser.
 _MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 _MAX_STORED_CHARS = 20_000
+_INGEST_EXTS = {"txt", "md", "markdown", "csv", "tsv", "json", "log", "yaml", "yml", "text"}
 
 # The three rungs of the autonomy ladder, in escalation order. Names are
 # user-facing; keep them plain English.
@@ -533,6 +534,15 @@ async def brain_ingest(
         if len(raw) > _MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="File too large (2 MB limit)")
         filename = file.filename
+        # Only accept text-based documents. Binary formats (PDF, images, exes)
+        # decode to non-empty printable-string noise under errors="ignore" and
+        # would otherwise be stored as bogus "knowledge".
+        ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+        if ext not in _INGEST_EXTS:
+            raise HTTPException(
+                status_code=415,
+                detail="Unsupported file type. Drop a text-based document (txt, md, csv, json, log, yaml).",
+            )
         decoded = raw.decode("utf-8", errors="ignore").strip()
         if not decoded:
             raise HTTPException(
@@ -543,6 +553,26 @@ async def brain_ingest(
     if not content:
         raise HTTPException(status_code=422, detail="Nothing to ingest - add text or a file")
 
+    # Operator-uploaded content is UNTRUSTED and lands in the same enterprise-memory
+    # namespace the copilot grounds on, so it must clear the same gauntlet every
+    # other ingest path clears (mirrors live_connectors.records_to_signals):
+    #  1. neutralize prompt-injection spans; quarantine (authority 0) if high-risk
+    #  2. redact structured PII before it is persisted or embedded
+    from app.services import prompt_guard
+    from app.transforms.pii_scrubber import redact_structured_pii
+    content, injection = prompt_guard.neutralize(content)
+    content, _pii_hits = redact_structured_pii(content)
+    authority = 0.8  # operator-provided knowledge is high authority...
+    if injection.should_block:
+        # ...unless it carries an injection payload: keep it human-visible but
+        # below every consumer's authority floor so it can never drive an action.
+        logger.warning(
+            "[BrainIngest] quarantining operator upload from %s: injection risk=%s",
+            filename or "operator-note", injection.risk.value,
+        )
+        content = f"[QUARANTINED: prompt-injection detected] {content}"
+        authority = 0.0
+
     signal = Signal(
         tenant_id=tenant_id,
         source_type="document" if filename else "note",
@@ -550,7 +580,7 @@ async def brain_ingest(
         signal_type="KNOWLEDGE",
         domain=domain,
         clean_payload=content[:_MAX_STORED_CHARS],
-        authority_score=0.8,  # operator-provided knowledge is high authority
+        authority_score=authority,
         temporal_class="CURRENT",
     )
     db.add(signal)

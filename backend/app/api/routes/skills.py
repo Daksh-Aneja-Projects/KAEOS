@@ -341,6 +341,13 @@ async def approve_hitl(
     execution = result.scalar_one_or_none()
     if not execution:
         raise HTTPException(404, "Execution not found")
+    # A department-scoped operator must not approve another department's paused
+    # action. hitl.py enforces this on its own resolve routes; this sibling
+    # endpoint resumes the same skill via the same resolve_hitl, so it needs the
+    # identical gate or it is a scope bypass.
+    from app.services.hitl_manager import hitl_manager
+    from app.core.tenant import check_department_scope
+    check_department_scope(tenant, await hitl_manager.get_record_department(exec_id))
     if execution.status != "PENDING_HITL" and execution.agent_state not in (
         "PAUSED", "PENDING_HITL"
     ):
@@ -359,7 +366,6 @@ async def approve_hitl(
         except Exception as e:
             logger.error(f"[HITL] could not record the correction for {exec_id}: {e}")
 
-    from app.services.hitl_manager import hitl_manager
     resolved = await hitl_manager.resolve_hitl(
         exec_id, approved=True, approver=approver, tenant_id=tenant_id
     )
@@ -404,7 +410,11 @@ async def reject_hitl(
     execution = result.scalar_one_or_none()
     if not execution:
         raise HTTPException(404, "Execution not found")
-    
+    # Same department-scope gate as approve: rejecting is a scoped action too.
+    from app.services.hitl_manager import hitl_manager
+    from app.core.tenant import check_department_scope
+    check_department_scope(tenant, await hitl_manager.get_record_department(exec_id))
+
     execution.status = "HUMAN_OVERRIDDEN"
     execution.outcome_type = "HUMAN_OVERRIDDEN"
     execution.hitl_approved = False
@@ -432,7 +442,6 @@ async def reject_hitl(
     await db.commit()
 
     # Close the gate-cache record too so both stores agree.
-    from app.services.hitl_manager import hitl_manager
     gate_record = await hitl_manager._get_record(exec_id)
     if gate_record and gate_record.get("status") == "PENDING":
         await hitl_manager.resolve_hitl(

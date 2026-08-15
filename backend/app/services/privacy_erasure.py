@@ -132,20 +132,23 @@ async def erase_subject(
     *,
     employee_id: Optional[str] = None,
     email: Optional[str] = None,
+    subject_ref: Optional[str] = None,
     _journal: bool = True,
 ) -> dict:
     """Irreversibly anonymise a single data subject across DB, blobs and vectors.
 
-    Matches on employee/candidate id and/or email (at least one required). For
-    every matching row, overwrites direct identifiers with a tombstone, nulls
-    free-text PII, DELETES the subject's stored files, and purges the subject's
-    vector embeddings. Rows are kept (not deleted) so FK-linked history stays
-    consistent while the PII is gone.
+    Matches on employee/candidate id, email, and/or external subject ref (the
+    lending applicant/borrower id) - at least one required. For every matching
+    row, overwrites direct identifiers with a tombstone, nulls free-text PII,
+    DELETES the subject's stored files, and purges the subject's vector
+    embeddings. Rows are kept (not deleted) so FK-linked history stays consistent
+    while the PII is gone.
     """
     if not tenant_id:
         raise ValueError("erase_subject requires a tenant_id")
-    if not (employee_id or email):
-        raise ValueError("erase_subject requires at least one of employee_id / email")
+    if not (employee_id or email or subject_ref):
+        raise ValueError(
+            "erase_subject requires at least one of employee_id / email / subject_ref")
 
     from app.models.domain import Base
     import app.core.database  # noqa: F401 — ensure HR tables are registered
@@ -242,6 +245,57 @@ async def erase_subject(
                 .where(docs.c.employee_id == employee_id).values(**values)
             )
             affected["hr_employee_documents"] = int(res.rowcount or 0)
+
+    # ── Lending vertical: applicant/borrower direct identifiers ───────────
+    # The subject in lending is keyed by the external applicant_ref. A caller
+    # may pass it as subject_ref, or reuse employee_id as that ref.
+    ref = subject_ref or employee_id
+    if ref:
+        apps = tables.get("lnd_loan_applications")
+        app_ids: list[str] = []
+        if apps is not None and "applicant_ref" in apps.c:
+            app_ids = list((await db.execute(
+                select(apps.c.id).where(apps.c.tenant_id == tenant_id)
+                .where(apps.c.applicant_ref == ref)
+            )).scalars().all())
+            values = {}
+            if "applicant_name" in apps.c:
+                values["applicant_name"] = _TOMBSTONE
+            if "applicant_ref" in apps.c:
+                values["applicant_ref"] = None
+            if app_ids and values:
+                res = await db.execute(
+                    update(apps).where(apps.c.tenant_id == tenant_id)
+                    .where(apps.c.applicant_ref == ref).values(**values)
+                )
+                affected["lnd_loan_applications"] = int(res.rowcount or 0)
+
+        # Serviced loans link to the application; cascade the borrower name.
+        loans = tables.get("lnd_serviced_loans")
+        loan_ids: list[str] = []
+        if loans is not None and app_ids and "application_id" in loans.c:
+            loan_ids = list((await db.execute(
+                select(loans.c.id).where(loans.c.tenant_id == tenant_id)
+                .where(loans.c.application_id.in_(app_ids))
+            )).scalars().all())
+            if "borrower_name" in loans.c and loan_ids:
+                res = await db.execute(
+                    update(loans).where(loans.c.tenant_id == tenant_id)
+                    .where(loans.c.application_id.in_(app_ids))
+                    .values(borrower_name=_TOMBSTONE)
+                )
+                affected["lnd_serviced_loans"] = int(res.rowcount or 0)
+
+        # Collection cases carry a free-text contact log (phone/notes); clear it.
+        cases = tables.get("lnd_collection_cases")
+        if cases is not None and loan_ids and "serviced_loan_id" in cases.c \
+                and "contact_log" in cases.c:
+            res = await db.execute(
+                update(cases).where(cases.c.tenant_id == tenant_id)
+                .where(cases.c.serviced_loan_id.in_(loan_ids))
+                .values(contact_log=[])
+            )
+            affected["lnd_collection_cases"] = int(res.rowcount or 0)
 
     await db.commit()
 
