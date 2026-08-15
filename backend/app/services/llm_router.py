@@ -564,7 +564,15 @@ class LLMRouter:
         try:
             return extract_json_object(content)
         except ValueError as e:
-            logger.error(f"Failed to parse JSON from LLM output: {str(content)[:300]}")
+            # The raw model output can embed the tenant's own PII (e.g. salary
+            # bands in the compensation agent's prompt echoed back). Log only its
+            # length and a short hash for correlation, never the content.
+            import hashlib
+            digest = hashlib.sha256(str(content).encode("utf-8", "ignore")).hexdigest()[:12]
+            logger.error(
+                "Failed to parse JSON from LLM output (len=%d, sha=%s)",
+                len(str(content)), digest,
+            )
             raise ValueError("Could not extract JSON from LLM response") from e
 
     async def _scrub_for_cloud(self, text: Optional[str]) -> Optional[str]:

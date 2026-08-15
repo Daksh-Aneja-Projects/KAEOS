@@ -275,7 +275,7 @@ kaeos/
 |   |       +-- services/            # source_to_pay: the deterministic three-way match
 |   |       +-- agents/gated_runner.py  # Sourcing + SpendGuard, control work first, then gated LLM
 |   |       +-- api/v1/router.py     # Reuses operations.procurement + finance AP models
-|   +-- alembic/versions/            # Migration chain, head 0044 (see Data layer & migrations)
+|   +-- alembic/versions/            # Migration chain, head 0049 (see Data layer & migrations)
 |   +-- scripts/
 |   |   +-- seed_master.py           # Master seeder - the only entry point you need
 |   |   +-- seed_agent_factory.py    # Agent Factory blueprints + agents
@@ -312,7 +312,7 @@ kaeos/
 
 ## Data layer & migrations
 
-The schema is Alembic-managed and currently runs to **head 0044**. Recent additions, all
+The schema is Alembic-managed and currently runs to **head 0049**. Recent additions, all
 additive and inspector-guarded (safe to re-run against a partially migrated database), with
 RLS enabled on PostgreSQL:
 
@@ -323,6 +323,11 @@ RLS enabled on PostgreSQL:
 | `0042_lending_vertical` | Lending vertical (`lnd_*`) |
 | `0043_metrics_timeseries` | `ts_metric_samples` |
 | `0044_tenant_branding` | `brand_tenant_branding` |
+| `0045_engineering_tables` | `eng_*` service/delivery/incident/on-call/CI tables |
+| `0046_support_fixes` | `sup_agents.avg_csat` retyped to numeric |
+| `0047_hc_compliance` | `hlth_compliance_reports`, `hlth_compliance_violations` |
+| `0048_loan_servicing` | `lnd_serviced_loans`, `lnd_collection_cases` |
+| `0049_ops_work_orders` | `ops_work_orders` + agent-decision advisory columns |
 
 Two deployment lessons are baked into the chain and are worth knowing before you add a revision:
 

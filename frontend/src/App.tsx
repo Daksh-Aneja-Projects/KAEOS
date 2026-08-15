@@ -202,6 +202,7 @@ function Shell() {
   // shell has to survive a phone.
   const [navOpen, setNavOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const notifButtonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -263,6 +264,7 @@ function Shell() {
         searchRef.current?.blur();
         setSearchQuery('');
         setSearchFocused(false);
+        setNotifOpen(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -345,6 +347,26 @@ function Shell() {
   const activeDepartment = DEPARTMENT_CONTEXT.find(
     d => location.pathname.startsWith(`/departments/${d.slug}`),
   );
+
+  // Roving keyboard nav for the search-results and notification dropdowns:
+  // ArrowDown/Up move between [data-menuitem] buttons, Escape closes.
+  const focusMenuItem = (container: HTMLElement, dir: 1 | -1) => {
+    const items = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-menuitem]'));
+    if (!items.length) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    const nextIdx = idx === -1 ? (dir === 1 ? 0 : items.length - 1) : (idx + dir + items.length) % items.length;
+    items[nextIdx].focus();
+  };
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(e.currentTarget, 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(e.currentTarget, -1); }
+    else if (e.key === 'Escape') { setSearchFocused(false); setSearchQuery(''); searchRef.current?.focus(); }
+  };
+  const handleNotifKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(e.currentTarget, 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(e.currentTarget, -1); }
+    else if (e.key === 'Escape') { setNotifOpen(false); notifButtonRef.current?.focus(); }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: colors.surface1, color: colors.ink, fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -477,7 +499,7 @@ function Shell() {
           <div className="flex items-center gap-2 md:gap-3">
             {/* Fixed-width search would overflow a phone; it is keyboard-driven
                 (⌘K) chrome, so it yields below md rather than shrinking. */}
-            <div className="relative hidden md:block">
+            <div className="relative hidden md:block" onKeyDown={handleSearchKeyDown}>
               <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
               <input
                 ref={searchRef}
@@ -487,6 +509,10 @@ function Shell() {
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
                 placeholder="Search… ⌘K"
+                role="combobox"
+                aria-expanded={searchFocused && (searchResults.length > 0 || entityResults.length > 0)}
+                aria-controls="global-search-results"
+                aria-autocomplete="list"
                 className="pl-8 pr-3 py-1.5 rounded border text-[12px] focus:outline-none focus:ring-1 transition-all"
                 style={{
                   background: colors.canvas,
@@ -496,39 +522,41 @@ function Shell() {
                 }}
               />
               {searchQuery && (
-                <button aria-label="Clear search" onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>
+                <button type="button" aria-label="Clear search" onClick={() => setSearchQuery('')}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
                   <X className="w-3 h-3" />
                 </button>
               )}
               {/* Search Results Dropdown */}
               {searchFocused && (searchResults.length > 0 || entityResults.length > 0) && (
-                <div className="absolute top-full left-0 mt-1 w-full rounded border shadow-lg z-50 overflow-hidden max-h-[420px] overflow-y-auto"
+                <div id="global-search-results" role="listbox" aria-label="Search results"
+                  className="absolute top-full left-0 mt-1 w-full rounded border shadow-lg z-50 overflow-hidden max-h-[420px] overflow-y-auto"
                   style={{ background: colors.surface1, borderColor: colors.hairline }}>
                   {searchResults.length > 0 && (
                     <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider font-semibold"
                       style={{ color: colors.inkSubtle }}>Go to</div>
                   )}
                   {searchResults.map(r => (
-                    <div key={r.path}
-                      onMouseDown={() => { navigate(r.path); setSearchQuery(''); }}
-                      className="px-3 py-2 text-[13px] cursor-pointer hover:bg-surface2 transition-colors flex items-center gap-2"
+                    <button key={r.path} type="button" role="option" data-menuitem
+                      onClick={() => { navigate(r.path); setSearchQuery(''); setSearchFocused(false); }}
+                      className="w-full text-left px-3 py-2 text-[13px] cursor-pointer hover:bg-surface2 transition-colors flex items-center gap-2 focus:outline-none focus-visible:bg-surface2"
                       style={{ color: colors.ink }}>
                       <Search className="w-3 h-3" style={{ color: colors.inkSubtle }} />
                       {r.label}
-                    </div>
+                    </button>
                   ))}
                   {entityResults.length > 0 && (
                     <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider font-semibold border-t"
                       style={{ color: colors.inkSubtle, borderColor: colors.hairline }}>In your company brain</div>
                   )}
                   {entityResults.map((r, i) => (
-                    <div key={`${r.path}-${i}`}
-                      onMouseDown={() => { navigate(r.path); setSearchQuery(''); }}
-                      className="px-3 py-2 cursor-pointer hover:bg-surface2 transition-colors"
+                    <button key={`${r.path}-${i}`} type="button" role="option" data-menuitem
+                      onClick={() => { navigate(r.path); setSearchQuery(''); setSearchFocused(false); }}
+                      className="w-full text-left px-3 py-2 cursor-pointer hover:bg-surface2 transition-colors block focus:outline-none focus-visible:bg-surface2"
                       style={{ color: colors.ink }}>
                       <div className="text-[12px] truncate">{r.label}</div>
                       <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{r.sub}</div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -539,8 +567,9 @@ function Shell() {
                 </div>
               )}
             </div>
-            <div className="relative">
-              <button aria-label="Notifications" onClick={() => setNotifOpen(o => !o)}
+            <div className="relative" onKeyDown={handleNotifKeyDown}>
+              <button ref={notifButtonRef} aria-label="Notifications" aria-expanded={notifOpen} aria-haspopup="true"
+                onClick={() => setNotifOpen(o => !o)}
                 className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
                 style={{ color: notifOpen ? colors.primary : colors.inkSubtle }}>
                 <Bell className="w-4 h-4" />
@@ -552,7 +581,7 @@ function Shell() {
               {notifOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
-                  <div className="absolute top-full right-0 mt-1 w-80 rounded-lg border shadow-xl z-50 overflow-hidden"
+                  <div role="menu" aria-label="Notifications" className="absolute top-full right-0 mt-1 w-80 rounded-lg border shadow-xl z-50 overflow-hidden"
                     style={{ background: colors.surface1, borderColor: colors.hairline }}>
                     <div className="px-3 py-2.5 border-b flex items-center justify-between" style={{ borderColor: colors.hairline }}>
                       <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>Notifications</span>
@@ -564,9 +593,9 @@ function Shell() {
                     <div className="max-h-[360px] overflow-y-auto">
                       {/* Org notifications: SLA escalations, @mentions, automation alerts */}
                       {orgNotifs.map(n => (
-                        <div key={n.id}
+                        <button key={n.id} type="button" role="menuitem" data-menuitem
                           onClick={() => { navigate('/pulse'); setNotifOpen(false); }}
-                          className="px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b"
+                          className="w-full text-left px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b block focus:outline-none focus-visible:bg-surface2"
                           style={{ borderColor: colors.hairline }}>
                           <div className="flex items-start gap-2">
                             <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
@@ -578,7 +607,7 @@ function Shell() {
                               {n.description && <div className="text-[11px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{n.description}</div>}
                             </div>
                           </div>
-                        </div>
+                        </button>
                       ))}
                       {notifs.length === 0 && orgNotifs.length === 0 ? (
                         <div className="px-3 py-8 text-center">
@@ -587,9 +616,9 @@ function Shell() {
                           <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>No decisions or alerts awaiting you</div>
                         </div>
                       ) : notifs.map(n => (
-                        <div key={n.id}
+                        <button key={n.id} type="button" role="menuitem" data-menuitem
                           onClick={() => { navigate('/platform/decisions'); setNotifOpen(false); }}
-                          className="px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b"
+                          className="w-full text-left px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b block focus:outline-none focus-visible:bg-surface2"
                           style={{ borderColor: colors.hairline }}>
                           <div className="flex items-start gap-2">
                             <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5" style={{ background: colors.warning + '20' }}>
@@ -602,15 +631,16 @@ function Shell() {
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                     {notifs.length > 0 && (
-                      <div onClick={() => { navigate('/platform/decisions'); setNotifOpen(false); }}
-                        className="px-3 py-2 text-center text-[12px] cursor-pointer hover:bg-surface2 transition-colors font-medium"
+                      <button type="button" role="menuitem" data-menuitem
+                        onClick={() => { navigate('/platform/decisions'); setNotifOpen(false); }}
+                        className="w-full px-3 py-2 text-center text-[12px] cursor-pointer hover:bg-surface2 transition-colors font-medium focus:outline-none focus-visible:bg-surface2"
                         style={{ color: colors.primary }}>
                         Review all in Decisions
-                      </div>
+                      </button>
                     )}
                   </div>
                 </>

@@ -71,7 +71,7 @@ Restoring is destructive: it drops and recreates objects in the `kaeos` database
    then `curl http://localhost:8001/health` for the backend-by-backend view, then log in to the
    frontend.
 6. Confirm the schema is at the expected head: `alembic current` should report
-   `0044_tenant_branding`. A dump taken before an upgrade restores the *old* schema, so re-run
+   `0049_ops_work_orders`. A dump taken before an upgrade restores the *old* schema, so re-run
    `alembic upgrade head` as the owner role after restoring an older dump.
 
 Note: dumps taken as the `kaeos` owner include grants for the `kaeos_app` role; that role exists in the same cluster (it lives in the `pgdata` volume, not in the dump). If you restore into a brand-new cluster, run the DB bootstrap (migrations + role setup) first so `kaeos_app` exists.

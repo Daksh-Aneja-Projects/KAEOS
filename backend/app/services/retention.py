@@ -213,7 +213,7 @@ async def sweep_all_tenants(*, dry_run: bool = False) -> list[dict]:
         tenants_tbl = _table("tenants")
         if tenants_tbl is None:
             return []
-        rows = (await db.execute(select(tenants_tbl.c.id))).fetchall()
+        rows = (await db.execute(select(tenants_tbl.c.tenant_id))).fetchall()
         tenant_ids = [r[0] for r in rows]
 
     receipts = []

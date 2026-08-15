@@ -160,10 +160,6 @@ export default function GettingStarted() {
           {steps.map((s, i) => (
             <div key={s.key} style={card}
               className="flex items-center gap-4 transition-all hover:border-opacity-100"
-              onClick={() => navigate(s.path)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') navigate(s.path); }}
             >
               <div className="shrink-0">
                 {s.done
@@ -182,11 +178,12 @@ export default function GettingStarted() {
                 <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>{s.desc}</p>
               </div>
               <button
+                type="button"
                 className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all hover:opacity-90"
                 style={s.done
                   ? { background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }
                   : { background: colors.primary, color: '#fff' }}
-                onClick={(e) => { e.stopPropagation(); navigate(s.path); }}>
+                onClick={() => navigate(s.path)}>
                 {s.done ? 'Review' : s.cta} <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -17,7 +17,7 @@ import asyncio
 import logging
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,29 @@ def reset_billing_provider() -> None:
     _provider = None
 
 
+def _plan_from_items(items: list) -> str | None:
+    """Derive the KAEOS plan tier from a subscription's price line items.
+
+    The tier is read from the price itself, in priority order:
+    metadata.plan, then lookup_key, then nickname. This keeps the price->plan
+    mapping on the Stripe object (where the operator configures the price)
+    rather than in a second source of truth that can drift. Returns a valid
+    tier slug, or None if none of the line items name a recognised tier.
+    """
+    from app.core.entitlements import PLAN_FEATURES
+    for it in items:
+        price = it.get("price") or {}
+        for candidate in (
+            (price.get("metadata") or {}).get("plan"),
+            price.get("lookup_key"),
+            price.get("nickname"),
+        ):
+            slug = (candidate or "").strip().lower()
+            if slug in PLAN_FEATURES:
+                return slug
+    return None
+
+
 async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
     """Process a verified Stripe event idempotently. The event id is the
     idempotency key: a redelivered event is a no-op. We never trust a tenant id
@@ -164,10 +187,14 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
     if seen is None:
         db.add(StripeWebhookEvent(event_id=event_id, event_type=event_type))
 
+    from app.models.auth import Tenant
+
     obj = (event.get("data") or {}).get("object") or {}
-    _KNOWN = ("customer.subscription.created", "customer.subscription.updated")
+    _UPSERT = ("customer.subscription.created", "customer.subscription.updated")
+    _CANCEL = ("customer.subscription.deleted",)
+    _KNOWN = _UPSERT + _CANCEL
     handled = False
-    if event_type in _KNOWN:
+    if event_type in _UPSERT:
         customer_id = obj.get("customer")
         acct = (await db.execute(
             select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id)
@@ -184,6 +211,39 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
             qty = sum(int(it.get("quantity") or 0) for it in items)
             if qty:
                 acct.seats = qty
+            # Sync the entitlement tier. Without this, paid features and the
+            # metered allowance stay decoupled from the real subscription: a
+            # tenant who upgrades keeps the old (lower) allowance and 402s on
+            # features they now pay for. The plan tier is carried on the price
+            # (metadata.plan / lookup_key / nickname) so no separate price->plan
+            # config has to be kept in sync out of band.
+            new_plan = _plan_from_items(items)
+            if new_plan:
+                await db.execute(
+                    update(Tenant).where(Tenant.tenant_id == acct.tenant_id)
+                    .values(plan=new_plan)
+                )
+            else:
+                logger.warning(
+                    "[Stripe] subscription %s for tenant %s carries no plan tier "
+                    "on its price (set price metadata.plan or a lookup_key); "
+                    "Tenant.plan left unchanged.", obj.get("id"), acct.tenant_id,
+                )
+            handled = True
+    elif event_type in _CANCEL:
+        customer_id = obj.get("customer")
+        acct = (await db.execute(
+            select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id)
+        )).scalar_one_or_none()
+        if acct is not None:
+            # Subscription ended: drop the metered linkage and fall the tenant
+            # back to free so cancelled tenants stop drawing paid entitlements
+            # and the paid allowance.
+            acct.stripe_subscription_id = None
+            acct.stripe_meter_item_id = None
+            await db.execute(
+                update(Tenant).where(Tenant.tenant_id == acct.tenant_id).values(plan="free")
+            )
             handled = True
 
     # A KNOWN event we could not complete (e.g. the local BillingAccount does not

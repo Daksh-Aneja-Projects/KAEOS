@@ -321,15 +321,18 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 
-# Innermost → Outermost: Tenant → RequestID → Logging → RateLimit → BodySize
-#                        → SecurityHeaders → TrustedHost → CORS
+# add_middleware() PREPENDS, so the LAST call is the OUTERMOST layer. Resulting
+# request order (outer -> inner): CORS -> TrustedHost -> SecurityHeaders ->
+# BodySize -> RequestID -> Logging -> Tenant -> RateLimit -> route.
+# RateLimit is registered BEFORE Tenant on purpose so it ends up INNER of Tenant
+# and therefore runs AFTER TenantMiddleware has populated request.state.tenant.
+# Registered the other way round (the previous order), the limiter ran first and
+# request.state.tenant was always None, so it silently keyed every request by IP
+# and, behind a proxy, collapsed all tenants into one global counter.
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_RPM)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
-# Per-tenant rate limit. Redis-backed (shared across workers) when reachable, else
-# in-memory. Dashboards poll several endpoints per page, so the default is generous
-# but still a real burst guard. Tunable via RATE_LIMIT_RPM.
-app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_RPM)
 # Reject over-large bodies before a handler allocates them (OOM guard).
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
 # Browser-hardening headers on every response (HSTS outside DEV_MODE only).

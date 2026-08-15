@@ -92,10 +92,19 @@ class CSVConnector(BaseConnector):
         delimiter = self.config.get("delimiter", ",")
         encoding = self.config.get("encoding", "utf-8")
         batch_size = self.config.get("batch_size", 1000)
-
         start_offset = int(cursor.value) if cursor else 0
-        records = []
 
+        # Blocking file IO must not run on the event loop - offload it so a large
+        # CSV never stalls every other request.
+        # ponytail: offset is a row index, so each batch re-reads from row 0 to
+        # skip; switch to a persisted byte offset (f.seek) if large multi-batch
+        # files become a real cost.
+        import asyncio
+        return await asyncio.to_thread(
+            self._read_batch_sync, file_path, delimiter, encoding, batch_size, start_offset)
+
+    def _read_batch_sync(self, file_path, delimiter, encoding, batch_size, start_offset):
+        records = []
         with open(file_path, "r", encoding=encoding) as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             for i, row in enumerate(reader):
@@ -112,7 +121,6 @@ class CSVConnector(BaseConnector):
                     source_table=os.path.basename(file_path),
                     data=dict(row),
                 ))
-
         return RecordBatch(
             records=records,
             cursor=SyncCursor(type="offset", value=start_offset + len(records)),

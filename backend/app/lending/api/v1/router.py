@@ -311,7 +311,9 @@ async def list_serviced_loans(status: Optional[str] = None,
     q = select(ServicedLoan).where(ServicedLoan.tenant_id == tenant["tenant_id"])
     if status:
         q = q.where(ServicedLoan.status == status)
-    rows = (await db.execute(q.order_by(ServicedLoan.next_due_date.asc()))).scalars().all()
+    # Bound the page like every sibling department list endpoint.
+    rows = (await db.execute(
+        q.order_by(ServicedLoan.next_due_date.asc()).limit(200))).scalars().all()
     return [_loan_out(loan) for loan in rows]
 
 

@@ -7,6 +7,8 @@ import asyncio
 import uuid
 from datetime import date, timedelta
 
+from sqlalchemy import select
+
 from app.core.database import async_engine, AsyncSessionLocal
 from app.models.domain import Base
 
@@ -29,6 +31,16 @@ async def seed():
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        # Idempotency guard: the standalone entry point (python -m app.legal.seed)
+        # would otherwise insert a full duplicate set on every run - there are no
+        # unique constraints to block it. Mirrors every sibling department seeder.
+        existing = await db.scalar(
+            select(LegalMatter.id).where(LegalMatter.tenant_id == TENANT).limit(1)
+        )
+        if existing:
+            print(f"[SKIP] Legal already seeded for {TENANT}; leaving existing data untouched.")
+            return
+
         # 1. Legal Team Members
         lawyers = [
             LegalTeamMember(id=_id(), tenant_id=TENANT, name="Sarah Jenkins", role="General Counsel", email="sarah.jenkins@kaeos.io", bar_license_number="CA-99214", is_active=True),

@@ -80,6 +80,7 @@ async def verify_audit_log(
     checkpoint anchored in the signed provenance ledger (deletions). Rows
     written before signing report as legacy, never as tampering.
     """
+    limit = max(1, min(limit, 10000))  # clamp caller-supplied scan size
     from app.core.audit import verify_audit_checkpoint, verify_audit_rows
     rows = await verify_audit_rows(db, tenant_id, limit=limit)
     checkpoint = await verify_audit_checkpoint(db, tenant_id)

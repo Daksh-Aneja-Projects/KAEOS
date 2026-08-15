@@ -50,6 +50,17 @@ def require_role(*roles: str):
     """Dependency that enforces role-based access."""
     async def checker(user: dict = Depends(get_current_user)):
         if user["role"] not in roles:
+            # Record the denial to the tamper-evident audit log. RBAC_DENIED is a
+            # defined event type that was never actually emitted; a role-boundary
+            # probe should leave a trail. record_security_event never raises.
+            from app.core.audit import record_security_event
+            await record_security_event(
+                tenant_id=user.get("tenant_id", "unknown"),
+                event_type="RBAC_DENIED", action="READ", result="BLOCKED",
+                actor=user.get("email") or user.get("id"),
+                actor_role=user.get("role"),
+                details={"required": list(roles)},
+            )
             raise HTTPException(
                 status_code=403,
                 detail=f"Insufficient permissions. Required: {', '.join(roles)}, Current: {user['role']}"
@@ -309,6 +320,13 @@ class MFACodeRequest(BaseModel):
     code: str
 
 
+class MFADisableRequest(BaseModel):
+    # Re-auth: a fresh TOTP code or the account password. Either proves the
+    # holder is the account owner, not just a bearer of a stolen/leaked token.
+    code: str | None = None
+    password: str | None = None
+
+
 @router.get("/mfa/status")
 async def mfa_status(user: dict = Depends(get_current_user)):
     """Whether the caller has MFA enrolled/enabled."""
@@ -337,7 +355,28 @@ async def mfa_confirm(data: MFACodeRequest, user: dict = Depends(get_current_use
 
 
 @router.post("/mfa/disable")
-async def mfa_disable(user: dict = Depends(get_current_user)):
-    """Disable MFA for the caller's own account."""
+async def mfa_disable(body: MFADisableRequest, user: dict = Depends(get_current_user)):
+    """Disable MFA for the caller's own account.
+
+    Requires re-authentication (a fresh TOTP code or the account password) so a
+    leaked/stolen bearer token alone cannot strip a victim's second factor.
+    """
     from app.services import mfa as mfa_svc
+    from app.services.auth import _verify_password
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.auth import User
+    from sqlalchemy import select
+
+    reauthed = False
+    if body.code:
+        reauthed = await mfa_svc.verify_login_code(user["id"], body.code)
+    if not reauthed and body.password:
+        async with MaintenanceSessionLocal() as db:
+            row = await db.scalar(select(User).where(User.id == user["id"]))
+        reauthed = bool(row and await _verify_password(body.password, row.hashed_password))
+    if not reauthed:
+        raise HTTPException(
+            status_code=401,
+            detail="Re-authentication required: provide a current TOTP code or your password.",
+        )
     return await mfa_svc.disable(user["id"])

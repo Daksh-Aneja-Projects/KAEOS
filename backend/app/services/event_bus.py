@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import asyncio
 import hashlib
+import hmac
 import json
 import uuid
 import logging
@@ -247,14 +248,23 @@ class EventBus:
                     sub_endpoint = sub.get("endpoint") if is_dict else sub.endpoint
 
                     try:
-                        signature = hashlib.sha256(
-                            f"{sub_secret}|{json.dumps(event_data, sort_keys=True, default=str)}".encode()
+                        # Sign the EXACT bytes we send, with a real HMAC (matches
+                        # notifier._send_webhook). The old sha256(secret|payload)
+                        # was both length-extendable and signed a differently
+                        # serialized string than httpx put on the wire, so a
+                        # receiver could never reproduce it.
+                        raw = json.dumps(event_data, default=str).encode()
+                        signature = hmac.new(
+                            str(sub_secret).encode(), raw, hashlib.sha256
                         ).hexdigest()
 
                         res = await client.post(
                             sub_endpoint,
-                            json=event_data,
-                            headers={"X-KAEOS-Signature": signature},
+                            content=raw,
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-KAEOS-Signature": signature,
+                            },
                             timeout=5.0
                         )
                         res.raise_for_status()

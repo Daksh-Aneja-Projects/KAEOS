@@ -34,6 +34,7 @@ router = APIRouter(prefix="/privacy", tags=["Privacy & Data Lifecycle"])
 class ErasureRequest(BaseModel):
     employee_id: Optional[str] = None
     email: Optional[str] = None
+    subject_ref: Optional[str] = None  # external borrower/applicant ref (lending)
 
 
 @router.post("/erasure")
@@ -50,11 +51,12 @@ async def erase_data_subject(
     references are retained by design).
     """
     tenant_id = tenant["tenant_id"]
-    if not (body.employee_id or body.email):
-        raise HTTPException(400, "Provide at least one of employee_id / email")
+    if not (body.employee_id or body.email or body.subject_ref):
+        raise HTTPException(400, "Provide at least one of employee_id / email / subject_ref")
     try:
         receipt = await erase_subject(
             db, tenant_id, employee_id=body.employee_id, email=body.email,
+            subject_ref=body.subject_ref,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

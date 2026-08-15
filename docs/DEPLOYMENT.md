@@ -54,7 +54,7 @@ existing install. For local development, see the Quick Start in the README.
   underlying data is stored as null, never as a fabricated `0`.
 
 ## Database migrations
-- The chain runs to head **`0044_tenant_branding`**. New this cycle:
+- The chain runs to head **`0049_ops_work_orders`**. Recent this cycle:
   `0040_fin_fx_rates` (multi-currency GL: `fin_fx_rates` +
   `fin_journal_lines.amount_in_base`), `0041_healthcare_tables` (`hlth_*`),
   `0042_lending_vertical` (`lnd_*`), `0043_metrics_timeseries`
@@ -109,7 +109,7 @@ Fresh installs are unaffected.
 
 ## Pre-launch checklist for a production/client deployment
 - [ ] Run `alembic upgrade head` against a real `pgvector/pgvector:pg16`
-      instance (not SQLite) and confirm it lands on `0044_tenant_branding`.
+      instance (not SQLite) and confirm it lands on `0049_ops_work_orders`.
 - [ ] Run the full E2E suite against your Postgres+pgvector stack.
 - [ ] Load test at your expected concurrency (the built-in rate limiter is a
       Redis-backed shared limiter across replicas; make sure every replica points

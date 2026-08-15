@@ -108,6 +108,7 @@ async def export_dataset(
     db: AsyncSession = Depends(get_db),
 ):
     """Emit instruction-tuned rows ready for Phase 3 fine-tuning."""
+    limit = max(1, min(limit, 50000))  # clamp caller-supplied export size
     examples = await dataset_builder.export_examples(
         db,
         tenant_id,

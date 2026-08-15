@@ -152,22 +152,22 @@ const SecuritySettings: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <input style={input} placeholder="Provider label (e.g. Okta)" value={form.provider_label} onChange={e => setForm({ ...form, provider_label: e.target.value })} />
-          <input style={input} placeholder="Email domain (e.g. acme.com)" value={form.email_domain} onChange={e => setForm({ ...form, email_domain: e.target.value })} />
+          <input style={input} aria-label="Provider label" placeholder="Provider label (e.g. Okta)" value={form.provider_label} onChange={e => setForm({ ...form, provider_label: e.target.value })} />
+          <input style={input} aria-label="Email domain" placeholder="Email domain (e.g. acme.com)" value={form.email_domain} onChange={e => setForm({ ...form, email_domain: e.target.value })} />
           {protocol === 'OIDC' ? (
             <>
-              <input style={input} placeholder="Issuer URL (https://…)" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
-              <input style={input} placeholder="Client ID" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })} />
-              <input style={input} type="password" placeholder="Client secret" value={form.client_secret} onChange={e => setForm({ ...form, client_secret: e.target.value })} />
+              <input style={input} aria-label="Issuer URL" placeholder="Issuer URL (https://…)" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
+              <input style={input} aria-label="Client ID" placeholder="Client ID" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })} />
+              <input style={input} aria-label="Client secret" type="password" placeholder="Client secret" value={form.client_secret} onChange={e => setForm({ ...form, client_secret: e.target.value })} />
             </>
           ) : (
             <>
-              <input style={input} placeholder="IdP EntityID / Issuer" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
-              <input style={input} placeholder="IdP SSO URL (https://…)" value={form.idp_sso_url} onChange={e => setForm({ ...form, idp_sso_url: e.target.value })} />
-              <textarea style={{ ...input, minHeight: 72, resize: 'vertical' }} className="md:col-span-2" placeholder="IdP X.509 signing certificate (PEM or base64 body)" value={form.idp_x509_cert} onChange={e => setForm({ ...form, idp_x509_cert: e.target.value })} />
+              <input style={input} aria-label="IdP EntityID or Issuer" placeholder="IdP EntityID / Issuer" value={form.issuer} onChange={e => setForm({ ...form, issuer: e.target.value })} />
+              <input style={input} aria-label="IdP SSO URL" placeholder="IdP SSO URL (https://…)" value={form.idp_sso_url} onChange={e => setForm({ ...form, idp_sso_url: e.target.value })} />
+              <textarea style={{ ...input, minHeight: 72, resize: 'vertical' }} className="md:col-span-2" aria-label="IdP X.509 signing certificate" placeholder="IdP X.509 signing certificate (PEM or base64 body)" value={form.idp_x509_cert} onChange={e => setForm({ ...form, idp_x509_cert: e.target.value })} />
             </>
           )}
-          <select style={input} value={form.default_role} onChange={e => setForm({ ...form, default_role: e.target.value })}>
+          <select style={input} aria-label="Default role for new users" value={form.default_role} onChange={e => setForm({ ...form, default_role: e.target.value })}>
             <option value="VIEWER">New users → Viewer</option>
             <option value="ANALYST">New users → Analyst</option>
             <option value="ADMIN">New users → Admin</option>
