@@ -163,8 +163,15 @@ async def lifespan(app: FastAPI):
 
     # Seed department domain data (HR/Finance/Legal/Sales/Support/Operations)
     # when empty, then roll up department KPI metrics. Idempotent per domain.
-    from app.core.domain_seed import seed_domains_if_empty
-    await seed_domains_if_empty()
+    # Same gate as the core demo dataset above: this is FICTIONAL department
+    # data (employees, contracts, loans, tickets), and without the gate a fresh
+    # production database would seed tenant_acme demo rows on first boot.
+    if settings.SEED_DEMO_DATA and not settings.is_production_like:
+        from app.core.domain_seed import seed_domains_if_empty
+        await seed_domains_if_empty()
+    else:
+        logger.info("Skipping fictional department demo data (SEED_DEMO_DATA off "
+                    "or production-like environment)")
 
     # Give every department its capability + agent backbone by running the real
     # WorkforceGenerator against each synced pack. Without this the org-wide
@@ -329,6 +336,12 @@ from app.core.middleware import (
 # Registered the other way round (the previous order), the limiter ran first and
 # request.state.tenant was always None, so it silently keyed every request by IP
 # and, behind a proxy, collapsed all tenants into one global counter.
+# Registered FIRST so it ends up INNERMOST (add_middleware prepends): the
+# response body is compressed before the outer layers stamp headers, and none
+# of them read bodies. Dashboards ship large JSON payloads; gzip is a large,
+# free win on them. minimum_size skips tiny responses where gzip is overhead.
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_RPM)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RequestIdMiddleware)

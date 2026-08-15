@@ -192,7 +192,8 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
     obj = (event.get("data") or {}).get("object") or {}
     _UPSERT = ("customer.subscription.created", "customer.subscription.updated")
     _CANCEL = ("customer.subscription.deleted",)
-    _KNOWN = _UPSERT + _CANCEL
+    _DUNNING = ("invoice.payment_failed",)
+    _KNOWN = _UPSERT + _CANCEL + _DUNNING
     handled = False
     if event_type in _UPSERT:
         customer_id = obj.get("customer")
@@ -230,6 +231,35 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
                     "Tenant.plan left unchanged.", obj.get("id"), acct.tenant_id,
                 )
             handled = True
+    elif event_type in _DUNNING:
+        # A failed payment does NOT change entitlements here: Stripe's own
+        # dunning retries, and a terminal failure arrives later as
+        # customer.subscription.deleted (handled below, drops the tenant to
+        # free). This handler exists so the failure is VISIBLE the day it
+        # happens - an audited event plus an operator notification - instead of
+        # being silently discarded until the subscription dies weeks later.
+        customer_id = obj.get("customer")
+        acct = (await db.execute(
+            select(BillingAccount).where(BillingAccount.stripe_customer_id == customer_id)
+        )).scalar_one_or_none()
+        if acct is not None:
+            from app.core.audit import record_security_event
+            from app.services.notifier import notify_fire_and_forget
+            await record_security_event(
+                tenant_id=acct.tenant_id, event_type="CONFIG_CHANGE",
+                action="WRITE", result="ESCALATED", actor="stripe-webhook",
+                resource_type="billing_account", resource_id=acct.tenant_id,
+                details={"stripe_event": "invoice.payment_failed",
+                         "invoice": obj.get("id")},
+            )
+            notify_fire_and_forget(
+                acct.tenant_id, "billing.payment_failed",
+                "Payment failed for your KAEOS subscription",
+                "A subscription payment failed. The card will be retried "
+                "automatically; if it keeps failing the plan drops to free. "
+                "Update the payment method to keep paid features.",
+            )
+            handled = True
     elif event_type in _CANCEL:
         customer_id = obj.get("customer")
         acct = (await db.execute(
@@ -250,7 +280,9 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
     # exist yet - a create/webhook race) must NOT be marked processed, or the
     # linkage is lost forever (Stripe never redelivers a 200'd event). Leave it
     # unprocessed and signal a retry; unknown types are acknowledged (processed).
-    recoverable_miss = (event_type in _KNOWN) and not handled
+    # Dunning events for a customer we do not know are acknowledged, not
+    # retried: there is no linkage to recover, unlike subscription events.
+    recoverable_miss = (event_type in (_UPSERT + _CANCEL)) and not handled
     mark = await db.get(StripeWebhookEvent, event_id)
     if mark is not None and not recoverable_miss:
         mark.processed = True
