@@ -301,6 +301,15 @@ async def test_decision_memory_is_stored_and_recalled():
 
     t = f"tenant_mem_{uuid.uuid4().hex[:6]}"
     ctx = "finance.dunning: chase the overdue ACME invoice"
+
+    # Semantic recall is deliberately honest about pseudo-vectors: with simulated
+    # embeddings (no local Ollama, e.g. CI) recall_similar_situations returns []
+    # rather than fabricating similarity between hash-scatter vectors. This test
+    # exercises REAL semantic recall, so it only runs where real embeddings exist.
+    _, prov = await EnterpriseMemoryService._embed(ctx, t)
+    if prov.get("simulated"):
+        pytest.skip("semantic recall requires real embeddings (local Ollama not available)")
+
     mem_id = await EnterpriseMemoryService.store_decision_memory(
         None, t, ctx, {"skill_id": "finance.dunning"}, outcome="SUCCESS_CLEAN")
     assert mem_id
