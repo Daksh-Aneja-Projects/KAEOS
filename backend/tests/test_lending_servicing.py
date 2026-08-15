@@ -10,7 +10,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.lending.models.core import CreditPolicy
 from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
                                           ServicedLoan, ServicingStatus)
 from app.lending.services.servicing import (CaseNotFound, CollectionGateError,

@@ -15,6 +15,5 @@ export * from './workforce';
 export * from './domainpack';
 export * from './finance';
 export * from './legal';
-export * from './support';
 export * from './sales';
 export * from './operations';

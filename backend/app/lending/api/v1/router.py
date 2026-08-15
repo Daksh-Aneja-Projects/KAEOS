@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func as sqlfunc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_security_event
@@ -23,12 +23,10 @@ from app.lending.agents.collections_agent import CollectionsAgent
 from app.lending.agents.intake_agent import IntakeAgent
 from app.lending.agents.underwriter_agent import UnderwriterAgent
 from app.lending.models.core import (AdverseActionNotice, CreditPolicy,
-                                     LoanApplication, LoanStatus,
-                                     UnderwritingDecision)
+                                     LoanApplication, LoanStatus)
 from app.lending.models.servicing import CollectionCase, ServicedLoan
 from app.lending.services.analytics import lending_analytics
 from app.lending.services.servicing import (CaseNotFound, CollectionGateError,
-                                            attempt_collection_contact,
                                             delinquency_bucket)
 from app.lending.services.underwriting import LendingError, UnderwritingGateError
 

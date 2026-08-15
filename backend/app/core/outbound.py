@@ -172,7 +172,7 @@ def _demo() -> None:
     try:
         try:
             _pick_safe_ip("rebind.example.com", allow_private=True)
-            assert False, "rebind to link-local should have been refused"
+            raise AssertionError("rebind to link-local should have been refused")
         except ValueError:
             pass
     finally:

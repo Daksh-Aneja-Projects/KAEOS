@@ -9,7 +9,7 @@ no-fork guarantees.
 import uuid
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
 from app.models.domain import ProvenanceLedger

@@ -10,7 +10,6 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
 
 TENANT = "tenant_wb_test"
@@ -200,8 +199,8 @@ async def test_generic_rest_carries_stable_idempotency_key():
     try:
         await _connector("generic_rest", category="hris", config={"base_url": url})
         from app.services.sync_engine import queue_outbound, dispatch_outbound
-        wid = await queue_outbound(TENANT, "employee", "i1", "UPSERT", {"x": 1},
-                                   external_id="IDEM", idempotency_key="fixed-token-123")
+        _wid = await queue_outbound(TENANT, "employee", "i1", "UPSERT", {"x": 1},
+                                    external_id="IDEM", idempotency_key="fixed-token-123")
         await dispatch_outbound(tenant_id=TENANT)
         assert len(_Sink.received) == 1
         assert _Sink.received[0]["idempotency_key"] == "fixed-token-123"

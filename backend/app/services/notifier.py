@@ -26,7 +26,6 @@ import smtplib
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
-import httpx
 from sqlalchemy import select
 
 from app.models.notifications import NotificationChannel, NotificationDelivery

@@ -12,7 +12,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.operations.models.procurement import (
-    POLineItem, ProcurementStatus, PurchaseOrder, PurchaseRequest,
+    ProcurementStatus, PurchaseOrder, PurchaseRequest,
 )
 from app.operations.models.vendors import VendorContract, VendorPerformance
 from app.procurement.connectors.po_sync import ProcurementSyncConnector

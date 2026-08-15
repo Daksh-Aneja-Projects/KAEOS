@@ -15,7 +15,6 @@ All deterministic — no live Ollama, no live DB (the Skill query is stubbed to
 sidestep the dual in-memory-engine split between the app engine and the test
 engine).
 """
-import types
 
 import pytest
 

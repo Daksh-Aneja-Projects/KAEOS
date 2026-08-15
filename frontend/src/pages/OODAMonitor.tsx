@@ -31,8 +31,8 @@ export default function OODAMonitor({ domain }: { domain?: string }) {
   // same cadence as the rest of the cognitive-loop streams (STREAM_INTERVALS.OODA)
   // instead of listening for a "ooda_event" WS message the server never sends.
   const { data, loading, error: pollError, isLive, staleness, refresh } =
-    usePolling(() => api.getOODAEvents(), STREAM_INTERVALS.OODA);
-  const events = data?.events || [];
+    usePolling<{ events: OODAEvent[] }>(() => api.getOODAEvents(), STREAM_INTERVALS.OODA);
+  const events: OODAEvent[] = data?.events || [];
   const empty = events.length === 0;
   // Only treat a poll failure as fatal (full-page error) when there's nothing
   // to show yet; a transient failure after data has loaded should not blank

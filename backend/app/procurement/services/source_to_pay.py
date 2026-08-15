@@ -38,7 +38,6 @@ from app.compliance.checkers.procurement import (
 from app.finance.services.three_way_match import evaluate_three_way_match
 from app.operations.models.procurement import (
     GoodsReceipt,
-    POLineItem,
     ProcurementStatus,
     PurchaseOrder,
     PurchaseRequest,

@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-import httpx
 from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)

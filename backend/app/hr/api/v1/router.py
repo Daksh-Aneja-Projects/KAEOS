@@ -20,14 +20,14 @@ from sqlalchemy import select, func as sqlfunc
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
-from app.hr.models.core import HREmployee, EmployeeDocument, DocumentType, EmploymentStatus
+from app.hr.models.core import HREmployee, EmployeeDocument, EmploymentStatus
 from app.hr.models.recruiting import (
     JobRequisition, Candidate, CandidateStage, ReqStatus, Interview,
 )
 from app.hr.models.time_attendance import TimeOffRequest, Timesheet
 from app.hr.models.performance import PerformanceReview, ReviewCycle
 from app.hr.models.benefits import BenefitPlan, BenefitEnrollment, EnrollmentStatus as BenefitEnrollmentStatus
-from app.hr.models.compensation import Compensation, CompType
+from app.hr.models.compensation import Compensation
 from app.hr.models.onboarding import BoardingPlan, BoardingTask, BoardingType, TaskStatus
 from app.hr.models.learning import Course, CourseEnrollment
 from app.hr.models.employee_relations import ERCase, CaseStatus

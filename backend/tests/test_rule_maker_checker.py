@@ -8,7 +8,6 @@ client-supplied validator string as identity.
 """
 import uuid
 
-import pytest
 from sqlalchemy import select
 
 from app.models.domain import Rule

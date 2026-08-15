@@ -187,7 +187,12 @@ class TestFairnessOverride:
         match = next((l for l in refreshed if l["id"] == target["id"]), None)
         assert match is not None
         assert match["was_overridden"] is True
-        assert match["override_by"] == "e2e_test"
+        # The server stamps the AUTHENTICATED admin as the overrider and ignores
+        # the body's override_by (anti-forgery: this row records who cleared a
+        # bias block). So the recorded actor must be a real identity - and must
+        # NOT be the client-supplied string, or the actor would be forgeable.
+        assert match["override_by"]
+        assert match["override_by"] != "e2e_test"
 
 
 @pytest.mark.asyncio
