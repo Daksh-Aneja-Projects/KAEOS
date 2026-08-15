@@ -22,7 +22,7 @@ import { Plus as PlusIcon } from 'lucide-react';
 type SalesTab = 'opportunities' | 'leads' | 'forecasts' | 'accounts' | 'commission' | 'analytics';
 
 interface CommissionRow {
-  id: string; plan_id: string | null; opportunity_id: string | null;
+  id: string; plan_id: string | null; plan_name: string | null; opportunity_id: string | null;
   deal_value: number; calculated_payout: number;
   is_approved: boolean | null; paid_date: string | null;
 }
@@ -50,7 +50,9 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [accounts, setAccounts] = useState<SalesAccount[]>([]);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
-  // Quote results bypass the gate pipeline, so they get their own card.
+  // CPQ runs through the same 7-gate pipeline as every other sales agent; the
+  // quote gets its own card (discount %, margin summary, counter) instead of
+  // the generic gate trace because that is the shape a rep actually wants to read.
   const [quote, setQuote] = useState<{ opportunity: string; discount: number; result: any } | null>(null);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const bulk = useBulkSelect(opportunities, workflows['opportunity'], o => o.stage);
@@ -78,7 +80,7 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     setLoading(false);
   };
 
-  /** CPQ answers with a quote, not a gate trace, so it is handled on its own. */
+  /** CPQ is gated like every other agent, but renders as a quote card, not a gate trace. */
   const runCpq = async (opp: Opportunity) => {
     const raw = window.prompt(`What discount is being asked for on "${opp.name}"? Enter a percentage.`, '10');
     if (raw === null) return;
@@ -237,38 +239,56 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
           <GateTrace running={runningAgent === trace.id} result={trace.result} skillLabel={trace.label} />
         )}
 
-        {/* Quote verdict (CPQ does not run through the gate pipeline) */}
-        {quote && (
-          <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Calculator className="w-4 h-4" style={{ color: '#14b8a6' }} />
-              <span className="text-[13px] font-semibold">
-                {quote.discount}% discount on {quote.opportunity}
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
-                style={{
-                  background: (quote.result?.approved ? '#22c55e' : '#f59e0b') + '20',
-                  color: quote.result?.approved ? '#22c55e' : '#f59e0b',
-                }}>
-                {quote.result?.approved ? 'Within policy' : 'Needs approval'}
-              </span>
-              <button onClick={() => setQuote(null)} className="ml-auto text-[11px] opacity-60">dismiss</button>
+        {/* Quote verdict (CPQ is gated; its status can be a clean decision,
+            pending human review, or a compliance block) */}
+        {quote && (() => {
+          const status = quote.result?.status;
+          const badge = status === 'PENDING_HITL'
+            ? { label: 'Awaiting human approval', color: '#f59e0b' }
+            : status === 'BLOCKED_COMPLIANCE' || status === 'BLOCKED_FAIRNESS' || status === 'BLOCKED_DEBATE'
+            ? { label: 'Blocked', color: '#ef4444' }
+            : status && status !== 'SUCCESS_CLEAN'
+            ? { label: 'Check failed', color: '#ef4444' }
+            : quote.result?.approved
+            ? { label: 'Within policy', color: '#22c55e' }
+            : { label: 'Needs approval', color: '#f59e0b' };
+          const blockedReason = (quote.result?.violations || [])[0]?.reason;
+          return (
+            <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Calculator className="w-4 h-4" style={{ color: '#14b8a6' }} />
+                <span className="text-[13px] font-semibold">
+                  {quote.discount}% discount on {quote.opportunity}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold"
+                  style={{ background: badge.color + '20', color: badge.color }}>
+                  {badge.label}
+                </span>
+                <button onClick={() => setQuote(null)} className="ml-auto text-[11px] opacity-60">dismiss</button>
+              </div>
+              <div className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>
+                {status === 'PENDING_HITL' && (
+                  <p>{quote.result?.reason || 'This discount needs a second human approver before it takes effect.'}</p>
+                )}
+                {(status === 'BLOCKED_COMPLIANCE' || status === 'BLOCKED_FAIRNESS' || status === 'BLOCKED_DEBATE') && (
+                  <p>{blockedReason || 'A compliance or fairness gate stopped this quote before it reached a decision.'}</p>
+                )}
+                {quote.result?.maximum_allowable_discount != null && (
+                  <p>The most this deal can give away without escalation is{' '}
+                    <strong style={{ color: colors.ink }}>{quote.result.maximum_allowable_discount}%</strong>.</p>
+                )}
+                {quote.result?.margin_impact_summary && <p>{quote.result.margin_impact_summary}</p>}
+                {quote.result?.negotiation_counter && (
+                  <p><strong style={{ color: colors.ink }}>Suggested counter:</strong> {quote.result.negotiation_counter}</p>
+                )}
+                {!quote.result?.margin_impact_summary && !quote.result?.negotiation_counter && quote.result?.maximum_allowable_discount == null
+                  && status !== 'PENDING_HITL' && !(status === 'BLOCKED_COMPLIANCE' || status === 'BLOCKED_FAIRNESS' || status === 'BLOCKED_DEBATE') && (
+                  <p>The quote engine returned no detail for this deal.</p>
+                )}
+              </div>
             </div>
-            <div className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>
-              {quote.result?.maximum_allowable_discount != null && (
-                <p>The most this deal can give away without escalation is{' '}
-                  <strong style={{ color: colors.ink }}>{quote.result.maximum_allowable_discount}%</strong>.</p>
-              )}
-              {quote.result?.margin_impact_summary && <p>{quote.result.margin_impact_summary}</p>}
-              {quote.result?.negotiation_counter && (
-                <p><strong style={{ color: colors.ink }}>Suggested counter:</strong> {quote.result.negotiation_counter}</p>
-              )}
-              {!quote.result?.margin_impact_summary && !quote.result?.negotiation_counter && quote.result?.maximum_allowable_discount == null && (
-                <p>The quote engine returned no detail for this deal.</p>
-              )}
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
@@ -513,8 +533,8 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>
                           {c.paid_date ? new Date(c.paid_date.replace(' ', 'T')).toLocaleDateString() : 'Not yet paid'}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color: colors.inkSubtle }}>
-                          {c.plan_id ? `#${c.plan_id.slice(-6)}` : 'No plan'}
+                        <td className="px-4 py-3 text-[11px]" style={{ color: colors.inkSubtle }}>
+                          {c.plan_name || 'No plan'}
                         </td>
                         <td className="px-4 py-3">
                           {c.paid_date ? (

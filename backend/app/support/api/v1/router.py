@@ -11,11 +11,12 @@ from sqlalchemy import select, func as sqlfunc
 from app.core.database import get_db
 
 # Models
-from app.support.models.core import SupportAgent
-from app.support.models.tickets import Ticket, TicketStatus
-from app.support.models.sla import SLAPolicy, SLAMetric
-from app.support.models.knowledge import KBArticle, KBCategory
-from app.support.models.feedback import CustomerSatisfaction
+from app.support.models.core import SupportAgent, SupportTeam, SupportChannel
+from app.support.models.tickets import Ticket, TicketComment, TicketStatus, TicketTag
+from app.support.models.sla import SLAPolicy
+from app.support.models.knowledge import ArticleFeedback, KBArticle, KBCategory
+from app.support.models.feedback import CustomerSatisfaction, FeedbackTheme, NPS_Survey
+from app.support.models.escalation import EscalationEvent, EscalationRule
 
 # Agents
 from app.support.agents.triage_agent import TriageAgent
@@ -26,11 +27,29 @@ from app.support.agents.escalation_agent import EscalationAgent
 from app.support.agents.auto_resolve_agent import AutoResolveAgent
 from app.support.agents.csat_agent import CSATAgent
 
+# Reuse the same hours-between math support_analytics() already uses for
+# MTTR/first-response, so SLA compliance is computed identically everywhere.
+from app.support.services.analytics import _hours_between
+
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/support", tags=["Support"])
+
+
+# --- Shared helpers ---
+async def _customer_names(db: AsyncSession, tenant_id: str) -> dict:
+    """Resolve customer_code ("CST001") -> display name once per request.
+    Reused by every endpoint that surfaces a customer to a human instead of
+    the internal code (list_tickets first fixed this; every other endpoint
+    that names a customer reuses this instead of re-inventing it)."""
+    from app.finance.models.accounts_receivable import Customer
+    q = await db.execute(
+        select(Customer.customer_code, Customer.name).where(Customer.tenant_id == tenant_id)
+    )
+    return {code: name for code, name in q.all()}
+
 
 # --- Dashboard ---
 @router.get("/dashboard")
@@ -76,11 +95,7 @@ async def list_tickets(
     # Resolve customer codes to names once, not per row: the list rendered a
     # raw "CST001" in the Customer column - an id no human recognises, when
     # the record ("Stark Industries") was one join away.
-    from app.finance.models.accounts_receivable import Customer
-    cust_q = await db.execute(
-        select(Customer.customer_code, Customer.name).where(Customer.tenant_id == tenant_id)
-    )
-    customer_names = {code: name for code, name in cust_q.all()}
+    customer_names = await _customer_names(db, tenant_id)
 
     result = []
     for t in tickets:
@@ -194,6 +209,151 @@ async def escalate_ticket(ticket_id: str, tenant: dict = Depends(require_role("o
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
+
+@router.get("/tickets/{ticket_id}/comments")
+async def list_ticket_comments(
+    ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """The actual support conversation thread (customer messages, agent
+    replies, system entries) - written by ResolutionAgent/KBAgent today but
+    never surfaced anywhere until now."""
+    ticket_q = await db.execute(select(Ticket).where(Ticket.id == ticket_id, Ticket.tenant_id == tenant_id))
+    if not ticket_q.scalar_one_or_none():
+        raise HTTPException(404, detail=f"Ticket {ticket_id} not found")
+
+    q = await db.execute(
+        select(TicketComment).where(TicketComment.ticket_id == ticket_id, TicketComment.tenant_id == tenant_id)
+        .order_by(TicketComment.created_at.asc())
+    )
+    comments = q.scalars().all()
+
+    agent_ids = {c.author_id for c in comments if c.author_type == "AGENT" and c.author_id}
+    agent_names = {}
+    if agent_ids:
+        a_q = await db.execute(select(SupportAgent.id, SupportAgent.name).where(
+            SupportAgent.tenant_id == tenant_id, SupportAgent.id.in_(agent_ids)
+        ))
+        agent_names = {aid: name for aid, name in a_q.all()}
+    customer_names = await _customer_names(db, tenant_id)
+
+    def _author(c: TicketComment) -> str:
+        if c.author_type == "AGENT":
+            if c.author_id in agent_names:
+                return agent_names[c.author_id]
+            # Agents write internal comments under a fixed service id
+            # ("resolution_agent") rather than a real SupportAgent row.
+            if c.author_id == "resolution_agent":
+                return "KAEOS Resolution Agent"
+            return "Support Agent"
+        if c.author_type == "CUSTOMER":
+            return customer_names.get(c.author_id, c.author_id) or "Customer"
+        return "System"
+
+    return [{
+        "id": c.id,
+        "author_type": c.author_type,
+        "author": _author(c),
+        "body": c.body,
+        "is_internal": c.is_internal == "Yes",
+        "created_at": str(c.created_at) if c.created_at else None,
+    } for c in comments]
+
+
+@router.get("/tickets/{ticket_id}/tags")
+async def list_ticket_tags(
+    ticket_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    ticket_q = await db.execute(select(Ticket.id).where(Ticket.id == ticket_id, Ticket.tenant_id == tenant_id))
+    if not ticket_q.scalar_one_or_none():
+        raise HTTPException(404, detail=f"Ticket {ticket_id} not found")
+    q = await db.execute(select(TicketTag).where(TicketTag.ticket_id == ticket_id, TicketTag.tenant_id == tenant_id))
+    return [{"id": t.id, "tag": t.tag} for t in q.scalars().all()]
+
+
+# --- Teams & Channels ---
+@router.get("/teams")
+async def list_support_teams(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    teams_q = await db.execute(select(SupportTeam).where(SupportTeam.tenant_id == tenant_id))
+    teams = teams_q.scalars().all()
+    counts_q = await db.execute(
+        select(SupportAgent.team_id, sqlfunc.count())
+        .where(SupportAgent.tenant_id == tenant_id, SupportAgent.team_id.isnot(None))
+        .group_by(SupportAgent.team_id)
+    )
+    counts = {tid: int(c) for tid, c in counts_q.all()}
+    return [{
+        "id": t.id, "name": t.name, "description": t.description, "tier": t.tier,
+        "agent_count": counts.get(t.id, 0),
+    } for t in teams]
+
+
+@router.get("/channels")
+async def list_support_channels(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    ch_q = await db.execute(select(SupportChannel).where(SupportChannel.tenant_id == tenant_id))
+    channels = ch_q.scalars().all()
+    team_ids = {c.routing_team_id for c in channels if c.routing_team_id}
+    team_names = {}
+    if team_ids:
+        t_q = await db.execute(select(SupportTeam.id, SupportTeam.name).where(
+            SupportTeam.tenant_id == tenant_id, SupportTeam.id.in_(team_ids)
+        ))
+        team_names = {tid: name for tid, name in t_q.all()}
+    return [{
+        "id": c.id, "name": c.channel_name,
+        "type": c.channel_type.value if hasattr(c.channel_type, "value") else str(c.channel_type),
+        "routing_team": team_names.get(c.routing_team_id),
+        "is_active": c.is_active,
+    } for c in channels]
+
+
+@router.get("/agents/leaderboard")
+async def support_agent_leaderboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Per-agent CSAT and ticket load, computed live from CustomerSatisfaction
+    joined through the ticket each agent was assigned. Persists the result
+    onto SupportAgent.avg_csat so the column stays meaningful for any other
+    reader; an agent with no completed surveys gets an honest null, not 0."""
+    agents_q = await db.execute(
+        select(SupportAgent).where(SupportAgent.tenant_id == tenant_id, SupportAgent.is_active == True)  # noqa: E712
+    )
+    agents = agents_q.scalars().all()
+    if not agents:
+        return []
+
+    teams_q = await db.execute(select(SupportTeam.id, SupportTeam.name).where(SupportTeam.tenant_id == tenant_id))
+    team_names = {tid: name for tid, name in teams_q.all()}
+
+    ratings_q = await db.execute(
+        select(Ticket.assigned_agent_id, CustomerSatisfaction.rating)
+        .select_from(CustomerSatisfaction)
+        .join(Ticket, Ticket.id == CustomerSatisfaction.ticket_id)
+        .where(CustomerSatisfaction.tenant_id == tenant_id, Ticket.assigned_agent_id.isnot(None))
+    )
+    ratings_by_agent: dict = {}
+    for agent_id, rating in ratings_q.all():
+        ratings_by_agent.setdefault(agent_id, []).append(rating)
+
+    load_q = await db.execute(
+        select(Ticket.assigned_agent_id, sqlfunc.count())
+        .where(Ticket.tenant_id == tenant_id, Ticket.assigned_agent_id.isnot(None))
+        .group_by(Ticket.assigned_agent_id)
+    )
+    ticket_counts = {aid: int(c) for aid, c in load_q.all()}
+
+    result = []
+    for a in agents:
+        ratings = ratings_by_agent.get(a.id, [])
+        avg = round(sum(ratings) / len(ratings), 2) if ratings else None
+        a.avg_csat = avg
+        db.add(a)
+        result.append({
+            "id": a.id, "name": a.name, "team": team_names.get(a.team_id),
+            "is_ai": a.is_ai, "avg_csat": avg, "survey_count": len(ratings),
+            "ticket_count": ticket_counts.get(a.id, 0),
+        })
+    await db.commit()
+    result.sort(key=lambda r: (r["avg_csat"] is None, -(r["avg_csat"] or 0)))
+    return result
+
 # --- KB ---
 @router.get("/kb/articles")
 async def list_kb_articles(
@@ -224,6 +384,53 @@ async def list_kb_articles(
         })
     return result
 
+
+async def _set_kb_published(article_id: str, tenant: dict, db: AsyncSession, published: bool) -> dict:
+    tenant_id = tenant["tenant_id"]
+    q = await db.execute(select(KBArticle).where(KBArticle.id == article_id, KBArticle.tenant_id == tenant_id))
+    article = q.scalar_one_or_none()
+    if not article:
+        raise HTTPException(404, detail=f"KB article {article_id} not found")
+    article.is_published = published
+    db.add(article)
+    await db.commit()
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="kb_article", resource_id=article_id,
+    )
+    return {"id": article.id, "status": "PUBLISHED" if article.is_published else "DRAFT"}
+
+
+@router.patch("/kb/articles/{article_id}/publish")
+async def publish_kb_article(article_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Puts an AI-drafted (or any) KB article in front of customers. Every
+    article KBAgent writes starts is_published=False - this is the only path
+    that ever flips it to True."""
+    return await _set_kb_published(article_id, tenant, db, True)
+
+
+@router.patch("/kb/articles/{article_id}/unpublish")
+async def unpublish_kb_article(article_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    return await _set_kb_published(article_id, tenant, db, False)
+
+
+@router.get("/kb/articles/{article_id}/feedback")
+async def list_kb_article_feedback(
+    article_id: str, tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    art_q = await db.execute(select(KBArticle.id).where(KBArticle.id == article_id, KBArticle.tenant_id == tenant_id))
+    if not art_q.scalar_one_or_none():
+        raise HTTPException(404, detail=f"KB article {article_id} not found")
+    q = await db.execute(
+        select(ArticleFeedback).where(ArticleFeedback.article_id == article_id, ArticleFeedback.tenant_id == tenant_id)
+        .order_by(ArticleFeedback.created_at.desc())
+    )
+    return [{
+        "id": f.id, "is_helpful": f.is_helpful, "comment": f.comment,
+        "created_at": str(f.created_at) if f.created_at else None,
+    } for f in q.scalars().all()]
+
 # --- CSAT ---
 @router.get("/csat/surveys")
 async def list_csat_surveys(
@@ -234,18 +441,26 @@ async def list_csat_surveys(
 ):
     q = await db.execute(select(CustomerSatisfaction).where(CustomerSatisfaction.tenant_id == tenant_id).limit(limit).offset(offset))
     surveys = q.scalars().all()
+
+    # Resolve customer codes to names, the same fix already applied to
+    # /tickets 30 lines above: CustomerSatisfaction -> Ticket -> Customer, one
+    # batched lookup instead of a per-row query.
+    ticket_ids = [s.ticket_id for s in surveys if s.ticket_id]
+    ticket_customers = {}
+    if ticket_ids:
+        t_q = await db.execute(select(Ticket.id, Ticket.customer_id).where(
+            Ticket.tenant_id == tenant_id, Ticket.id.in_(ticket_ids)
+        ))
+        ticket_customers = {tid: cid for tid, cid in t_q.all()}
+    customer_names = await _customer_names(db, tenant_id)
+
     result = []
     for s in surveys:
-        customer_id = None
-        if s.ticket_id:
-            ticket_q = await db.execute(select(Ticket).where(
-                Ticket.id == s.ticket_id, Ticket.tenant_id == tenant_id
-            ))
-            ticket = ticket_q.scalar_one_or_none()
-            customer_id = ticket.customer_id if ticket else None
+        customer_code = ticket_customers.get(s.ticket_id)
+        customer_name = customer_names.get(customer_code, customer_code) if customer_code else None
         result.append({
             "id": s.id,
-            "customer": customer_id or "Anonymous",
+            "customer": customer_name or "Anonymous",
             "rating": s.rating,
             "sentiment": s.sentiment,
             "ticket_id": s.ticket_id,
@@ -272,33 +487,183 @@ async def analyze_csat(survey_id: str, tenant: dict = Depends(require_role("oper
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
 
+
+# --- NPS & Feedback Themes ---
+@router.get("/nps/surveys")
+async def list_nps_surveys(
+    tenant_id: str = Depends(get_tenant_id),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    q = await db.execute(
+        select(NPS_Survey).where(NPS_Survey.tenant_id == tenant_id)
+        .order_by(NPS_Survey.created_at.desc()).limit(limit).offset(offset)
+    )
+    surveys = q.scalars().all()
+    customer_names = await _customer_names(db, tenant_id)
+    return [{
+        "id": s.id,
+        "customer": customer_names.get(s.customer_id, s.customer_id) or "Anonymous",
+        "score": s.score,
+        "feedback_text": s.feedback_text,
+        "created_at": str(s.created_at) if s.created_at else None,
+    } for s in surveys]
+
+
+@router.get("/feedback/themes")
+async def list_feedback_themes(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    q = await db.execute(
+        select(FeedbackTheme).where(FeedbackTheme.tenant_id == tenant_id)
+        .order_by(FeedbackTheme.volume_percentage.desc())
+    )
+    return [{
+        "id": t.id, "theme": t.theme_name,
+        "volume_pct": float(t.volume_percentage) if t.volume_percentage is not None else None,
+        "severity": t.severity_rating,
+    } for t in q.scalars().all()]
+
+
+# --- Escalation ---
+@router.get("/escalation-rules")
+async def list_escalation_rules(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    q = await db.execute(select(EscalationRule).where(EscalationRule.tenant_id == tenant_id))
+    rules = q.scalars().all()
+    team_ids = {r.escalate_to_team_id for r in rules if r.escalate_to_team_id}
+    agent_ids = {r.escalate_to_agent_id for r in rules if r.escalate_to_agent_id}
+    team_names, agent_names = {}, {}
+    if team_ids:
+        t_q = await db.execute(select(SupportTeam.id, SupportTeam.name).where(
+            SupportTeam.tenant_id == tenant_id, SupportTeam.id.in_(team_ids)
+        ))
+        team_names = {tid: name for tid, name in t_q.all()}
+    if agent_ids:
+        a_q = await db.execute(select(SupportAgent.id, SupportAgent.name).where(
+            SupportAgent.tenant_id == tenant_id, SupportAgent.id.in_(agent_ids)
+        ))
+        agent_names = {aid: name for aid, name in a_q.all()}
+    return [{
+        "id": r.id, "name": r.rule_name, "trigger": r.trigger_condition,
+        "escalate_to_team": team_names.get(r.escalate_to_team_id),
+        "escalate_to_agent": agent_names.get(r.escalate_to_agent_id),
+        "time_threshold_mins": r.time_threshold_mins, "is_active": r.is_active,
+    } for r in rules]
+
+
+@router.get("/escalation-events")
+async def list_escalation_events(
+    tenant_id: str = Depends(get_tenant_id),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    q = await db.execute(
+        select(EscalationEvent).where(EscalationEvent.tenant_id == tenant_id)
+        .order_by(EscalationEvent.created_at.desc()).limit(limit).offset(offset)
+    )
+    events = q.scalars().all()
+
+    ticket_ids = {e.ticket_id for e in events if e.ticket_id}
+    rule_ids = {e.rule_id for e in events if e.rule_id}
+    agent_ids = ({e.escalated_from_agent_id for e in events if e.escalated_from_agent_id}
+                 | {e.escalated_to_agent_id for e in events if e.escalated_to_agent_id})
+
+    tickets_map = {}
+    if ticket_ids:
+        t_q = await db.execute(select(Ticket.id, Ticket.subject, Ticket.ticket_number).where(
+            Ticket.tenant_id == tenant_id, Ticket.id.in_(ticket_ids)
+        ))
+        tickets_map = {tid: (subj, num) for tid, subj, num in t_q.all()}
+    rules_map = {}
+    if rule_ids:
+        r_q = await db.execute(select(EscalationRule.id, EscalationRule.rule_name).where(
+            EscalationRule.tenant_id == tenant_id, EscalationRule.id.in_(rule_ids)
+        ))
+        rules_map = {rid: name for rid, name in r_q.all()}
+    agents_map = {}
+    if agent_ids:
+        a_q = await db.execute(select(SupportAgent.id, SupportAgent.name).where(
+            SupportAgent.tenant_id == tenant_id, SupportAgent.id.in_(agent_ids)
+        ))
+        agents_map = {aid: name for aid, name in a_q.all()}
+
+    result = []
+    for e in events:
+        t = tickets_map.get(e.ticket_id)
+        result.append({
+            "id": e.id,
+            "ticket_id": e.ticket_id,
+            "ticket_number": t[1] if t else None,
+            "ticket_subject": t[0] if t else None,
+            "rule": rules_map.get(e.rule_id),
+            "from_agent": agents_map.get(e.escalated_from_agent_id),
+            "to_agent": agents_map.get(e.escalated_to_agent_id),
+            "reason": e.reason,
+            "created_at": str(e.created_at) if e.created_at else None,
+        })
+    return result
+
 # --- SLA ---
 @router.get("/sla/metrics")
 async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    # Return per-policy SLA targets with latest aggregate compliance metrics
+    """Per-policy SLA compliance, computed live from each matching ticket's
+    first_response_at/resolved_at against that policy's targets - never from
+    a cached aggregate. A policy with no measurable tickets returns an honest
+    null, not a fabricated number."""
     policies_q = await db.execute(select(SLAPolicy).where(SLAPolicy.tenant_id == tenant_id))
     policies = policies_q.scalars().all()
+    if not policies:
+        return []
 
-    # Get latest aggregate metric for breach count
-    latest_q = await db.execute(
-        select(SLAMetric).where(SLAMetric.tenant_id == tenant_id).order_by(SLAMetric.date_label.desc())
+    tickets_q = await db.execute(
+        select(Ticket.priority, Ticket.created_at, Ticket.first_response_at, Ticket.resolved_at)
+        .where(Ticket.tenant_id == tenant_id)
+        .limit(2000)
     )
-    latest_metric = latest_q.scalars().first()
-    global_compliance = float(latest_metric.compliance_rate or 100) if latest_metric else 100.0
-    global_breached = latest_metric.breached_tickets if latest_metric else 0
+    all_tickets = tickets_q.all()
 
     result = []
     for p in policies:
-        compliance = global_compliance if len(policies) == 1 else max(0, global_compliance + (5 if p.priority_level == "HIGH" else -5))
+        target_hours = round(p.response_target_mins / 60, 2)
+        matched = [
+            t for t in all_tickets
+            if (t.priority.value if hasattr(t.priority, "value") else str(t.priority)) == p.priority_level
+        ]
+        responded = [t for t in matched if t.first_response_at is not None]
+        # "Measurable" = at least one timestamp exists to judge against a
+        # target; a ticket that is still brand-new with neither carries no
+        # signal either way.
+        measurable = [t for t in matched if t.first_response_at is not None or t.resolved_at is not None]
+
+        if not measurable:
+            result.append({
+                "id": p.id, "policy": p.name, "priority": p.priority_level,
+                "status": "NO_DATA", "target_hours": target_hours,
+                "actual_hours": None, "compliance_pct": None, "breached_count": None,
+                "note": "No tickets at this priority have a recorded first response or resolution yet.",
+            })
+            continue
+
+        response_hours = [_hours_between(t.created_at, t.first_response_at) for t in responded]
+        actual_hours = round(sum(response_hours) / len(response_hours), 2) if response_hours else None
+
+        breached = 0
+        for t in measurable:
+            resp_breach = (t.first_response_at is not None
+                           and _hours_between(t.created_at, t.first_response_at) > target_hours)
+            reso_breach = (t.resolved_at is not None
+                           and _hours_between(t.created_at, t.resolved_at) > p.resolution_target_hrs)
+            if resp_breach or reso_breach:
+                breached += 1
+        compliance_pct = round((len(measurable) - breached) / len(measurable) * 100, 1)
+
         result.append({
-            "id": p.id,
-            "policy": p.name,
-            "priority": p.priority_level,
-            "status": "BREACHED" if compliance < 90 else "MET",
-            "target_hours": round(p.response_target_mins / 60, 1),
-            "actual_hours": round((p.response_target_mins / 60) * (100 / max(compliance, 1)), 1),
-            "compliance_pct": round(compliance, 1),
-            "breached_count": global_breached if p.priority_level == "URGENT" else max(0, global_breached - 1),
+            "id": p.id, "policy": p.name, "priority": p.priority_level,
+            "status": "BREACHED" if compliance_pct < 90 else "MET",
+            "target_hours": target_hours,
+            "actual_hours": actual_hours,
+            "compliance_pct": compliance_pct,
+            "breached_count": breached,
         })
     return result
 

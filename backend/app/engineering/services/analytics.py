@@ -76,10 +76,10 @@ async def engineering_analytics(db: AsyncSession, tenant_id: str,
                          "message": f"{open_incidents} incidents are open right now."})
     if deploy_success is not None and deploy_success < 90 and dep_done >= 5:
         insights.append({"severity": "warning",
-                         "message": f"Deployment success rate is {deploy_success:.0f}% — below the 90% bar."})
+                         "message": f"Deployment success rate is {deploy_success:.0f}%, below the 90% bar."})
     if risky_open_prs:
         insights.append({"severity": "warning",
-                         "message": f"{risky_open_prs} open PRs touch auth or migrations — prioritize review."})
+                         "message": f"{risky_open_prs} open PRs touch auth or migrations, prioritize review."})
     if pending_deploys:
         insights.append({"severity": "info",
                          "message": f"{pending_deploys} deployments are waiting for approval."})

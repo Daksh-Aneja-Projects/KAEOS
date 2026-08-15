@@ -3,7 +3,9 @@ import {
   Receipt, Landmark, BarChart3, Wallet, Scale, ShieldAlert,
   Search, Filter, RefreshCw, Loader2, Bot, ArrowUpRight,
   CheckCircle2, XCircle, AlertCircle, Clock, DollarSign,
-  FileText, TrendingUp, ShieldCheck
+  FileText, TrendingUp, ShieldCheck, PiggyBank, ChevronDown,
+  ChevronRight, FileBarChart2, FileCheck2, Gavel, ArrowDownCircle, ArrowUpCircle,
+  Building2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { api } from '../api/client';
@@ -15,6 +17,7 @@ import StatCard from '../components/shared/StatCard';
 import { humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { MiniDonut, DONUT_PALETTE, type DonutItem } from '../components/shared/MiniDonut';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import GateTrace from '../components/GateTrace';
@@ -25,7 +28,7 @@ import BulkActionBar from '../components/BulkActionBar';
 import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 
-type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'audit' | 'accounts' | 'analytics';
+type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'treasury' | 'audit' | 'accounts' | 'analytics';
 
 /** Accounting types in the order a ledger is normally read. */
 const ACCOUNT_TYPE_ORDER = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
@@ -34,7 +37,7 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [tab, setTab] = useState<FinanceTab>(() => {
-    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'audit', 'accounts', 'analytics'];
+    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'treasury', 'audit', 'accounts', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as FinanceTab)) return defaultTab as FinanceTab;
     return 'ap';
   });
@@ -58,9 +61,48 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   const [auditFindings, setAuditFindings] = useState<any[]>([]);
   const [soxControls, setSoxControls] = useState<any[]>([]);
   const [chartOfAccounts, setChartOfAccounts] = useState<any[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const [cashFlows, setCashFlows] = useState<any[]>([]);
+  const [financialReports, setFinancialReports] = useState<any[]>([]);
+  const [complianceRules, setComplianceRules] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const bulk = useBulkSelect(invoices, workflows['invoice'], (i: any) => i.status);
+
+  // Drill-down: budget lines / expense items are fetched lazily on expand and
+  // cached by parent id so re-expanding never re-fetches.
+  const [expandedBudget, setExpandedBudget] = useState<string | null>(null);
+  const [budgetLines, setBudgetLines] = useState<Record<string, any[]>>({});
+  const [budgetLinesLoading, setBudgetLinesLoading] = useState<string | null>(null);
+  const [expandedReport, setExpandedReport] = useState<string | null>(null);
+  const [expenseItems, setExpenseItems] = useState<Record<string, any[]>>({});
+  const [expenseItemsLoading, setExpenseItemsLoading] = useState<string | null>(null);
+
+  const toggleBudget = async (budgetId: string) => {
+    if (expandedBudget === budgetId) { setExpandedBudget(null); return; }
+    setExpandedBudget(budgetId);
+    if (!budgetLines[budgetId]) {
+      setBudgetLinesLoading(budgetId);
+      try {
+        const lines = await api.getFinanceBudgetLines(budgetId);
+        setBudgetLines((prev) => ({ ...prev, [budgetId]: lines || [] }));
+      } catch { setBudgetLines((prev) => ({ ...prev, [budgetId]: [] })); }
+      finally { setBudgetLinesLoading(null); }
+    }
+  };
+
+  const toggleReport = async (reportId: string) => {
+    if (expandedReport === reportId) { setExpandedReport(null); return; }
+    setExpandedReport(reportId);
+    if (!expenseItems[reportId]) {
+      setExpenseItemsLoading(reportId);
+      try {
+        const items = await api.getFinanceExpenseItems(reportId);
+        setExpenseItems((prev) => ({ ...prev, [reportId]: items || [] }));
+      } catch { setExpenseItems((prev) => ({ ...prev, [reportId]: [] })); }
+      finally { setExpenseItemsLoading(null); }
+    }
+  };
 
   useEffect(() => { loadData(); }, []);
 
@@ -87,6 +129,10 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
       api.getFinanceSOXControls(),
       api.getDomainWorkflows('finance'),
       api.getChartOfAccounts(),
+      api.getFinanceBankAccounts(),
+      api.getFinanceCashFlow(),
+      api.getFinanceReports(),
+      api.getFinanceComplianceRules(),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setVendors(val(0)); setInvoices(val(1)); setPayments(val(2));
@@ -95,6 +141,8 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     setTaxRules(val(9)); setAuditFindings(val(10)); setSoxControls(val(11));
     if (results[12].status === 'fulfilled') setWorkflows((results[12] as any).value || {});
     setChartOfAccounts(val(13));
+    setBankAccounts(val(14)); setCashFlows(val(15));
+    setFinancialReports(val(16)); setComplianceRules(val(17));
     setLoading(false);
   };
 
@@ -156,12 +204,34 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     </div>
   );
 
+  /** Live horizontal bars (animated width) for cash movement by category. */
+  const TreasuryBars = ({ items }: { items: DonutItem[] }) => {
+    const max = Math.max(...items.map(i => i.value), 1);
+    return (
+      <div className="space-y-2">
+        {items.map((it, idx) => (
+          <div key={it.label} className="flex items-center gap-2">
+            <span className="text-[11px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+            <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
+              <div className="h-3.5 rounded transition-all duration-500" style={{
+                width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
+                background: DONUT_PALETTE[idx % DONUT_PALETTE.length],
+              }} />
+            </div>
+            <span className="text-[11px] font-mono w-16 shrink-0 text-right" style={{ color: colors.ink }}>{fmt(it.value)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const TABS: { key: FinanceTab; label: string; icon: React.ElementType; color: string }[] = [
     { key: 'ap', label: 'Accounts Payable', icon: Receipt, color: '#ec4899' },
     { key: 'ar', label: 'Accounts Receivable', icon: Landmark, color: '#3b82f6' },
     { key: 'budgets', label: 'Budgets', icon: BarChart3, color: '#8b5cf6' },
     { key: 'expenses', label: 'Expenses', icon: Wallet, color: '#22c55e' },
     { key: 'tax', label: 'Tax', icon: Scale, color: '#f59e0b' },
+    { key: 'treasury', label: 'Treasury', icon: PiggyBank, color: '#14b8a6' },
     { key: 'audit', label: 'Audit & SOX', icon: ShieldAlert, color: '#ef4444' },
     { key: 'accounts', label: 'Chart of Accounts', icon: FileText, color: '#0ea5e9' },
     { key: 'analytics', label: 'Analytics', icon: TrendingUp, color: '#a855f7' },
@@ -404,41 +474,82 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
               <div className="space-y-4">
                 <h3 className="text-[14px] font-bold">Active Budgets</h3>
                 <div className="grid grid-cols-1 gap-3">
-                  {budgets.map((b: any) => (
-                    <div key={b.id} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <BarChart3 className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+                  {budgets.map((b: any) => {
+                    const expanded = expandedBudget === b.id;
+                    const lines = budgetLines[b.id] || [];
+                    return (
+                      <div key={b.id} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                        <button type="button" onClick={() => toggleBudget(b.id)}
+                          className="w-full flex items-center justify-between mb-3 text-left">
+                          <div className="flex items-center gap-3">
+                            {expanded ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: colors.inkSubtle }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: colors.inkSubtle }} />}
+                            <BarChart3 className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+                            <div>
+                              <span className="text-[14px] font-bold">{b.name}</span>
+                              <span className="text-[11px] ml-2" style={{ color: colors.inkSubtle }}>FY{b.year} | {b.department || 'Company'}</span>
+                            </div>
+                          </div>
+                          <Badge status={b.status} />
+                        </button>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                           <div>
-                            <span className="text-[14px] font-bold">{b.name}</span>
-                            <span className="text-[11px] ml-2" style={{ color: colors.inkSubtle }}>FY{b.year} | {b.department || 'Company'}</span>
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Planned</p>
+                            <p className="text-[16px] font-bold font-mono">{fmt(b.planned)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Actual</p>
+                            <p className="text-[16px] font-bold font-mono">{fmt(b.actual)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance</p>
+                            <p className="text-[16px] font-bold font-mono" style={{ color: b.variance < 0 ? '#ef4444' : '#22c55e' }}>{fmt(Math.abs(b.variance))}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance %</p>
+                            <p className="text-[16px] font-bold" style={{ color: (b.variance_pct || 0) < 0 ? '#ef4444' : '#22c55e' }}>{b.variance_pct?.toFixed(1)}%</p>
                           </div>
                         </div>
-                        <Badge status={b.status} />
+                        <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
+                          <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (b.actual / (b.planned || 1)) * 100)}%`, background: (b.actual / (b.planned || 1)) > 1 ? '#ef4444' : '#8b5cf6' }} />
+                        </div>
+                        {expanded && (
+                          <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
+                            {budgetLinesLoading === b.id ? (
+                              <div className="flex items-center gap-2 py-3 text-[12px]" style={{ color: colors.inkSubtle }}>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading budget lines...
+                              </div>
+                            ) : lines.length === 0 ? (
+                              <p className="text-[12px] py-2" style={{ color: colors.inkTertiary }}>No line items for this budget.</p>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-[12px]">
+                                  <thead>
+                                    <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                      {['Period', 'Category', 'Planned', 'Actual', 'Committed', 'Variance'].map(h => (
+                                        <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {lines.map((l: any) => (
+                                      <tr key={l.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                        <td className="px-3 py-2" style={{ color: colors.inkSubtle }}>{l.label || l.period}</td>
+                                        <td className="px-3 py-2">{l.category}</td>
+                                        <td className="px-3 py-2 font-mono">{fmt(l.planned)}</td>
+                                        <td className="px-3 py-2 font-mono">{fmt(l.actual)}</td>
+                                        <td className="px-3 py-2 font-mono" style={{ color: colors.inkSubtle }}>{fmt(l.committed)}</td>
+                                        <td className="px-3 py-2 font-mono font-semibold" style={{ color: l.variance < 0 ? '#ef4444' : '#22c55e' }}>{fmt(l.variance)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Planned</p>
-                          <p className="text-[16px] font-bold font-mono">{fmt(b.planned)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Actual</p>
-                          <p className="text-[16px] font-bold font-mono">{fmt(b.actual)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance</p>
-                          <p className="text-[16px] font-bold font-mono" style={{ color: b.variance < 0 ? '#ef4444' : '#22c55e' }}>{fmt(Math.abs(b.variance))}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Variance %</p>
-                          <p className="text-[16px] font-bold" style={{ color: (b.variance_pct || 0) < 0 ? '#ef4444' : '#22c55e' }}>{b.variance_pct?.toFixed(1)}%</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: colors.hairline }}>
-                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (b.actual / (b.planned || 1)) * 100)}%`, background: (b.actual / (b.planned || 1)) > 1 ? '#ef4444' : '#8b5cf6' }} />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {budgets.length === 0 && <EmptyState icon={BarChart3} title="No budgets" sub="Budget allocations appear here when created" />}
                 </div>
                 <h3 className="text-[14px] font-bold mt-6">Forecasts</h3>
@@ -488,36 +599,91 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                   <table className="w-full text-[12px]">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        {['Report #', 'Title', 'Status', 'Total', 'Approved', 'Compliance', 'Violations'].map(h => (
+                        {['', 'Report #', 'Title', 'Status', 'Total', 'Approved', 'Compliance', 'Violations'].map(h => (
                           <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {expenseReports.filter(r => !searchQ || r.title?.toLowerCase().includes(searchQ.toLowerCase())).map((r: any) => (
-                        <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          <td className="px-4 py-3 font-medium">{r.number}</td>
-                          <td className="px-4 py-3">{r.title}</td>
-                          <td className="px-4 py-3"><Badge status={r.status} /></td>
-                          <td className="px-4 py-3 font-mono">${r.total?.toLocaleString()}</td>
-                          <td className="px-4 py-3 font-mono">${r.approved?.toLocaleString()}</td>
-                          <td className="px-4 py-3">
-                            {r.compliance_score != null && (() => {
-                              const pct = toPct(r.compliance_score)!;
-                              return (
-                                <span className="text-[11px] font-bold" style={{ color: pct > 80 ? '#22c55e' : '#ef4444' }}>
-                                  {pct.toFixed(0)}%
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="px-4 py-3">
-                            {r.violations > 0 ? (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>{r.violations} issues</span>
-                            ) : <CheckCircle2 className="w-4 h-4" style={{ color: '#22c55e' }} />}
-                          </td>
-                        </tr>
-                      ))}
+                      {expenseReports.filter(r => !searchQ || r.title?.toLowerCase().includes(searchQ.toLowerCase())).map((r: any) => {
+                        const expanded = expandedReport === r.id;
+                        const items = expenseItems[r.id] || [];
+                        return (
+                          <React.Fragment key={r.id}>
+                            <tr style={{ borderBottom: expanded ? 'none' : `1px solid ${colors.hairline}` }}>
+                              <td className="px-2 py-3">
+                                <button type="button" onClick={() => toggleReport(r.id)} aria-label={`${expanded ? 'Collapse' : 'Expand'} line items for ${r.title}`}
+                                  className="p-1 rounded-md" style={{ color: colors.inkSubtle }}>
+                                  {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                </button>
+                              </td>
+                              <td className="px-4 py-3 font-medium">{r.number}</td>
+                              <td className="px-4 py-3">{r.title}</td>
+                              <td className="px-4 py-3"><Badge status={r.status} /></td>
+                              <td className="px-4 py-3 font-mono">${r.total?.toLocaleString()}</td>
+                              <td className="px-4 py-3 font-mono">${r.approved?.toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                {r.compliance_score != null && (() => {
+                                  const pct = toPct(r.compliance_score)!;
+                                  return (
+                                    <span className="text-[11px] font-bold" style={{ color: pct > 80 ? '#22c55e' : '#ef4444' }}>
+                                      {pct.toFixed(0)}%
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                              <td className="px-4 py-3">
+                                {r.violations > 0 ? (
+                                  <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>{r.violations} issues</span>
+                                ) : <CheckCircle2 className="w-4 h-4" style={{ color: '#22c55e' }} />}
+                              </td>
+                            </tr>
+                            {expanded && (
+                              <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                <td colSpan={8} className="px-4 pb-4 pt-0" style={{ background: colors.canvas }}>
+                                  {expenseItemsLoading === r.id ? (
+                                    <div className="flex items-center gap-2 py-3 text-[12px]" style={{ color: colors.inkSubtle }}>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading line items...
+                                    </div>
+                                  ) : items.length === 0 ? (
+                                    <p className="text-[12px] py-2" style={{ color: colors.inkTertiary }}>No line items for this report.</p>
+                                  ) : (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-[11.5px]">
+                                        <thead>
+                                          <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                            {['Date', 'Category', 'Description', 'Merchant', 'Amount', 'Receipt', 'Policy', 'Billable'].map(h => (
+                                              <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                                            ))}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {items.map((it: any) => (
+                                            <tr key={it.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                                              <td className="px-3 py-2" style={{ color: colors.inkSubtle }}>{it.date}</td>
+                                              <td className="px-3 py-2">{humanize(it.category)}</td>
+                                              <td className="px-3 py-2">{it.description}</td>
+                                              <td className="px-3 py-2" style={{ color: colors.inkSubtle }}>{it.merchant || '-'}</td>
+                                              <td className="px-3 py-2 font-mono font-semibold">${it.amount?.toLocaleString()}</td>
+                                              <td className="px-3 py-2">{it.has_receipt ? <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#22c55e' }} /> : <span style={{ color: colors.inkTertiary }}>-</span>}</td>
+                                              <td className="px-3 py-2">
+                                                {it.within_policy
+                                                  ? <span style={{ color: '#22c55e' }}>Within policy</span>
+                                                  : <span style={{ color: '#ef4444' }}>Flagged</span>}
+                                              </td>
+                                              <td className="px-3 py-2" style={{ color: colors.inkSubtle }}>{it.billable ? 'Billable' : 'Internal'}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {expenseReports.length === 0 && <EmptyState icon={Wallet} title="No expense reports" sub="Employee expense reports appear here" />}
@@ -570,6 +736,134 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                 </div>
               </div>
             )}
+
+            {/* ═══ TREASURY ═══ */}
+            {tab === 'treasury' && (() => {
+              const totalCash = bankAccounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
+              const totalAvailable = bankAccounts.reduce((s: number, a: any) => s + (a.available || 0), 0);
+              const actualFlows = cashFlows.filter((f: any) => !f.is_forecast);
+              const forecastFlows = cashFlows.filter((f: any) => f.is_forecast);
+              const netActual = actualFlows.reduce((s: number, f: any) => s + (f.amount || 0), 0);
+              const netForecast = forecastFlows.reduce((s: number, f: any) => s + (f.amount || 0), 0);
+              const byCategory: Record<string, number> = {};
+              actualFlows.forEach((f: any) => {
+                const cat = f.category || 'Other';
+                byCategory[cat] = (byCategory[cat] || 0) + Math.abs(f.amount || 0);
+              });
+              const flowBars: DonutItem[] = Object.entries(byCategory)
+                .map(([label, value]) => ({ label, value }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 8);
+              const byClass: Record<string, number> = {};
+              bankAccounts.forEach((a: any) => {
+                const label = humanize(a.classification) || 'Other';
+                byClass[label] = (byClass[label] || 0) + (a.balance || 0);
+              });
+              const classDonut: DonutItem[] = Object.entries(byClass).map(([label, value]) => ({ label, value }));
+
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <StatCard label="Total Cash" value={totalCash} format="currency" icon={<PiggyBank className="w-4 h-4" />} accent="#14b8a6" />
+                    <StatCard label="Available Balance" value={totalAvailable} format="currency" icon={<Wallet className="w-4 h-4" />} accent="#22c55e" />
+                    <StatCard label="Net Cash Flow" value={netActual} format="currency" icon={netActual >= 0 ? <ArrowUpCircle className="w-4 h-4" /> : <ArrowDownCircle className="w-4 h-4" />} accent={netActual >= 0 ? '#22c55e' : '#ef4444'} />
+                    <StatCard label="Forecasted Net" value={netForecast} format="currency" icon={<TrendingUp className="w-4 h-4" />} accent="#8b5cf6" />
+                  </div>
+
+                  <h3 className="text-[14px] font-bold">Bank Accounts</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {bankAccounts.map((a: any) => (
+                      <div key={a.id} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                        <div className="flex items-center justify-between mb-2 gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Building2 className="w-4 h-4 shrink-0" style={{ color: '#14b8a6' }} />
+                            <div className="min-w-0">
+                              <p className="text-[13px] font-semibold truncate">{a.name}</p>
+                              <p className="text-[11px] truncate" style={{ color: colors.inkSubtle }}>{a.bank} &middot; {a.masked_number}</p>
+                            </div>
+                          </div>
+                          <Badge status={a.classification} />
+                        </div>
+                        <div className="flex items-end justify-between mt-3">
+                          <div>
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Balance</p>
+                            <CountUp value={a.balance || 0} prefix="$" decimals={2} className="text-[18px] font-bold tabular-nums" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] uppercase font-semibold" style={{ color: colors.inkSubtle }}>Available</p>
+                            <p className="text-[13px] font-mono font-semibold" style={{ color: colors.inkSubtle }}>${(a.available || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] mt-2" style={{ color: colors.inkTertiary }}>
+                          {a.last_reconciled ? `Reconciled ${timeAgo(a.last_reconciled)}` : 'Not yet reconciled'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  {bankAccounts.length === 0 && <EmptyState icon={PiggyBank} title="No bank accounts" sub="Treasury accounts appear here once connected" />}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                      <h3 className="text-[13px] font-semibold mb-3 flex items-center gap-1.5">
+                        <BarChart3 className="w-4 h-4" style={{ color: '#14b8a6' }} /> Cash Movement by Category
+                      </h3>
+                      {flowBars.length > 0
+                        ? <TreasuryBars items={flowBars} />
+                        : <div className="text-[12px] py-6" style={{ color: colors.inkTertiary }}>No posted cash movements.</div>}
+                    </div>
+                    <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                      <h3 className="text-[13px] font-semibold mb-3 flex items-center gap-1.5">
+                        <PiggyBank className="w-4 h-4" style={{ color: '#14b8a6' }} /> Cash by Account Classification
+                      </h3>
+                      {classDonut.length > 0
+                        ? <MiniDonut items={classDonut} size={96} centerLabel="cash" />
+                        : <div className="text-[12px] py-6" style={{ color: colors.inkTertiary }}>No bank accounts.</div>}
+                    </div>
+                  </div>
+
+                  <h3 className="text-[14px] font-bold mt-2">Recent Cash Flow</h3>
+                  <TableCard>
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                          {['Date', 'Type', 'Category', 'Amount', 'Source', 'Status'].map(h => (
+                            <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cashFlows.map((f: any) => {
+                          const inflow = String(f.type || '').includes('INFLOW');
+                          return (
+                            <tr key={f.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                              <td className="px-4 py-3">{f.date || '-'}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center gap-1" style={{ color: inflow ? '#22c55e' : '#ef4444' }}>
+                                  {inflow ? <ArrowUpCircle className="w-3.5 h-3.5" /> : <ArrowDownCircle className="w-3.5 h-3.5" />}
+                                  {humanize(f.type)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">{f.category || '-'}</td>
+                              <td className="px-4 py-3 font-mono font-semibold" style={{ color: inflow ? '#22c55e' : '#ef4444' }}>
+                                ${Math.abs(f.amount || 0).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(f.source) || 'Manual'}</td>
+                              <td className="px-4 py-3">
+                                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+                                  style={{ background: (f.is_forecast ? '#8b5cf6' : '#22c55e') + '18', color: f.is_forecast ? '#8b5cf6' : '#22c55e' }}>
+                                  {f.is_forecast ? 'Forecast' : 'Actual'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {cashFlows.length === 0 && <EmptyState icon={Wallet} title="No cash flow activity" sub="Treasury cash movements appear here" />}
+                  </TableCard>
+                </div>
+              );
+            })()}
 
             {/* ═══ AUDIT & SOX ═══ */}
             {tab === 'audit' && (
@@ -640,6 +934,65 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
                     </tbody>
                   </table>
                   {soxControls.length === 0 && <EmptyState icon={ShieldCheck} title="No SOX controls" sub="SOX controls appear here" />}
+                </TableCard>
+
+                <h3 className="text-[14px] font-bold mt-6">Financial Reports</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {financialReports.map((r: any) => (
+                    <div key={r.id} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileBarChart2 className="w-4 h-4 shrink-0" style={{ color: '#ef4444' }} />
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold truncate">{r.title}</p>
+                            <p className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(r.type)} &middot; {r.period}</p>
+                          </div>
+                        </div>
+                        <Badge status={r.status} />
+                      </div>
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="text-[11px]" style={{ color: colors.inkTertiary }}>
+                          {r.generated_at ? `Generated ${timeAgo(r.generated_at)}` : 'Not yet generated'}
+                        </span>
+                        {r.ai_anomalies > 0 ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold" style={{ background: '#ef444415', color: '#ef4444' }}>{r.ai_anomalies} anomal{r.ai_anomalies === 1 ? 'y' : 'ies'}</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#22c55e' }}><CheckCircle2 className="w-3.5 h-3.5" /> No anomalies</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {financialReports.length === 0 && <EmptyState icon={FileBarChart2} title="No financial reports" sub="Generated financial reports appear here" />}
+                </div>
+
+                <h3 className="text-[14px] font-bold mt-6">Compliance Rules</h3>
+                <TableCard>
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        {['Regulation', 'Section', 'Rule', 'Applies To', 'Severity', 'Blocking'].map(h => (
+                          <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {complianceRules.map((r: any) => (
+                        <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                          <td className="px-4 py-3 font-medium flex items-center gap-1.5"><Gavel className="w-3.5 h-3.5" style={{ color: colors.inkTertiary }} />{r.regulation}</td>
+                          <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{r.section}</td>
+                          <td className="px-4 py-3">{r.name}</td>
+                          <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(r.applies_to)}</td>
+                          <td className="px-4 py-3"><Badge status={r.severity} /></td>
+                          <td className="px-4 py-3">
+                            {r.is_blocking
+                              ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#ef4444' }}><ShieldAlert className="w-3.5 h-3.5" /> Blocking</span>
+                              : <span className="text-[11px]" style={{ color: colors.inkSubtle }}>Advisory</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {complianceRules.length === 0 && <EmptyState icon={FileCheck2} title="No compliance rules" sub="Finance compliance rules appear here" />}
                 </TableCard>
               </div>
             )}

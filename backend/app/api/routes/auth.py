@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.domain_seed import DEPARTMENT_SLUGS
 from app.services.auth import AuthService, decode_token, revoke_token
 from app.models.auth import UserRole
 
@@ -195,7 +196,7 @@ async def update_department(
     from app.models.auth import User as UserModel
     from sqlalchemy import select as _select
     dept = data.get("department")
-    valid = {"hr", "finance", "legal", "sales", "support", "operations", "engineering"}
+    valid = set(DEPARTMENT_SLUGS)
     if dept is not None and dept not in valid:
         raise HTTPException(status_code=400,
                             detail=f"department must be one of {sorted(valid)} or null")
@@ -252,7 +253,7 @@ async def invite_user(
     role_map = {"ADMIN": UserRole.ADMIN, "ANALYST": UserRole.ANALYST, "VIEWER": UserRole.VIEWER}
     role = role_map.get(data.get("role", "VIEWER"), UserRole.VIEWER)
     dept = data.get("department") or None
-    _valid_depts = {"hr", "finance", "legal", "sales", "support", "operations", "engineering"}
+    _valid_depts = set(DEPARTMENT_SLUGS)
     if dept is not None and dept not in _valid_depts:
         raise HTTPException(status_code=400,
                             detail=f"department must be one of {sorted(_valid_depts)} or null")

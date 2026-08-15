@@ -4,7 +4,7 @@ KAEOS — Workflow Spec Registry
 Single place that aggregates every domain's declared WorkflowSpecs. Lives above
 the domain packages (which import app.core.workflow) so there is no import
 cycle. Both the Org Pulse SLA sweep and the automation engine resolve specs
-through here instead of re-listing the seven SPECS dicts.
+through here instead of re-listing the ten SPECS dicts.
 """
 from typing import Dict, List
 
@@ -16,10 +16,14 @@ from app.support.services.workflows import SPECS as SUPPORT_SPECS
 from app.operations.services.workflows import SPECS as OPERATIONS_SPECS
 from app.legal.services.workflows import SPECS as LEGAL_SPECS
 from app.engineering.services.workflows import SPECS as ENGINEERING_SPECS
+from app.healthcare.services.workflows import SPECS as HEALTHCARE_SPECS
+from app.lending.services.workflows import SPECS as LENDING_SPECS
+from app.procurement.services.workflows import SPECS as PROCUREMENT_SPECS
 
 _DOMAIN_SPEC_DICTS = (
     FINANCE_SPECS, HR_SPECS, SALES_SPECS, SUPPORT_SPECS,
     OPERATIONS_SPECS, LEGAL_SPECS, ENGINEERING_SPECS,
+    HEALTHCARE_SPECS, LENDING_SPECS, PROCUREMENT_SPECS,
 )
 
 # entity_type -> WorkflowSpec (entity_type strings are globally unique).

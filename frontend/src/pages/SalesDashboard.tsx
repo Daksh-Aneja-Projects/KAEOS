@@ -9,7 +9,7 @@ import { api } from '../api/client';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   TrendingUp, Compass, Target, DollarSign, Award,
-  ArrowRight, Bot, Zap, Shield, Sparkles
+  ArrowRight, Bot, Zap, Shield, Sparkles, BarChart3, Briefcase
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';
@@ -17,11 +17,43 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
+// Small chart renderers fed only by the /sales/analytics computed payload,
+// mirroring FinanceDashboard's ledger-composition section.
+const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7'];
+const fmtMoney = (v: number) =>
+  v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
+    : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}k`
+      : `$${Math.round(v).toLocaleString()}`;
+
+function MiniBars({ items, colors, money }: { items: { label: string; value: number }[]; colors: any; money?: boolean }) {
+  const max = Math.max(...items.map(i => i.value), 1);
+  return (
+    <div className="space-y-2">
+      {items.map((it, idx) => (
+        <div key={it.label} className="flex items-center gap-2">
+          <span className="text-[11px] w-24 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+          <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
+            <div className="h-3.5 rounded transition-all duration-500" style={{
+              width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
+              background: CHART_PALETTE[idx % CHART_PALETTE.length],
+            }} />
+          </div>
+          <span className="text-[11px] font-mono w-14 shrink-0 text-right" style={{ color: colors.ink }}>
+            {money ? fmtMoney(it.value) : it.value.toLocaleString()}
+          </span>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-[11px]" style={{ color: colors.inkTertiary }}>No data yet</p>}
+    </div>
+  );
+}
+
 export default function SalesDashboard() {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [dept, setDept] = useState<any>(null);
   const [salesStats, setSalesStats] = useState<any>(null);
+  const [salesAnalytics, setSalesAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +61,12 @@ export default function SalesDashboard() {
     Promise.allSettled([
       api.getWorkforceDepartment('sales'),
       api.getSalesDashboard(),
-    ]).then(([d, s]) => {
+      api.getDomainAnalytics('sales'),
+    ]).then(([d, s, a]) => {
       if (d.status === 'fulfilled') setDept(d.value);
       if (s.status === 'fulfilled') { setSalesStats(s.value); setError(null); }
       else if (d.status === 'rejected') setError((s.reason as any)?.message || 'Failed to load Sales');
+      if (a.status === 'fulfilled') setSalesAnalytics(a.value);
       setLoading(false);
     });
   };
@@ -138,6 +172,59 @@ export default function SalesDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Pipeline composition - funnel counts, funnel value and top accounts,
+            computed server-side by /sales/analytics from the real pipeline. */}
+        {(salesAnalytics?.charts || []).length > 0 && (() => {
+          const chartByKey = (k: string) => (salesAnalytics.charts || []).find((c: any) => c.key === k);
+          const funnelCount = chartByKey('funnel_count');
+          const funnelValue = chartByKey('funnel_value');
+          const topAccounts = chartByKey('top_accounts');
+          const winRateKpi = (salesAnalytics.kpis || []).find((k: any) => k.key === 'win_rate');
+          const weightedKpi = (salesAnalytics.kpis || []).find((k: any) => k.key === 'weighted');
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {funnelCount && (
+                <div style={card}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4" style={{ color: '#6366f1' }} /> {funnelCount.title}
+                    </h3>
+                    {winRateKpi?.value != null && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#22c55e18', color: '#22c55e' }}>
+                        {winRateKpi.value.toFixed(0)}% win rate
+                      </span>
+                    )}
+                  </div>
+                  <MiniBars items={funnelCount.items} colors={colors} />
+                </div>
+              )}
+              {funnelValue && (
+                <div style={card}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
+                      <DollarSign className="w-4 h-4" style={{ color: '#f59e0b' }} /> {funnelValue.title}
+                    </h3>
+                    {weightedKpi?.value != null && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#f59e0b18', color: '#f59e0b' }}>
+                        {fmtMoney(weightedKpi.value)} weighted
+                      </span>
+                    )}
+                  </div>
+                  <MiniBars items={funnelValue.items} colors={colors} money />
+                </div>
+              )}
+              {topAccounts && (
+                <div style={card}>
+                  <h3 className="text-[13px] font-semibold mb-3 flex items-center gap-1.5">
+                    <Briefcase className="w-4 h-4" style={{ color: '#3b82f6' }} /> {topAccounts.title}
+                  </h3>
+                  <MiniBars items={topAccounts.items} colors={colors} money />
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Sub-modules navigation */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

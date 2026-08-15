@@ -116,12 +116,12 @@ async def finance_analytics(db: AsyncSession, tenant_id: str,
     if duplicate_flags:
         insights.append({
             "severity": "critical",
-            "message": f"{duplicate_flags} invoices carry an AI duplicate flag — review before payment.",
+            "message": f"{duplicate_flags} invoices carry an AI duplicate flag. Review before payment.",
         })
     if total_ap > total_cash > 0:
         insights.append({
             "severity": "warning",
-            "message": "Open payables exceed current cash position — check the payment run schedule.",
+            "message": "Open payables exceed current cash position. Check the payment run schedule.",
         })
     if not insights:
         insights.append({"severity": "info", "message": "No finance anomalies detected in the current cycle."})

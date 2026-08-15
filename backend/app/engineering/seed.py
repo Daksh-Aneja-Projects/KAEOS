@@ -10,6 +10,8 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func as sqlfunc, select
+
 from app.core.database import AsyncSessionLocal, async_engine
 from app.models.domain import Base
 
@@ -19,6 +21,9 @@ from app.engineering.models.delivery import (
 )
 from app.engineering.models.incidents import (
     Incident, IncidentSeverity, IncidentStatus, Postmortem,
+)
+from app.engineering.models.ops import (
+    OnCallRole, OnCallRotation, PipelineRun, PipelineStatus,
 )
 
 TENANT = "tenant_acme"  # demo tenant — matches seed_demo_user and dev-mode tenant
@@ -37,6 +42,15 @@ async def seed():
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        # Idempotency guard: a second run (direct script invocation, a test
+        # fixture, a re-triggered startup seed) must not duplicate rows.
+        existing = (await db.execute(
+            select(sqlfunc.count()).select_from(Engineer)
+            .where(Engineer.tenant_id == TENANT))).scalar() or 0
+        if existing:
+            print(f"[SKIP] Engineering already seeded for {TENANT} ({existing} engineers) - skipping.")
+            return
+
         # ── Engineers ────────────────────────────────────────────────────────
         engineers = [
             Engineer(id=_id(), tenant_id=TENANT, name="Ravi Iyer", email="ravi.iyer@acme.com",
@@ -223,9 +237,66 @@ async def seed():
             published=True,
         ))
 
+        # ── On-call rotations — current + one upcoming shift per squad, plus a
+        #    completed prior shift so the history isn't just a single row ─────
+        rotations = [
+            OnCallRotation(id=_id(), tenant_id=TENANT, engineer_id=engineers[0].id,
+                            squad="Platform", role=OnCallRole.PRIMARY,
+                            starts_at=_now() - timedelta(days=2), ends_at=_now() + timedelta(days=5)),
+            OnCallRotation(id=_id(), tenant_id=TENANT, engineer_id=engineers[2].id,
+                            squad="Platform", role=OnCallRole.SECONDARY,
+                            starts_at=_now() - timedelta(days=2), ends_at=_now() + timedelta(days=5)),
+            OnCallRotation(id=_id(), tenant_id=TENANT, engineer_id=engineers[3].id,
+                            squad="Data", role=OnCallRole.PRIMARY,
+                            starts_at=_now() - timedelta(days=1), ends_at=_now() + timedelta(days=6)),
+            OnCallRotation(id=_id(), tenant_id=TENANT, engineer_id=engineers[1].id,
+                            squad="Payments", role=OnCallRole.PRIMARY,
+                            starts_at=_now() + timedelta(days=5), ends_at=_now() + timedelta(days=12)),
+            OnCallRotation(id=_id(), tenant_id=TENANT, engineer_id=engineers[0].id,
+                            squad="Platform", role=OnCallRole.PRIMARY,
+                            starts_at=_now() - timedelta(days=9), ends_at=_now() - timedelta(days=2)),
+        ]
+        db.add_all(rotations)
+
+        # ── CI pipeline runs — real build/test history behind the deploy-risk
+        #    agent's score, not just a single PR's ci_passing flag. Payments is
+        #    deliberately flaky (matches its DEGRADED health + open incident);
+        #    identity and reporting are clean. ─────────────────────────────────
+        pipeline_runs = []
+        run_specs = [
+            # (service, pr, name, statuses-newest-first, branch)
+            (payments, prs[3], "build-and-test",
+             [(PipelineStatus.SUCCEEDED, 812, 0), (PipelineStatus.FAILED, 795, 17),
+              (PipelineStatus.SUCCEEDED, 803, 0), (PipelineStatus.FAILED, 780, 9),
+              (PipelineStatus.SUCCEEDED, 790, 0)], "fix/acquirer-retry"),
+            (identity, prs[0], "build-and-test",
+             [(PipelineStatus.FAILED, 411, 6), (PipelineStatus.SUCCEEDED, 402, 0),
+              (PipelineStatus.SUCCEEDED, 398, 0)], "feat/key-rotation"),
+            (reporting, prs[1], "build-and-test",
+             [(PipelineStatus.SUCCEEDED, 266, 0), (PipelineStatus.SUCCEEDED, 260, 0),
+              (PipelineStatus.SUCCEEDED, 255, 0)], "perf/parallel-rollup"),
+        ]
+        hours_ago = 1
+        for service, pr, name, runs, branch in run_specs:
+            for status, run_number, tests_failed in runs:
+                hours_ago += 6
+                started = _now() - timedelta(hours=hours_ago)
+                pipeline_runs.append(PipelineRun(
+                    id=_id(), tenant_id=TENANT, service_id=service.id, pull_request_id=pr.id,
+                    pipeline_name=name, run_number=run_number, status=status,
+                    trigger="PULL_REQUEST", branch=branch,
+                    commit_sha=uuid.uuid4().hex[:12],
+                    tests_passed=140 - tests_failed, tests_failed=tests_failed,
+                    duration_seconds=310 if status == PipelineStatus.SUCCEEDED else 96,
+                    started_at=started,
+                    completed_at=started + timedelta(minutes=5 if status == PipelineStatus.SUCCEEDED else 2),
+                ))
+        db.add_all(pipeline_runs)
+
         await db.commit()
         print(f"[EngineeringSeed] {len(services)} services, {len(engineers)} engineers, "
-              f"{len(prs)} PRs, {len(deploys)} deployments, {len(incidents)} incidents seeded.")
+              f"{len(prs)} PRs, {len(deploys)} deployments, {len(incidents)} incidents seeded, "
+              f"{len(rotations)} on-call rotations, {len(pipeline_runs)} pipeline runs.")
 
 
 if __name__ == "__main__":

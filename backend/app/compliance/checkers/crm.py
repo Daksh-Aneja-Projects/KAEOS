@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from app.compliance.base import CheckResult, CheckStatus, Finding
 from app.compliance.registry import register
 
-_DEPT = "crm"
+_DEPT = "sales"
 
 # GDPR Art 6(1) lawful bases for processing personal data.
 _LAWFUL_BASES = {

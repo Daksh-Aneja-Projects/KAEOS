@@ -208,7 +208,11 @@ async def test_notifications_and_digest(async_client: AsyncClient, db):
     r = await async_client.get("/api/v1/org/digest")
     d = r.json()
     assert set(d) >= {"org_health", "domains", "notifications", "workload", "action_required"}
-    assert len(d["domains"]) == 7
+    # Every governed department must reach the digest, not just the original seven.
+    assert {x["domain"] for x in d["domains"]} >= {
+        "hr", "finance", "legal", "sales", "support",
+        "operations", "engineering", "healthcare", "procurement", "lending",
+    }
 
 
 # ── Segments + export (Sprint 10) ────────────────────────────────────────

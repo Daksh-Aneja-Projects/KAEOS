@@ -58,5 +58,5 @@ class CommissionAgent:
             "calculated_payout": payout,
             "is_approved": auto_approved,
             "status": "APPROVED" if auto_approved else "PENDING_HUMAN_APPROVAL",
-            "reason": None if auto_approved else f"Payout ${payout:,.2f} ≥ ${AUTO_APPROVE_LIMIT:,.0f} — requires human approval",
+            "reason": None if auto_approved else f"Payout ${payout:,.2f} is at or above the ${AUTO_APPROVE_LIMIT:,.0f} auto-approve limit, so it requires human approval",
         }

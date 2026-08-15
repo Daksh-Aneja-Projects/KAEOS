@@ -18,11 +18,17 @@ import uuid
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 
+from sqlalchemy import func as sqlfunc, select
+
 from app.core.database import AsyncSessionLocal, async_engine
 from app.lending.models.core import (
     AdverseActionNotice, CreditPolicy, LoanApplication, LoanStatus,
     UnderwritingDecision,
 )
+from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
+                                          ServicedLoan, ServicingStatus)
+from app.lending.services.servicing import (build_amortization_schedule,
+                                            delinquency_bucket)
 from app.models.domain import Base
 
 TENANT = "tenant_acme"
@@ -45,24 +51,39 @@ _POLICIES = {
 }
 
 # (app#, name, product, amount, term_months, score, income, dti, protected_class, days_ago_decided)
-# days_ago_decided = None -> still RECEIVED (no decision yet).
+# days_ago_decided = None -> still RECEIVED (no decision yet). The six approved
+# rows converted to serviced loans below (LN-1001/1002/1005/1007/1009/1010) are
+# decided much further back than the rest of the book so their payment
+# schedules have real, internally-consistent history (some current, some
+# delinquent) instead of a freshly-funded loan claiming months of payments.
 _APPS = [
-    ("LN-1001", "Jordan Rivera",   "personal_loan",  18000, 36, 742,  96000, 0.28, {"gender": "female", "ethnicity": "hispanic"}, 12),
-    ("LN-1002", "Sam Okafor",      "personal_loan",  25000, 48, 705, 120000, 0.31, {"gender": "male",   "ethnicity": "black"},    11),
+    ("LN-1001", "Jordan Rivera",   "personal_loan",  18000, 36, 742,  96000, 0.28, {"gender": "female", "ethnicity": "hispanic"}, 380),
+    ("LN-1002", "Sam Okafor",      "personal_loan",  25000, 48, 705, 120000, 0.31, {"gender": "male",   "ethnicity": "black"},    300),
     ("LN-1003", "Alex Chen",       "personal_loan",  32000, 60, 598,  41000, 0.58, {"gender": "male",   "ethnicity": "asian"},    10),
     ("LN-1004", "Priya Nair",      "personal_loan",  75000, 60, 760, 210000, 0.22, {"gender": "female", "ethnicity": "asian"},     9),
-    ("LN-1005", "Marcus Bell",     "auto_loan",      41000, 72, 688,  84000, 0.36, {"gender": "male",   "ethnicity": "black"},     8),
+    ("LN-1005", "Marcus Bell",     "auto_loan",      41000, 72, 688,  84000, 0.36, {"gender": "male",   "ethnicity": "black"},    500),
     ("LN-1006", "Dana White",      "auto_loan",      52000, 72, 610,  58000, 0.54, {"gender": "female", "ethnicity": "white"},     7),
-    ("LN-1007", "Sofia Marquez",   "mortgage",      420000, 360, 774, 165000, 0.33, {"gender": "female", "ethnicity": "hispanic"},  6),
+    ("LN-1007", "Sofia Marquez",   "mortgage",      420000, 360, 774, 165000, 0.33, {"gender": "female", "ethnicity": "hispanic"}, 250),
     ("LN-1008", "Ethan Cole",      "mortgage",      610000, 360, 651,  92000, 0.47, {"gender": "male",   "ethnicity": "white"},     5),
-    ("LN-1009", "Amina Yusuf",     "mortgage",      380000, 360, 712, 138000, 0.29, {"gender": "female", "ethnicity": "black"},     5),
-    ("LN-1010", "Grace Kim",       "small_business",180000, 60, 724, 240000, 0.34, {"gender": "female", "ethnicity": "asian"},     4),
+    ("LN-1009", "Amina Yusuf",     "mortgage",      380000, 360, 712, 138000, 0.29, {"gender": "female", "ethnicity": "black"},   150),
+    ("LN-1010", "Grace Kim",       "small_business",180000, 60, 724, 240000, 0.34, {"gender": "female", "ethnicity": "asian"},   220),
     ("LN-1011", "Tomas Alvarez",   "small_business",300000, 84, 701, 320000, 0.31, {"gender": "male",   "ethnicity": "hispanic"},  3),
     ("LN-1012", "Ruth Feldman",    "small_business", 90000, 48, 668,  95000, 0.44, {"gender": "female", "ethnicity": "white"},     3),
     # Still in intake (no decision yet) - populates the RECEIVED queue.
     ("LN-1013", "Noah Bennett",    "personal_loan",  22000, 36, 731, 102000, 0.27, {"gender": "male",   "ethnicity": "white"},   None),
     ("LN-1014", "Leila Haddad",    "auto_loan",      36000, 60, 699,  76000, 0.38, {"gender": "female", "ethnicity": "hispanic"}, None),
 ]
+
+# Which approved applications become serviced loans, and how delinquent (0 =
+# current). Chosen so the servicing book shows a real spread of buckets.
+_SERVICING = {
+    "LN-1001": 0,    # current, seasoned book
+    "LN-1002": 65,   # lands in the 30-59 DPD bucket - open collections case
+    "LN-1005": 95,   # lands in the 90+ DPD bucket / DEFAULT - escalated case
+    "LN-1007": 0,    # current
+    "LN-1009": 0,    # current
+    "LN-1010": 0,    # current
+}
 
 
 def _decide(product, amount, score, income, dti):
@@ -88,18 +109,91 @@ def _apr(product, score):
     return round(base + spread, 2)
 
 
+def _fund_loan(app_id, num, name, product, amount, term, score, funded_days_ago, delinquent_days=0):
+    """Build a ServicedLoan (+ its amortization schedule) that is internally
+    consistent with how long ago it funded and how delinquent it is today.
+    Returns (ServicedLoan, days_past_due)."""
+    principal = Decimal(str(amount))
+    apr = Decimal(str(_apr(product, score)))
+    funded_at = _ago(funded_days_ago)
+    first_due = funded_at.date() + timedelta(days=30)
+    schedule = build_amortization_schedule(principal, apr, term, first_due)
+
+    today = date.today()
+    elapsed_months = min(term, max(0, (today - funded_at.date()).days // 30))
+    missed_months = min(elapsed_months, max(0, delinquent_days // 30 + (1 if delinquent_days % 30 else 0)))
+    paid_count = max(0, elapsed_months - missed_months)
+
+    for i, row in enumerate(schedule):
+        if i < paid_count:
+            row["status"] = "paid"
+        elif i < paid_count + missed_months:
+            row["status"] = "missed"
+        # else: stays "scheduled" (set by build_amortization_schedule)
+
+    outstanding = principal - sum((Decimal(str(row["principal"])) for row in schedule[:paid_count]), Decimal("0"))
+    days_past_due = 0
+    if paid_count < elapsed_months:
+        oldest_missed_due = date.fromisoformat(schedule[paid_count]["due_date"])
+        days_past_due = max(0, (today - oldest_missed_due).days)
+
+    next_idx = paid_count + missed_months
+    next_due = date.fromisoformat(schedule[next_idx]["due_date"]) if next_idx < len(schedule) else None
+    last_payment = schedule[paid_count - 1] if paid_count > 0 else None
+
+    if days_past_due <= 0:
+        status = ServicingStatus.CURRENT.value
+    elif days_past_due >= 90:
+        status = ServicingStatus.DEFAULT.value
+    else:
+        status = ServicingStatus.DELINQUENT.value
+
+    loan = ServicedLoan(
+        id=_id(), tenant_id=TENANT, application_id=app_id,
+        loan_number=num, product=product, borrower_name=name,
+        principal=principal, outstanding_principal=outstanding.quantize(Decimal("0.01")),
+        apr=apr, term_months=term, monthly_payment=Decimal(str(schedule[0]["amount"])),
+        next_due_date=next_due,
+        last_payment_date=date.fromisoformat(last_payment["due_date"]) if last_payment else None,
+        last_payment_amount=Decimal(str(last_payment["amount"])) if last_payment else None,
+        payments_made=paid_count, days_past_due=days_past_due, status=status,
+        payment_schedule=schedule, funded_at=funded_at,
+    )
+    return loan, days_past_due
+
+
+def _contact(days_ago, hour_local, channel, notes):
+    """A past FDCPA-compliant collection contact log entry (within the
+    8am-9pm window by construction, since it already happened)."""
+    at = _ago(days_ago).replace(hour=hour_local, minute=0, second=0, microsecond=0)
+    return {"at": at.isoformat(), "hour_local": hour_local, "channel": channel,
+            "harassment": False, "notes": notes, "actor": "collections_agent"}
+
+
 async def seed():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        # Idempotency guard: a second run (direct script invocation, a test
+        # fixture, a re-triggered startup seed) must not duplicate rows or
+        # crash on the application_number unique constraint.
+        existing = (await db.execute(
+            select(sqlfunc.count()).select_from(LoanApplication)
+            .where(LoanApplication.tenant_id == TENANT))).scalar() or 0
+        if existing:
+            print(f"[SKIP] Lending already seeded for {TENANT} ({existing} applications) - skipping.")
+            return
+
         for product, p in _POLICIES.items():
             db.add(CreditPolicy(id=_id(), tenant_id=TENANT, product=product,
                                 is_active=True, **p))
 
+        app_ids_by_number: dict[str, str] = {}
         approvals = denials = pending = 0
         for (num, name, product, amount, term, score, income, dti, pclass, decided_ago) in _APPS:
             app_id = _id()
+            app_ids_by_number[num] = app_id
             if decided_ago is None:
                 status = LoanStatus.RECEIVED.value
             else:
@@ -148,11 +242,66 @@ async def seed():
                     sent_at=_ago(decided_ago - 1 if decided_ago > 1 else 0),
                     within_30_days=True))
 
+        # ── Servicing: fund the approved applications selected in _SERVICING,
+        # seasoned to match how long ago each was decided, and open FDCPA-
+        # governed collections cases on the ones that are delinquent. ──────
+        apps_by_number = {row[0]: row for row in _APPS}
+        loans_by_number: dict[str, tuple] = {}
+        for num, delinquent_days in _SERVICING.items():
+            (_n, name, product, amount, term, score, _income, _dti, _pclass,
+             decided_ago) = apps_by_number[num]
+            loan, dpd = _fund_loan(app_ids_by_number[num], num, name, product, amount,
+                                   term, score, decided_ago, delinquent_days)
+            db.add(loan)
+            loans_by_number[num] = (loan, dpd)
+
+        # LN-1002: 30-59-day DPD bucket, an open collections case with a short
+        # contact history - validation notice mailed, one call, one follow-up.
+        loan_1002, dpd_1002 = loans_by_number["LN-1002"]
+        db.add(CollectionCase(
+            id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1002.id,
+            status=CollectionCaseStatus.IN_PROGRESS.value,
+            delinquency_bucket=delinquency_bucket(dpd_1002),
+            validation_notice_sent=True, validation_notice_sent_at=_ago(14),
+            contact_log=[
+                _contact(14, 9, "mail", "FDCPA validation notice mailed."),
+                _contact(9, 11, "phone",
+                        "Outbound call - borrower acknowledged the missed payment and "
+                        "promised to pay within the week."),
+                _contact(3, 15, "phone",
+                        "Follow-up call - no answer, left a voicemail requesting a callback."),
+            ],
+            last_contact_at=_ago(3), opened_at=_ago(15),
+        ))
+
+        # LN-1005: 90+ bucket, escalated - a longer contact history spanning
+        # several weeks, every contact inside the 8am-9pm FDCPA window.
+        loan_1005, dpd_1005 = loans_by_number["LN-1005"]
+        db.add(CollectionCase(
+            id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1005.id,
+            status=CollectionCaseStatus.ESCALATED.value,
+            delinquency_bucket=delinquency_bucket(dpd_1005),
+            validation_notice_sent=True, validation_notice_sent_at=_ago(63),
+            contact_log=[
+                _contact(64, 9, "mail", "FDCPA validation notice mailed."),
+                _contact(58, 10, "phone", "Outbound call - borrower requested a hardship review."),
+                _contact(45, 14, "phone",
+                        "Follow-up call - borrower disputed the amount; dispute logged."),
+                _contact(30, 11, "phone", "Outbound call - no answer, left a voicemail."),
+                _contact(16, 16, "phone",
+                        "Outbound call - borrower proposed a partial-payment plan."),
+                _contact(4, 13, "phone", "Follow-up call confirming the partial-payment plan terms."),
+            ],
+            last_contact_at=_ago(4), opened_at=_ago(65),
+        ))
+
         await db.commit()
         print("[SUCCESS] Seeded Lending database:")
         print(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
               f"{pending} in intake), {len(_POLICIES)} credit policies, "
               f"{denials} adverse-action notices")
+        print(f"   - {len(loans_by_number)} serviced loans, 2 collection cases "
+              f"(FDCPA-governed contact log)")
 
 
 if __name__ == "__main__":

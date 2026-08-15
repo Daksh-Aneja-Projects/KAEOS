@@ -10,8 +10,8 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.legal.agents.gated_runner import run_gated_legal_skill
-from app.legal.models.compliance import ComplianceObligation
+from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
+from app.legal.models.compliance import ComplianceObligation, ObligationStatus
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
@@ -61,10 +61,30 @@ class ComplianceAuditAgent:
             tenant_id=tenant_id,
             compliance_tags=["GDPR", "CCPA"],
         )
-        if result.get("status") in ("PENDING_HITL", "SUCCESS_CLEAN"):
+        if result.get("status") == "PENDING_HITL":
             return {
-                "status": result.get("status"),
+                "status": "PENDING_HITL",
                 "obligation_id": obligation_id,
+                "execution_id": result.get("execution_id"),
+            }
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+
+            # Persist the AI's verdict onto the obligation. An explicit `false`
+            # is left alone rather than fabricated into a status the model never
+            # asserted (ObligationStatus has no NON_COMPLIANT state); only an
+            # explicit `true` advances PENDING/OVERDUE to COMPLETED.
+            compliant = decision.get("compliant")
+            if compliant is True:
+                ob.status = ObligationStatus.COMPLETED
+
+            db.add(ob)
+            await db.commit()
+
+            return {
+                "status": "SUCCESS_CLEAN",
+                "obligation_id": obligation_id,
+                "decision": decision,
                 "execution_id": result.get("execution_id"),
             }
         return result

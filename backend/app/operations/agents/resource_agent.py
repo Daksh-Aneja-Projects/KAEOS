@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.operations.agents.gated_runner import run_gated_operations_skill
+from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 
 class ResourceAgent:
     async def check_resources(self, db: AsyncSession, resource_id: str, tenant_id: str) -> Dict[str, Any]:
@@ -45,10 +45,27 @@ class ResourceAgent:
                     f"at {utilization}% utilization. Assess overload risk and recommend rebalancing."
                 ),
             }],
-            context={"allocation_id": allocation_id, "utilization": utilization,
-                     "tenant_id": tenant_id},
+            context={
+                "allocation_id": allocation_id, "utilization": utilization, "tenant_id": tenant_id,
+                "instruction": "Output strict JSON: {overload_confirmed, recommended_action, rebalance_plan}.",
+            },
             tenant_id=tenant_id,
         )
+
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+            note_parts = []
+            plan = decision.get("rebalance_plan")
+            if plan:
+                note_parts.append(str(plan).rstrip(".") + ".")
+            action = decision.get("recommended_action")
+            if action and action != plan:
+                note_parts.append(f"Recommended: {action}.")
+            alloc.ai_rebalance_note = " ".join(note_parts) if note_parts else None
+            db.add(alloc)
+            await db.commit()
+            result = {**result, "decision": decision}
+
         result["allocation_id"] = allocation_id
         result["utilization"] = utilization if util_known else None
         # >= 100% is at capacity, which is overloaded; unknown utilization is

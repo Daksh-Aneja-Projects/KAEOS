@@ -44,6 +44,10 @@ class Inspection(Base):
     status = Column(Enum(QualityStatus), default=QualityStatus.IN_PROGRESS)
     notes = Column(Text, nullable=True)
 
+    # QAAgent's plain-English defect/corrective-action summary. status itself
+    # (PASSED/FAILED) is also set by the agent when the decision is unambiguous.
+    ai_summary = Column(Text, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

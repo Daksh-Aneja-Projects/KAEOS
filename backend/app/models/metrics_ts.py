@@ -9,6 +9,13 @@ row per (tenant, metric, interval bucket). Tenant-scoped (``tenant_id`` column â
 auto-swept into RLS), idempotent per bucket (unique constraint), and HONEST â€” a
 metric with no underlying data in a bucket is simply not written, never a
 fabricated 0.
+
+NOT seed-populated on purpose: the same no-fabricated-telemetry stance already
+applied to CostEvent (see scripts/seed_infrastructure.py). A backfilled history
+here would be indistinguishable from a real rollup once written, so a fresh
+tenant legitimately starts with an empty trend until the leader-guarded rollup
+(app/services/metrics_timeseries.py) has actually run. Do not "fix" this by
+seeding synthetic samples.
 """
 from sqlalchemy import Column, String, Numeric, DateTime, Index, UniqueConstraint
 from sqlalchemy.sql import func

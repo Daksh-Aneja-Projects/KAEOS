@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.support.agents.gated_runner import run_gated_support_skill
+from app.support.models.escalation import EscalationRule
 from app.support.models.tickets import Ticket
 from app.services.json_utils import plain_facts
 
@@ -22,17 +23,33 @@ class EscalationAgent:
         if not ticket:
             raise ValueError(f"Ticket {ticket_id} not found")
 
+        # Ground the decision in the tenant's actual escalation policy instead
+        # of asking the model to invent a path from scratch - mirrors how
+        # SLAAgent grounds itself in SLAPolicy/SLABreach.
+        rules = (await db.execute(
+            select(EscalationRule).where(
+                EscalationRule.tenant_id == tenant_id, EscalationRule.is_active == True  # noqa: E712
+            )
+        )).scalars().all()
+
         facts = {
             "subject": ticket.subject,
             "description": (ticket.description or "")[:1500],
             "priority": ticket.priority.value if ticket.priority else None,
             "status": ticket.status.value if ticket.status else None,
+            "escalation_policy": [
+                {"rule": r.rule_name, "trigger_condition": r.trigger_condition,
+                 "time_threshold_mins": r.time_threshold_mins}
+                for r in rules
+            ],
         }
         facts = plain_facts(facts)
         return await run_gated_support_skill(
             skill_id="support_escalation",
             steps=[{"step": 1, "name": "Escalate",
-                    "prompt": f"Decide the escalation path for this ticket: {facts}"}],
+                    "prompt": f"Decide the escalation path for this ticket, grounded in "
+                              f"the tenant's escalation policy rules (do not invent a "
+                              f"policy that isn't listed): {facts}"}],
             context={
                 "ticket_id": ticket_id, "tenant_id": tenant_id, **facts,
                 "instruction": "Output strict JSON: {escalate, target_tier, urgency, rationale}.",

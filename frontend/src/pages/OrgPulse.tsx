@@ -14,7 +14,7 @@ import { PAGE_PAD } from '../lib/layout';
 import { timeAgo } from '../lib/time';
 
 /**
- * Org Pulse - the cross-domain layer above the 7 department views.
+ * Org Pulse - the cross-domain layer above the department views.
  * One screen answering "how is the whole company doing right now":
  * org health ring, per-domain health grid (click-through), unified
  * severity-ranked insight feed, and the live workflow activity stream.
@@ -24,17 +24,11 @@ import { timeAgo } from '../lib/time';
 const healthColor = (h: number | null) =>
   h === null ? '#6b7280' : h >= 80 ? '#22c55e' : h >= 50 ? '#f59e0b' : '#ef4444';
 
-const DOMAIN_LABEL: Record<string, string> = {
-  finance: 'Finance', hr: 'Human Resources', sales: 'Sales & CRM',
-  support: 'Customer Support', operations: 'Operations', legal: 'Legal',
-  engineering: 'Engineering',
-};
-
-const DOMAIN_ROUTE: Record<string, string> = {
-  finance: '/departments/finance', hr: '/departments/hr', sales: '/departments/sales',
-  support: '/departments/support', operations: '/departments/operations',
-  legal: '/departments/legal', engineering: '/departments/engineering',
-};
+// Every domain slug returned by /org/pulse matches its /departments/<slug>
+// route segment 1:1 (see backend/app/core/seed.py department creation), so
+// the label and route are both derived, never a hand-maintained lookup that
+// silently misses new departments.
+const domainRoute = (domain: string) => `/departments/${domain}`;
 
 const fmtKpi = (v: number | null, format: string) => {
   if (v === null || v === undefined) return '-';
@@ -422,13 +416,13 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
             </div>
           </div>
           <p className="text-[11px] mt-4 text-center" style={{ color: colors.inkSubtle }}>
-            Mean of the 7 domain health scores (insight-severity weighted)
+            Mean of the {(pulse?.domains || []).length} domain health scores (insight-severity weighted)
           </p>
         </div>
 
         <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {(pulse?.domains || []).map(d => (
-            <div key={d.domain} onClick={() => navigate(DOMAIN_ROUTE[d.domain] || '/pulse')}
+            <div key={d.domain} onClick={() => navigate(domainRoute(d.domain))}
               className="rounded-xl p-4 block transition-transform hover:-translate-y-0.5 cursor-pointer"
               style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
               <div className="flex items-center justify-between mb-2">
@@ -437,7 +431,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
                   {d.health ?? '-'}
                 </span>
               </div>
-              <p className="text-[12px] font-semibold truncate">{DOMAIN_LABEL[d.domain] || d.domain}</p>
+              <p className="text-[12px] font-semibold truncate">{humanize(d.domain)}</p>
               <div className="mt-2 space-y-0.5">
                 {(d.kpis || []).slice(0, 3).map(k => (
                   <div key={k.key} className="flex justify-between text-[11px]">
@@ -476,7 +470,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               const Icon = ins.severity === 'critical' ? OctagonAlert : AlertTriangle;
               return (
                 <div key={i}
-                  onClick={() => navigate(DOMAIN_ROUTE[ins.domain] || '/pulse')}
+                  onClick={() => navigate(domainRoute(ins.domain))}
                   className="flex items-start gap-2.5 px-3 py-2 rounded-lg text-[12px] cursor-pointer transition-colors hover:brightness-110"
                   style={{ background: `${color}10` }}
                   title={`Open ${ins.domain} department`}>
@@ -566,7 +560,7 @@ const OrgPulse: React.FC<{ domain?: string }> = () => {
               <tbody>
                 {stale.slice(0, 15).map(b => (
                   <tr key={`${b.entity_type}-${b.entity_id}`}
-                    onClick={() => navigate(DOMAIN_ROUTE[b.domain] || '/pulse')}
+                    onClick={() => navigate(domainRoute(b.domain))}
                     className="cursor-pointer transition-colors hover:brightness-110"
                     style={{ borderBottom: `1px solid ${colors.hairline}` }}
                     title={`Open ${b.domain} department`}>

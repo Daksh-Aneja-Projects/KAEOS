@@ -6,7 +6,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import desc, select, func as sqlfunc
 
 from app.core.database import get_db
 
@@ -14,9 +14,10 @@ from app.core.database import get_db
 from app.operations.models.core import OpsTeamMember
 from app.operations.models.projects import Project, Task, ProjectStatus
 from app.operations.models.resources import Resource, ResourceAllocation
-from app.operations.models.vendors import VendorContract
+from app.operations.models.vendors import VendorContract, VendorPerformance
 from app.operations.models.procurement import PurchaseRequest, ProcurementStatus
 from app.operations.models.quality import Inspection, QualityStatus
+from app.operations.models.facilities import WorkOrder
 
 # Agents
 from app.operations.agents.project_agent import ProjectAgent
@@ -24,6 +25,7 @@ from app.operations.agents.resource_agent import ResourceAgent
 from app.operations.agents.vendor_agent import VendorAgent
 from app.operations.agents.procurement_agent import ProcurementAgent
 from app.operations.agents.qa_agent import QAAgent
+from app.operations.agents.facility_agent import FacilityAgent
 
 import logging
 
@@ -112,6 +114,7 @@ async def list_projects(tenant_id: str = Depends(get_tenant_id), db: AsyncSessio
             "completion_pct": float(p.completion_percentage or 0),
             "start_date": str(p.start_date) if p.start_date else None,
             "end_date": str(p.end_date) if p.end_date else None,
+            "ai_risk_note": p.ai_risk_note,
         })
     return project_list
 
@@ -160,6 +163,7 @@ async def list_resources(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
                 "project": project_name,
                 "utilization": float(a.utilization_percentage or 0),
                 "available_from": res.is_available.isoformat() if res.is_available else None,
+                "ai_rebalance_note": a.ai_rebalance_note,
             })
     return alloc_list
 
@@ -186,15 +190,37 @@ async def check_overload(allocation_id: str, tenant: dict = Depends(require_role
 async def list_vendors(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(VendorContract).where(VendorContract.tenant_id == tenant_id).limit(200))
     contracts = q.scalars().all()
-    return [{
-        "id": c.id,
-        "name": c.vendor_name,
-        "category": c.service_provided,
-        "risk_level": getattr(c, 'risk_level', 'MEDIUM') or 'MEDIUM',
-        "contract_value": float(c.contract_value or 0),
-        "soc2_verified": bool(getattr(c, 'soc2_verified', False)),
-        "contract_expiry": str(c.renewal_date) if c.renewal_date else None,
-    } for c in contracts]
+    result = []
+    for c in contracts:
+        perf = (await db.execute(
+            select(VendorPerformance)
+            .where(VendorPerformance.vendor_contract_id == c.id, VendorPerformance.tenant_id == tenant_id)
+            .order_by(desc(VendorPerformance.created_at))
+            .limit(1)
+        )).scalar_one_or_none()
+        # Risk is DERIVED from the vendor's own measured performance score, never
+        # a fabricated constant. No performance record on file -> honestly
+        # unscored (None), not a guessed "MEDIUM".
+        if perf is not None and perf.overall_performance_score is not None:
+            score = float(perf.overall_performance_score)
+            risk_level = "LOW" if score >= 90 else "MEDIUM" if score >= 75 else "HIGH"
+        else:
+            score = None
+            risk_level = None
+        result.append({
+            "id": c.id,
+            "name": c.vendor_name,
+            "category": c.service_provided,
+            "risk_level": risk_level,
+            "performance_score": round(score, 1) if score is not None else None,
+            "contract_value": float(c.contract_value or 0),
+            # No SOC2 attestation column/mechanism exists yet — honestly untracked
+            # rather than a fabricated boolean.
+            "soc2_verified": None,
+            "contract_expiry": str(c.renewal_date) if c.renewal_date else None,
+            "ai_recommendation": c.ai_recommendation,
+        })
+    return result
 
 @router.post("/vendors/{contract_id}/evaluate")
 async def evaluate_vendor(contract_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
@@ -236,6 +262,7 @@ async def list_procurements(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
             "amount": float(r.total_estimated_cost or 0),
             "vendor": vendor,
             "submitted_at": str(getattr(r, 'created_at', '') or ''),
+            "ai_audit_note": r.ai_audit_note,
         })
     return result
 
@@ -263,17 +290,22 @@ async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     from app.operations.models.quality import NonConformance, QualityStandard
     q = await db.execute(select(Inspection).where(Inspection.tenant_id == tenant_id).limit(200))
     inspections = q.scalars().all()
+    # Real defect count/severity -> score, not a 3-rung status lookup.
+    _IMPACT_DEDUCTION = {"HIGH": 20, "MEDIUM": 10, "LOW": 5}
     result = []
     for i in inspections:
-        nc_q = await db.execute(select(NonConformance).where(
-            NonConformance.tenant_id == tenant_id, NonConformance.inspection_id == i.id))
-        defects = len(nc_q.scalars().all())
+        nc_rows = (await db.execute(select(NonConformance).where(
+            NonConformance.tenant_id == tenant_id, NonConformance.inspection_id == i.id))).scalars().all()
+        defects = len(nc_rows)
+        deduction = sum(
+            _IMPACT_DEDUCTION.get(str(nc.impact_rating or "MEDIUM").upper(), 10) for nc in nc_rows
+        )
+        score = max(0, 100 - deduction)
         standard = (await db.execute(
             select(QualityStandard).where(
                 QualityStandard.id == i.standard_id, QualityStandard.tenant_id == tenant_id)
         )).scalar_one_or_none()
         status_val = i.status.value if hasattr(i.status, 'value') else str(i.status)
-        score = 100 if status_val == "PASSED" else (50 if status_val == "IN_PROGRESS" else 20)
         result.append({
             "id": i.id,
             "title": i.inspected_item,
@@ -283,6 +315,7 @@ async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
             "defects": defects,
             "inspector": i.inspector,
             "date": str(getattr(i, 'created_at', '') or '').split('T')[0] or None,
+            "ai_summary": i.ai_summary,
         })
     return result
 
@@ -296,6 +329,51 @@ async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_ro
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
             actor=tenant.get("name"), actor_role=tenant.get("role"),
             resource_type="inspection", resource_id=inspection_id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e))
+    except Exception as e:
+        logger.exception("%s failed", __name__)
+        raise HTTPException(500, detail="Internal error - see server logs") from e
+
+# --- Facilities / Work Orders ---
+@router.get("/work-orders")
+async def list_work_orders(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    q = await db.execute(
+        select(WorkOrder).where(WorkOrder.tenant_id == tenant_id)
+        .order_by(WorkOrder.created_at.desc()).limit(200)
+    )
+    orders = q.scalars().all()
+    return [{
+        "id": w.id,
+        "facility_name": w.facility_name,
+        "issue_title": w.issue_title,
+        "description": w.description,
+        "category": w.category,
+        "severity": w.severity,
+        "status": w.status,
+        "priority": w.priority,
+        "assigned_team": w.assigned_team,
+        "scheduled_hours": w.scheduled_hours,
+        "safety_flagged": bool(w.safety_flagged),
+        "reported_by": w.reported_by,
+        "ai_notes": w.ai_notes,
+        "created_at": str(w.created_at) if w.created_at else None,
+        "resolved_at": str(w.resolved_at) if w.resolved_at else None,
+    } for w in orders]
+
+
+@router.post("/work-orders/{work_order_id}/triage")
+async def triage_work_order(work_order_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    tenant_id = tenant["tenant_id"]
+    agent = FacilityAgent()
+    try:
+        result = await agent.triage_work_order(db, work_order_id, tenant_id)
+        await record_security_event(
+            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            resource_type="work_order", resource_id=work_order_id,
         )
         return result
     except ValueError as e:
@@ -398,6 +476,42 @@ async def create_purchase_request(
     return {"id": pr.id, "item_description": pr.item_description,
             "status": pr.status.value if hasattr(pr.status, "value") else str(pr.status),
             "total_estimated_cost": float(pr.total_estimated_cost or 0)}
+
+
+class WorkOrderCreate(BaseModel):
+    facility_name: str = Field(..., min_length=1, max_length=256)
+    issue_title: str = Field(..., min_length=1, max_length=256)
+    description: Optional[str] = Field(None, max_length=2000)
+    category: str = Field("MAINTENANCE", max_length=32)
+    severity: Optional[str] = Field(None, max_length=32)
+    reported_by: Optional[str] = Field(None, max_length=128)
+
+
+@router.post("/work-orders", status_code=201)
+async def create_work_order(
+    body: WorkOrderCreate,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """File a facility work order (starts OPEN; triage via /work-orders/{id}/triage)."""
+    tenant_id = tenant["tenant_id"]
+    wo = WorkOrder(
+        tenant_id=tenant_id,
+        facility_name=body.facility_name,
+        issue_title=body.issue_title,
+        description=body.description,
+        category=(body.category or "MAINTENANCE").upper(),
+        severity=body.severity,
+        reported_by=body.reported_by or tenant.get("name"),
+    )
+    db.add(wo)
+    await db.commit()
+    await db.refresh(wo)
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
+        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="work_order", resource_id=wo.id,
+    )
+    return {"id": wo.id, "issue_title": wo.issue_title, "category": wo.category, "status": wo.status}
 
 
 @router.post("/workflows/{entity_type}/bulk-transition")

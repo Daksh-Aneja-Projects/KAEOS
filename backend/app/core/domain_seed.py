@@ -2,9 +2,10 @@
 KAEOS — Domain seed orchestration (startup)
 
 Runs each department domain seeder (HR, Finance, Legal, Sales, Support,
-Operations) when its tables are empty, so every dashboard renders live data
-out of the box. Each check is per-domain and idempotent — an already-seeded
-domain is never re-seeded.
+Operations, Engineering, Healthcare, Lending; Procurement piggybacks on the
+Operations seeder's P2P tables) when its tables are empty, so every dashboard
+renders live data out of the box. Each check is per-domain and idempotent — an
+already-seeded domain is never re-seeded.
 
 Also rolls Department KPI metrics (tasks completed, hours saved, automation
 coverage) up from real skill-execution data so the Workforce dashboard shows
@@ -33,11 +34,25 @@ _DOMAINS = [
     ("Engineering", "app.engineering.seed", "app.engineering.models.core:Service"),
     ("Healthcare", "app.healthcare.seed", "app.healthcare.models.core:PatientEncounter"),
     ("Lending",    "app.lending.seed",    "app.lending.models.core:LoanApplication"),
-    # Procurement reuses the operations P2P tables (ops_purchase_*), which the
-    # Operations seeder above populates - no separate procurement seeder needed.
+    # Procurement has its own app.procurement.seed module, but it operates on
+    # the shared operations P2P tables (ops_purchase_*) and is called directly
+    # from the tail of the Operations seeder above - it does not need (and must
+    # not get) its own top-level entry here, or it would run before Operations
+    # has created the rows it depends on.
 ]
 
 SEED_TENANT = "tenant_acme"
+
+# The ten department slugs KAEOS ships, in canonical display order. Single
+# backend source of truth for anything that needs to validate or enumerate
+# department scope (auth's department-assignment endpoints, the autonomy
+# dial's canonical domain list, ...) so those call sites can't drift out of
+# sync with each other or with the ten workforce Department rows seeded below
+# / frontend/src/lib/departments.ts's DEPARTMENTS list.
+DEPARTMENT_SLUGS = [
+    "hr", "finance", "legal", "sales", "support",
+    "operations", "engineering", "healthcare", "procurement", "lending",
+]
 
 
 def _resolve(path: str):
@@ -97,6 +112,13 @@ _DEPT_SLUG_MAP = {
     "engineering": "engineering",
     "it ops": "engineering",
     "platform": "engineering",
+    # The three regulated departments' gated_runner.py modules write these
+    # exact strings to Skill.department (e.g. healthcare/agents/gated_runner.py
+    # sets domain="healthcare"), so without these entries their executions were
+    # never attributed and tasks_completed_total stayed 0 forever.
+    "healthcare": "healthcare",
+    "lending": "lending",
+    "procurement": "procurement",
 }
 
 

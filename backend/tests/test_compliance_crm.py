@@ -19,6 +19,16 @@ def test_crm_frameworks_registered():
     assert {"GDPR", "CCPA", "TCPA", "DSAR"} <= tags
 
 
+def test_crm_frameworks_grouped_under_sales_department():
+    """These checkers must self-register under the platform's canonical "sales"
+    slug, not the legacy internal "crm" name - the Compliance Checker catalog
+    page groups its left rail by department, and Department.slug is "sales"
+    everywhere else in the product (routes, nav tab, seed data)."""
+    depts = {f["framework"]: f["department"] for f in list_frameworks()
+             if f["framework"] in ("GDPR", "CCPA", "TCPA", "DSAR")}
+    assert depts == {"GDPR": "sales", "CCPA": "sales", "TCPA": "sales", "DSAR": "sales"}
+
+
 # ---------------------------------------------------------------- GDPR Art 6
 def test_gdpr_lawful_basis():
     # Valid non-consent basis -> pass.

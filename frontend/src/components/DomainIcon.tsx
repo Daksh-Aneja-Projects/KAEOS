@@ -3,7 +3,7 @@ import {
   Building2, Users, Landmark, Scale, Settings, TrendingUp, Headphones,
   Package, Boxes, Rocket, Target, HeartPulse, Zap, Briefcase, ShoppingCart,
   ShieldCheck, FileText, GraduationCap, Wallet, Clock, BarChart3, Bot,
-  ClipboardCheck, Wrench, Globe, Database, MessageSquare, type LucideIcon,
+  ClipboardCheck, Wrench, Globe, Database, MessageSquare, Banknote, type LucideIcon,
 } from 'lucide-react';
 
 /**
@@ -24,6 +24,9 @@ const ICONS: Record<string, { icon: LucideIcon; color: string }> = {
   engineering: { icon: Database, color: '#06b6d4' },
   procurement: { icon: ShoppingCart, color: '#8b5cf6' },
   marketing: { icon: Globe, color: '#f97316' },
+  // matches DEPARTMENT_COLORS in lib/departments.ts
+  healthcare: { icon: HeartPulse, color: '#14b8a6' },
+  lending: { icon: Banknote, color: '#d97706' },
   '👥': { icon: Users, color: '#22c55e' },
   '💰': { icon: Landmark, color: '#ec4899' },
   '⚖️': { icon: Scale, color: '#6366f1' },
@@ -59,6 +62,10 @@ const KEYWORDS: [string, keyof typeof ICONS][] = [
   ['success', 'support'], ['ticket', '💬'], ['learning', '🎓'],
   ['performance', '📊'], ['time', '⏰'], ['quality', '✅'],
   ['procure', 'procurement'], ['vendor', '🔧'], ['project', '📊'],
+  ['healthcare', 'healthcare'], ['clinical', 'healthcare'], ['patient', 'healthcare'],
+  ['hospital', 'healthcare'], ['medical', 'healthcare'],
+  ['lending', 'lending'], ['loan', 'lending'], ['credit', 'lending'],
+  ['underwrit', 'lending'], ['banking', 'lending'],
 ];
 
 function resolve(hint?: string | null): { icon: LucideIcon; color: string } {

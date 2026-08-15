@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
-  FolderKanban, Users2, Building2, ShoppingCart, ClipboardCheck, BarChart3,
-  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle
+  FolderKanban, Users2, Building2, ShoppingCart, ClipboardCheck, BarChart3, Wrench,
+  Search, RefreshCw, Loader2, Bot, CheckCircle2, XCircle, ArrowRight, AlertTriangle
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { WorkflowSpec } from '../api/client';
+import { operationsApi } from '../api/endpoints/operations';
+import type { WorkOrderRow } from '../api/endpoints/operations';
 import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 import { humanize } from '../lib/format';
@@ -12,24 +14,22 @@ import { PAGE_PAD } from '../lib/layout';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
-import WorkflowActions from '../components/WorkflowActions';
-import BulkActionBar from '../components/BulkActionBar';
-import { useBulkSelect } from '../hooks/useBulkSelect';
 import CreateEntityModal from '../components/CreateEntityModal';
 import { Plus as PlusIcon } from 'lucide-react';
 
-type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality' | 'analytics';
+type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality' | 'facilities' | 'analytics';
 
-interface OpsProject { id: string; name: string; status: string; owner: string | null; budget: number; spent: number; completion_pct: number; start_date: string | null; end_date: string | null; }
-interface OpsResource { id: string; name: string; type: string; project: string | null; utilization: number; available_from: string | null; }
-interface OpsVendor { id: string; name: string; category: string; risk_level: string; contract_value: number; soc2_verified: boolean; contract_expiry: string | null; }
-interface OpsProcurement { id: string; description: string; requestor: string; status: string; amount: number; vendor: string | null; submitted_at: string; }
-interface OpsInspection { id: string; title: string; area: string | null; status: string; score: number; defects: number; inspector: string; date: string | null; }
+interface OpsProject { id: string; name: string; status: string; owner: string | null; budget: number; spent: number; completion_pct: number; start_date: string | null; end_date: string | null; ai_risk_note?: string | null; }
+interface OpsResource { id: string; name: string; type: string; project: string | null; utilization: number; available_from: string | null; ai_rebalance_note?: string | null; }
+interface OpsVendor { id: string; name: string; category: string; risk_level: string | null; performance_score?: number | null; contract_value: number; soc2_verified: boolean | null; contract_expiry: string | null; ai_recommendation?: string | null; }
+interface OpsProcurement { id: string; description: string; requestor: string; status: string; amount: number; vendor: string | null; submitted_at: string; ai_audit_note?: string | null; }
+interface OpsInspection { id: string; title: string; area: string | null; status: string; score: number; defects: number; inspector: string; date: string | null; ai_summary?: string | null; }
 
 const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<OpsTab>(() => {
-    const valid: OpsTab[] = ['projects', 'resources', 'vendors', 'procurement', 'quality', 'analytics'];
+    const valid: OpsTab[] = ['projects', 'resources', 'vendors', 'procurement', 'quality', 'facilities', 'analytics'];
     if (defaultTab && valid.includes(defaultTab as OpsTab)) return defaultTab as OpsTab;
     return 'projects';
   });
@@ -44,9 +44,9 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [vendors, setVendors] = useState<OpsVendor[]>([]);
   const [procurements, setProcurements] = useState<OpsProcurement[]>([]);
   const [inspections, setInspections] = useState<OpsInspection[]>([]);
-  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
-  const bulk = useBulkSelect(procurements, workflows['purchase_request'], p => p.status);
+  const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createWOOpen, setCreateWOOpen] = useState(false);
 
   // Left/right arrows move between tabs, the way a tablist is expected to behave.
   const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -73,11 +73,11 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     const results = await Promise.allSettled([
       api.getOperationsProjects(), api.getOperationsResources(), api.getOperationsVendors(),
       api.getOperationsProcurements(), api.getOperationsInspections(),
-      api.getDomainWorkflows('operations'),
+      operationsApi.getOperationsWorkOrders(),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setProjects(val(0)); setResources(val(1)); setVendors(val(2)); setProcurements(val(3)); setInspections(val(4));
-    if (results[5].status === 'fulfilled') setWorkflows((results[5] as any).value || {});
+    setWorkOrders(val(5));
     setLoading(false);
   };
 
@@ -99,10 +99,10 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
 
   const statusColor = (s: string) => {
     const n = (s || '').toUpperCase();
-    if (['ACTIVE', 'ON_TRACK', 'APPROVED', 'PASSED', 'COMPLETED', 'VERIFIED', 'LOW'].includes(n)) return '#22c55e';
-    if (['IN_PROGRESS', 'PENDING', 'AT_RISK', 'DRAFT', 'MEDIUM', 'UNDER_REVIEW'].includes(n)) return '#f59e0b';
-    if (['DELAYED', 'BLOCKED', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'OVERDUE'].includes(n)) return '#ef4444';
-    if (['PLANNING', 'NEW', 'SUBMITTED'].includes(n)) return '#3b82f6';
+    if (['ACTIVE', 'ON_TRACK', 'APPROVED', 'PASSED', 'COMPLETED', 'VERIFIED', 'LOW', 'RESOLVED', 'CLOSED'].includes(n)) return '#22c55e';
+    if (['IN_PROGRESS', 'PENDING', 'AT_RISK', 'DRAFT', 'MEDIUM', 'UNDER_REVIEW', 'NEEDS_TRIAGE'].includes(n)) return '#f59e0b';
+    if (['DELAYED', 'BLOCKED', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'OVERDUE', 'URGENT'].includes(n)) return '#ef4444';
+    if (['PLANNING', 'NEW', 'SUBMITTED', 'OPEN'].includes(n)) return '#3b82f6';
     return colors.inkSubtle;
   };
 
@@ -127,6 +127,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     { key: 'vendors', label: 'Vendors', icon: Building2, color: '#f59e0b' },
     { key: 'procurement', label: 'Procurement', icon: ShoppingCart, color: '#3b82f6' },
     { key: 'quality', label: 'Quality', icon: ClipboardCheck, color: '#ef4444' },
+    { key: 'facilities', label: 'Facilities', icon: Wrench, color: '#14b8a6' },
     { key: 'analytics', label: 'Analytics', icon: BarChart3, color: '#a855f7' },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
@@ -143,11 +144,20 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
             <p className="text-[12px] mt-0.5" style={{ color: colors.inkSubtle }}>Operations Department</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setCreateOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
-              style={{ background: colors.primary }}>
-              <PlusIcon className="w-3.5 h-3.5" /> New Purchase Request
-            </button>
+            {tab === 'procurement' && (
+              <button onClick={() => setCreateOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+                style={{ background: colors.primary }}>
+                <PlusIcon className="w-3.5 h-3.5" /> New Purchase Request
+              </button>
+            )}
+            {tab === 'facilities' && (
+              <button onClick={() => setCreateWOOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+                style={{ background: '#14b8a6' }}>
+                <PlusIcon className="w-3.5 h-3.5" /> New Work Order
+              </button>
+            )}
             <button onClick={loadData} aria-label="Refresh operations data" className="p-2 rounded-lg" style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -159,6 +169,18 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
               { key: 'quantity', label: 'Quantity', type: 'number', defaultValue: 1 },
               { key: 'unit_price', label: 'Unit Price ($)', type: 'number', defaultValue: 0 },
               { key: 'department', label: 'Department', type: 'text' },
+            ]}
+            onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
+          <CreateEntityModal open={createWOOpen} onClose={() => setCreateWOOpen(false)}
+            title="New Work Order" domain="operations" entityPath="work-orders"
+            fields={[
+              { key: 'facility_name', label: 'Facility', type: 'text', required: true },
+              { key: 'issue_title', label: 'Issue', type: 'text', required: true },
+              { key: 'description', label: 'Description', type: 'textarea' },
+              { key: 'category', label: 'Category', type: 'select', defaultValue: 'MAINTENANCE',
+                options: ['MAINTENANCE', 'SAFETY', 'DECOMMISSION'] },
+              { key: 'severity', label: 'Severity', type: 'text', placeholder: 'e.g. SEV1, HIGH, LOW' },
+              { key: 'reported_by', label: 'Reported By', type: 'text' },
             ]}
             onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
         </div>
@@ -192,13 +214,15 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
           <GateTrace running={runningAgent === trace.id} result={trace.result} skillLabel={trace.label} />
         )}
 
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
-          <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
-            placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-            className="w-full pl-9 pr-4 py-2 rounded-lg border text-[12px] focus:outline-none"
-            style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.ink }} />
-        </div>
+        {tab !== 'procurement' && (
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
+            <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
+              placeholder={`Search ${activeTab.label.toLowerCase()}...`}
+              className="w-full pl-9 pr-4 py-2 rounded-lg border text-[12px] focus:outline-none"
+              style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.ink }} />
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.primary }} /></div>
@@ -216,7 +240,10 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   <tbody>
                     {projects.filter(p => !searchQ || p.name?.toLowerCase().includes(searchQ.toLowerCase())).map((p) => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        <td className="px-4 py-3 font-medium">{p.name}</td>
+                        <td className="px-4 py-3 font-medium" title={p.ai_risk_note || undefined}>
+                          {p.name}
+                          {p.ai_risk_note && <AlertTriangle className="w-3 h-3 inline-block ml-1.5 mb-0.5" style={{ color: '#f59e0b' }} />}
+                        </td>
                         <td className="px-4 py-3"><Badge status={p.status} /></td>
                         <td className="px-4 py-3">{p.owner || '-'}</td>
                         <td className="px-4 py-3 font-mono">{p.budget != null ? `$${p.budget.toLocaleString()}` : '-'}</td>
@@ -258,7 +285,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   <tbody>
                     {resources.filter(r => !searchQ || r.name?.toLowerCase().includes(searchQ.toLowerCase())).map((r) => (
                       <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        <td className="px-4 py-3 font-medium">{r.name}</td>
+                        <td className="px-4 py-3 font-medium" title={r.ai_rebalance_note || undefined}>{r.name}</td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{r.type || '-'}</td>
                         <td className="px-4 py-3">{r.project || 'Unassigned'}</td>
                         <td className="px-4 py-3">
@@ -299,14 +326,20 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   <tbody>
                     {vendors.filter(v => !searchQ || v.name?.toLowerCase().includes(searchQ.toLowerCase())).map((v) => (
                       <tr key={v.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        <td className="px-4 py-3 font-medium">{v.name}</td>
+                        <td className="px-4 py-3 font-medium" title={v.ai_recommendation || undefined}>{v.name}</td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{v.category || '-'}</td>
-                        <td className="px-4 py-3"><Badge status={v.risk_level || 'MEDIUM'} /></td>
+                        <td className="px-4 py-3">
+                          {v.risk_level
+                            ? <Badge status={v.risk_level} />
+                            : <span className="text-[11px]" style={{ color: colors.inkTertiary }} title="No performance record on file yet">Not scored</span>}
+                        </td>
                         <td className="px-4 py-3 font-mono">${(v.contract_value || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">
-                          {v.soc2_verified
+                          {v.soc2_verified === true
                             ? <span className="inline-flex items-center gap-1" style={{ color: '#22c55e' }}><CheckCircle2 className="w-3 h-3" /> Verified</span>
-                            : <span style={{ color: '#f59e0b' }}>Pending</span>}
+                            : v.soc2_verified === false
+                              ? <span style={{ color: '#f59e0b' }}>Pending</span>
+                              : <span className="text-[11px]" style={{ color: colors.inkTertiary }} title="No SOC2 attestation on file">Not tracked</span>}
                         </td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{v.contract_expiry || '-'}</td>
                         <td className="px-4 py-3">
@@ -326,58 +359,79 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
               </div>
             )}
 
-            {/* PROCUREMENT */}
-            {tab === 'procurement' && (
-              <div className="space-y-3">
-                <BulkActionBar domain="operations" entityType="purchase_request" noun="request"
-                  ids={bulk.ids} count={bulk.size} bulkAllowed={bulk.bulkAllowed}
-                  onDone={async (m) => { setActionMsg(m); await loadData(); }} onClear={bulk.clear} />
-              <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-                <table className="w-full text-[12px]">
-                  <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                    <th className="px-3 py-3 w-8">
-                      <input type="checkbox" aria-label="Select all purchase requests"
-                        checked={bulk.allSelected} onChange={e => bulk.setAll(e.target.checked)} />
-                    </th>
-                    {['Request', 'Requestor', 'Status', 'Amount', 'Vendor', 'Submitted', 'AI Audit'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+            {/* PROCUREMENT — thin read-only summary. The dedicated Procurement
+                department (/departments/procurement) now owns requisitions,
+                purchase orders, goods receipts, and vendor management; this
+                tab keeps only the AI audit action and a link over there. */}
+            {tab === 'procurement' && (() => {
+              const pendingCount = procurements.filter(p => p.status === 'PENDING_APPROVAL').length;
+              const totalValue = procurements.reduce((s, p) => s + (p.amount || 0), 0);
+              const recent = procurements.slice(0, 5);
+              return (
+                <div className="rounded-xl p-5 space-y-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <h3 className="text-[14px] font-bold flex items-center gap-1.5">
+                        <ShoppingCart className="w-4 h-4" style={{ color: '#3b82f6' }} /> Procurement Summary
+                      </h3>
+                      <p className="text-[12px] mt-1 max-w-md" style={{ color: colors.inkSubtle }}>
+                        Requisitions, purchase orders, goods receipts, and vendor management now
+                        live in the dedicated Procurement department.
+                      </p>
+                    </div>
+                    <button onClick={() => navigate('/departments/procurement')}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white shrink-0"
+                      style={{ background: '#3b82f6' }}>
+                      Open Procurement Department <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {[
+                      { label: 'Total Requests', value: procurements.length },
+                      { label: 'Pending Approval', value: pendingCount },
+                      { label: 'Total Value', value: `$${totalValue.toLocaleString()}` },
+                    ].map(kpi => (
+                      <div key={kpi.label} className="p-3 rounded-lg text-center" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                        <div className="text-[16px] font-bold" style={{ color: '#3b82f6' }}>{kpi.value}</div>
+                        <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: colors.inkSubtle }}>{kpi.label}</div>
+                      </div>
                     ))}
-                  </tr></thead>
-                  <tbody>
-                    {procurements.filter(p => !searchQ || p.description?.toLowerCase().includes(searchQ.toLowerCase()) || p.requestor?.toLowerCase().includes(searchQ.toLowerCase())).map((p) => (
-                      <tr key={p.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        <td className="px-3 py-3">
-                          <input type="checkbox" aria-label={`Select ${p.description}`}
-                            checked={bulk.isSelected(p.id)} onChange={() => bulk.toggle(p.id)} />
-                        </td>
-                        <td className="px-4 py-3 font-medium max-w-[140px]"><span className="block truncate">{p.description}</span></td>
-                        <td className="px-4 py-3">{p.requestor}</td>
-                        <td className="px-4 py-3"><Badge status={p.status} /></td>
-                        <td className="px-4 py-3 font-mono font-semibold">${(p.amount || 0).toLocaleString()}</td>
-                        <td className="px-4 py-3">{p.vendor || '-'}</td>
-                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{timeAgo(p.submitted_at)}</td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => runAgent('Procurement audit', p.id, api.runOperationsProcurementAgent)}
-                            disabled={runningAgent === p.id}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
-                            style={{ background: '#3b82f615', color: '#3b82f6' }}>
-                            {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-                            Audit
-                          </button>
-                          <div className="mt-1">
-                            <WorkflowActions domain="operations" entityPath="purchase-requests" entityId={p.id}
-                              currentState={p.status} transitions={workflows['purchase_request']?.transitions}
-                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                  </div>
+
+                  {recent.length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: colors.inkSubtle }}>
+                        Recent Requests
+                      </div>
+                      <div className="space-y-1.5">
+                        {recent.map(p => (
+                          <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }} title={p.ai_audit_note || undefined}>
+                            <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{p.description}</span>
+                            <Badge status={p.status} />
+                            <span className="font-mono text-[11px] font-semibold w-20 text-right shrink-0">${(p.amount || 0).toLocaleString()}</span>
+                            <span className="text-[11px] w-20 text-right shrink-0" style={{ color: colors.inkSubtle }}>{timeAgo(p.submitted_at)}</span>
+                            <button onClick={() => runAgent('Procurement audit', p.id, api.runOperationsProcurementAgent)}
+                              disabled={runningAgent === p.id}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 shrink-0"
+                              style={{ background: '#3b82f615', color: '#3b82f6' }}>
+                              {runningAgent === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+                              Audit
+                            </button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {procurements.length === 0 && <EmptyState icon={ShoppingCart} title="No procurement requests" sub="Purchase requests appear here" />}
-              </div>
-              </div>
-            )}
+                        ))}
+                      </div>
+                      {procurements.length > recent.length && (
+                        <p className="text-[11px] mt-2" style={{ color: colors.inkTertiary }}>
+                          +{procurements.length - recent.length} more in the Procurement Department.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {procurements.length === 0 && <EmptyState icon={ShoppingCart} title="No procurement requests" sub="Purchase requests appear here" />}
+                </div>
+              );
+            })()}
 
             {/* QUALITY */}
             {tab === 'quality' && (
@@ -391,7 +445,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   <tbody>
                     {inspections.filter(i => !searchQ || i.title?.toLowerCase().includes(searchQ.toLowerCase()) || i.area?.toLowerCase().includes(searchQ.toLowerCase())).map((i) => (
                       <tr key={i.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                        <td className="px-4 py-3 font-medium">{i.title}</td>
+                        <td className="px-4 py-3 font-medium" title={i.ai_summary || undefined}>{i.title}</td>
                         <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{i.area || '-'}</td>
                         <td className="px-4 py-3"><Badge status={i.status} /></td>
                         <td className="px-4 py-3">
@@ -416,6 +470,46 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                   </tbody>
                 </table>
                 {inspections.length === 0 && <EmptyState icon={ClipboardCheck} title="No inspections" sub="Quality inspections appear here" />}
+              </div>
+            )}
+
+            {/* FACILITIES */}
+            {tab === 'facilities' && (
+              <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                <table className="w-full text-[12px]">
+                  <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    {['Facility', 'Issue', 'Category', 'Status', 'Priority', 'Assigned Team', 'AI Triage'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {workOrders.filter(w => !searchQ || w.facility_name?.toLowerCase().includes(searchQ.toLowerCase()) || w.issue_title?.toLowerCase().includes(searchQ.toLowerCase())).map((w) => (
+                      <tr key={w.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                        <td className="px-4 py-3 font-medium">{w.facility_name}</td>
+                        <td className="px-4 py-3 max-w-[220px]" title={w.ai_notes || undefined}>
+                          <span className="flex items-center gap-1.5">
+                            {w.safety_flagged && <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: '#ef4444' }} />}
+                            <span className="block truncate">{w.issue_title}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{humanize(w.category)}</td>
+                        <td className="px-4 py-3"><Badge status={w.status} /></td>
+                        <td className="px-4 py-3">{w.priority ? <Badge status={w.priority} /> : <span style={{ color: colors.inkTertiary }}>-</span>}</td>
+                        <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{w.assigned_team || '-'}</td>
+                        <td className="px-4 py-3">
+                          <button onClick={() => runAgent('Work order triage', w.id, operationsApi.triageOperationsWorkOrder)}
+                            disabled={runningAgent === w.id}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
+                            style={{ background: '#14b8a615', color: '#14b8a6' }}>
+                            {runningAgent === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+                            Triage
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {workOrders.length === 0 && <EmptyState icon={Wrench} title="No work orders" sub="Facility maintenance, safety, and decommission requests appear here" />}
               </div>
             )}
 

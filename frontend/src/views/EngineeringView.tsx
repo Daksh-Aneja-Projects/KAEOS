@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Code2, Server, GitPullRequest, Rocket, Siren, FileText,
-  Bot, Loader2, CheckCircle2, XCircle, RefreshCw, ShieldAlert,
+  Bot, Loader2, CheckCircle2, XCircle, RefreshCw, ShieldAlert, PhoneCall,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
+import { engineeringApi } from '../api/endpoints/engineering';
 import { useTheme } from '../context/ThemeContext';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -19,7 +20,7 @@ import { PAGE_PAD } from '../lib/layout';
 import TableCard from '../components/shared/TableCard';
 import { CountUp } from '../components/CountUp';
 
-type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'analytics';
+type EngTab = 'services' | 'pull-requests' | 'deployments' | 'incidents' | 'postmortems' | 'oncall' | 'analytics';
 
 const TAB_LABEL: Record<EngTab, string> = {
   services: 'Service Catalog',
@@ -27,12 +28,13 @@ const TAB_LABEL: Record<EngTab, string> = {
   deployments: 'Deployments',
   incidents: 'Incidents',
   postmortems: 'Postmortems',
+  oncall: 'On-Call',
   analytics: 'Analytics',
 };
 
 const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const valid: EngTab[] = ['services', 'pull-requests', 'deployments', 'incidents', 'postmortems', 'analytics'];
+  const valid: EngTab[] = ['services', 'pull-requests', 'deployments', 'incidents', 'postmortems', 'oncall', 'analytics'];
   const [tab, setTab] = useState<EngTab>(
     defaultTab && valid.includes(defaultTab) ? defaultTab : 'services'
   );
@@ -43,6 +45,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const [deployments, setDeployments] = useState<any[]>([]);
   const [incidents, setIncidents] = useState<any[]>([]);
   const [postmortems, setPostmortems] = useState<any[]>([]);
+  const [oncall, setOncall] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const bulk = useBulkSelect(incidents, workflows['incident'], (i: any) => i.status);
@@ -52,7 +55,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const [actionMsg, setActionMsg] = useState('');
 
   const loadData = async () => {
-    const [d, s, p, dep, inc, pm, wf] = await Promise.allSettled([
+    const [d, s, p, dep, inc, pm, wf, oc] = await Promise.allSettled([
       api.getEngineeringDashboard(),
       api.getEngineeringServices(),
       api.getPullRequests(),
@@ -60,6 +63,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
       api.getIncidents(),
       api.getPostmortems(),
       api.getDomainWorkflows('engineering'),
+      engineeringApi.getOnCallRotations(),
     ]);
     if (d.status === 'fulfilled') setDashboard(d.value);
     if (s.status === 'fulfilled') setServices(s.value || []);
@@ -68,6 +72,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
     if (inc.status === 'fulfilled') setIncidents(inc.value || []);
     if (pm.status === 'fulfilled') setPostmortems(pm.value || []);
     if (wf.status === 'fulfilled') setWorkflows(wf.value || {});
+    if (oc.status === 'fulfilled') setOncall(oc.value || []);
     setLoading(false);
   };
 
@@ -475,6 +480,65 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
           {postmortems.length === 0 && (
             <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>
               No postmortems recorded.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* On-Call */}
+      {!loading && tab === 'oncall' && (
+        <div className="space-y-3">
+          {oncall.filter((r) => r.active).length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {oncall.filter((r) => r.active).map((r) => (
+                <div key={r.id} style={card} className="p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: '#22c55e18' }}>
+                    <PhoneCall className="w-5 h-5" style={{ color: '#22c55e' }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-bold truncate">{r.engineer_name || 'Unassigned'}</div>
+                    <div className="text-[11px]" style={{ color: colors.inkSubtle }}>
+                      {r.squad} &middot; {humanize(r.role)} on call now
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <TableCard>
+            <table className="w-full text-[12px]" style={{ color: colors.ink }}>
+              <thead>
+                <tr style={{ background: colors.surface2, color: colors.inkSubtle }}>
+                  {['Engineer', 'Squad', 'Role', 'Window', 'Status'].map((h) => (
+                    <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {oncall.map((r) => (
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                    <td className="px-4 py-3 font-medium">{r.engineer_name || 'Unassigned'}</td>
+                    <td className="px-4 py-3">{r.squad}</td>
+                    <td className="px-4 py-3"><Badge text={humanize(r.role)} color="#6366f1" /></td>
+                    <td className="px-4 py-3 text-[11px]" style={{ color: colors.inkSubtle }}>
+                      {r.starts_at ? new Date(r.starts_at).toLocaleString() : '-'}
+                      {' → '}
+                      {r.ends_at ? new Date(r.ends_at).toLocaleString() : '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.active
+                        ? <Badge text="On call now" color="#22c55e" />
+                        : <Badge text={new Date(r.starts_at) > new Date() ? 'Upcoming' : 'Completed'} color="#6b7280" />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+          {oncall.length === 0 && (
+            <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>
+              No on-call rotations scheduled.
             </div>
           )}
         </div>

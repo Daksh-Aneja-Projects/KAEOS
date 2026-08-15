@@ -217,8 +217,8 @@ function JournalTab({ entries }: { entries: any[] }) {
             const sc = posted ? colors.success : colors.warning;
             return (
               <tr key={e.id} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                <td className={`${td} font-mono`} style={{ color: colors.ink }}>{e.entry_number || '—'}</td>
-                <td className={td} style={{ color: colors.inkSubtle }}>{e.entry_date || '—'}</td>
+                <td className={`${td} font-mono`} style={{ color: colors.ink }}>{e.entry_number || '-'}</td>
+                <td className={td} style={{ color: colors.inkSubtle }}>{e.entry_date || '-'}</td>
                 <td className={td} style={{ color: colors.ink }}>
                   <span className="block truncate max-w-[320px]" title={e.description}>{e.description || 'Journal entry'}</span>
                   {e.reference && <span className="text-[11px]" style={{ color: colors.inkTertiary }}>Ref {e.reference}</span>}
@@ -457,8 +457,8 @@ function PeriodsTab({ data, busy, onSet }: { data: any; busy: boolean; onSet: (y
                 <tr key={`${p.fiscal_year}-${p.fiscal_period}`} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
                   <td className={`${td} font-mono`} style={{ color: colors.ink }}>{p.fiscal_year}-{String(p.fiscal_period).padStart(2, '0')}</td>
                   <td className={td}><span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: sc + '1f', color: sc }}>{humanize(p.status)}</span></td>
-                  <td className={td} style={{ color: colors.inkSubtle }}>{p.closed_by || '—'}</td>
-                  <td className={td} style={{ color: colors.inkSubtle }}>{p.closed_at ? new Date(p.closed_at).toLocaleString() : '—'}</td>
+                  <td className={td} style={{ color: colors.inkSubtle }}>{p.closed_by || '-'}</td>
+                  <td className={td} style={{ color: colors.inkSubtle }}>{p.closed_at ? new Date(p.closed_at).toLocaleString() : '-'}</td>
                   <td className={`${td} text-right`}>
                     <button
                       disabled={busy}
@@ -520,10 +520,10 @@ function PaymentsTab({ payments }: { payments: any[] }) {
               const sc = paid ? colors.success : colors.warning;
               return (
                 <tr key={p.id || i} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                  <td className={`${td} font-mono`} style={{ color: colors.ink }}>{p.number || p.id?.slice(0, 8) || '—'}</td>
+                  <td className={`${td} font-mono`} style={{ color: colors.ink }}>{p.number || p.id?.slice(0, 8) || '-'}</td>
                   <td className={td} style={{ color: colors.inkSubtle }}>{humanize(p.method)}</td>
                   <td className={td}><span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: sc + '1f', color: sc }}>{humanize(p.status)}</span></td>
-                  <td className={td} style={{ color: colors.inkSubtle }}>{p.date || '—'}</td>
+                  <td className={td} style={{ color: colors.inkSubtle }}>{p.date || '-'}</td>
                   <td className={`${td} text-right font-mono tabular-nums font-semibold`} style={{ color: colors.ink }}>{money(p.amount)}</td>
                 </tr>
               );

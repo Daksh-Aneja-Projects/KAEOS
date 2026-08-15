@@ -181,3 +181,38 @@ async def test_admin_sets_and_clears_department_scope(client, db):
     resp = await client.put(f"/api/v1/auth/users/{uid}/department",
                             headers=admin, json={"department": None})
     assert resp.status_code == 200 and resp.json()["department"] is None
+
+
+@pytest.mark.asyncio
+async def test_admin_can_scope_users_into_the_regulated_departments(client, db):
+    """PUT /users/{id}/department and POST /users/invite used to hardcode a
+    stale 7-department set and 400 on exactly the 3 newest, most
+    compliance-sensitive departments (Healthcare, Lending, Procurement) even
+    though the frontend's department picker already offered all 10."""
+    from app.models.auth import User, UserRole
+    admin_row = User(id="u-rbac-admin-2", email="rbac.admin2@kaeos.ai",
+                     display_name="RBAC Admin 2", hashed_password="x",
+                     role=UserRole.ADMIN, tenant_id=TENANT, is_active=True)
+    db.add(admin_row)
+    await db.commit()
+    token = _create_token("u-rbac-admin-2", "rbac.admin2@kaeos.ai", "ADMIN", TENANT)
+    admin = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.post("/api/v1/auth/users", headers=admin, json={
+        "email": "healthcare.person@kaeos.ai", "display_name": "Healthcare Person",
+        "password": "a-strong-password-123", "role": "ANALYST"})
+    assert resp.status_code == 200, resp.text
+    uid = resp.json()["id"]
+
+    for dept in ("healthcare", "lending", "procurement"):
+        resp = await client.put(f"/api/v1/auth/users/{uid}/department",
+                                headers=admin, json={"department": dept})
+        assert resp.status_code == 200, f"{dept}: {resp.status_code} {resp.text}"
+        assert resp.json()["department"] == dept
+
+    # The invite flow (a second call site with its own hardcoded set) accepts
+    # them too.
+    resp = await client.post("/api/v1/auth/users/invite", headers=admin, json={
+        "email": "lending.invitee@kaeos.ai", "display_name": "Lending Invitee",
+        "role": "VIEWER", "department": "lending"})
+    assert resp.status_code == 200, resp.text

@@ -1,6 +1,6 @@
 """KAEOS Engineering Domain — Deploy Risk Agent"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,9 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engineering.agents.gated_runner import extract_decision, run_gated_engineering_skill
 from app.engineering.models.core import Service
 from app.engineering.models.delivery import Deployment, PullRequest, RiskLevel
+from app.engineering.models.ops import PipelineRun, PipelineStatus
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
+
+# A pipeline run history that failed this often (or worse) over the recent
+# window is a real risk signal, not noise from one flaky run.
+_PIPELINE_FAILURE_RATE_THRESHOLD_PCT = 30.0
 
 
 class DeployRiskAgent:
@@ -49,6 +54,24 @@ class DeployRiskAgent:
                 )
             )).scalar_one_or_none()
 
+        # Real CI build/test history for the service, not just the single PR's
+        # ci_passing flag at the moment it was last reviewed — a service whose
+        # last 10 pipeline runs are mostly red is riskier to ship to, regardless
+        # of what any one PR says.
+        recent_runs: List[PipelineRun] = []
+        if deploy.service_id:
+            recent_runs = (await db.execute(
+                select(PipelineRun)
+                .where(
+                    PipelineRun.service_id == deploy.service_id,
+                    PipelineRun.tenant_id == tenant_id,
+                    PipelineRun.status.in_([PipelineStatus.SUCCEEDED, PipelineStatus.FAILED]),
+                )
+                .order_by(PipelineRun.started_at.desc())
+                .limit(10)
+            )).scalars().all()
+        pipeline_failure_rate = self._pipeline_failure_rate(recent_runs)
+
         facts = {
             "version": deploy.version,
             "environment": deploy.environment,
@@ -60,6 +83,10 @@ class DeployRiskAgent:
             "open_incidents": service.open_incidents if service else 0,
             "pr_risk": pr.ai_risk_level.value if pr and pr.ai_risk_level else None,
             "pr_ci_passing": pr.ci_passing if pr else None,
+            # None (not 0) when there is no pipeline history to derive from -
+            # the honesty contract forbids presenting "no data" as "0% failure".
+            "recent_pipeline_failure_rate_pct": pipeline_failure_rate,
+            "recent_pipeline_runs_considered": len(recent_runs),
         }
         facts = plain_facts(facts)
 
@@ -68,9 +95,9 @@ class DeployRiskAgent:
             {"step": 2, "name": "Score Risk",
              "prompt": (
                  "Score the risk of shipping this deployment to production. Weigh: service tier, "
-                 "current service health, remaining error budget, open incidents, and the risk of "
-                 "the underlying change. Respond as JSON with keys "
-                 '"risk_level" (LOW|MEDIUM|HIGH|CRITICAL), "risk_score" (0-100), '
+                 "current service health, remaining error budget, open incidents, recent CI "
+                 "pipeline failure history, and the risk of the underlying change. Respond as "
+                 'JSON with keys "risk_level" (LOW|MEDIUM|HIGH|CRITICAL), "risk_score" (0-100), '
                  'and "rationale" (one sentence).'
              )},
         ]
@@ -101,6 +128,16 @@ class DeployRiskAgent:
         }
 
     @staticmethod
+    def _pipeline_failure_rate(runs: List[PipelineRun]) -> Optional[float]:
+        """Failure rate over the recent (SUCCEEDED|FAILED) pipeline runs, or
+        None when there is no history to derive one from — never a fabricated
+        0%."""
+        if not runs:
+            return None
+        failed = sum(1 for r in runs if r.status == PipelineStatus.FAILED)
+        return round(failed / len(runs) * 100, 1)
+
+    @staticmethod
     def _resolve_score(model_answer: Any, facts: Dict[str, Any]) -> float:
         """Deterministic risk score; the model may only refine within bounds."""
         if isinstance(model_answer, (int, float)) and 0 <= float(model_answer) <= 100:
@@ -119,6 +156,9 @@ class DeployRiskAgent:
             score += 15
         if facts.get("pr_ci_passing") is False:
             score += 20
+        pipe_fail = facts.get("recent_pipeline_failure_rate_pct")
+        if pipe_fail is not None and pipe_fail >= _PIPELINE_FAILURE_RATE_THRESHOLD_PCT:
+            score += 15
         return round(min(100.0, score), 1)
 
     @staticmethod
@@ -150,5 +190,8 @@ class DeployRiskAgent:
         budget = facts.get("error_budget_remaining_pct")
         if budget is not None and budget < 25:
             reasons.append(f"only {budget:.0f}% error budget left")
+        pipe_fail = facts.get("recent_pipeline_failure_rate_pct")
+        if pipe_fail is not None and pipe_fail >= _PIPELINE_FAILURE_RATE_THRESHOLD_PCT:
+            reasons.append(f"{pipe_fail:.0f}% of recent CI pipeline runs failed")
         detail = ", ".join(reasons) if reasons else "no elevated risk factors"
         return f"Risk scored {score}/100 ({detail})."

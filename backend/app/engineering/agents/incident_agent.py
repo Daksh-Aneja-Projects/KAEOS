@@ -1,7 +1,7 @@
 """KAEOS Engineering Domain — Incident Triage Agent (IT Ops)"""
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,24 @@ from app.engineering.models.incidents import Incident, IncidentSeverity
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
+
+
+def _change_context(incident: Incident, recent_deploy: Optional[Deployment]) -> Dict[str, Any]:
+    """Real change-management facts for this incident triage, for the
+    CHANGE_MANAGEMENT checker (app/compliance/checkers/operations.py).
+
+    Triage evaluates a SUSPECTED cause after the fact; it is not itself the
+    production change, so ``is_production`` stays honestly unresolved (None)
+    rather than a fabricated verdict. When a causal deploy was correlated, the
+    person who ran it is surfaced as the real implementer; KAEOS does not track
+    a distinct deploy-approver identity, so ``approver`` is intentionally left
+    out rather than invented.
+    """
+    return {
+        "is_production": None,
+        "implementer": recent_deploy.deployed_by if recent_deploy else None,
+        "ticket": incident.incident_number,
+    }
 
 
 class IncidentAgent:
@@ -89,7 +107,10 @@ class IncidentAgent:
         result = await run_gated_engineering_skill(
             skill_id="engineering_incident_triage",
             steps=steps,
-            context={"incident_id": incident_id, "tenant_id": tenant_id, "facts": facts},
+            context={
+                "incident_id": incident_id, "tenant_id": tenant_id, "facts": facts,
+                "change": _change_context(incident, recent_deploy),
+            },
             tenant_id=tenant_id,
         )
 

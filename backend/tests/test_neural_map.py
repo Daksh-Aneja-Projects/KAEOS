@@ -134,5 +134,76 @@ async def test_brain_ingest_note(async_client: AsyncClient, db):
     assert empty.status_code == 422
 
 
+async def _seed_new_departments(db):
+    """Healthcare/Lending/Procurement + one connected connector each, matching
+    the category each department's dept_categories entry expects."""
+    from app.models.domain import Connector
+    from app.workforce.models.core import Department
+
+    db.add(Department(id="dept-hc", tenant_id=T, name="Healthcare", slug="healthcare", status="ACTIVE"))
+    db.add(Department(id="dept-ln", tenant_id=T, name="Lending & Credit", slug="lending", status="ACTIVE"))
+    db.add(Department(id="dept-pr", tenant_id=T, name="Procurement", slug="procurement", status="ACTIVE"))
+    db.add(Connector(id="conn-ehr", tenant_id=T, name="Clinical EHR",
+                      category="clinical", connector_type="API", status="CONNECTED"))
+    db.add(Connector(id="conn-los", tenant_id=T, name="Loan Origination System",
+                      category="core_banking", connector_type="NATIVE", status="CONNECTED"))
+    db.add(Connector(id="conn-esrc", tenant_id=T, name="E-Sourcing Platform",
+                      category="procurement", connector_type="API", status="CONNECTED"))
+    await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("slug,expected_connector", [
+    ("healthcare", "Clinical EHR"),
+    ("lending", "Loan Origination System"),
+    ("procurement", "E-Sourcing Platform"),
+])
+async def test_new_departments_get_connector_nodes(async_client: AsyncClient, db, slug, expected_connector):
+    """dept_categories used to have no entry for these 3 slugs, so their
+    cluster always had zero Connector nodes regardless of what was seeded."""
+    await _seed(db)
+    await _seed_new_departments(db)
+    r = await async_client.get(f"/api/v1/neural/departments/{slug}/graph", headers={"X-Tenant-ID": T})
+    assert r.status_code == 200
+    body = r.json()
+    connectors = [n for n in body["nodes"] if n["type"] == "connector"]
+    assert any(n["label"] == expected_connector for n in connectors), (
+        f"{slug} cluster has no connector node; got {[n['label'] for n in connectors]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_world_includes_new_department_connectors(async_client: AsyncClient, db):
+    """The same fix must hold in the org-wide /neural/world graph, not just
+    the single-department view (both share _cluster_graph)."""
+    await _seed(db)
+    await _seed_new_departments(db)
+    r = await async_client.get("/api/v1/neural/world", headers={"X-Tenant-ID": T})
+    assert r.status_code == 200
+    labels = {n["label"] for n in r.json()["nodes"] if n.get("type") == "connector"}
+    assert {"Clinical EHR", "Loan Origination System", "E-Sourcing Platform"} <= labels
+
+
+def test_seed_connector_catalog_covers_new_departments():
+    """The demo connector catalog (backend/app/core/seed.py) must ship at
+    least one non-AVAILABLE connector per new department's dept_categories
+    category, or the dict entry alone renders nothing on a freshly seeded
+    tenant (the cluster filter is `category in dept_categories and status !=
+    AVAILABLE`, unless an IntegrationMapping row links it - none are seeded)."""
+    from app.core.seed import seed_connectors
+
+    by_category: dict[str, list] = {}
+    for c in seed_connectors():
+        by_category.setdefault(c.category, []).append(c)
+
+    for category in ("clinical", "core_banking", "procurement"):
+        rows = by_category.get(category, [])
+        assert rows, f"no seeded connector has category={category!r}"
+        assert any(c.status != "AVAILABLE" for c in rows), (
+            f"every seeded {category!r} connector is AVAILABLE, so it would "
+            "never surface on the Neural Map without a manual integration link"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

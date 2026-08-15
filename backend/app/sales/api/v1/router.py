@@ -338,27 +338,32 @@ async def predict_forecast(forecast_id: str, tenant: dict = Depends(require_role
 # --- Commission ---
 @router.get("/commission")
 async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Commission calculations for this tenant.
+    """Commission calculations for this tenant, joined to the plan name so the
+    UI never has to show a raw plan_id.
 
     This list had no endpoint at all: the only commission route was the payout
     POST, so callers (including an e2e test) had to reach into the database
     file directly to find an id.
     """
-    from app.sales.models.commission import CommissionCalculation
+    from app.sales.models.commission import CommissionCalculation, CommissionPlan
     q = await db.execute(
-        select(CommissionCalculation).where(CommissionCalculation.tenant_id == tenant_id).limit(200)
+        select(CommissionCalculation, CommissionPlan.plan_name)
+        .outerjoin(CommissionPlan, (CommissionPlan.id == CommissionCalculation.plan_id)
+                   & (CommissionPlan.tenant_id == tenant_id))
+        .where(CommissionCalculation.tenant_id == tenant_id).limit(200)
     )
     return [
         {
             "id": c.id,
             "plan_id": c.plan_id,
+            "plan_name": plan_name,
             "opportunity_id": c.opportunity_id,
             "deal_value": float(c.deal_value or 0),
             "calculated_payout": float(c.calculated_payout or 0),
             "is_approved": c.is_approved,
             "paid_date": str(c.paid_date) if c.paid_date else None,
         }
-        for c in q.scalars().all()
+        for c, plan_name in q.all()
     ]
 
 
@@ -472,3 +477,94 @@ async def bulk_transition_sales(
     if not spec:
         raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
     return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+
+# ═══════════════════════════════════════════════════════════════════════
+# Data Privacy (CCPA / TCPA / DSAR) — real fail-closed call sites for the
+# deterministic checkers in app/compliance/checkers/crm.py, so "sales has
+# CCPA/TCPA/DSAR compliance" is an exercised control, not just a registered
+# checker no code path ever calls.
+# ═══════════════════════════════════════════════════════════════════════
+from typing import List as _List  # noqa: E402
+from app.sales.services.privacy import (  # noqa: E402
+    PrivacyCheckBlocked, check_contact, check_data_sale, check_dsar,
+)
+
+
+class LeadContactCheck(BaseModel):
+    channel: str = Field(..., description="call, sms, text, autodial, or prerecorded")
+    do_not_contact: Optional[_List[str]] = None
+    consent: Optional[bool] = None
+
+
+@router.post("/leads/{lead_id}/contact-check")
+async def check_lead_contact(
+    lead_id: str, body: LeadContactCheck,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """TCPA gate: verifies a lead can be called or texted before a rep or
+    dialer reaches out. Fail-closed - a BLOCK stops the contact."""
+    tenant_id = tenant["tenant_id"]
+    lead = (await db.execute(select(Lead).where(
+        Lead.id == lead_id, Lead.tenant_id == tenant_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(404, detail=f"Lead {lead_id} not found")
+    try:
+        verdict = await check_contact(db, tenant_id, lead=lead, channel=body.channel,
+                                      do_not_contact=body.do_not_contact, consent=body.consent)
+    except PrivacyCheckBlocked as e:
+        raise HTTPException(403, detail={"message": str(e), "verdict": e.verdict}) from e
+    return verdict
+
+
+class AccountDataSaleCheck(BaseModel):
+    opted_out_of_sale: bool
+
+
+@router.post("/accounts/{account_id}/data-sale-check")
+async def check_account_data_sale(
+    account_id: str, body: AccountDataSaleCheck,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """CCPA gate: verifies an account's data can be shared with a partner
+    (e.g. a data-enrichment vendor sync) before it runs."""
+    tenant_id = tenant["tenant_id"]
+    account = (await db.execute(select(Account).where(
+        Account.id == account_id, Account.tenant_id == tenant_id))).scalar_one_or_none()
+    if not account:
+        raise HTTPException(404, detail=f"Account {account_id} not found")
+    try:
+        verdict = await check_data_sale(db, tenant_id, account=account,
+                                        opted_out_of_sale=body.opted_out_of_sale)
+    except PrivacyCheckBlocked as e:
+        raise HTTPException(403, detail={"message": str(e), "verdict": e.verdict}) from e
+    return verdict
+
+
+class DSARCheck(BaseModel):
+    subject_type: str = Field(..., description="lead or account")
+    subject_id: str
+    regime: str = Field(..., description="GDPR or CCPA")
+    request_date: _date
+    fulfilled_date: Optional[_date] = None
+    status: Optional[str] = None
+    as_of: Optional[_date] = None
+
+
+@router.post("/privacy/dsar-check")
+async def check_dsar_request(
+    body: DSARCheck, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """DSAR gate: verifies a data-subject access/deletion request for a lead
+    or account is within its statutory response window (GDPR one calendar
+    month, CCPA 45 days)."""
+    tenant_id = tenant["tenant_id"]
+    try:
+        verdict = await check_dsar(
+            db, tenant_id, subject_type=body.subject_type, subject_id=body.subject_id,
+            regime=body.regime, request_date=str(body.request_date),
+            fulfilled_date=str(body.fulfilled_date) if body.fulfilled_date else None,
+            status=body.status, as_of=str(body.as_of) if body.as_of else None,
+        )
+    except PrivacyCheckBlocked as e:
+        raise HTTPException(403, detail={"message": str(e), "verdict": e.verdict}) from e
+    return verdict

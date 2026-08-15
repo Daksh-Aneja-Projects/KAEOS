@@ -49,6 +49,10 @@ class ProposalGenAgent:
                     "prompt": f"Draft a proposal outline for this opportunity: {facts}"}],
             context={
                 "opp_id": opp_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: drafting a proposal for an engaged
+                # opportunity is a legitimate interest (this also always routes
+                # to HITL below, so a human reviews it before it ships).
+                "legal_basis": "legitimate_interests:sales_proposal_generation",
                 "instruction": "Output strict JSON: {executive_summary, pricing_approach, key_terms}.",
             },
             tenant_id=tenant_id,

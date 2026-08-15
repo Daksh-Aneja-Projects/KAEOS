@@ -10,7 +10,7 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.legal.agents.gated_runner import run_gated_legal_skill
+from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.litigation import Case
 from app.services.json_utils import plain_facts
 
@@ -47,7 +47,7 @@ class LitigationAgent:
             {"step": 2, "name": "Risk Score",
              "prompt": "Produce a risk score and exposure assessment from the case facts."},
         ]
-        return await run_gated_legal_skill(
+        result = await run_gated_legal_skill(
             skill_id="legal_litigation_eval",
             steps=steps,
             context={
@@ -56,3 +56,33 @@ class LitigationAgent:
             },
             tenant_id=tenant_id,
         )
+        if result.get("status") == "PENDING_HITL":
+            return {"status": "PENDING_HITL", "case_id": case_id, "execution_id": result.get("execution_id")}
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+
+            # Persist the AI's assessment onto the case outcome narrative. Only
+            # append fields the model actually returned - never fabricate a
+            # verdict for a field it left out.
+            parts = []
+            if decision.get("case_strength"):
+                parts.append(f"Case strength: {decision['case_strength']}.")
+            if decision.get("risk_score") is not None:
+                parts.append(f"Risk score: {decision['risk_score']}.")
+            if decision.get("settle_or_fight"):
+                parts.append(f"Recommendation: {decision['settle_or_fight']}.")
+            if decision.get("rationale"):
+                parts.append(str(decision["rationale"]))
+            if parts:
+                case.outcome = " ".join(parts)
+
+            db.add(case)
+            await db.commit()
+
+            return {
+                "status": "success",
+                "case_id": case_id,
+                "decision": decision,
+                "execution_id": result.get("execution_id"),
+            }
+        return result

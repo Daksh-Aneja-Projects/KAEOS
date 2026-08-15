@@ -115,3 +115,121 @@ def test_all_three_frameworks_are_backed():
     # None should return UNBACKED (which would be blocking): the checkers exist.
     res = run_checks(["SOC2", "ISO27001", "CHANGE_FREEZE"], {})
     assert all(r["status"] != CheckStatus.UNBACKED.value for r in res["results"])
+
+
+# --- CHANGE_MANAGEMENT (operations.py) -- Engineering now populates context ---
+#
+# Regression coverage: CodeReviewAgent.review_pull_request and
+# IncidentAgent.triage_incident used to build a gate context with no "change"
+# key at all, so this checker returned NOT_APPLICABLE on literally every run
+# (a permanent no-op) and the gated_runner's "change_record_logged" bridge was
+# dead code (this checker never read that key). Both agents now populate
+# context['change'] with real facts before calling run_gated_engineering_skill.
+
+def test_change_management_not_applicable_without_change_key():
+    # Baseline: this is the bug being fixed - no 'change' key at all.
+    assert _status(run_checks(["CHANGE_MANAGEMENT"], {}),
+                   "CHANGE_MANAGEMENT") == CheckStatus.NOT_APPLICABLE.value
+
+
+def test_change_management_real_verdict_for_engineering_review_context():
+    """The exact shape CodeReviewAgent/IncidentAgent now build (is_production
+    explicitly None - a review/triage is advisory, not the production change
+    event itself) must yield a real ADVISORY verdict, never NOT_APPLICABLE."""
+    ctx = {"change": {"is_production": None, "implementer": "ravi.iyer@acme.com",
+                       "ticket": "PR-482"}}
+    res = run_checks(["CHANGE_MANAGEMENT"], ctx)
+    status = _status(res, "CHANGE_MANAGEMENT")
+    assert status != CheckStatus.NOT_APPLICABLE.value
+    assert status == CheckStatus.ADVISORY.value
+
+
+def test_change_management_blocks_known_production_change_without_approver():
+    # A genuinely known production change (is_production=True) with an
+    # implementer and ticket but no named approver correctly BLOCKs - proving
+    # the checker evaluates real data, not just NOT_APPLICABLE, once it is told
+    # this specific action targets production.
+    ctx = {"change": {"is_production": True, "implementer": "dana.w@acme.com",
+                       "ticket": "DEPLOY-v2.14.0"}}
+    assert _status(run_checks(["CHANGE_MANAGEMENT"], ctx),
+                   "CHANGE_MANAGEMENT") == CheckStatus.BLOCK.value
+
+
+def test_change_management_passes_with_segregated_approver_and_ticket():
+    ctx = {"change": {"is_production": True, "implementer": "dana.w@acme.com",
+                       "approver": "ravi.iyer@acme.com", "ticket": "DEPLOY-v2.14.0"}}
+    assert _status(run_checks(["CHANGE_MANAGEMENT"], ctx),
+                   "CHANGE_MANAGEMENT") == CheckStatus.PASS.value
+
+
+# --- Engineering agents' _change_context() builders: real facts, no fabrication
+
+def test_code_review_change_context_is_honest_and_never_fabricates_approver():
+    from app.engineering.agents.code_review_agent import _change_context
+    from app.engineering.models.delivery import PRStatus, PullRequest
+
+    pr = PullRequest(id="pr1", tenant_id="t1", number=482, title="x", status=PRStatus.IN_REVIEW)
+    ctx = _change_context(pr, "ravi.iyer@acme.com")
+
+    assert ctx["is_production"] is None      # honest: review isn't the production event
+    assert ctx["implementer"] == "ravi.iyer@acme.com"
+    assert ctx["ticket"] == "PR-482"
+    assert "approver" not in ctx              # KAEOS tracks no named-approver identity
+
+
+def test_code_review_change_context_without_known_author():
+    from app.engineering.agents.code_review_agent import _change_context
+    from app.engineering.models.delivery import PRStatus, PullRequest
+
+    pr = PullRequest(id="pr1", tenant_id="t1", number=97, title="x", status=PRStatus.APPROVED)
+    ctx = _change_context(pr, None)
+    assert ctx["implementer"] is None
+    assert ctx["ticket"] == "PR-97"
+
+
+def test_incident_change_context_uses_real_deploy_fields():
+    from app.engineering.agents.incident_agent import _change_context
+    from app.engineering.models.delivery import Deployment
+    from app.engineering.models.incidents import Incident
+
+    incident = Incident(id="i1", tenant_id="t1", incident_number="INC-2026-0042", title="x")
+    deploy = Deployment(id="d1", tenant_id="t1", version="v2.14.0", deployed_by="dana.w@acme.com")
+    ctx = _change_context(incident, deploy)
+
+    assert ctx["is_production"] is None
+    assert ctx["implementer"] == "dana.w@acme.com"
+    assert ctx["ticket"] == "INC-2026-0042"
+
+
+def test_incident_change_context_without_correlated_deploy():
+    from app.engineering.agents.incident_agent import _change_context
+    from app.engineering.models.incidents import Incident
+
+    incident = Incident(id="i1", tenant_id="t1", incident_number="INC-2026-0041", title="x")
+    ctx = _change_context(incident, None)
+    assert ctx["implementer"] is None
+    assert ctx["ticket"] == "INC-2026-0041"
+
+
+def test_engineering_change_context_wiring_gives_real_verdict_end_to_end():
+    """Wiring proof: run the ACTUAL agent-built context through the ACTUAL
+    checker and confirm it is no longer the NOT_APPLICABLE no-op."""
+    from app.engineering.agents.code_review_agent import _change_context
+    from app.engineering.models.delivery import PRStatus, PullRequest
+
+    pr = PullRequest(id="pr1", tenant_id="t1", number=482, title="x", status=PRStatus.IN_REVIEW)
+    res = run_checks(["CHANGE_MANAGEMENT"], {"change": _change_context(pr, "ravi.iyer@acme.com")})
+    status = _status(res, "CHANGE_MANAGEMENT")
+    assert status == CheckStatus.ADVISORY.value
+    assert status != CheckStatus.NOT_APPLICABLE.value
+
+
+def test_gated_runner_has_no_dead_change_record_logged_bridge():
+    """The old `ctx["change_record_logged"] = True` bridge line is gone -
+    no checker ever read that key, so it was dead code. Assert it no longer
+    leaks into the context gated_engineering skills build."""
+    import inspect
+
+    from app.engineering.agents import gated_runner
+    src = inspect.getsource(gated_runner)
+    assert "change_record_logged" not in src

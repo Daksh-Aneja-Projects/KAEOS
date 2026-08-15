@@ -9,7 +9,7 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.operations.agents.gated_runner import run_gated_operations_skill
+from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.procurement import PurchaseRequest
 from app.services.json_utils import plain_facts
 
@@ -37,7 +37,7 @@ class ProcurementAgent:
             "department": req.department,
         }
         facts = plain_facts(facts)
-        return await run_gated_operations_skill(
+        result = await run_gated_operations_skill(
             skill_id="operations_procurement_audit",
             steps=[{"step": 1, "name": "Audit",
                     "prompt": f"Audit this purchase request for policy compliance and price reasonableness: {facts}"}],
@@ -47,3 +47,28 @@ class ProcurementAgent:
             },
             tenant_id=tenant_id,
         )
+
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+            # Advisory only — the request still moves through the governed
+            # workflow transitions (/purchase-requests/{id}/transition), which
+            # keep the WorkflowEvent audit trail this note does not replace.
+            note_parts = []
+            if decision.get("compliant") is not None:
+                note_parts.append(f"Policy compliant: {'Yes' if decision.get('compliant') else 'No'}.")
+            if decision.get("price_reasonable") is not None:
+                note_parts.append(f"Price reasonable: {'Yes' if decision.get('price_reasonable') else 'No'}.")
+            flags = decision.get("flags")
+            if flags:
+                flags_text = flags if isinstance(flags, str) else ", ".join(str(f) for f in flags)
+                if flags_text.strip():
+                    note_parts.append(f"Flags: {flags_text}.")
+            verdict = decision.get("approve_or_review")
+            if verdict:
+                note_parts.append(f"AI recommendation: {verdict}.")
+            req.ai_audit_note = " ".join(note_parts) if note_parts else None
+            db.add(req)
+            await db.commit()
+            result = {**result, "decision": decision}
+
+        return result

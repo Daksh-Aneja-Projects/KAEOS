@@ -42,8 +42,53 @@ export interface GoodsReceiptRow {
 export interface VendorRow {
   vendor: string;
   vendor_id: string | null;
+  service_provided: string | null;
+  contract_value: number;
+  renewal_date: string | null;      // ISO date, or null if not on file
+  performance_score: number | null; // 0-100, null if no performance sheet yet (honesty contract)
   po_count: number;
   committed_spend: number;
+}
+
+/**
+ * Result of routing a requisition or PO through the gated 7-gate pipeline
+ * (compliance -> fairness -> confidence/HITL -> debate -> execute -> audit).
+ * ``status`` mirrors app.agents.runtime.AgentExecutor.execute_skill: one of
+ * SUCCESS_CLEAN | PENDING_HITL | BLOCKED_COMPLIANCE | BLOCKED_FAIRNESS |
+ * BLOCKED_DEBATE | ESCALATED_DEBATE | HUMAN_OVERRIDDEN | FAILED_ACTUATION |
+ * FAILED_AUDIT. The frontend translates it to plain English - never render it
+ * raw.
+ */
+export interface GatedRunResult {
+  status: string;
+  execution_id?: string;
+  reason?: string;
+}
+
+/** Sourcing Agent's parsed verdict on a requisition (present when status is SUCCESS_CLEAN). */
+export interface SourcingAssessment extends GatedRunResult {
+  assessment?: {
+    compliant?: boolean;
+    price_reasonable?: boolean;
+    recommend_po?: boolean;
+    flags?: string[];
+  };
+}
+
+/** Spend Guard Agent's advisory read on a PO: the same four gates the approval
+ * endpoint enforces, plus a gated plain-English recommendation. Read-only -
+ * it never approves or blocks the PO itself. */
+export interface SpendGuardResult {
+  po_id: string;
+  gates: ProcurementGate[];
+  blocking_controls: string[];
+  safe_to_approve: boolean;
+  gated: GatedRunResult;
+  rationale?: {
+    safe_to_approve?: boolean;
+    blocking_controls?: string[];
+    recommendation?: string;
+  };
 }
 
 /** One source-to-pay control outcome (spend-auth, SoD, three-way match, OFAC). */
@@ -131,4 +176,19 @@ export const procurementApi = {
     request<ProcurementGate>('/procurement/vendors/screen', {
       method: 'POST', body: JSON.stringify({ vendor_name: vendorName, sanctions_list: sanctionsList ?? null }),
     }),
+
+  /** Sourcing Agent: gated policy-fit + price-reasonableness read on a
+   * requisition, before a PO is raised. Advisory - writes nothing. */
+  assessRequisition: (requestId: string) =>
+    request<SourcingAssessment>(`/procurement/requisitions/${requestId}/assess`, { method: 'POST' }),
+
+  /** Spend Guard Agent: the same four control gates the approval endpoint
+   * enforces, plus a gated plain-English recommendation for the approver.
+   * Read-only - meant to run alongside (not instead of) approvePurchaseOrder. */
+  guardPurchaseOrder: (
+    poId: string,
+    body?: { approver_limit?: number; sanctions_list?: any[] },
+  ) => request<SpendGuardResult>(`/procurement/purchase-orders/${poId}/guard`, {
+    method: 'POST', body: JSON.stringify(body || {}),
+  }),
 };

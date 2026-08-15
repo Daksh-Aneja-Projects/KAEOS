@@ -57,6 +57,10 @@ class ForecastAgent:
                     "prompt": f"Predict the quarter outcome from these pipeline numbers: {facts}"}],
             context={
                 "forecast_id": forecast_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: aggregate quota forecasting is a
+                # legitimate business interest (no individual data subject
+                # decision is made here).
+                "legal_basis": "legitimate_interests:sales_forecasting",
                 "instruction": "Output strict JSON: {predicted_amount, quota_attainment_pct, confidence, risks}.",
             },
             tenant_id=tenant_id,

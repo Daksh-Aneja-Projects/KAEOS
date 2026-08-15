@@ -25,16 +25,22 @@ _KIND_DEPT = {
     "SUPPLY_CHAIN": "operations", "MARKET": "finance", "NEWS": None,
 }
 
-# KAEOS is a fixed 7-domain platform; these canonical departments always exist in
-# the twin. Skill departments may be tagged with aliases, normalized here.
-_CANON = ["finance", "hr", "sales", "support", "operations", "legal", "engineering", "marketing"]
+# KAEOS is a fixed 10-department platform; these canonical departments always
+# exist in the twin. Skill departments may be tagged with aliases, normalized
+# here.
+_CANON = ["finance", "hr", "sales", "support", "operations", "legal", "engineering",
+          "marketing", "healthcare", "lending", "procurement"]
 _ALIAS = {
     "human_resources": "hr", "people": "hr", "workforce": "hr",
     "customer_support": "support", "customersupport": "support", "cx": "support", "service": "support",
-    "ops": "operations", "supply_chain": "operations", "procurement": "operations",
+    "ops": "operations", "supply_chain": "operations",
     "eng": "engineering", "platform": "engineering", "it": "engineering",
     "revenue": "sales", "gtm": "sales", "growth": "marketing", "demand_gen": "marketing",
     "compliance": "legal", "risk_legal": "legal",
+    "health": "healthcare", "clinical": "healthcare",
+    "banking": "lending", "credit": "lending",
+    # "procurement" is deliberately NOT aliased to "operations" - it shipped its
+    # own gated_runner.py (domain="procurement") and is first-class in _CANON.
 }
 # Text tokens that map a phrase to a canonical department.
 _DEPT_TEXT = {
@@ -42,10 +48,16 @@ _DEPT_TEXT = {
     "hr": ["hr", "human resources", "employee", "hiring", "headcount", "payroll"],
     "sales": ["sales", "pipeline", "deal", "revenue"],
     "support": ["support", "customer support", "ticket", "service desk"],
-    "operations": ["operations", "ops", "supply chain", "vendor", "supplier", "logistics", "procurement"],
+    "operations": ["operations", "ops", "supply chain", "vendor", "supplier", "logistics"],
     "legal": ["legal", "compliance", "regulation", "regulatory", "contract", "gdpr", "sec ", "disclosure"],
     "engineering": ["engineering", "security", "cve", "vulnerability", "deploy", "infrastructure", "outage", "system"],
     "marketing": ["marketing", "campaign", "brand"],
+    "healthcare": ["healthcare", "hipaa", "patient", "clinical", "phi",
+                   "protected health information", "consent", "diagnosis"],
+    "lending": ["lending", "loan", "credit", "underwrite", "underwriting",
+                "adverse action", "borrower", "fair lending", "mortgage"],
+    "procurement": ["procurement", "purchase order", "rfq", "sourcing",
+                    "requisition", "three-way match", "spend authorization"],
 }
 
 
@@ -55,8 +67,9 @@ def _canon_dept(raw: str) -> str:
 
 
 async def _twin_departments(db: AsyncSession, tenant_id: str) -> dict[str, list[str]]:
-    """The org's canonical departments -> their skill ids. The 7 governed domains
-    always exist; skills add specificity and are normalized to canonical names."""
+    """The org's canonical departments -> their skill ids. The 10 governed
+    domains always exist; skills add specificity and are normalized to
+    canonical names."""
     rows = (await db.execute(
         select(Skill.department, Skill.skill_id).where(
             Skill.tenant_id == tenant_id, Skill.status == "ACTIVE")

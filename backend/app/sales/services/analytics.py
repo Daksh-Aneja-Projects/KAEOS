@@ -69,14 +69,14 @@ async def sales_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
     insights = []
     if stalled:
         insights.append({"severity": "warning",
-                         "message": f"{stalled} open opportunities are flagged as stalled — nudge the owners."})
+                         "message": f"{stalled} open opportunities are flagged as stalled, nudge the owners."})
     if win_rate is not None and win_rate < 25 and closed >= 4:
         insights.append({"severity": "warning",
-                         "message": f"Win rate is {win_rate:.0f}% — below the 25% healthy floor."})
+                         "message": f"Win rate is {win_rate:.0f}%, below the 25% healthy floor."})
     neg_count = by_stage.get("NEGOTIATION", (0, 0))[0]
     if open_count and neg_count == 0:
         insights.append({"severity": "info",
-                         "message": "No deals in negotiation — late-stage pipeline is empty."})
+                         "message": "No deals in negotiation, late-stage pipeline is empty."})
     if not insights:
         insights.append({"severity": "info", "message": "Pipeline health is nominal."})
 

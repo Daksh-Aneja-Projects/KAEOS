@@ -4,6 +4,11 @@ One row per tenant. Absent = the app themes with KAEOS defaults (see the API's
 DEFAULTS), so an unset tenant is a valid, fully-themed state, never an error.
 Brand assets only: no secrets here, so GET is readable by any authed tenant user
 (the SPA needs it to paint the shell); PUT is admin-only.
+
+NOT seed-populated on purpose: this is a tenant's own opt-in choice (set via
+PUT /branding), not derivable data. Seeding a fake brand for the demo tenant
+would misrepresent an unconfigured tenant as one that had actively white-labeled
+itself. An absent row is the honest, fully-functional default state (see above).
 """
 from sqlalchemy import Column, String, DateTime
 from sqlalchemy.sql import func

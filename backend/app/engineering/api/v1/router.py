@@ -4,6 +4,7 @@ KAEOS Engineering Domain — API v1
 Engineering + IT Ops surface: service catalog, pull requests, deployments,
 incidents, postmortems, dashboard, and the three gated AI agents.
 """
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +20,7 @@ from app.engineering.agents.incident_agent import IncidentAgent
 from app.engineering.models.core import Engineer, Service
 from app.engineering.models.delivery import Deployment, PullRequest
 from app.engineering.models.incidents import Incident, Postmortem
+from app.engineering.models.ops import OnCallRotation, PipelineRun
 
 import logging
 
@@ -145,6 +147,49 @@ async def list_engineers(
     } for e in engineers]
 
 
+# ── On-call rotations ─────────────────────────────────────────────────────────
+
+def _naive_utc(dt):
+    """Postgres preserves tzinfo on a DateTime(timezone=True) column; SQLite
+    (local dev) hands it back naive. Strip tzinfo from whichever side has it so
+    the two are always comparable regardless of backend."""
+    return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
+
+
+def _rotation_row(r: OnCallRotation, engineers_by_id: dict) -> dict:
+    eng = engineers_by_id.get(r.engineer_id)
+    now = _naive_utc(datetime.now(timezone.utc))
+    starts, ends = _naive_utc(r.starts_at), _naive_utc(r.ends_at)
+    active = bool(starts and ends and starts <= now <= ends)
+    return {
+        "id": r.id, "engineer_id": r.engineer_id,
+        "engineer_name": eng.name if eng else None,
+        "squad": r.squad, "role": _enum(r.role), "active": active,
+        "starts_at": r.starts_at.isoformat() if r.starts_at else None,
+        "ends_at": r.ends_at.isoformat() if r.ends_at else None,
+    }
+
+
+@router.get("/oncall")
+async def list_oncall_rotations(
+    tenant_id: str = Depends(get_tenant_id),
+    squad: Optional[str] = None,
+    active_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """On-call schedule: who is (or was, or will be) paged for each squad."""
+    q = select(OnCallRotation).where(OnCallRotation.tenant_id == tenant_id)
+    if squad:
+        q = q.where(OnCallRotation.squad == squad)
+    rotations = (await db.execute(q.order_by(OnCallRotation.starts_at.desc()).limit(200))).scalars().all()
+    engineers = (await db.execute(
+        select(Engineer).where(Engineer.tenant_id == tenant_id)
+    )).scalars().all()
+    engineers_by_id = {e.id: e for e in engineers}
+    rows = [_rotation_row(r, engineers_by_id) for r in rotations]
+    return [r for r in rows if r["active"]] if active_only else rows
+
+
 # ── Pull requests ─────────────────────────────────────────────────────────────
 
 @router.get("/pull-requests")
@@ -215,6 +260,34 @@ async def list_deployments(
         "started_at": d.started_at.isoformat() if d.started_at else None,
         "duration_seconds": d.duration_seconds,
     } for d in deploys]
+
+
+# ── CI pipeline runs ─────────────────────────────────────────────────────────
+
+@router.get("/pipeline-runs")
+async def list_pipeline_runs(
+    tenant_id: str = Depends(get_tenant_id),
+    service_id: Optional[str] = None,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """CI build/test history - the real signal behind the deploy-risk agent's
+    score, beyond a single PR's ci_passing flag."""
+    q = select(PipelineRun).where(PipelineRun.tenant_id == tenant_id)
+    if service_id:
+        q = q.where(PipelineRun.service_id == service_id)
+    if status:
+        q = q.where(PipelineRun.status == status)
+    runs = (await db.execute(q.order_by(PipelineRun.started_at.desc()).limit(200))).scalars().all()
+    return [{
+        "id": r.id, "service_id": r.service_id, "pull_request_id": r.pull_request_id,
+        "pipeline_name": r.pipeline_name, "run_number": r.run_number, "status": _enum(r.status),
+        "trigger": r.trigger, "branch": r.branch, "commit_sha": r.commit_sha,
+        "tests_passed": r.tests_passed, "tests_failed": r.tests_failed,
+        "duration_seconds": r.duration_seconds,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+    } for r in runs]
 
 
 @router.post("/deployments/{deployment_id}/assess")
