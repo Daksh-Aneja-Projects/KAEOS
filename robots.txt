@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://daksh-aneja-projects.github.io/KAEOS/sitemap.xml
