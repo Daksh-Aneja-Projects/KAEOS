@@ -156,7 +156,7 @@
   .sa-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   .sa-num { font-family: var(--mono); font-weight: 700; font-size: 29px; line-height: 1; background: var(--grad-3); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .sa-num .pct { font-size: 15px; }
-  .sa-cap { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin-top: 6px; }
+  .sa-cap { font-size: 8.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin-top: 4px; white-space: nowrap; }
   .sa-meta { flex: 1; min-width: 190px; }
   .sa-live { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--emerald); margin-bottom: 9px; }
   .sa-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); animation: blink 2.2s ease-in-out infinite; }
@@ -480,7 +480,7 @@
     </div>
     <div class="stats">
       <div class="stat"><div class="num" data-count="10">0</div><div class="lbl">AI Departments</div></div>
-      <div class="stat"><div class="num" data-count="48">0</div><div class="lbl">Agents on Duty</div></div>
+      <div class="stat"><div class="num" data-count="51">0</div><div class="lbl">Agents on Duty</div></div>
       <div class="stat"><div class="num" data-count="7">0</div><div class="lbl">Governance Gates</div></div>
       <div class="stat"><div class="num" data-count="441">0</div><div class="lbl">E2E Tests</div></div>
       <div class="stat"><div class="num" data-count="0">0</div><div class="lbl">Invented Numbers</div></div>
@@ -948,15 +948,29 @@ docker compose up --build</div>
     var RY = Math.min(H * 0.46, box.height / 2 + 64);
     ringCy = cy; ringRy = RY;
     brain.x = W / 2;
-    /* Hub line clamps at H-96; keep the brain a clear band below it. */
-    brain.y = Math.min(H - 34, cy + RY + 132);
+    /* Hub line clamps at H-96; keep the brain a clear band below it, and
+       never inside the copy block. Hidden when the viewport leaves no band. */
+    var innerBottom = box.bottom - heroBox.top;
+    brain.y = Math.min(H - 34, Math.max(cy + RY + 132, innerBottom + 56));
+    brain.hide = brain.y < innerBottom + 40;
     brain.r = Math.max(20, Math.min(32, W * 0.024));
+    /* The copy block (headline, console, stats) is a hard exclusion zone:
+       a hub that would land inside it gets pushed to the nearest side rail,
+       and hidden entirely when the viewport has no rail to push it to.
+       Inflation covers the hub glow plus the label drawn above/below it. */
+    var ex = { left: box.left - heroBox.left - 46, right: box.right - heroBox.left + 46,
+               top: box.top - heroBox.top - 36, bottom: box.bottom - heroBox.top + 40 };
     for (var i = 0; i < n; i++) {
       var deg = 168 - (i * (168 - 12) / (n - 1));   /* 168 deg to 12 deg */
       var a = deg * Math.PI / 180;
       var hx = W / 2 + Math.cos(a) * RX;
       var hy = Math.min(H - 96, cy + Math.sin(a) * RY);
-      hubs.push({ x: hx, y: hy, r: Math.max(9, Math.min(14, W * 0.01)), c: COLORS[i], name: NAMES[i], ph: Math.random() * 6.28 });
+      var hide = false;
+      if (hx > ex.left && hx < ex.right && hy > ex.top && hy < ex.bottom) {
+        hx = hx < W / 2 ? ex.left - 14 : ex.right + 14;
+        if (hx < 40 || hx > W - 40) hide = true;   /* no side rail at this width */
+      }
+      hubs.push({ x: hx, y: hy, r: Math.max(9, Math.min(14, W * 0.01)), c: COLORS[i], name: NAMES[i], ph: Math.random() * 6.28, hide: hide });
       var na = 3 + (i % 2);
       for (var j = 0; j < na; j++) {
         agents.push({
@@ -1005,20 +1019,23 @@ docker compose up --build</div>
     }
     ctx.globalAlpha = 1;
 
+    var lastVisible = -1;
     for (var i = 0; i < hubs.length; i++) {
       var h = hubs[i];
+      if (h.hide) continue;
       var g = ctx.createLinearGradient(h.x, h.y, brain.x, brain.y);
       g.addColorStop(0, h.c + "55"); g.addColorStop(1, "rgba(99,102,241,0.10)");
       ctx.strokeStyle = g; ctx.lineWidth = 1.2;
       ctx.setLineDash([3, 9]);
       ctx.lineDashOffset = -t * 26;
-      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(brain.x, brain.y); ctx.stroke();
+      if (!brain.hide) { ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(brain.x, brain.y); ctx.stroke(); }
       ctx.setLineDash([]);
-      if (i > 0) {
-        var h0 = hubs[i - 1];
+      if (lastVisible >= 0) {
+        var h0 = hubs[lastVisible];
         ctx.strokeStyle = "rgba(148, 163, 194, 0.10)"; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(h0.x, h0.y); ctx.lineTo(h.x, h.y); ctx.stroke();
       }
+      lastVisible = i;
     }
 
     for (var q = pulses.length - 1; q >= 0; q--) {
@@ -1026,6 +1043,7 @@ docker compose up --build</div>
       pu.t += 0.011;
       if (pu.t >= 1) { pulses.splice(q, 1); continue; }
       var hh = hubs[pu.hub];
+      if (hh.hide || brain.hide) { pulses.splice(q, 1); continue; }
       var tt = pu.dir === 1 ? pu.t : 1 - pu.t;
       var px = hh.x + (brain.x - hh.x) * tt;
       var py = hh.y + (brain.y - hh.y) * tt;
@@ -1037,8 +1055,9 @@ docker compose up --build</div>
 
     for (var a = 0; a < agents.length; a++) {
       var ag = agents[a];
-      var pos = agentPos(ag, t);
       var hb = hubs[ag.hub];
+      if (hb.hide) continue;
+      var pos = agentPos(ag, t);
       var dxm = pos.x - mouse.x, dym = pos.y - mouse.y;
       var dm = Math.sqrt(dxm * dxm + dym * dym);
       if (dm > 0 && dm < 90) { pos.x += dxm / dm * (90 - dm) * 0.25; pos.y += dym / dm * (90 - dm) * 0.25; }
@@ -1052,6 +1071,7 @@ docker compose up --build</div>
 
     for (var m = 0; m < hubs.length; m++) {
       var hu = hubs[m];
+      if (hu.hide) continue;
       var breathe = 1 + Math.sin(t * 1.4 + hu.ph) * 0.08;
       var rg = ctx.createRadialGradient(hu.x, hu.y, 0, hu.x, hu.y, hu.r * 3.2);
       rg.addColorStop(0, hu.c + "38"); rg.addColorStop(1, "rgba(0,0,0,0)");
@@ -1080,6 +1100,7 @@ docker compose up --build</div>
       }
     }
 
+    if (brain.hide) { return; }
     var bg2 = ctx.createRadialGradient(brain.x, brain.y, 0, brain.x, brain.y, brain.r * 4);
     bg2.addColorStop(0, "rgba(99, 102, 241, 0.30)");
     bg2.addColorStop(0.5, "rgba(34, 211, 238, 0.10)");
