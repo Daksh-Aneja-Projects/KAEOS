@@ -52,11 +52,12 @@ async def run_all_seeds():
         await AuthService.seed_admin_user(session)
     logger.info("[Phase 1b] Admin account provisioned ✓")
 
-    # Phase 2: Department domains (HR, Finance, Legal, Sales, Support, Operations)
+    # Phase 2: Department domains (HR, Finance, Legal, Sales, Support, Operations,
+    # Engineering, Healthcare, Lending; Procurement piggybacks on Operations)
     logger.info("\n[Phase 2] Domain-specific seeds...")
-    from app.core.domain_seed import seed_domains_if_empty
+    from app.core.domain_seed import seed_domains_if_empty, _DOMAINS
     await seed_domains_if_empty()
-    logger.info("[Phase 2] All 6 domain seeds completed ✓")
+    logger.info(f"[Phase 2] All {len(_DOMAINS)} domain seeds completed ✓")
 
     # Phase 3: Workforce layer (domain packs, departments)
     logger.info("\n[Phase 3] Workforce domain packs...")
@@ -67,6 +68,21 @@ async def run_all_seeds():
         logger.info("[Phase 3] Built-in domain packs synced ✓")
     except Exception as e:
         logger.warning(f"[Phase 3] Domain pack sync failed (non-fatal): {e}")
+
+    # Phase 3b: Org-graph backbone (capabilities + deployed agents per
+    # department). This is the ONLY thing that creates Capability/DepartmentAgent
+    # rows - normally driven by app.main's lifespan, but a script invocation (a
+    # one-off data job, or a test harness with no ASGI lifespan) never boots that,
+    # so without this call a fresh Postgres seeded purely via this script has
+    # departments with zero capabilities/agents and Neural Map / Org Pulse /
+    # Reality Twin / Command Center all render an empty graph.
+    logger.info("\n[Phase 3b] Workforce org-graph backbone...")
+    try:
+        from app.core.workforce_seed import seed_workforce_graph
+        summary = await seed_workforce_graph()
+        logger.info(f"[Phase 3b] Org-graph backbone seeded: {summary} ✓")
+    except Exception as e:
+        logger.warning(f"[Phase 3b] Org-graph backbone seed failed (non-fatal): {e}")
 
     # Phase 4: Agent Factory (blueprints, deployed agents, debates, feed)
     logger.info("\n[Phase 4] Agent Factory seed...")

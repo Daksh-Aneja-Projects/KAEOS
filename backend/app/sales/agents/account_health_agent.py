@@ -36,6 +36,9 @@ class AccountHealthAgent:
                     "prompt": f"Assess the health of this account from its profile: {facts}"}],
             context={
                 "account_id": account_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: monitoring an existing customer's
+                # health is processing for the performance of the contract.
+                "legal_basis": "contract:customer_account_management",
                 "instruction": "Output strict JSON: {health_assessment, risk_signals, engagement_actions}.",
             },
             tenant_id=tenant_id,

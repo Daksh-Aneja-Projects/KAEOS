@@ -201,9 +201,12 @@ async def test_org_pulse_shape_and_health(async_client: AsyncClient):
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body) == {"org_health", "domains", "insights"}
-    assert len(body["domains"]) == 7
+    assert len(body["domains"]) == 10
     names = {d["domain"] for d in body["domains"]}
-    assert names == {"finance", "hr", "sales", "support", "operations", "legal", "engineering"}
+    assert names == {
+        "finance", "hr", "sales", "support", "operations", "legal", "engineering",
+        "healthcare", "lending", "procurement",
+    }
     for d in body["domains"]:
         assert 0 <= d["health"] <= 100
 

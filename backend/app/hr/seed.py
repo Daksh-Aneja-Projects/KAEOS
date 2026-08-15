@@ -8,12 +8,23 @@ import uuid
 from datetime import date, datetime, timedelta
 import random
 
+from sqlalchemy import select
+
 from app.core.database import async_engine, AsyncSessionLocal
 from app.models.domain import Base
-from app.hr.models.core import HREmployee, EmploymentStatus
-from app.hr.models.recruiting import JobRequisition, Candidate, ReqStatus, CandidateStage
-from app.hr.models.time_attendance import TimeOffRequest, LeaveType, LeaveStatus
+from app.hr.models.core import HREmployee, EmploymentStatus, EmployeeDocument, DocumentType
+from app.hr.models.recruiting import JobRequisition, Candidate, ReqStatus, CandidateStage, Interview
+from app.hr.models.time_attendance import TimeOffRequest, LeaveType, LeaveStatus, Timesheet
 from app.hr.models.performance import PerformanceReview, ReviewCycle
+from app.hr.models.benefits import BenefitPlan, BenefitEnrollment, BenefitType, EnrollmentStatus as BenefitEnrollStatus
+from app.hr.models.compensation import Compensation, CompType
+from app.hr.models.onboarding import BoardingPlan, BoardingTask, BoardingType, TaskStatus
+from app.hr.models.learning import Course, CourseEnrollment, EnrollmentStatus as CourseEnrollStatus
+from app.hr.models.employee_relations import ERCase, CaseStatus, CaseSeverity
+from app.hr.models.workforce_planning import HeadcountPlan, PlanStatus
+from app.hr.models.payroll import PayrollRun, Payslip, PayrollRunStatus
+from app.hr.models.compliance import ComplianceReport, ComplianceViolation, ComplianceFramework
+from app.hr.models.analytics import HRMetricSnapshot
 
 TENANT = "tenant_acme"  # demo tenant — matches seed_demo_user and dev-mode tenant
 
@@ -41,6 +52,17 @@ async def seed():
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        # Idempotency guard: domain_seed.py already gates this whole module on
+        # HREmployee count == 0 for the tenant, but this module is also runnable
+        # directly (`python -m app.hr.seed`) - guard here too so a second run
+        # never duplicates the whole HR schema's worth of demo rows.
+        already_seeded = (await db.execute(
+            select(HREmployee).where(HREmployee.tenant_id == TENANT).limit(1)
+        )).scalar_one_or_none()
+        if already_seeded:
+            print(f"[SKIP] HR already seeded for tenant {TENANT}; skipping to avoid duplicates.")
+            return
+
         # ── 1. Seed Employees ──
         employees = []
         for i in range(20):
@@ -107,6 +129,7 @@ async def seed():
         _GENDERS = ["female", "male", "nonbinary"]
         _ETHNICITIES = ["asian", "black", "hispanic", "white", "two_or_more"]
         _AGE_BANDS = ["under_40", "40_plus"]
+        candidates = []
         for first, last in cand_names:
             cand = Candidate(
                 id=_id(),
@@ -124,7 +147,10 @@ async def seed():
                     "age_band": random.choice(_AGE_BANDS),
                 },
             )
+            candidates.append(cand)
             db.add(cand)
+
+        await db.flush()  # candidates need ids before Interview rows reference them
 
         # ── 4. Seed Time-Off Requests ──
         for _ in range(12):
@@ -176,6 +202,315 @@ async def seed():
             )
             db.add(rev)
 
+        # ── 6. Seed Benefit Plans + Enrollments ──
+        benefit_plans_data = [
+            ("Premium PPO Health Plan", "Anthem Blue Cross", BenefitType.HEALTH, 350.0, 850.0, 600.0),
+            ("Standard Dental Plan", "Delta Dental", BenefitType.DENTAL, 25.0, 65.0, 40.0),
+            ("Vision Care Plan", "VSP", BenefitType.VISION, 8.0, 20.0, 12.0),
+            ("Basic Life Insurance", "MetLife", BenefitType.LIFE_INSURANCE, 0.0, 0.0, 50000.0),
+            ("401(k) Retirement Plan", "Fidelity", BenefitType.RETIREMENT, 0.0, 0.0, 0.0),
+            ("Flexible Spending Account", "WEX", BenefitType.FSA_HSA, 0.0, 0.0, 0.0),
+        ]
+        benefit_plans = []
+        for name, provider, btype, cost_ind, cost_fam, employer_contrib in benefit_plans_data:
+            plan = BenefitPlan(
+                id=_id(), tenant_id=TENANT, name=name, provider=provider, benefit_type=btype,
+                description=f"{name}, provided through {provider}.",
+                employee_cost_individual=cost_ind, employee_cost_family=cost_fam,
+                employer_contribution=employer_contrib,
+            )
+            benefit_plans.append(plan)
+            db.add(plan)
+        await db.flush()
+
+        for emp in employees[:16]:
+            for plan in random.sample(benefit_plans, k=random.randint(1, 3)):
+                db.add(BenefitEnrollment(
+                    id=_id(), tenant_id=TENANT, employee_id=emp.id, plan_id=plan.id,
+                    status=random.choice([BenefitEnrollStatus.ACTIVE] * 6 + [BenefitEnrollStatus.PENDING] * 2
+                                          + [BenefitEnrollStatus.WAIVED]),
+                    coverage_level=random.choice(["INDIVIDUAL", "INDIVIDUAL_PLUS_ONE", "FAMILY"]),
+                    effective_date=emp.hire_date,
+                    agent_verified=random.choice([True, True, False]),
+                ))
+
+        # ── 7. Seed Compensation (one current record per employee) ──
+        SALARY_BY_TITLE = {
+            "Software Engineer": 125000, "Senior Engineer": 155000, "Staff Engineer": 185000,
+            "Engineering Manager": 175000, "Product Manager": 145000, "UX Designer": 115000,
+            "Data Scientist": 150000, "DevOps Engineer": 135000, "QA Lead": 120000,
+            "Frontend Developer": 118000, "Backend Developer": 128000, "ML Engineer": 165000,
+            "Technical Writer": 95000, "Security Engineer": 155000, "Platform Engineer": 140000,
+            "SRE": 145000, "VP Engineering": 260000, "CTO": 320000, "Head of Design": 210000,
+            "Product Analyst": 110000,
+        }
+        comp_by_emp = {}
+        for emp in employees:
+            base = round(SALARY_BY_TITLE.get(emp.job_title, 120000) * random.uniform(0.92, 1.12), -2)
+            comp = Compensation(
+                id=_id(), tenant_id=TENANT, employee_id=emp.id, comp_type=CompType.SALARY,
+                base_amount=base, currency="USD",
+                target_bonus_pct=random.choice([0.0, 5.0, 10.0, 15.0, 20.0]),
+                equity_grant=random.choice([0, 0, 2000, 5000, 10000]),
+                equity_type=random.choice([None, "RSU", "ISO"]),
+                vesting_schedule="4yr vest, 1yr cliff" if random.random() > 0.4 else None,
+                effective_date=emp.hire_date, is_current=True,
+                change_reason="New hire compensation",
+            )
+            comp_by_emp[emp.id] = comp
+            db.add(comp)
+
+        # ── 8. Terminate a couple of employees + seed Onboarding/Offboarding plans ──
+        offboarding_emps = [e for e in employees if e.status == EmploymentStatus.ACTIVE][-2:]
+        for e in offboarding_emps:
+            e.status = EmploymentStatus.TERMINATED
+            e.termination_date = date.today() - timedelta(days=random.randint(3, 20))
+            db.add(e)
+
+        onboarding_emps = [e for e in employees if e.status == EmploymentStatus.ONBOARDING]
+
+        ONBOARDING_TASKS = [
+            "Complete I-9 and W-4 paperwork", "Provision laptop and system accounts",
+            "Complete employee handbook acknowledgment", "30-60-90 plan with manager",
+            "Benefits enrollment",
+        ]
+        OFFBOARDING_TASKS = [
+            "Revoke system access", "Return company equipment",
+            "Final paycheck and COBRA notice", "Exit interview",
+        ]
+
+        for emp in onboarding_emps:
+            start = datetime.combine(emp.hire_date, datetime.min.time())
+            plan = BoardingPlan(
+                id=_id(), tenant_id=TENANT, employee_id=emp.id, plan_type=BoardingType.ONBOARDING,
+                status="ACTIVE", total_tasks=len(ONBOARDING_TASKS), completed_tasks=2,
+                start_date=start, target_completion_date=start + timedelta(days=90),
+            )
+            db.add(plan)
+            await db.flush()
+            for i, title in enumerate(ONBOARDING_TASKS):
+                status = TaskStatus.COMPLETED if i < 2 else TaskStatus.PENDING
+                db.add(BoardingTask(
+                    id=_id(), tenant_id=TENANT, plan_id=plan.id, title=title,
+                    due_date=start + timedelta(days=(i + 1) * 7), status=status,
+                    completed_at=(start + timedelta(days=i)) if status == TaskStatus.COMPLETED else None,
+                    is_automated=(i == 1), automation_action="provision_accounts" if i == 1 else None,
+                ))
+
+        for emp in offboarding_emps:
+            start = datetime.combine(emp.termination_date - timedelta(days=10), datetime.min.time())
+            end = datetime.combine(emp.termination_date, datetime.min.time())
+            plan = BoardingPlan(
+                id=_id(), tenant_id=TENANT, employee_id=emp.id, plan_type=BoardingType.OFFBOARDING,
+                status="ACTIVE", total_tasks=len(OFFBOARDING_TASKS), completed_tasks=1,
+                start_date=start, target_completion_date=end,
+            )
+            db.add(plan)
+            await db.flush()
+            for i, title in enumerate(OFFBOARDING_TASKS):
+                status = TaskStatus.COMPLETED if i == 0 else TaskStatus.PENDING
+                db.add(BoardingTask(
+                    id=_id(), tenant_id=TENANT, plan_id=plan.id, title=title,
+                    due_date=start + timedelta(days=(i + 1) * 2), status=status,
+                    completed_at=start if status == TaskStatus.COMPLETED else None,
+                ))
+
+        # ── 9. Seed Courses + Course Enrollments ──
+        courses_data = [
+            ("Security Awareness Training", "Internal", True, 45),
+            ("Anti-Harassment and Workplace Conduct", "Internal", True, 60),
+            ("Data Privacy and GDPR Fundamentals", "Internal", True, 30),
+            ("Leadership Essentials", "LinkedIn Learning", False, 120),
+            ("Advanced System Design", "Internal", False, 180),
+            ("Effective Communication", "Coursera", False, 90),
+        ]
+        courses = []
+        for title, provider, compliance_req, minutes in courses_data:
+            c = Course(
+                id=_id(), tenant_id=TENANT, title=title, description=f"{title}, delivered via {provider}.",
+                provider=provider, is_required_for_compliance=compliance_req, estimated_minutes=minutes,
+            )
+            courses.append(c)
+            db.add(c)
+        await db.flush()
+
+        for emp in employees:
+            for course in random.sample(courses, k=random.randint(1, 3)):
+                status = random.choice([CourseEnrollStatus.COMPLETED] * 5 + [CourseEnrollStatus.IN_PROGRESS] * 3
+                                        + [CourseEnrollStatus.ENROLLED] * 2)
+                progress = (100.0 if status == CourseEnrollStatus.COMPLETED
+                           else round(random.uniform(10, 90), 1) if status == CourseEnrollStatus.IN_PROGRESS else 0.0)
+                db.add(CourseEnrollment(
+                    id=_id(), tenant_id=TENANT, employee_id=emp.id, course_id=course.id, status=status,
+                    progress_pct=progress, due_date=datetime.now() + timedelta(days=random.randint(-10, 60)),
+                    completed_at=(datetime.now() - timedelta(days=random.randint(1, 90)))
+                                 if status == CourseEnrollStatus.COMPLETED else None,
+                ))
+
+        # ── 10. Seed Employee Relations Cases ──
+        er_case_data = [
+            ("Workplace conduct complaint",
+             "An employee raised a concern regarding a colleague's conduct in a team meeting.",
+             "POLICY_VIOLATION", CaseSeverity.MEDIUM, CaseStatus.UNDER_INVESTIGATION),
+            ("Compensation dispute",
+             "An employee requested a review of their compensation relative to market benchmarks.",
+             "DISPUTE", CaseSeverity.LOW, CaseStatus.RESOLVED),
+            ("Anonymous harassment report",
+             "An anonymous report was filed alleging inappropriate remarks in a project channel.",
+             "HARASSMENT", CaseSeverity.HIGH, CaseStatus.OPEN),
+        ]
+        for title, desc, category, severity, status in er_case_data:
+            reporter = random.choice(employees)
+            accused = random.choice([e for e in employees if e.id != reporter.id])
+            db.add(ERCase(
+                id=_id(), tenant_id=TENANT, title=title, description=desc,
+                reporter_id=reporter.id if random.random() > 0.3 else None,
+                accused_id=accused.id,
+                investigator_id=employees[0].id if status != CaseStatus.OPEN else None,
+                category=category, severity=severity, status=status,
+                ai_risk_assessment=("Moderate compliance risk; recommend HR review within 5 business days."
+                                    if status != CaseStatus.OPEN else None),
+                ai_recommended_actions=(["Schedule interviews with involved parties",
+                                         "Review relevant communication logs"] if status != CaseStatus.OPEN else []),
+                opened_at=datetime.now() - timedelta(days=random.randint(5, 60)),
+                closed_at=(datetime.now() - timedelta(days=random.randint(1, 4)))
+                          if status in (CaseStatus.RESOLVED, CaseStatus.CLOSED) else None,
+            ))
+
+        # ── 11. Seed Headcount Plans ──
+        headcount_plan_data = [
+            ("FY26 Engineering Scaling", "Engineering", 2026, 2_400_000.0, PlanStatus.ACTIVE,
+             [{"title": "Senior Backend Engineer", "count": 3, "target_qtr": "Q2", "est_salary": 155000},
+              {"title": "Staff ML Engineer", "count": 1, "target_qtr": "Q3", "est_salary": 190000}]),
+            ("FY26 Go-to-Market Expansion", "Sales", 2026, 900_000.0, PlanStatus.DRAFT,
+             [{"title": "Account Executive", "count": 4, "target_qtr": "Q1", "est_salary": 110000}]),
+        ]
+        for name, dept, year, budget, status, positions in headcount_plan_data:
+            db.add(HeadcountPlan(
+                id=_id(), tenant_id=TENANT, name=name, department_id=dept, target_year=year,
+                budget_allocated=budget, currency="USD", status=status, planned_positions=positions,
+            ))
+
+        # ── 12. Seed Payroll Runs + Payslips ──
+        payroll_runs = []
+        today = date.today()
+        for months_back, run_status in [(2, PayrollRunStatus.COMPLETED), (1, PayrollRunStatus.COMPLETED),
+                                        (0, PayrollRunStatus.PENDING_APPROVAL)]:
+            start = (today.replace(day=1) - timedelta(days=months_back * 30)).replace(day=1)
+            end = (start + timedelta(days=31)).replace(day=1) - timedelta(days=1)
+            run = PayrollRun(
+                id=_id(), tenant_id=TENANT, period_start=start, period_end=end, pay_date=end,
+                status=run_status, ai_approved=(run_status == PayrollRunStatus.COMPLETED),
+            )
+            payroll_runs.append(run)
+            db.add(run)
+        await db.flush()
+
+        for run in payroll_runs:
+            period_days = (run.period_end - run.period_start).days + 1
+            run_total_gross = 0.0
+            for emp in employees:
+                if emp.status == EmploymentStatus.TERMINATED and emp.termination_date \
+                        and emp.termination_date < run.period_start:
+                    continue
+                comp = comp_by_emp.get(emp.id)
+                if not comp:
+                    continue
+                gross = round(comp.base_amount * (period_days / 365.0), 2)
+                run_total_gross += gross
+                db.add(Payslip(id=_id(), tenant_id=TENANT, run_id=run.id, employee_id=emp.id,
+                               gross_pay=gross, net_pay=gross))
+            run.total_gross = round(run_total_gross, 2)
+            run.total_net = round(run_total_gross, 2)
+            db.add(run)
+
+        # ── 13. Seed Compliance Reports + a Violation ──
+        db.add(ComplianceReport(
+            id=_id(), tenant_id=TENANT, framework=ComplianceFramework.EEOC,
+            report_name="EEO-1 Component 1 Filing", period_year=2025, status="SUBMITTED",
+            data={"total_employees": len(employees), "note": "Annual EEO-1 filing summary."},
+            submitted_at=datetime.now() - timedelta(days=120),
+        ))
+        db.add(ComplianceReport(
+            id=_id(), tenant_id=TENANT, framework=ComplianceFramework.OSHA,
+            report_name="OSHA 300 Log Summary", period_year=2025, status="REVIEWED",
+            data={"recordable_incidents": 0, "note": "No recordable workplace incidents in the reporting period."},
+        ))
+        db.add(ComplianceReport(
+            id=_id(), tenant_id=TENANT, framework=ComplianceFramework.HIPAA,
+            report_name="HIPAA Compliance Self-Assessment", period_year=2026, status="GENERATED",
+            data={"phi_access_reviews_completed": True, "note": "Benefits administration PHI handling reviewed."},
+        ))
+        db.add(ComplianceViolation(
+            id=_id(), tenant_id=TENANT, framework="I9", severity="WARNING",
+            description="Section 2 of the I-9 was completed 1 business day past the 3-day statutory window "
+                        "for one new hire.",
+            context={"employee_id": (onboarding_emps[0].id if onboarding_emps else employees[0].id)},
+            actor_id="hr_seed_demo_data", resolved=False,
+        ))
+
+        # ── 14. Seed HR Metric Snapshots (time-distributed, weekly) ──
+        for weeks_back in range(8, 0, -1):
+            snap_date = today - timedelta(weeks=weeks_back)
+            db.add(HRMetricSnapshot(
+                id=_id(), tenant_id=TENANT, snapshot_date=snap_date,
+                total_headcount=max(len(employees) - max(0, weeks_back - 4), 10),
+                active_contractors=sum(1 for e in employees if e.status == EmploymentStatus.CONTRACTOR),
+                open_requisitions=sum(1 for r in requisitions if r.status == ReqStatus.OPEN),
+                time_to_fill_avg_days=round(random.uniform(28, 45), 1),
+                offer_acceptance_rate=round(random.uniform(65, 88), 1),
+                total_payroll_run_rate=(round(sum(c.base_amount for c in comp_by_emp.values()) / 12, 2)
+                                        if comp_by_emp else 0.0),
+                diversity_metrics={},
+            ))
+
+        # ── 15. Seed Interviews (linked to candidates + employees) ──
+        for cand in candidates[:8]:
+            interviewer = random.choice(employees[:8])
+            feedback_given = random.random() > 0.4
+            db.add(Interview(
+                id=_id(), tenant_id=TENANT, candidate_id=cand.id, interviewer_id=interviewer.id,
+                scheduled_at=datetime.now() + timedelta(days=random.randint(-14, 20)),
+                duration_mins=random.choice([30, 45, 60]),
+                interview_type=random.choice(["Technical", "Behavioral", "System Design", "Hiring Manager"]),
+                feedback_submitted=feedback_given,
+                score=random.randint(2, 5) if feedback_given else None,
+                recommendation=random.choice(["STRONG_HIRE", "HIRE", "NO_HIRE"]) if feedback_given else None,
+                notes="Solid communication and problem-solving approach." if feedback_given else None,
+            ))
+
+        # ── 16. Seed Employee Documents ──
+        DOC_TEMPLATES = [
+            (DocumentType.I9, "Form I-9, Employment Eligibility Verification", True),
+            (DocumentType.W4, "Form W-4, Employee Withholding Certificate", True),
+            (DocumentType.OFFER_LETTER, "Signed Offer Letter", True),
+            (DocumentType.HANDBOOK_ACK, "Employee Handbook Acknowledgment", True),
+        ]
+        for emp in employees:
+            for doc_type, title, signed_default in DOC_TEMPLATES:
+                signed = signed_default and random.random() > 0.1
+                db.add(EmployeeDocument(
+                    id=_id(), tenant_id=TENANT, employee_id=emp.id, doc_type=doc_type, title=title,
+                    file_path=f"documents/{emp.id}/{doc_type.value.lower()}.pdf",
+                    is_signed=signed,
+                    signature_date=datetime.combine(emp.hire_date, datetime.min.time()) if signed else None,
+                    is_pii=True,
+                ))
+
+        # ── 17. Seed Timesheets ──
+        for emp in employees:
+            for weeks_back in range(1, 4):
+                period_start = today - timedelta(days=today.weekday() + 7 * weeks_back)
+                period_end = period_start + timedelta(days=6)
+                ts_status = "PROCESSED" if weeks_back > 1 else random.choice(["SUBMITTED", "APPROVED"])
+                db.add(Timesheet(
+                    id=_id(), tenant_id=TENANT, employee_id=emp.id,
+                    period_start=period_start, period_end=period_end,
+                    total_regular_hours=round(random.uniform(36, 40), 1),
+                    total_overtime_hours=round(random.uniform(0, 4), 1) if random.random() > 0.7 else 0.0,
+                    status=ts_status,
+                ))
+
         await db.commit()
         print("[SUCCESS] Seeded HR database:")
         print(f"   - {len(employees)} employees")
@@ -184,6 +519,18 @@ async def seed():
         print("   - 12 time-off requests")
         print("   - 14 performance reviews")
         print("   - 1 review cycle")
+        print(f"   - {len(benefit_plans_data)} benefit plans + enrollments")
+        print(f"   - {len(employees)} compensation records")
+        print(f"   - {len(onboarding_emps)} onboarding + {len(offboarding_emps)} offboarding plans")
+        print(f"   - {len(courses_data)} courses + enrollments")
+        print(f"   - {len(er_case_data)} ER cases")
+        print(f"   - {len(headcount_plan_data)} headcount plans")
+        print(f"   - {len(payroll_runs)} payroll runs + payslips")
+        print("   - 3 compliance reports + 1 violation")
+        print("   - 8 HR metric snapshots")
+        print("   - 8 interviews")
+        print(f"   - {len(employees) * len(DOC_TEMPLATES)} employee documents")
+        print(f"   - {len(employees) * 3} timesheets")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,10 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.workflow import apply_transition
 from app.healthcare.agents.gated_runner import run_gated_healthcare_skill
 from app.healthcare.models.core import PatientEncounter
+from app.healthcare.services.workflows import ENCOUNTER_WORKFLOW
 from app.services.provenance import append_ledger_event
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,8 @@ class IntakeAgent:
     persona = ("You are the KAEOS Healthcare Intake Agent. You triage encounters "
                "for urgency and completeness before clinical work begins.")
 
-    async def triage_encounter(self, db: AsyncSession, encounter_id: str, tenant_id: str) -> Dict[str, Any]:
+    async def triage_encounter(self, db: AsyncSession, encounter_id: str, tenant: dict) -> Dict[str, Any]:
+        tenant_id = tenant["tenant_id"]
         enc = (await db.execute(select(PatientEncounter).where(
             PatientEncounter.id == encounter_id,
             PatientEncounter.tenant_id == tenant_id))).scalar_one_or_none()
@@ -45,8 +48,14 @@ class IntakeAgent:
 
         priority = _triage_priority(enc.reason)
         enc.priority = priority
-        enc.status = "TRIAGED"
         db.add(enc)
+
+        # Validated OPEN -> TRIAGED transition (404 on a missing row, 409 on an
+        # illegal move such as re-triaging a closed encounter) replaces the old
+        # raw `enc.status = "TRIAGED"` write and leaves a WorkflowEvent trail.
+        await apply_transition(db, ENCOUNTER_WORKFLOW, enc.id, "TRIAGED", tenant,
+                               note=f"Deterministic triage: priority {priority}")
+
         await append_ledger_event(
             db, tenant_id=tenant_id, event_type="ENCOUNTER_TRIAGED",
             reasoning=f"Encounter {enc.encounter_number} triaged {priority} (deterministic).",

@@ -10,8 +10,8 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.legal.agents.gated_runner import run_gated_legal_skill
-from app.legal.models.privacy import DataSubjectRequest
+from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
+from app.legal.models.privacy import DataSubjectRequest, DsarStatus
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class PrivacyDSARAgent:
             {"step": 2, "name": "Produce Response",
              "prompt": "Generate a GDPR 30-day compliant response plan for the request."},
         ]
-        return await run_gated_legal_skill(
+        result = await run_gated_legal_skill(
             skill_id="legal_privacy_dsar",
             steps=steps,
             context={
@@ -58,3 +58,27 @@ class PrivacyDSARAgent:
             tenant_id=tenant_id,
             compliance_tags=["GDPR", "CCPA"],
         )
+        if result.get("status") == "PENDING_HITL":
+            return {"status": "PENDING_HITL", "dsar_id": dsar_id, "execution_id": result.get("execution_id")}
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+
+            # The agent produced a validated response plan for this request -
+            # record that (dsar.ai_validation) and advance a freshly RECEIVED
+            # request into PROCESSING. Never downgrade or skip past a status a
+            # human already moved forward (e.g. COMPLETED).
+            if decision.get("response_plan"):
+                dsar.ai_validation = True
+                if dsar.status == DsarStatus.RECEIVED:
+                    dsar.status = DsarStatus.PROCESSING
+
+            db.add(dsar)
+            await db.commit()
+
+            return {
+                "status": "success",
+                "dsar_id": dsar_id,
+                "decision": decision,
+                "execution_id": result.get("execution_id"),
+            }
+        return result

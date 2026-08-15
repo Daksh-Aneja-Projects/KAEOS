@@ -10,7 +10,7 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.operations.agents.gated_runner import run_gated_operations_skill
+from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.projects import Project
 from app.services.json_utils import plain_facts
 
@@ -45,7 +45,7 @@ class ProjectAgent:
             {"step": 2, "name": "Flag Delays",
              "prompt": "Flag any delays or risks given the completion percentage and dates."},
         ]
-        return await run_gated_operations_skill(
+        result = await run_gated_operations_skill(
             skill_id="operations_project_eval",
             steps=steps,
             context={
@@ -54,3 +54,27 @@ class ProjectAgent:
             },
             tenant_id=tenant_id,
         )
+
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+            # Write the outcome onto the real entity. A healthy verdict (no
+            # delay risk / no blockers / no recommendation) clears any stale
+            # warning rather than leaving it stuck from a prior evaluation.
+            note_parts = []
+            delay_risk = decision.get("delay_risk")
+            if delay_risk and str(delay_risk).strip().upper() not in ("NONE", "LOW", "N/A"):
+                note_parts.append(f"Delay risk: {str(delay_risk).replace('_', ' ').title()}.")
+            blockers = decision.get("blockers")
+            if blockers:
+                blockers_text = blockers if isinstance(blockers, str) else ", ".join(str(b) for b in blockers)
+                if blockers_text.strip():
+                    note_parts.append(f"Blockers: {blockers_text}.")
+            action = decision.get("recommended_action")
+            if action:
+                note_parts.append(f"Recommended action: {action}.")
+            project.ai_risk_note = " ".join(note_parts) if note_parts else None
+            db.add(project)
+            await db.commit()
+            result = {**result, "decision": decision}
+
+        return result

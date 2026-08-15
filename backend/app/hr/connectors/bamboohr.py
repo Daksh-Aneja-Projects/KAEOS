@@ -6,7 +6,11 @@ Handles pulling employee records, org charts, and time-off data.
 """
 import logging
 import httpx
+from datetime import date
 from typing import List, Dict, Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -86,3 +90,61 @@ class BambooHRConnector:
         except Exception:
             logger.warning("BambooHR connection test failed", exc_info=True)
             return False
+
+
+async def sync_employees(db: AsyncSession, tenant_id: str, subdomain: str, api_key: str) -> Dict[str, Any]:
+    """Pull the BambooHR directory and upsert it into ``hr_employees``.
+
+    Credentials are used for this request only — never persisted (there is no
+    connector-credential store for HR yet, so the honest scope of "wiring" the
+    connector is a per-call sync, not a saved integration). Matches by
+    ``worker_id`` (the BambooHR employee id) within the tenant so re-running a
+    sync updates existing rows instead of duplicating them.
+    """
+    from app.hr.models.core import HREmployee, EmploymentStatus
+
+    connector = BambooHRConnector(tenant_id, subdomain, api_key)
+    if not await connector.test_connection():
+        return {"ok": False, "error": "Could not authenticate with BambooHR using the supplied subdomain/API key.",
+                "created": 0, "updated": 0}
+
+    directory = await connector.get_employees()
+    existing = {
+        e.worker_id: e for e in (await db.execute(
+            select(HREmployee).where(HREmployee.tenant_id == tenant_id)
+        )).scalars().all() if e.worker_id
+    }
+
+    created = updated = skipped = 0
+    for row in directory:
+        worker_id = str(row.get("id") or "").strip()
+        first = (row.get("firstName") or "").strip()
+        last = (row.get("lastName") or "").strip()
+        email = (row.get("workEmail") or "").strip()
+        if not worker_id or not first or not last or not email:
+            # BambooHR directory fields are configurable per-company; a row
+            # missing the identity fields we key/require on can't be synced.
+            skipped += 1
+            continue
+
+        if worker_id in existing:
+            emp = existing[worker_id]
+            emp.first_name, emp.last_name, emp.email = first, last, email
+            emp.job_title = row.get("jobTitle") or emp.job_title
+            emp.location = row.get("location") or emp.location
+            emp.phone = row.get("mobilePhone") or emp.phone
+            db.add(emp)
+            updated += 1
+        else:
+            db.add(HREmployee(
+                tenant_id=tenant_id, worker_id=worker_id,
+                first_name=first, last_name=last, email=email,
+                job_title=row.get("jobTitle") or "Unknown",
+                location=row.get("location"), phone=row.get("mobilePhone"),
+                status=EmploymentStatus.ACTIVE,
+                hire_date=date.today(),
+            ))
+            created += 1
+
+    await db.commit()
+    return {"ok": True, "fetched": len(directory), "created": created, "updated": updated, "skipped": skipped}

@@ -29,7 +29,7 @@ export interface ShockPulse {
   ts: number;
 }
 
-import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, TWIN_W, TWIN_H, W, H } from './TwinGraph.layout';
+import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, TWIN_W, TWIN_H, W, H, fitDeptLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_LETTER_SPACING } from './TwinGraph.layout';
 import type { GraphNode, GraphData, SimNode } from './TwinGraph.layout';
 export { TWIN_W, TWIN_H } from './TwinGraph.layout';
 
@@ -50,7 +50,7 @@ export default function TwinGraph({
   focus?: { x: number; y: number; zoom: number; ts: number } | null;
 }) {
   // ── Static derivations (per data identity) ────────────────────────────────
-  const { simNodes, simLinks, adjacency, index, deptColor, clusters } = useMemo(() => {
+  const { simNodes, simLinks, adjacency, index, deptColor, clusters, deptLabels } = useMemo(() => {
     const nodes = data?.nodes || [];
     const links = data?.links || [];
     const { positions, adjacency, clusterOf } = seedLayout(nodes, links);
@@ -85,6 +85,24 @@ export default function TwinGraph({
     const deptColor = new Map<string, string>(
       departments.map((d, i) => [d.id, DEPT_PALETTE[i % DEPT_PALETTE.length]]),
     );
+    // Each department label gets the largest font that fits half the
+    // distance to its nearest neighboring department (home/seed position,
+    // not the live physics position, so the size doesn't jitter frame to
+    // frame). Works for any layout - the fixed-width horizontal band the
+    // Neural Map seeds departments into, or the default radial ring - since
+    // both just shrink this nearest-neighbor gap as department count grows.
+    const deptLabels = new Map<string, { fontSize: number; maxChars: number }>();
+    departments.forEach((d, i) => {
+      let minDist = Infinity;
+      for (let j = 0; j < departments.length; j++) {
+        if (i === j) continue;
+        const o = departments[j];
+        const dist = Math.hypot(d.hx - o.hx, d.hy - o.hy);
+        if (dist < minDist) minDist = dist;
+      }
+      const budget = Number.isFinite(minDist) ? Math.max(20, minDist / 2 - 6) : 200;
+      deptLabels.set(d.id, fitDeptLabel(d.name, budget));
+    });
     // per-department cluster: hub index + member indices, for the territory glow
     const clusters = departments.map(d => ({
       deptId: d.id,
@@ -95,7 +113,7 @@ export default function TwinGraph({
         .map((n, i) => (clusterOf[n.id] === d.id ? i : -1))
         .filter(i => i >= 0),
     }));
-    return { simNodes, simLinks, adjacency, index, deptColor, clusters };
+    return { simNodes, simLinks, adjacency, index, deptColor, clusters, deptLabels };
   }, [data, seedPositions]);
   const nodes = data?.nodes || [];
   const links = data?.links || [];
@@ -633,17 +651,24 @@ export default function TwinGraph({
                   stroke="rgba(255,255,255,0.25)" strokeWidth={0.8}
                 />
                 {n.label === 'Connector' && <circle r={2} fill={color} />}
-                {n.label === 'Department' ? (
-                  <text
-                    ref={el => { if (el) deptLabelEls.current.set(n.id, el); }}
-                    y={n.r + 14} fill={color} fontSize={10.5} fontWeight={700}
-                    fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing="0.8"
-                    textAnchor="middle" opacity={labelsAlways ? 1 : 0}
-                    style={{ userSelect: 'none', pointerEvents: 'none' }}
-                  >
-                    {labelsAlways ? (n.name || '').toUpperCase() : n.name}
-                  </text>
-                ) : n.label === 'Agent' ? (
+                {n.label === 'Department' ? (() => {
+                  const lbl = deptLabels.get(n.id) || { fontSize: DEPT_LABEL_BASE_FONT, maxChars: Infinity };
+                  const cased = labelsAlways ? (n.name || '').toUpperCase() : (n.name || '');
+                  const text = cased.length > lbl.maxChars
+                    ? cased.slice(0, Math.max(1, lbl.maxChars - 1)).trimEnd() + '…'
+                    : cased;
+                  return (
+                    <text
+                      ref={el => { if (el) deptLabelEls.current.set(n.id, el); }}
+                      y={n.r + 14} fill={color} fontSize={lbl.fontSize} fontWeight={700}
+                      fontFamily="ui-monospace, SFMono-Regular, monospace" letterSpacing={DEPT_LABEL_LETTER_SPACING}
+                      textAnchor="middle" opacity={labelsAlways ? 1 : 0}
+                      style={{ userSelect: 'none', pointerEvents: 'none' }}
+                    >
+                      {text}
+                    </text>
+                  );
+                })() : n.label === 'Agent' ? (
                   <text
                     ref={el => { if (el) agentLabelEls.current.set(n.id, el); }}
                     y={n.r + 12} fill="#cbd5e1" fontSize={7.5} fontWeight={600}

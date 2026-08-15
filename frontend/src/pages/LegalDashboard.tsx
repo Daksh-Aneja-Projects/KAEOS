@@ -78,6 +78,7 @@ export default function LegalDashboard() {
   }
 
   const quickLinks = [
+    { label: 'Legal Matters', path: '/departments/legal/matters', icon: Scale, color: '#14b8a6' },
     { label: 'Contract Lifecycle', path: '/departments/legal/contracts', icon: FileText, color: '#6366f1' },
     { label: 'Compliance Oblig.', path: '/departments/legal/compliance', icon: ShieldCheck, color: '#10b981' },
     { label: 'Litigation Support', path: '/departments/legal/litigation', icon: Landmark, color: '#ef4444' },

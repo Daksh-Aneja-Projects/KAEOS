@@ -1,7 +1,7 @@
 """
 KAEOS Operations Domain — Projects Models
 """
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Float, Date
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Float, Date, Text
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -34,6 +34,10 @@ class Project(Base):
     
     project_manager_id = Column(String, ForeignKey("ops_team_members.id"), nullable=True)
     completion_percentage = Column(Float, default=0.00) # 0 to 100
+
+    # ProjectAgent's plain-English delay-risk advisory (never a fabricated
+    # completion number — only a narrative synthesized from its real decision).
+    ai_risk_note = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

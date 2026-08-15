@@ -26,6 +26,12 @@ from app.operations.models.procurement import (
     PurchaseOrder,
     PurchaseRequest,
 )
+from app.operations.models.vendors import VendorContract, VendorPerformance
+from app.procurement.agents.gated_runner import (
+    extract_decision,
+    sourcing_agent,
+    spend_guard_agent,
+)
 from app.procurement.services.source_to_pay import (
     ProcurementBlocked,
     ProcurementNotFound,
@@ -110,6 +116,30 @@ async def create_requisition(
     await db.refresh(req)
     return {"id": req.id, "item": req.item_description, "estimated_cost": float(req.total_estimated_cost or 0),
             "status": req.status.value if hasattr(req.status, "value") else str(req.status)}
+
+
+@router.post("/requisitions/{request_id}/assess")
+async def assess_requisition(
+    request_id: str,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Route a requisition through the gated Sourcing Agent (policy fit and
+    price reasonableness) for a plain-English recommendation before a PO is
+    raised. Advisory only - it never writes to the requisition."""
+    tenant_id = tenant["tenant_id"]
+    try:
+        result = await sourcing_agent(db, request_id, tenant_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="purchase_request", resource_id=request_id,
+        details={"status": result.get("status")},
+    )
+    if result.get("status") == "SUCCESS_CLEAN":
+        result["assessment"] = extract_decision(result)
+    return result
 
 
 # ── Purchase orders ──────────────────────────────────────────────────────
@@ -210,6 +240,35 @@ async def approve_po(
     return result
 
 
+@router.post("/purchase-orders/{po_id}/guard")
+async def guard_purchase_order(
+    po_id: str, body: POApproveIn,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Spend Guard Agent: evaluates the same four control gates the approval
+    endpoint enforces, then a gated LLM explains for an approver whether the
+    order looks safe to approve. Read-only - it never approves or blocks the
+    PO; it advises. Meant to be surfaced alongside the approval panel."""
+    tenant_id = tenant["tenant_id"]
+    try:
+        result = await spend_guard_agent(
+            db, po_id, tenant_id, approver=approver_identity(tenant),
+            approver_limit=body.approver_limit, sanctions_list=body.sanctions_list,
+        )
+    except ProcurementNotFound as e:
+        raise HTTPException(404, str(e))
+    await record_security_event(
+        tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="purchase_order", resource_id=po_id,
+        details={"safe_to_approve": result.get("safe_to_approve")},
+    )
+    gated = result.get("gated") or {}
+    if gated.get("status") == "SUCCESS_CLEAN":
+        result["rationale"] = extract_decision(gated)
+    return result
+
+
 # ── Goods receipts ───────────────────────────────────────────────────────
 class GoodsReceiptCreate(BaseModel):
     purchase_order_id: str
@@ -279,17 +338,46 @@ class VendorScreenIn(BaseModel):
 async def list_procurement_vendors(
     tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)
 ):
-    """Distinct vendors seen on this tenant's purchase orders, with PO counts
-    and committed spend."""
-    rows = (await db.execute(
-        select(PurchaseOrder.vendor_name, PurchaseOrder.vendor_id,
-               sqlfunc.count(), sqlfunc.coalesce(sqlfunc.sum(PurchaseOrder.total_amount), 0))
+    """Every vendor under contract (app.operations.models.vendors.VendorContract),
+    left-joined to its latest performance sheet, with PO count and committed
+    spend rolled up by vendor name. A vendor with no purchase order yet still
+    appears here - onboarding and sanctions screening happen before the first
+    PO is ever raised, not after."""
+    latest_perf_id = (
+        select(VendorPerformance.id)
+        .where(VendorPerformance.vendor_contract_id == VendorContract.id)
+        .order_by(VendorPerformance.created_at.desc())
+        .limit(1)
+        .correlate(VendorContract)
+        .scalar_subquery()
+    )
+    po_agg = (
+        select(PurchaseOrder.vendor_name.label("vendor_name"),
+               sqlfunc.count().label("po_count"),
+               sqlfunc.coalesce(sqlfunc.sum(PurchaseOrder.total_amount), 0).label("committed_spend"))
         .where(PurchaseOrder.tenant_id == tenant_id)
-        .group_by(PurchaseOrder.vendor_name, PurchaseOrder.vendor_id)
+        .group_by(PurchaseOrder.vendor_name)
+        .subquery()
+    )
+    rows = (await db.execute(
+        select(VendorContract, VendorPerformance.overall_performance_score,
+               po_agg.c.po_count, po_agg.c.committed_spend)
+        .outerjoin(VendorPerformance, VendorPerformance.id == latest_perf_id)
+        .outerjoin(po_agg, po_agg.c.vendor_name == VendorContract.vendor_name)
+        .where(VendorContract.tenant_id == tenant_id)
+        .order_by(VendorContract.vendor_name)
         .limit(200)
     )).all()
-    return [{"vendor": name, "vendor_id": vid, "po_count": int(cnt), "committed_spend": float(spend or 0)}
-            for name, vid, cnt, spend in rows]
+    return [{
+        "vendor": c.vendor_name,
+        "vendor_id": c.vendor_id,
+        "service_provided": c.service_provided,
+        "contract_value": float(c.contract_value or 0),
+        "renewal_date": c.renewal_date.isoformat() if c.renewal_date else None,
+        "performance_score": float(perf) if perf is not None else None,
+        "po_count": int(cnt or 0),
+        "committed_spend": float(spend or 0),
+    } for c, perf, cnt, spend in rows]
 
 
 @router.post("/vendors/screen")
@@ -299,3 +387,62 @@ async def screen_procurement_vendor(
 ):
     """OFAC / denied-parties screen for a vendor. A hit returns blocking=True."""
     return await screen_vendor(body.vendor_name, body.sanctions_list)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Analytics & Workflow Layer (shared engine: app.core.workflow)
+# ═══════════════════════════════════════════════════════════════════════
+from app.core.workflow import (  # noqa: E402
+    TransitionRequest, apply_transition, list_workflow_events,
+)
+from app.procurement.services.analytics import procurement_analytics  # noqa: E402
+from app.procurement.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
+
+
+@router.get("/analytics")
+async def get_procurement_analytics(
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)
+):
+    """Spend, vendor-risk, cycle-time and PO-funnel KPIs computed live from
+    tenant rows."""
+    return await procurement_analytics(db, tenant_id, charts=True)
+
+
+@router.get("/workflows")
+async def get_procurement_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines - the frontend can render lifecycle actions from
+    this. PO approval itself stays off this map; see services/workflows.py."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/workflow-events")
+async def get_procurement_workflow_events(
+    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped transition audit trail for procurement entities."""
+    return await list_workflow_events(db, tenant_id, domain="procurement",
+                                      entity_type=entity_type, entity_id=entity_id)
+
+
+@router.post("/requisitions/{request_id}/transition")
+async def transition_requisition(
+    request_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a requisition through draft, approval, ordered, received."""
+    return await apply_transition(db, WORKFLOW_SPECS["procurement_requisition"],
+                                  request_id, body.to_state, tenant, note=body.note)
+
+
+@router.post("/purchase-orders/{po_id}/transition")
+async def transition_purchase_order(
+    po_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move an already-approved PO through ordered / received, or cancel a
+    draft or pending one. Does not accept PENDING_APPROVAL -> APPROVED: use
+    POST /purchase-orders/{id}/approve, which is fail-closed on the four
+    source-to-pay controls."""
+    return await apply_transition(db, WORKFLOW_SPECS["procurement_purchase_order"],
+                                  po_id, body.to_state, tenant, note=body.note)

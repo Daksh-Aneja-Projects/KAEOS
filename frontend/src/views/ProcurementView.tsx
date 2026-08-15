@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import {
   ShoppingCart, ClipboardList, FileCheck2, PackageCheck, Building2,
   Search, RefreshCw, Loader2, ShieldCheck, CheckCircle2, XCircle,
-  AlertTriangle, GitCompareArrows, Gavel, MinusCircle,
+  AlertTriangle, GitCompareArrows, Gavel, MinusCircle, Sparkles,
+  BrainCircuit, Plus, X, TrendingUp,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
   ProcurementDashboard, RequisitionRow, PurchaseOrderRow, GoodsReceiptRow,
   VendorRow, ProcurementGate, ApprovalOutcome, ThreeWayMatch,
+  SourcingAssessment, SpendGuardResult,
 } from '../api/endpoints/procurement';
 import { useTheme } from '../context/ThemeContext';
 import { CountUp } from '../components/CountUp';
@@ -15,14 +17,31 @@ import Ring from '../components/shared/Ring';
 import StatCard from '../components/shared/StatCard';
 import TableCard from '../components/shared/TableCard';
 import LiveBadge from '../components/LiveBadge';
-import { humanize, formatCurrency } from '../lib/format';
+import DomainAnalytics from '../components/DomainAnalytics';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { announce } from '../components/a11y/LiveRegion';
+import { humanize, formatCurrency, formatDate } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 const ACCENT = '#8b5cf6';
 
-type Tab = 'overview' | 'requisitions' | 'purchase-orders' | 'goods-receipts' | 'vendors';
-const VALID: Tab[] = ['overview', 'requisitions', 'purchase-orders', 'goods-receipts', 'vendors'];
+type Tab = 'overview' | 'requisitions' | 'purchase-orders' | 'goods-receipts' | 'vendors' | 'analytics';
+const VALID: Tab[] = ['overview', 'requisitions', 'purchase-orders', 'goods-receipts', 'vendors', 'analytics'];
+
+/** Plain-English copy for the gated 7-gate pipeline's run status (never render
+ * the raw status string). Mirrors app.agents.runtime.AgentExecutor states. */
+const RUN_STATUS_COPY: Record<string, string> = {
+  SUCCESS_CLEAN: 'Assessment complete.',
+  PENDING_HITL: 'Routed to a human reviewer for approval before it can proceed.',
+  BLOCKED_COMPLIANCE: 'Blocked by a compliance check.',
+  BLOCKED_FAIRNESS: 'Held for a fairness review.',
+  BLOCKED_DEBATE: 'Blocked after multi-agent debate.',
+  ESCALATED_DEBATE: 'Escalated to a human after multi-agent debate.',
+  HUMAN_OVERRIDDEN: 'Rejected by a human reviewer.',
+  FAILED_ACTUATION: 'The recommendation was produced but a downstream write failed.',
+  FAILED_AUDIT: 'Blocked by a post-execution audit check.',
+};
 
 /** Plain-English copy for each source-to-pay control. */
 const GATE_COPY: Record<string, { title: string; ok: string }> = {
@@ -58,8 +77,15 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
 
   // Governance action panels (last action wins).
   const [approval, setApproval] = useState<{ po: string; outcome: ApprovalOutcome } | null>(null);
+  const [guard, setGuard] = useState<SpendGuardResult | null>(null);
   const [match, setMatch] = useState<{ po: string; result: ThreeWayMatch } | null>(null);
   const [screen, setScreen] = useState<{ vendor: string; gate: ProcurementGate } | null>(null);
+  const [assess, setAssess] = useState<{ item: string; result: SourcingAssessment } | null>(null);
+  const [screenInput, setScreenInput] = useState('');
+
+  // "New ..." create panels.
+  const [newReqOpen, setNewReqOpen] = useState(false);
+  const [newPoOpen, setNewPoOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
   useLiveRefresh(loadData, { intervalMs: 20000 });
@@ -84,10 +110,18 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
   }
 
   async function approve(po: PurchaseOrderRow) {
-    setBusy(po.id); setActionMsg(''); setMatch(null);
+    setBusy(po.id); setActionMsg(''); setMatch(null); setGuard(null);
     try {
-      const outcome = await api.approvePurchaseOrder(po.id);
+      // The deterministic four-control chain (binding) and the Spend Guard
+      // Agent's gated plain-English read (advisory) run together, so the
+      // approval panel shows both the verdict and why it makes sense in one
+      // pass - the Spend Guard Agent never decides, it explains.
+      const [outcome, guardResult] = await Promise.all([
+        api.approvePurchaseOrder(po.id),
+        api.guardPurchaseOrder(po.id).catch(() => null),
+      ]);
       setApproval({ po: po.po_number, outcome });
+      if (guardResult) setGuard(guardResult);
       setActionMsg(outcome.approved
         ? `Purchase order ${po.po_number} approved. All four controls cleared.`
         : `Purchase order ${po.po_number} held. ${outcome.message || 'A control blocked the approval.'}`);
@@ -98,12 +132,34 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
   }
 
   async function checkMatch(po: PurchaseOrderRow) {
-    setBusy(po.id); setActionMsg(''); setApproval(null);
+    setBusy(po.id); setActionMsg(''); setApproval(null); setGuard(null);
     try {
       const result = await api.getThreeWayMatch(po.id);
       setMatch({ po: po.po_number, result });
     } catch (e: any) {
       setActionMsg(`Three-way match failed: ${e?.message || e}`);
+    } finally { setBusy(null); }
+  }
+
+  async function assessRequisition(r: RequisitionRow) {
+    setBusy(r.id); setActionMsg('');
+    try {
+      const result = await api.assessRequisition(r.id);
+      setAssess({ item: r.item, result });
+    } catch (e: any) {
+      setActionMsg(`Assessment failed: ${e?.message || e}`);
+    } finally { setBusy(null); }
+  }
+
+  async function screenVendorByName(name: string) {
+    const clean = name.trim();
+    if (!clean) return;
+    setBusy(`screen:${clean}`); setActionMsg('');
+    try {
+      const gate = await api.screenVendor(clean);
+      setScreen({ vendor: clean, gate });
+    } catch (e: any) {
+      setActionMsg(`Vendor screen failed: ${e?.message || e}`);
     } finally { setBusy(null); }
   }
 
@@ -144,6 +200,7 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
     { key: 'purchase-orders', label: 'Purchase Orders', icon: FileCheck2 },
     { key: 'goods-receipts', label: 'Goods Receipts', icon: PackageCheck },
     { key: 'vendors', label: 'Vendors', icon: Building2 },
+    { key: 'analytics', label: 'Analytics', icon: TrendingUp },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
   const moveTab = (e: React.KeyboardEvent, i: number) => {
@@ -171,13 +228,28 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
               Procurement · every purchase order clears four source-to-pay controls before approval
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setNewReqOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: ACCENT }}>
+              <Plus className="w-3.5 h-3.5" /> New Requisition
+            </button>
+            <button onClick={() => setNewPoOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold"
+              style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+              <Plus className="w-3.5 h-3.5" /> New Purchase Order
+            </button>
             <LiveBadge lastSync={lastSync} />
             <button onClick={loadData} aria-label="Refresh procurement data" className="p-2 rounded-lg transition-colors" style={{ color: colors.inkSubtle }}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
+
+        <NewRequisitionModal open={newReqOpen} onClose={() => setNewReqOpen(false)} colors={colors}
+          onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
+        <NewPurchaseOrderModal open={newPoOpen} onClose={() => setNewPoOpen(false)} colors={colors}
+          onCreated={async (m) => { setActionMsg(m); await loadData(); }} />
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" role="tablist" aria-label="Procurement sections" style={{ background: colors.surface1 }}>
@@ -223,6 +295,21 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {approval.outcome.gates.map((g, i) => <GateCell key={i} gate={g} colors={colors} />)}
             </div>
+            {guard && (
+              <div className="mt-3 pt-3 flex items-start gap-2" style={{ borderTop: `1px solid ${colors.hairline}` }}>
+                <BrainCircuit className="w-4 h-4 mt-0.5 shrink-0" style={{ color: ACCENT }} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: colors.inkSubtle }}>
+                    Spend Guard Agent
+                  </p>
+                  <p className="text-[12px] mt-0.5 leading-relaxed" style={{ color: colors.ink }}>
+                    {guard.rationale?.recommendation
+                      || RUN_STATUS_COPY[guard.gated.status]
+                      || 'The agent could not produce a rationale for this order.'}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {match && (
@@ -270,9 +357,35 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
             </div>
           </div>
         )}
+        {assess && (
+          <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4" style={{ color: ACCENT }} />
+              <span className="text-[12px] font-semibold">Sourcing Agent · {assess.item}</span>
+            </div>
+            {assess.result.assessment ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <AssessCell label="Policy fit" ok={assess.result.assessment.compliant} colors={colors} />
+                <AssessCell label="Price reasonable" ok={assess.result.assessment.price_reasonable} colors={colors} />
+                <AssessCell label="Recommend raising a PO" ok={assess.result.assessment.recommend_po} colors={colors} />
+                {(assess.result.assessment.flags || []).length > 0 && (
+                  <div className="sm:col-span-3 rounded-lg p-2.5" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+                    <ul className="space-y-0.5">
+                      {assess.result.assessment.flags!.map((f, j) => <li key={j} className="text-[11px]" style={{ color: colors.inkSubtle }}>· {f}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
+                {assess.result.reason || RUN_STATUS_COPY[assess.result.status] || 'The agent has not reached a clean recommendation yet.'}
+              </p>
+            )}
+          </div>
+        )}
 
-        {/* Search (non-overview) */}
-        {tab !== 'overview' && (
+        {/* Search (non-overview, non-analytics) */}
+        {tab !== 'overview' && tab !== 'analytics' && (
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
             <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)}
@@ -339,11 +452,11 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
               return rows.length === 0
                 ? <EmptyState icon={ClipboardList} title="No requisitions" sub="Internal purchase requests appear here." />
                 : (
-                  <TableCard minWidth={820}>
+                  <TableCard minWidth={940}>
                     <table className="w-full text-[12px]">
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          {['Item', 'Qty', 'Unit price', 'Estimated cost', 'Status', 'Requested by', 'Department'].map(h => (
+                          {['Item', 'Qty', 'Unit price', 'Estimated cost', 'Status', 'Requested by', 'Department', 'Actions'].map(h => (
                             <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                           ))}
                         </tr>
@@ -358,6 +471,14 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
                             <td className="px-4 py-3"><Badge status={r.status} /></td>
                             <td className="px-4 py-3">{r.requested_by || <span style={{ color: colors.inkTertiary }}>-</span>}</td>
                             <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{r.department || '-'}</td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => assessRequisition(r)} disabled={busy === r.id}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap"
+                                style={{ background: ACCENT + '18', color: ACCENT }}>
+                                {busy === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                Assess
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -457,39 +578,80 @@ const ProcurementView: React.FC<{ domain?: string; defaultTab?: string }> = ({ d
             {/* ═══ VENDORS ═══ */}
             {tab === 'vendors' && (() => {
               const rows = vendors.filter(v => !searchQ || v.vendor.toLowerCase().includes(searchQ.toLowerCase()));
-              return rows.length === 0
-                ? <EmptyState icon={Building2} title="No vendors" sub="Vendors seen on purchase orders appear here." />
-                : (
-                  <TableCard minWidth={680}>
-                    <table className="w-full text-[12px]">
-                      <thead>
-                        <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          {['Vendor', 'Purchase orders', 'Committed spend', 'Sanctions screen'].map(h => (
-                            <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map(v => (
-                          <tr key={v.vendor} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                            <td className="px-4 py-3 font-medium">{v.vendor}</td>
-                            <td className="px-4 py-3 font-mono">{v.po_count}</td>
-                            <td className="px-4 py-3 font-mono font-semibold">{formatCurrency(v.committed_spend)}</td>
-                            <td className="px-4 py-3">
-                              <button onClick={() => screenVendor(v)} disabled={busy === v.vendor}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
-                                style={{ background: ACCENT + '18', color: ACCENT }}>
-                                {busy === v.vendor ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                                Screen (OFAC)
-                              </button>
-                            </td>
+              const riskColor = (v: VendorRow) => {
+                const days = v.renewal_date ? Math.round((new Date(v.renewal_date).getTime() - Date.now()) / 86400000) : null;
+                const poor = v.performance_score != null && v.performance_score < 70;
+                if (poor || (days != null && days <= 30)) return colors.error;
+                if ((v.performance_score != null && v.performance_score < 85) || (days != null && days <= 90)) return colors.warning;
+                return colors.success;
+              };
+              return (
+                <div className="space-y-4">
+                  <div className="rounded-xl p-4 flex items-center gap-2 flex-wrap" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+                    <ShieldCheck className="w-4 h-4 shrink-0" style={{ color: ACCENT }} />
+                    <span className="text-[12px] font-semibold shrink-0">Screen any vendor name</span>
+                    <input type="text" value={screenInput} onChange={e => setScreenInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') screenVendorByName(screenInput); }}
+                      placeholder="e.g. a vendor not yet under contract"
+                      className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg border text-[12px] focus:outline-none focus:ring-1"
+                      style={{ background: colors.canvas, borderColor: colors.hairline, color: colors.ink }} />
+                    <button onClick={() => screenVendorByName(screenInput)} disabled={!screenInput.trim() || busy === `screen:${screenInput.trim()}`}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors disabled:opacity-50"
+                      style={{ background: ACCENT, color: '#fff' }}>
+                      {busy === `screen:${screenInput.trim()}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                      Screen (OFAC)
+                    </button>
+                  </div>
+
+                  {rows.length === 0
+                    ? <EmptyState icon={Building2} title="No vendors" sub="Vendors under contract appear here." />
+                    : (
+                    <TableCard minWidth={980}>
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                            {['Vendor', 'Service', 'Contract value', 'Renewal', 'Performance', 'Purchase orders', 'Committed spend', 'Sanctions screen'].map(h => (
+                              <th key={h} className="text-left px-4 py-3 font-semibold whitespace-nowrap" style={{ color: colors.inkSubtle }}>{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </TableCard>
-                );
+                        </thead>
+                        <tbody>
+                          {rows.map(v => (
+                            <tr key={v.vendor} style={{ borderBottom: `1px solid ${colors.hairline}` }}>
+                              <td className="px-4 py-3 font-medium">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: riskColor(v) }} />
+                                {v.vendor}
+                              </td>
+                              <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{v.service_provided || '-'}</td>
+                              <td className="px-4 py-3 font-mono">{formatCurrency(v.contract_value)}</td>
+                              <td className="px-4 py-3" style={{ color: colors.inkSubtle }}>{v.renewal_date ? formatDate(v.renewal_date) : '-'}</td>
+                              <td className="px-4 py-3">
+                                {v.performance_score != null
+                                  ? <span className="font-mono">{v.performance_score.toFixed(0)}<span style={{ color: colors.inkTertiary }}>/100</span></span>
+                                  : <span style={{ color: colors.inkTertiary }}>No sheet yet</span>}
+                              </td>
+                              <td className="px-4 py-3 font-mono">{v.po_count}</td>
+                              <td className="px-4 py-3 font-mono font-semibold">{formatCurrency(v.committed_spend)}</td>
+                              <td className="px-4 py-3">
+                                <button onClick={() => screenVendor(v)} disabled={busy === v.vendor}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap"
+                                  style={{ background: ACCENT + '18', color: ACCENT }}>
+                                  {busy === v.vendor ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                                  Screen (OFAC)
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </TableCard>
+                  )}
+                </div>
+              );
             })()}
+
+            {/* ═══ ANALYTICS ═══ */}
+            {tab === 'analytics' && <DomainAnalytics domain="procurement" />}
           </>
         )}
       </div>
@@ -516,6 +678,229 @@ function GateCell({ gate, colors }: { gate: ProcurementGate; colors: Record<stri
       <p className="text-[11px] mt-1 leading-snug" style={{ color: colors.inkSubtle }}>
         {gate.reasons.length ? gate.reasons.join(' ') : copy.ok}
       </p>
+    </div>
+  );
+}
+
+/** One Sourcing Agent verdict field (Yes / No / Unknown), rendered in plain English. */
+function AssessCell({ label, ok, colors }: { label: string; ok?: boolean; colors: Record<string, string> }) {
+  const c = ok === true ? colors.success : ok === false ? colors.error : colors.inkSubtle;
+  const Icon = ok === true ? CheckCircle2 : ok === false ? XCircle : MinusCircle;
+  return (
+    <div className="rounded-lg p-2.5 flex items-center gap-1.5" style={{ background: colors.canvas, border: `1px solid ${colors.hairline}` }}>
+      <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: c }} />
+      <span className="text-[11.5px] font-medium" style={{ color: colors.ink }}>{label}</span>
+      <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide" style={{ color: c }}>
+        {ok === true ? 'Yes' : ok === false ? 'No' : 'Unknown'}
+      </span>
+    </div>
+  );
+}
+
+interface CreatePanelProps {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (msg: string) => void;
+  colors: Record<string, string>;
+}
+
+/** Small, focus-trapped create dialog. Mirrors components/CreateEntityModal's
+ * shell, but posts through the department-specific procurementApi wrapper
+ * (api.createRequisition) rather than the generic domain-entity endpoint. */
+function NewRequisitionModal({ open, onClose, onCreated, colors }: CreatePanelProps) {
+  const [item, setItem] = useState('');
+  const [qty, setQty] = useState('1');
+  const [price, setPrice] = useState('0');
+  const [department, setDepartment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const titleId = useId();
+  const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    if (!item.trim()) {
+      setError('Item description is required');
+      announce('Item description is required', 'assertive');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      await api.createRequisition({
+        item_description: item.trim(),
+        quantity: Math.max(1, Number(qty) || 1),
+        unit_price: Math.max(0, Number(price) || 0),
+        department: department.trim() || undefined,
+      });
+      const done = `Requisition "${item.trim()}" created.`;
+      announce(done);
+      setItem(''); setQty('1'); setPrice('0'); setDepartment('');
+      onCreated(done);
+      onClose();
+    } catch (e: any) {
+      const msg = e?.message || 'Create failed';
+      setError(msg);
+      announce(msg, 'assertive');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputStyle = { background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink } as React.CSSProperties;
+  const labelCls = 'text-[11px] font-semibold block mb-1';
+  const fieldCls = 'w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="w-full max-w-md rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+        style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 id={titleId} className="text-[15px] font-bold" style={{ color: colors.ink }}>New Requisition</h2>
+          <button onClick={onClose} aria-label="Close dialog" className="p-1 rounded" style={{ color: colors.inkSubtle }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div>
+          <label className={labelCls} style={{ color: colors.inkSubtle }}>Item description <span style={{ color: '#ef4444' }}>*</span></label>
+          <input type="text" value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. 10x standing desks"
+            className={fieldCls} style={inputStyle} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls} style={{ color: colors.inkSubtle }}>Quantity</label>
+            <input type="number" min={1} value={qty} onChange={e => setQty(e.target.value)} className={fieldCls} style={inputStyle} />
+          </div>
+          <div>
+            <label className={labelCls} style={{ color: colors.inkSubtle }}>Unit price ($)</label>
+            <input type="number" min={0} step="0.01" value={price} onChange={e => setPrice(e.target.value)} className={fieldCls} style={inputStyle} />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls} style={{ color: colors.inkSubtle }}>Department</label>
+          <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="Optional"
+            className={fieldCls} style={inputStyle} />
+        </div>
+
+        {error && <p role="alert" className="text-[11px] font-medium" style={{ color: '#ef4444' }}>{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-[12px] font-semibold" style={{ background: 'transparent', color: colors.inkSubtle }}>Cancel</button>
+          <button onClick={submit} disabled={busy}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50 text-white"
+            style={{ background: ACCENT }}>
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Same shell as NewRequisitionModal; posts a vendor plus one optional line
+ * item through api.createPurchaseOrder. */
+function NewPurchaseOrderModal({ open, onClose, onCreated, colors }: CreatePanelProps) {
+  const [vendor, setVendor] = useState('');
+  const [poNumber, setPoNumber] = useState('');
+  const [desc, setDesc] = useState('');
+  const [qty, setQty] = useState('1');
+  const [price, setPrice] = useState('0');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const titleId = useId();
+  const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    if (!vendor.trim()) {
+      setError('Vendor name is required');
+      announce('Vendor name is required', 'assertive');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const lines = desc.trim()
+        ? [{ description: desc.trim(), quantity: Math.max(1, Number(qty) || 1), unit_price: Math.max(0, Number(price) || 0) }]
+        : [];
+      const created = await api.createPurchaseOrder({
+        vendor_name: vendor.trim(),
+        po_number: poNumber.trim() || undefined,
+        lines,
+      });
+      const done = `Purchase order ${created.po_number} created for ${vendor.trim()}.`;
+      announce(done);
+      setVendor(''); setPoNumber(''); setDesc(''); setQty('1'); setPrice('0');
+      onCreated(done);
+      onClose();
+    } catch (e: any) {
+      const msg = e?.message || 'Create failed';
+      setError(msg);
+      announce(msg, 'assertive');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputStyle = { background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink } as React.CSSProperties;
+  const labelCls = 'text-[11px] font-semibold block mb-1';
+  const fieldCls = 'w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="w-full max-w-md rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+        style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 id={titleId} className="text-[15px] font-bold" style={{ color: colors.ink }}>New Purchase Order</h2>
+          <button onClick={onClose} aria-label="Close dialog" className="p-1 rounded" style={{ color: colors.inkSubtle }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div>
+          <label className={labelCls} style={{ color: colors.inkSubtle }}>Vendor <span style={{ color: '#ef4444' }}>*</span></label>
+          <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g. Meridian Office Supply Co"
+            className={fieldCls} style={inputStyle} />
+        </div>
+        <div>
+          <label className={labelCls} style={{ color: colors.inkSubtle }}>PO number</label>
+          <input type="text" value={poNumber} onChange={e => setPoNumber(e.target.value)} placeholder="Auto-generated if left blank"
+            className={fieldCls} style={inputStyle} />
+        </div>
+        <div>
+          <label className={labelCls} style={{ color: colors.inkSubtle }}>Line item description</label>
+          <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional - e.g. 10x laptop stands"
+            className={fieldCls} style={inputStyle} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls} style={{ color: colors.inkSubtle }}>Quantity</label>
+            <input type="number" min={1} value={qty} onChange={e => setQty(e.target.value)} className={fieldCls} style={inputStyle} />
+          </div>
+          <div>
+            <label className={labelCls} style={{ color: colors.inkSubtle }}>Unit price ($)</label>
+            <input type="number" min={0} step="0.01" value={price} onChange={e => setPrice(e.target.value)} className={fieldCls} style={inputStyle} />
+          </div>
+        </div>
+
+        {error && <p role="alert" className="text-[11px] font-medium" style={{ color: '#ef4444' }}>{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-[12px] font-semibold" style={{ background: 'transparent', color: colors.inkSubtle }}>Cancel</button>
+          <button onClick={submit} disabled={busy}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+            style={{ background: colors.canvas, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            Create
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

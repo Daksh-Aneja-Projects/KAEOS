@@ -3,6 +3,11 @@ KAEOS Sales Vertical — Gated Skill Runner
 
 Shared helper that routes a Sales agent action through the full 7-gate pipeline.
 Note: Proposal generation always routes to HITL (confidence hardcoded low) for human review.
+
+Gate 6 audit flags are DERIVED from context, not pre-set: a hardcoded
+``data_processing_basis_logged=True`` with no real ``legal_basis`` used to make
+Gate 6 pass on an assertion instead of a fact, which is not what the flag means.
+Mirrors app/hr/agents/gated_runner.py.
 """
 from __future__ import annotations
 
@@ -68,8 +73,13 @@ async def run_gated_sales_skill(
         "execution_id": execution_id,
         "_skill_obj": skill_obj,
     }
-    if "GDPR" in compliance_tags:
-        ctx["data_processing_basis_logged"] = True
+    # Gate 6 audit flags: derive from context, not unconditionally pre-set.
+    # A hardcoded True let every GDPR-tagged sales agent pass the audit gate
+    # regardless of whether a real lawful basis was ever supplied.
+    if any(t in compliance_tags for t in ("GDPR", "HIPAA", "CCPA")):
+        ctx.setdefault("data_processing_basis_logged", bool(context.get("legal_basis")))
+    if "SOX" in compliance_tags:
+        ctx.setdefault("financial_amount_logged", bool(context.get("amount")))
 
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)

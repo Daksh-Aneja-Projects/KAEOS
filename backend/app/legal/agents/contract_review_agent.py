@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
-from app.legal.models.contracts import Contract
+from app.legal.models.contracts import Contract, ContractClause
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,14 @@ class ContractReviewAgent:
         )).scalar_one_or_none()
         if not contract:
             raise ValueError(f"Contract {contract_id} not found")
+
+        clause_rows = (await db.execute(
+            select(ContractClause).where(
+                ContractClause.contract_id == contract_id,
+                ContractClause.tenant_id == tenant_id,
+            )
+        )).scalars().all()
+        clause_types = [c.clause_type for c in clause_rows]
 
         facts = {
             "title": contract.title,
@@ -55,19 +63,49 @@ class ContractReviewAgent:
             steps=steps,
             context={
                 "contract_id": contract_id, "tenant_id": tenant_id, **facts,
+                # CONTRACT_CLAUSE (app/compliance/checkers/legal.py) needs
+                # context['contract'] = {type, clauses}. Real clause inventory,
+                # not fabricated, so an unmodeled type/no clauses reads ADVISORY.
+                "contract": {"type": contract.contract_type, "clauses": clause_types},
                 "instruction": "Output strict JSON: {risk_score, high_risk_clauses, recommendation}.",
             },
             tenant_id=tenant_id,
             confidence=0.75,  # Contracts need human review
-            compliance_tags=["GDPR", "CCPA"],
+            compliance_tags=["GDPR", "CCPA", "CONTRACT_CLAUSE"],
         )
         if result.get("status") == "PENDING_HITL":
             return {"status": "PENDING_HITL", "execution_id": result.get("execution_id")}
         if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+
+            # Persist the AI's conclusion onto the contract — a missing field
+            # leaves the prior value alone rather than clobbering it with a
+            # fabricated number (honesty contract: never invent a metric).
+            risk_score = decision.get("risk_score")
+            if risk_score is not None:
+                try:
+                    contract.ai_risk_score = float(risk_score)
+                except (TypeError, ValueError):
+                    logger.warning(f"ContractReviewAgent: non-numeric risk_score {risk_score!r}")
+
+            summary_parts = []
+            high_risk = decision.get("high_risk_clauses")
+            if high_risk:
+                clause_list = ", ".join(str(c) for c in high_risk) if isinstance(high_risk, list) else str(high_risk)
+                summary_parts.append(f"High-risk clauses: {clause_list}.")
+            recommendation = decision.get("recommendation")
+            if recommendation:
+                summary_parts.append(str(recommendation))
+            if summary_parts:
+                contract.ai_summary = " ".join(summary_parts)
+
+            db.add(contract)
+            await db.commit()
+
             return {
                 "status": "success",
                 "contract_id": contract_id,
-                "decision": extract_decision(result),
+                "decision": decision,
                 "execution_id": result.get("execution_id"),
             }
         return result

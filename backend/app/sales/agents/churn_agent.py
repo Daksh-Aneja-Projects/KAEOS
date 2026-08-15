@@ -36,6 +36,9 @@ class ChurnAgent:
                     "prompt": f"Assess churn risk for this account (low health score = high risk): {facts}"}],
             context={
                 "account_id": account_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: retention outreach on an existing
+                # customer is the seller's legitimate interest.
+                "legal_basis": "legitimate_interests:customer_retention",
                 "instruction": "Output strict JSON: {churn_risk, drivers, retention_plan}.",
             },
             tenant_id=tenant_id,

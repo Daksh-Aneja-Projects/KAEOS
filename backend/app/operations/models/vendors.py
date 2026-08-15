@@ -1,7 +1,7 @@
 """
 KAEOS Operations Domain — Vendor Models
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Numeric, Date
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Numeric, Date, Text
 from sqlalchemy.sql import func
 import uuid
 
@@ -26,6 +26,12 @@ class VendorContract(Base):
     renewal_date = Column(Date, nullable=True)
     
     owner_id = Column(String, ForeignKey("ops_team_members.id"), nullable=True)
+
+    # VendorAgent's plain-English risk/renewal advisory. Deliberately separate
+    # from any measured "risk_level" badge (that is derived from real
+    # VendorPerformance scores, never stored here) — this is a labeled AI
+    # opinion, not a metric.
+    ai_recommendation = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

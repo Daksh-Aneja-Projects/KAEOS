@@ -17,11 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import record_security_event
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
+from app.healthcare.models.compliance import ComplianceReport
 from app.healthcare.models.core import (
     ClinicalTask, ConsentRecord, PatientEncounter, PHIDisclosure,
 )
 from app.healthcare.services.analytics import healthcare_analytics
-from app.healthcare.services.phi_disclosure import PHIDisclosureError, record_disclosure
+from app.healthcare.services.workflows import SPECS as WORKFLOW_SPECS
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,24 @@ async def healthcare_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
 async def get_healthcare_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """Computed KPIs, distributions and insights for the healthcare cockpit."""
     return await healthcare_analytics(db, tenant_id)
+
+
+@router.get("/workflows")
+async def get_healthcare_workflows(tenant_id: str = Depends(get_tenant_id)):
+    """Declared state machines — the frontend renders transition actions from this."""
+    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+
+
+@router.get("/compliance-reports")
+async def list_compliance_reports(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(ComplianceReport).where(ComplianceReport.tenant_id == tenant_id)
+        .order_by(ComplianceReport.generated_at.desc()).limit(50))).scalars().all()
+    return [{"id": r.id, "framework": r.framework, "report_name": r.report_name,
+             "period_year": r.period_year, "status": r.status,
+             "generated_at": r.generated_at.isoformat() if r.generated_at else None,
+             "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+             "data": r.data} for r in rows]
 
 
 # ─── Encounters ───────────────────────────────────────────────────────────
@@ -97,6 +116,71 @@ async def create_encounter(body: EncounterCreate, tenant: dict = Depends(require
     return _enc_dict(enc)
 
 
+# ─── Encounter agent actions (the gated 7-gate pipeline, live) ────────────
+#
+# Every write here goes through app.healthcare.agents.gated_runner's
+# run_gated_healthcare_skill: Compliance -> Fairness -> Confidence/HITL ->
+# Debate -> Execute -> Audit. always_hitl=True on every healthcare skill means
+# a clean run still lands on PENDING_HITL - that is the expected, governed
+# outcome, not a failure.
+
+class PriorAuthRequest(BaseModel):
+    procedure: str = Field(..., min_length=1, max_length=256)
+    payer: Optional[str] = Field(None, max_length=128)
+
+
+@router.post("/encounters/{encounter_id}/triage")
+async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(require_role("operator")),
+                                 db: AsyncSession = Depends(get_db)):
+    """Runs the Intake Agent's deterministic triage through the gated pipeline."""
+    from app.healthcare.agents.intake_agent import IntakeAgent
+    try:
+        result = await IntakeAgent().triage_encounter(db, encounter_id, tenant)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="encounter", resource_id=encounter_id,
+    )
+    return result
+
+
+@router.post("/encounters/{encounter_id}/suggest-codes")
+async def suggest_codes_route(encounter_id: str, tenant: dict = Depends(require_role("operator")),
+                              db: AsyncSession = Depends(get_db)):
+    """Runs the Medical Coding Agent's ICD-10 suggestion through the gated pipeline."""
+    from app.healthcare.agents.coding_agent import CodingAgent
+    try:
+        result = await CodingAgent().suggest_codes(db, encounter_id, tenant)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="clinical_task", resource_id=result.get("task_id"),
+    )
+    return result
+
+
+@router.post("/encounters/{encounter_id}/prior-auth")
+async def prior_auth_route(encounter_id: str, body: PriorAuthRequest,
+                           tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+    """Runs the Prior Authorization Agent's justification draft through the gated pipeline."""
+    from app.healthcare.agents.prior_auth_agent import PriorAuthAgent
+    try:
+        result = await PriorAuthAgent().prepare_prior_auth(
+            db, tenant, encounter_id=encounter_id, procedure=body.procedure, payer=body.payer)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
+        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        resource_type="clinical_task", resource_id=result.get("task_id"),
+    )
+    return result
+
+
 # ─── PHI Disclosures (the gated write path) ───────────────────────────────
 
 class DisclosureCreate(BaseModel):
@@ -129,9 +213,15 @@ async def create_disclosure(body: DisclosureCreate, tenant: dict = Depends(requi
                             db: AsyncSession = Depends(get_db)):
     """Record a PHI disclosure - ONLY if it passes the HIPAA + Part 2 gate.
 
-    A disclosure exceeding minimum-necessary scope, lacking a required patient
-    authorization, or touching Part 2 substance-use records without consent is
-    refused (422) and never persisted; the denial is written to the ledger."""
+    Routed through PHIGuardAgent.review_disclosure: the deterministic HIPAA +
+    Part 2 checkers run FIRST (the load-bearing control, unchanged), then the
+    full 7-gate AgentExecutor pipeline governs the release. A disclosure
+    exceeding minimum-necessary scope, lacking a required patient
+    authorization, touching Part 2 substance-use records without consent, or
+    blocked at a governance gate is refused (422) and never persisted; the
+    denial is written to the ledger."""
+    from app.healthcare.agents.phi_guard_agent import PHIGuardAgent
+
     tenant_id = tenant["tenant_id"]
     # Validate the encounter belongs to this tenant (404, not 403, on a foreign id).
     if body.encounter_id:
@@ -140,27 +230,32 @@ async def create_disclosure(body: DisclosureCreate, tenant: dict = Depends(requi
             PatientEncounter.tenant_id == tenant_id))).scalar_one_or_none()
         if not enc:
             raise HTTPException(404, "Encounter not found")
-    try:
-        disclosure = await record_disclosure(
-            db, tenant_id,
-            purpose=body.purpose, recipient=body.recipient, fields=body.fields,
-            minimum_necessary_justification=body.minimum_necessary_justification,
-            encounter_id=body.encounter_id, authorization=body.authorization,
-            diagnosis_codes=body.diagnosis_codes, part2_records=body.part2_records,
-            part2_consent=body.part2_consent, recorded_by=approver_identity(tenant),
-        )
-    except PHIDisclosureError as e:
+
+    result = await PHIGuardAgent().review_disclosure(
+        db, tenant_id,
+        purpose=body.purpose, recipient=body.recipient, fields=body.fields,
+        minimum_necessary_justification=body.minimum_necessary_justification,
+        encounter_id=body.encounter_id, authorization=body.authorization,
+        diagnosis_codes=body.diagnosis_codes, part2_records=body.part2_records,
+        part2_consent=body.part2_consent, recorded_by=approver_identity(tenant),
+    )
+    if not result.get("recorded"):
         # Governance refusal - surface WHY, keep it a 422 (the request was well
         # formed; the disclosure is simply not permitted).
         raise HTTPException(422, detail={"error": "PHI disclosure blocked",
-                                         "reason": str(e), "blocking": e.blocking})
+                                         "reason": result.get("reason") or "Blocked by the governance gate.",
+                                         "blocking": result.get("blocking", []),
+                                         "gate_status": result.get("status")})
+    disclosure = (await db.execute(select(PHIDisclosure).where(
+        PHIDisclosure.id == result["disclosure_id"]))).scalar_one()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
         actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="phi_disclosure", resource_id=disclosure.id,
     )
     return {"id": disclosure.id, "purpose": disclosure.purpose, "recipient": disclosure.recipient,
-            "authorized": disclosure.authorized, "part2": disclosure.part2}
+            "authorized": disclosure.authorized, "part2": disclosure.part2,
+            "gate_status": result.get("gate_status"), "execution_id": result.get("execution_id")}
 
 
 # ─── Consent ──────────────────────────────────────────────────────────────

@@ -6,13 +6,16 @@ codes are a recommendation for a human coder (always_hitl), never auto-applied
 to a claim.
 """
 import logging
+import uuid
 from typing import Any, Dict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.workflow import apply_transition
 from app.healthcare.agents.gated_runner import extract_decision, run_gated_healthcare_skill
 from app.healthcare.models.core import ClinicalTask, PatientEncounter
+from app.healthcare.services.workflows import CLINICAL_TASK_WORKFLOW
 from app.services.provenance import append_ledger_event
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,8 @@ class CodingAgent:
                "codes from an encounter's documented reason. You never finalize a "
                "claim; a certified human coder reviews every suggestion.")
 
-    async def suggest_codes(self, db: AsyncSession, encounter_id: str, tenant_id: str) -> Dict[str, Any]:
+    async def suggest_codes(self, db: AsyncSession, encounter_id: str, tenant: dict) -> Dict[str, Any]:
+        tenant_id = tenant["tenant_id"]
         enc = (await db.execute(select(PatientEncounter).where(
             PatientEncounter.id == encounter_id,
             PatientEncounter.tenant_id == tenant_id))).scalar_one_or_none()
@@ -31,10 +35,15 @@ class CodingAgent:
             raise ValueError(f"Encounter {encounter_id} not found")
 
         # Deterministic work + provenance FIRST: open a coding task tied to the
-        # encounter so the suggestion has a tracked, auditable home.
-        task = ClinicalTask(tenant_id=tenant_id, encounter_id=enc.id,
-                            task_type="coding", status="IN_PROGRESS")
+        # encounter, moved OPEN -> IN_PROGRESS through the validated workflow
+        # (not a raw field write) so the suggestion has a tracked, auditable,
+        # SLA-governed home.
+        task_id = str(uuid.uuid4())
+        task = ClinicalTask(id=task_id, tenant_id=tenant_id, encounter_id=enc.id, task_type="coding")
         db.add(task)
+        await apply_transition(db, CLINICAL_TASK_WORKFLOW, task_id, "IN_PROGRESS", tenant,
+                               note=f"Coding suggestion started for {enc.encounter_number}")
+
         await append_ledger_event(
             db, tenant_id=tenant_id, event_type="CODING_STARTED",
             reasoning=f"Coding suggestion requested for encounter {enc.encounter_number}.",
@@ -52,6 +61,6 @@ class CodingAgent:
         )
 
         decision = extract_decision(result) if result.get("status") == "SUCCESS_CLEAN" else {}
-        return {"encounter_id": enc.id, "task_id": task.id,
+        return {"encounter_id": enc.id, "task_id": task_id,
                 "status": result.get("status"), "suggested_codes": decision.get("codes"),
                 "execution_id": result.get("execution_id")}

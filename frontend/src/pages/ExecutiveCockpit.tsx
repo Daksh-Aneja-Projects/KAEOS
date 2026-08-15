@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
+import { metricsApi } from '../api/endpoints/metrics';
 import { useParallelApi } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { CountUp } from '../components/CountUp';
+import Sparkline from '../components/Sparkline';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
@@ -39,6 +41,11 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
     // engine was fully built but headless - nothing in the UI surfaced what the
     // org was about to do without being asked.
     ghosts: () => api.getGhostExecutions(),
+    // The STORED metric series + model-call latency - a real shipped surface
+    // (app/models/metrics_ts.py MetricSample, app/api/routes/safe_autonomy.py)
+    // that had zero UI reader until now.
+    timeseries: () => metricsApi.getTimeseries('safe_autonomy_rate', { interval: 'day' }),
+    latency: () => metricsApi.getLatency(24),
   });
 
   // Cockpit-specific data - separate stream for live executive intelligence
@@ -69,6 +76,10 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
   const pioneerAlerts = cockpit?.pioneer_alerts || [];
   const debateQueue = cockpit?.debate_queue || [];
   const orgReadiness = cockpit?.org_readiness || [];
+
+  const metricSeries = results.timeseries?.series || [];
+  const latency = results.latency;
+  const latencyTiers = latency ? Object.entries(latency.model_calls || {}) : [];
 
   const card = {
     background: colors.surface1,
@@ -571,6 +582,41 @@ export default function ExecutiveCockpit({ domain }: { domain?: string }) {
               </div>
             );
           })()}
+        </div>
+      </div>
+
+      {/* Row 5: Recorded Metric Trend + Latency - from the stored MetricSample
+          series (app/models/metrics_ts.py), not reconstructed on every read */}
+      <div style={card}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[13px] font-semibold flex items-center gap-2">
+            <BarChart3 className="w-4 h-4" style={{ color: '#3b82f6' }} /> Recorded Metric Trend
+          </h3>
+          <span className="text-[11px]" style={{ color: colors.inkSubtle }}>Safe-autonomy rate, stored daily series</span>
+        </div>
+        <div className="flex items-center gap-8 flex-wrap">
+          <div className="flex-1 min-w-[220px]">
+            {metricSeries.length >= 2 ? (
+              <Sparkline points={metricSeries.map(p => p.value)} color="#3b82f6" width={320} height={52} />
+            ) : (
+              <BrainEmpty
+                title="No stored trend yet."
+                action={results.timeseries?.note || 'The hourly rollup has not produced a sample for this window yet.'}
+                icon={BarChart3}
+              />
+            )}
+          </div>
+          {latencyTiers.length > 0 && (
+            <div className="flex gap-4 flex-wrap">
+              {latencyTiers.slice(0, 3).map(([tier, stats]) => (
+                <div key={tier} className="p-2.5 rounded-lg text-center" style={{ background: colors.canvas, minWidth: '84px' }}>
+                  <div className="text-[16px] font-bold" style={{ color: colors.ink }}>{(stats.p50_ms / 1000).toFixed(1)}s</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{humanize(tier)} p50</div>
+                  <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{stats.calls} calls (24h)</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

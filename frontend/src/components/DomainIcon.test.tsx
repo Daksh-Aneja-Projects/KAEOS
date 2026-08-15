@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { Users, Landmark, Target, Building2, Wallet, ShieldCheck } from 'lucide-react';
+import { Users, Landmark, Target, Building2, Wallet, ShieldCheck, HeartPulse, Banknote } from 'lucide-react';
 import DomainIcon from './DomainIcon';
 
 /**
@@ -26,6 +26,21 @@ describe('DomainIcon', () => {
 
   it('is case-insensitive on slugs', () => {
     expect(tileSvg({ hint: 'Finance' }).innerHTML).toBe(iconMarkup(<Landmark />));
+  });
+
+  it('resolves healthcare and lending to their own distinct icon and color', () => {
+    expect(tileSvg({ hint: 'healthcare' }).innerHTML).toBe(iconMarkup(<HeartPulse />));
+    expect(tileSvg({ hint: 'lending' }).innerHTML).toBe(iconMarkup(<Banknote />));
+    // Full department names (as returned by the API), not just the slug.
+    expect(tileSvg({ hint: 'Healthcare' }).innerHTML).toBe(iconMarkup(<HeartPulse />));
+    expect(tileSvg({ hint: 'Lending & Credit' }).innerHTML).toBe(iconMarkup(<Banknote />));
+    // Neither collides with the generic fallback or with each other.
+    const healthcareTile = render(<DomainIcon hint="healthcare" />).container.firstElementChild as HTMLElement;
+    const lendingTile = render(<DomainIcon hint="lending" />).container.firstElementChild as HTMLElement;
+    const fallbackTile = render(<DomainIcon hint="zzz-unknown" />).container.firstElementChild as HTMLElement;
+    expect(healthcareTile.style.background).not.toBe(lendingTile.style.background);
+    expect(healthcareTile.style.background).not.toBe(fallbackTile.style.background);
+    expect(lendingTile.style.background).not.toBe(fallbackTile.style.background);
   });
 
   it('resolves a legacy emoji to the replacement icon', () => {

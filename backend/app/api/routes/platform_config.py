@@ -376,20 +376,23 @@ async def update_federated(item: FederatedItem, tenant: dict = Depends(require_r
 
 
 # ── Autonomy Dial (per-domain risk appetite) ─────────────────────────────────
-_AUTONOMY_DOMAINS = ["hr", "finance", "legal", "sales", "support", "operations", "engineering"]
+# The ten shipped departments, in canonical display order. Single source of
+# truth shared with auth.py's department-scope validation.
+from app.core.domain_seed import DEPARTMENT_SLUGS as _AUTONOMY_DOMAINS
 
 
 async def _tenant_autonomy_domains(db: AsyncSession, tenant_id: str) -> list[str]:
     """Every domain whose autonomy is actually governed for this tenant.
 
-    The canonical seven are not the whole story: the governor derives domains
-    from the executed skill's department, so it can create and tune a dial for
-    any department that exists (marketing, customer_support, general...). While
-    this list was hardcoded, those dials were enforced by Gate 3 but invisible in
-    the UI and rejected by the PUT below, so "human override wins" was not true
-    for them -- nobody could see the dial, let alone take it back. Deriving the
-    list from real policies and real skill departments keeps the governed set and
-    the overridable set identical.
+    The ten shipped departments are not the whole story: the governor derives
+    domains from the executed skill's department, so it can create and tune a
+    dial for any department that exists (marketing, customer_support,
+    general...). While this list was hardcoded to an older 7-department set,
+    dials for the departments it omitted were enforced by Gate 3 but invisible
+    in the UI and rejected by the PUT below, so "human override wins" was not
+    true for them -- nobody could see the dial, let alone take it back.
+    Deriving the list from real policies and real skill departments keeps the
+    governed set and the overridable set identical.
     """
     from app.models.settings import AutonomyPolicy
     from app.models.domain import Skill
@@ -404,7 +407,7 @@ async def _tenant_autonomy_domains(db: AsyncSession, tenant_id: str) -> list[str
     )).scalars().all()
 
     seen = {d for d in (*policy_domains, *skill_domains) if d}
-    # Canonical seven first (stable, familiar order), then anything else found.
+    # Canonical ten first (stable, familiar order), then anything else found.
     return _AUTONOMY_DOMAINS + sorted(seen - set(_AUTONOMY_DOMAINS))
 
 

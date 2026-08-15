@@ -74,6 +74,14 @@ def seed_departments():
                 icon="LGL", status=DepartmentStatus.ACTIVE,
                 employee_count=8, agent_count=4, capability_count=4, process_count=11,
                 health_score=0.96, automation_coverage=0.62,
+                # These are the frameworks legal's own gates actually enforce:
+                # CONFLICT_OF_INTEREST/LEGAL_HOLD/RETENTION_SCHEDULE are bound as
+                # real pre-write gates (app/legal/services/compliance_gates.py),
+                # CONTRACT_CLAUSE/GDPR/CCPA are the gated compliance_tags on
+                # contract_review_agent.py - not the domain pack's longer list.
+                compliance_frameworks=["CONFLICT_OF_INTEREST", "LEGAL_HOLD",
+                                       "RETENTION_SCHEDULE", "CONTRACT_CLAUSE",
+                                       "GDPR", "CCPA"],
                 deployed_at=NOW - timedelta(days=14),),
             Department(id="dept_sales", tenant_id=T, name="Sales", slug="sales",
                 description="AI-powered Sales department: pipeline, forecasting, account management.",
@@ -274,6 +282,12 @@ def seed_connectors():
         ("Recruiting ATS", "ats", "API", "AVAILABLE", "🌱", "Greenhouse candidates and pipeline stages", "api_key", "DAILY", 0, 0, 0, 0, None),
         ("Payments", "payments", "API", "AVAILABLE", "💳", "Stripe invoices, charges, and settlement status", "api_key", "HOURLY", 0, 0, 0, 0, None),
         ("E-Signature", "legal", "API", "AVAILABLE", "✍️", "DocuSign envelopes and signature completion status", "oauth2", "HOURLY", 0, 0, 0, 0, None),
+        # Healthcare, Lending, Procurement — each department's headline system
+        # of record, connected so its Neural Map cluster gets real connector
+        # nodes (see neural_helpers.dept_categories for the category match).
+        ("Clinical EHR", "clinical", "API", "CONNECTED", "", "Electronic health records, encounters, and clinical documentation sync", "oauth2", "REAL_TIME", 19640, 2380, 1, 64, NOW_L-timedelta(minutes=9)),
+        ("Loan Origination System", "core_banking", "NATIVE", "CONNECTED", "", "Loan applications, underwriting decisions, and core banking ledger sync", "service_account", "HOURLY", 9280, 1170, 0, 132, NOW_L-timedelta(hours=2)),
+        ("E-Sourcing Platform", "procurement", "API", "CONNECTED", "", "Supplier sourcing events, RFQs, and purchase requisition sync", "oauth2", "DAILY", 5410, 760, 0, 210, NOW_L-timedelta(hours=9)),
     ]
     result = []
     for name, cat, ctype, status, icon, desc, auth, freq, events, signals, errors, latency, sync_at in connectors_data:
@@ -494,18 +508,20 @@ async def top_up_new_entities(db_session) -> dict:
     try:
         from datetime import date, timedelta
 
-        from app.hr.models.payroll import PayrollRun
+        from app.hr.models.payroll import PayrollRun, Payslip
+        from app.hr.models.core import HREmployee, EmploymentStatus
 
         added["payroll_runs"] = 0
+        added["payslips"] = 0
         existing_runs = (await db_session.execute(
-            select(PayrollRun).where(PayrollRun.tenant_id == T).limit(1)
-        )).scalars().first()
+            select(PayrollRun).where(PayrollRun.tenant_id == T)
+        )).scalars().all()
         if not existing_runs:
             today = NOW.date() if NOW else date.today()
             for months_back in (2, 1):
                 start = (today.replace(day=1) - timedelta(days=months_back * 30)).replace(day=1)
                 end = (start + timedelta(days=31)).replace(day=1) - timedelta(days=1)
-                db_session.add(PayrollRun(
+                run = PayrollRun(
                     tenant_id=T,
                     period_start=start,
                     period_end=end,
@@ -514,8 +530,36 @@ async def top_up_new_entities(db_session) -> dict:
                     total_net=298_430.75,
                     total_taxes=87_190.25,
                     total_deductions=26_879.00,
-                ))
+                )
+                db_session.add(run)
+                existing_runs.append(run)
                 added["payroll_runs"] += 1
+            await db_session.flush()  # populate run.id before Payslip.run_id references it
+
+        # Payslips: the per-employee breakdown of each run's aggregate totals.
+        # This backfill previously stopped at PayrollRun, leaving hr_payslips
+        # permanently empty for any tenant seeded before Payslip shipped -
+        # covers both runs created just above and any older top-up that
+        # already has runs but never got their child rows.
+        existing_payslip_run_ids = set((await db_session.execute(
+            select(Payslip.run_id).where(Payslip.tenant_id == T)
+        )).scalars().all())
+        runs_needing_payslips = [r for r in existing_runs if r.id not in existing_payslip_run_ids]
+        if runs_needing_payslips:
+            emp_ids = (await db_session.execute(
+                select(HREmployee.id).where(
+                    HREmployee.tenant_id == T, HREmployee.status == EmploymentStatus.ACTIVE)
+            )).scalars().all()
+            if emp_ids:
+                for run in runs_needing_payslips:
+                    share_gross = round((run.total_gross or 0.0) / len(emp_ids), 2)
+                    share_net = round((run.total_net or 0.0) / len(emp_ids), 2)
+                    for emp_id in emp_ids:
+                        db_session.add(Payslip(
+                            tenant_id=T, run_id=run.id, employee_id=emp_id,
+                            gross_pay=share_gross, net_pay=share_net,
+                        ))
+                        added["payslips"] += 1
     except Exception as e:
         logger.warning(f"[Seed] Payroll top-up skipped: {e}")
 

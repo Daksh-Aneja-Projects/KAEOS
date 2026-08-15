@@ -159,6 +159,90 @@ BLUEPRINT_DEFS = [
             ],
         },
     },
+    {
+        "name": "Deploy Risk Sentinel Agent",
+        "description": "Build an agent that reviews upcoming deploys for blast radius, checks active change-freeze windows, and pages the on-call engineer when risk is high.",
+        "department": "engineering",
+        "domain": "engineering",
+        "status": BlueprintStatus.COMPILED,
+        "compliance_tags": ["SOC2", "CHANGE_FREEZE"],
+        "graph": {
+            "nodes": [
+                {"id": "fetch_plan", "type": "DATA_SOURCE", "label": "Fetch Deploy Plan", "config": {"tool": "ci_read"}},
+                {"id": "check_freeze", "type": "DECISION_GATE", "label": "Check Change-Freeze Window", "config": {"tool": "compliance_engine"}},
+                {"id": "score_risk", "type": "DECISION_GATE", "label": "Score Blast Radius", "config": {}},
+                {"id": "page_oncall", "type": "OUTPUT", "label": "Page On-Call Engineer", "config": {"tool": "pagerduty_notify"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "fetch_plan", "target": "check_freeze", "type": "DATA_FLOW"},
+                {"id": "e2", "source": "check_freeze", "target": "score_risk", "type": "DATA_FLOW"},
+                {"id": "e3", "source": "score_risk", "target": "page_oncall", "type": "CONDITIONAL_TRUE"},
+            ],
+        },
+    },
+    {
+        "name": "PHI Disclosure Guard Agent",
+        "description": "Build an agent that reviews every outbound PHI disclosure request against the HIPAA minimum-necessary standard and 42 CFR Part 2 before release.",
+        "department": "healthcare",
+        "domain": "healthcare",
+        "status": BlueprintStatus.DEPLOYED,
+        "compliance_tags": ["HIPAA_MINIMUM_NECESSARY", "PART2"],
+        "graph": {
+            "nodes": [
+                {"id": "fetch_request", "type": "DATA_SOURCE", "label": "Fetch Disclosure Request", "config": {"tool": "ehr_read"}},
+                {"id": "check_minimum", "type": "DECISION_GATE", "label": "Check Minimum-Necessary", "config": {"tool": "compliance_engine"}},
+                {"id": "check_part2", "type": "DECISION_GATE", "label": "Check 42 CFR Part 2", "config": {"tool": "compliance_engine"}},
+                {"id": "approve", "type": "ACTION", "label": "Approve or Block Disclosure", "config": {"tool": "ehr_write"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "fetch_request", "target": "check_minimum", "type": "DATA_FLOW"},
+                {"id": "e2", "source": "check_minimum", "target": "check_part2", "type": "DATA_FLOW"},
+                {"id": "e3", "source": "check_part2", "target": "approve", "type": "CONDITIONAL_TRUE"},
+            ],
+        },
+    },
+    {
+        "name": "Three-Way Match Agent",
+        "description": "Build an agent that matches purchase orders, goods receipts, and vendor invoices, screens the supplier against sanctions lists, and releases payment within spend authority.",
+        "department": "procurement",
+        "domain": "procurement",
+        "status": BlueprintStatus.APPROVED,
+        "compliance_tags": ["THREE_WAY_MATCH", "OFAC_SANCTIONS"],
+        "graph": {
+            "nodes": [
+                {"id": "fetch_po", "type": "DATA_SOURCE", "label": "Fetch PO, Receipt, Invoice", "config": {"tool": "erp_read"}},
+                {"id": "match", "type": "DECISION_GATE", "label": "Three-Way Match", "config": {"tool": "erp_match"}},
+                {"id": "screen_supplier", "type": "DECISION_GATE", "label": "Screen Supplier (OFAC)", "config": {"tool": "sanctions_screen"}},
+                {"id": "release", "type": "ACTION", "label": "Release Payment or Escalate", "config": {"tool": "erp_write"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "fetch_po", "target": "match", "type": "DATA_FLOW"},
+                {"id": "e2", "source": "match", "target": "screen_supplier", "type": "DATA_FLOW"},
+                {"id": "e3", "source": "screen_supplier", "target": "release", "type": "CONDITIONAL_TRUE"},
+            ],
+        },
+    },
+    {
+        "name": "Adverse Action Notice Agent",
+        "description": "Build an agent that drafts ECOA-compliant adverse action notices for declined loan applications and files the fair-lending audit trail.",
+        "department": "lending",
+        "domain": "lending",
+        "status": BlueprintStatus.DRAFTING,
+        "compliance_tags": ["ECOA", "FAIR_LENDING"],
+        "graph": {
+            "nodes": [
+                {"id": "fetch_decision", "type": "DATA_SOURCE", "label": "Fetch Underwriting Decision", "config": {"tool": "los_read"}},
+                {"id": "draft_notice", "type": "TRANSFORM", "label": "Draft Adverse Action Notice", "config": {"tool": "llm_reason"}},
+                {"id": "check_fair_lending", "type": "DECISION_GATE", "label": "Check Fair-Lending Reasons", "config": {"tool": "compliance_engine"}},
+                {"id": "send_notice", "type": "OUTPUT", "label": "Send Notice to Applicant", "config": {"tool": "email_send"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "fetch_decision", "target": "draft_notice", "type": "DATA_FLOW"},
+                {"id": "e2", "source": "draft_notice", "target": "check_fair_lending", "type": "DATA_FLOW"},
+                {"id": "e3", "source": "check_fair_lending", "target": "send_notice", "type": "CONDITIONAL_TRUE"},
+            ],
+        },
+    },
 ]
 
 

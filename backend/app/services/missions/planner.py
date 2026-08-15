@@ -28,9 +28,15 @@ _DEPT_ALIASES = {
     "legal": ["legal", "compliance", "legal_compliance", "risk_legal"],
     "sales": ["sales", "revenue", "gtm"],
     "support": ["support", "customer_support", "customersupport", "cx", "service"],
-    "operations": ["operations", "ops", "supply_chain", "procurement"],
+    "operations": ["operations", "ops", "supply_chain"],
     "engineering": ["engineering", "eng", "platform", "it"],
     "marketing": ["marketing", "growth", "demand_gen"],
+    "healthcare": ["healthcare", "health", "clinical", "medical"],
+    "lending": ["lending", "banking", "credit", "loans"],
+    # No alias list needed: "procurement" is already canonical and gets no
+    # rewrite (it used to be folded into "operations" until the department
+    # shipped its own gated_runner.py with domain="procurement").
+    "procurement": [],
 }
 _ALIAS_TO_CANON = {a: canon for canon, aliases in _DEPT_ALIASES.items() for a in aliases}
 
@@ -46,18 +52,28 @@ _DEPT_SIGNALS = {
               "revenue target", "renewal", "prospect"],
     "support": ["ticket", "support", "incident", "sla", "customer service", "escalation",
                 "outage response", "brief support"],
-    "operations": ["vendor", "supply", "operations", "logistics", "procurement",
+    "operations": ["vendor", "supply", "operations", "logistics",
                    "supplier", "inventory", "capacity"],
     "engineering": ["deploy", "engineering", "code", "release", "infra", "infrastructure",
                     "outage", "system", "migration"],
     "marketing": ["campaign", "marketing", "brand", "launch", "content", "demand", "lead gen"],
+    "healthcare": ["patient", "clinical", "encounter", "hipaa", "phi", "consent",
+                   "diagnosis", "treatment", "prior authorization", "protected health"],
+    "lending": ["loan", "credit", "underwrite", "underwriting", "adverse action",
+                "borrower", "fair lending", "mortgage", "origination", "collections"],
+    "procurement": ["procurement", "purchase order", "rfq", "sourcing", "requisition",
+                    "three-way match", "spend authorization", "vendor onboarding"],
 }
 
-# Canonical execution order (dependency priority) across departments.
-_DEPT_ORDER = ["legal", "finance", "hr", "operations", "engineering", "marketing", "sales", "support"]
+# Canonical execution order (dependency priority) across departments: gate
+# departments first (legal/finance/healthcare/lending all carry regulatory
+# HITL weight), then hr/procurement feed operations/engineering, then the
+# customer-facing departments.
+_DEPT_ORDER = ["legal", "finance", "healthcare", "lending", "hr", "procurement",
+               "operations", "engineering", "marketing", "sales", "support"]
 
 # Departments where an autonomous action is treated as high-consequence.
-_HIGH_CONSEQUENCE = {"legal", "finance"}
+_HIGH_CONSEQUENCE = {"legal", "finance", "healthcare", "lending", "procurement"}
 
 
 def _canon_dept(raw: Optional[str]) -> str:

@@ -11,6 +11,51 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Depth pass: every department audited, then taken to parity
+
+A 14-agent audit of all ten departments and the cross-cutting surfaces found 107
+gaps (18 critical). All of them are now closed, with the backend suite grown from
+814 to 1043 tests.
+
+**Production-breaking defects.** Three of these would have failed in production:
+- **Engineering had no migration at all.** Its six tables existed only via the
+  `create_all` baseline, which is refused in production. A deploy following the
+  documented `alembic upgrade head` path left every `/engineering/*` endpoint
+  permanently returning 500, with a swallowed warning as the only symptom.
+  Migration `0045` creates them, plus on-call rotations and CI pipeline runs.
+- **Every gated sales agent failed its audit gate.** The runner asserted
+  `data_processing_basis_logged=True` without ever setting a `legal_basis`, so
+  Gate 6 returned `FAILED_AUDIT` instead of a decision on all six agents. The flag
+  is now derived from a real lawful basis, as HR already did. The existing test
+  missed it because it only asserted `status_code == 200`, never the body.
+- **RBAC rejected the three newest departments.** Scoping or inviting a user into
+  Healthcare, Lending or Procurement returned a 400 from a hardcoded seven-slug set,
+  while the UI dropdown correctly offered all ten.
+
+**Ungoverned decisions brought under the gate pipeline.** Patent abandonment
+(Legal), discount and margin approval (Sales CPQ), and PHI disclosure (Healthcare)
+each mutated real state while bypassing compliance, HITL and the audit trail. All
+now route through the seven-gate pipeline.
+
+**Agents that ran but changed nothing.** Nine agents across Legal and Operations
+ran a full governed LLM call and discarded the result, so every Review, Audit and
+Evaluate button left the record untouched. They now persist their decision.
+
+**Fabricated numbers replaced with real ones.** Per-policy SLA metrics were derived
+from one unrelated aggregate row plus a hardcoded five-point fudge; vendor risk and
+SOC2 status were `getattr` defaults; inspection scores were a three-rung status
+lookup. All are now computed from real rows, or honestly reported as absent.
+
+**Reach.** Roughly 90 endpoints added across HR, Legal and Support for models that
+were seeded but unreachable; loan servicing and collections built so the advertised
+FDCPA controls actually execute; facilities work orders, healthcare agent routes and
+procurement sourcing wired to real UI actions. The org-wide health view, Reality
+twin, What-If simulator, mission planner and event mesh all cover ten departments
+instead of seven. Neural Map labels no longer collide at ten departments, and the
+colour palette no longer repeats a hue.
+
+Every migration validated on a real Postgres 16 container, not only SQLite.
+
 ### All ten departments visible everywhere + org-graph seeding fix
 Two defects meant the three new departments existed in the API but were invisible
 in the org-wide surfaces, and the living views rendered a near-empty organisation:

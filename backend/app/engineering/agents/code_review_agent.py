@@ -1,15 +1,34 @@
 """KAEOS Engineering Domain — Code Review Agent"""
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engineering.agents.gated_runner import extract_decision, run_gated_engineering_skill
+from app.engineering.models.core import Engineer
 from app.engineering.models.delivery import PullRequest, RiskLevel
 
 logger = logging.getLogger(__name__)
+
+
+def _change_context(pr: PullRequest, implementer: Optional[str]) -> Dict[str, Any]:
+    """Real change-management facts for this PR review, for the CHANGE_MANAGEMENT
+    checker (app/compliance/checkers/operations.py).
+
+    A code review is advisory analysis of a PROPOSED change, not the production
+    change event itself, so whether this specific action targets production is
+    genuinely unresolved (``is_production: None`` -> an honest ADVISORY verdict,
+    never a fabricated PASS/BLOCK). KAEOS records only an approval COUNT on a PR
+    (``approvals``), not a named approver identity, so ``approver`` is
+    intentionally left out rather than invented.
+    """
+    return {
+        "is_production": None,
+        "implementer": implementer,
+        "ticket": f"PR-{pr.number}",
+    }
 
 
 class CodeReviewAgent:
@@ -25,6 +44,14 @@ class CodeReviewAgent:
         )).scalar_one_or_none()
         if not pr:
             raise ValueError("Pull request not found")
+
+        author = None
+        if pr.author_id:
+            author = (await db.execute(
+                select(Engineer).where(
+                    Engineer.id == pr.author_id, Engineer.tenant_id == tenant_id
+                )
+            )).scalar_one_or_none()
 
         # Deterministic change-surface facts, given to the model as grounding
         # so its judgement is anchored to the real diff rather than invented.
@@ -55,7 +82,10 @@ class CodeReviewAgent:
         result = await run_gated_engineering_skill(
             skill_id="engineering_code_review",
             steps=steps,
-            context={"pr_id": pr_id, "tenant_id": tenant_id, "surface": surface},
+            context={
+                "pr_id": pr_id, "tenant_id": tenant_id, "surface": surface,
+                "change": _change_context(pr, author.email if author else None),
+            },
             tenant_id=tenant_id,
         )
 

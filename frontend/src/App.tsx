@@ -63,6 +63,7 @@ const SalesView = lazy(() => import('./views/SalesView'));
 // ─── OPERATIONS DEPARTMENT ──────────────────────────────────────────
 const OperationsDashboard = lazy(() => import('./pages/OperationsDashboard'));
 const OperationsView = lazy(() => import('./views/OperationsView'));
+const EngineeringDashboard = lazy(() => import('./pages/EngineeringDashboard'));
 const EngineeringView = lazy(() => import('./views/EngineeringView'));
 
 // ─── REGULATED VERTICALS (Healthcare · Lending · Procurement) ───────
@@ -692,11 +693,13 @@ function Shell() {
 
                 {/* OPERATIONS DEPARTMENT */}
                 {/* Engineering & IT Ops - the largest slice of enterprise AI spend */}
-                <Route path="/departments/engineering" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="services" /></ThemeAdapter>} />
+                <Route path="/departments/engineering" element={<ThemeAdapter><EngineeringDashboard /></ThemeAdapter>} />
+                <Route path="/departments/engineering/services" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="services" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/pull-requests" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="pull-requests" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/deployments" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="deployments" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/incidents" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="incidents" /></ThemeAdapter>} />
                 <Route path="/departments/engineering/postmortems" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="postmortems" /></ThemeAdapter>} />
+                <Route path="/departments/engineering/oncall" element={<ThemeAdapter><EngineeringView domain={domain} defaultTab="oncall" /></ThemeAdapter>} />
 
                 <Route path="/departments/operations" element={<ThemeAdapter><OperationsDashboard /></ThemeAdapter>} />
                 <Route path="/departments/operations/projects" element={<ThemeAdapter><OperationsView domain={domain} defaultTab="projects" /></ThemeAdapter>} />

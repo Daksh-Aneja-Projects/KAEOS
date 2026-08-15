@@ -18,7 +18,7 @@ from app.healthcare.services.phi_disclosure import (
 
 logger = logging.getLogger(__name__)
 
-PHI_TAGS = ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "PART2"]
+PHI_TAGS = ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "HIPAA_DEIDENTIFICATION", "PART2"]
 
 
 class PHIGuardAgent:

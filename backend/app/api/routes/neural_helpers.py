@@ -349,6 +349,9 @@ def _cluster_graph(
         "engineering": {"engineering"},
         "operations": {"commercial"},
         "legal": set(),
+        "healthcare": {"clinical"},
+        "lending": {"core_banking"},
+        "procurement": {"procurement"},
     }.get(dept.slug, set())
     connectors = [
         c for c in all_connectors

@@ -53,7 +53,7 @@ class OpportunityProduct(Base):
     opportunity_id = Column(String, ForeignKey("sls_opportunities.id"), nullable=False, index=True)
 
     product_name = Column(String(128), nullable=False)
-    quantity = Column(Integer, default=1) if 'Integer' in globals() else Column(String(32), default="1") # Let's verify Integer is imported.
+    quantity = Column(Integer, default=1)
     unit_price = Column(Numeric(18, 2), default=0)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

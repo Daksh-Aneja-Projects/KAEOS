@@ -10,7 +10,9 @@
 import { Brain } from 'lucide-react';
 import { humanize } from '../lib/format';
 
-export const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering'];
+// Every label here lowercases to a real department slug (target_domain in
+// RealityExperience.tsx), so keep this in sync with the 10 seeded departments.
+export const WHATIF_DOMAINS = ['All Domains', 'HR', 'Finance', 'Legal', 'Sales', 'Support', 'Operations', 'Engineering', 'Healthcare', 'Procurement', 'Lending'];
 export const WHATIF_RISK = ['conservative', 'balanced', 'aggressive'];
 
 export interface TwinNode { id: string; name: string; group: number; label: string; [k: string]: any }
@@ -77,6 +79,9 @@ export const TWIN_LEGEND = [
   { label: 'Contract', color: '#f472b6' },
   { label: 'Incident', color: '#f87171' },
   { label: 'PurchaseOrder', color: '#a3e635' },
+  { label: 'Encounter', color: '#14b8a6' },
+  { label: 'LoanApplication', color: '#d97706' },
+  { label: 'Requisition', color: '#facc15' },
   { label: 'Vendor', color: '#ec4899' },
   { label: 'Project', color: '#ef4444' },
   { label: 'Capability', color: '#06b6d4' },

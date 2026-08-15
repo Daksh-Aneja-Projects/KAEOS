@@ -82,10 +82,6 @@ async def run_gated_engineering_skill(
         "_skill_obj": skill_obj,
     }
 
-    # SOC2 change management expects an auditable approval trail.
-    if "CHANGE_MANAGEMENT" in compliance_tags:
-        ctx["change_record_logged"] = True
-
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)
 

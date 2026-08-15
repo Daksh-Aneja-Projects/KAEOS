@@ -23,6 +23,8 @@ import asyncio
 import uuid
 from datetime import date, timedelta
 
+from sqlalchemy import select
+
 from app.core.database import AsyncSessionLocal, async_engine
 from app.models.domain import Base
 from app.operations.models.procurement import (
@@ -31,6 +33,13 @@ from app.operations.models.procurement import (
 from app.operations.models.vendors import VendorContract
 
 TENANT = "tenant_acme"
+
+# Sentinel for "has this seeder already run for this tenant". Operations' own
+# seed() (which calls this module) seeds ITS OWN PurchaseRequest/PurchaseOrder/
+# VendorContract rows first, so a generic "any row exists" check would always
+# be true and this seeder would never run. This vendor name is unique to this
+# file - Operations never creates it - so it is a reliable, cheap sentinel.
+_SENTINEL_VENDOR = "Crimson Star Trading Ltd"
 
 
 def _id() -> str:
@@ -42,6 +51,16 @@ async def seed():
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        already = (await db.execute(
+            select(VendorContract.id).where(
+                VendorContract.tenant_id == TENANT,
+                VendorContract.vendor_name == _SENTINEL_VENDOR,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if already:
+            print("[SKIP] Procurement already seeded for this tenant - no changes made.")
+            return
+
         # ── Vendors (one sanctioned-looking name for the OFAC screen demo) ────
         vendors = [
             VendorContract(id=_id(), tenant_id=TENANT, vendor_name="Meridian Office Supply Co",
@@ -94,10 +113,12 @@ async def seed():
         po3 = PurchaseOrder(id=_id(), tenant_id=TENANT, purchase_request_id=reqs[3].id,
                             po_number="PO-2026-1003", vendor_name="Northwind Logistics Inc",
                             total_amount=48000.00, status=ProcurementStatus.RECEIVED)
-        # PO 4: ordered, not yet received (open on the receiving desk).
+        # PO 4: awaiting approval - so the four-control gate panel and its
+        # Approve button are reachable on a freshly seeded tenant (the only
+        # states _APPROVABLE accepts are DRAFT / PENDING_APPROVAL).
         po4 = PurchaseOrder(id=_id(), tenant_id=TENANT, purchase_request_id=reqs[1].id,
                             po_number="PO-2026-1004", vendor_name="BrightPath Cloud Systems",
-                            total_amount=210000.00, status=ProcurementStatus.ORDERED)
+                            total_amount=210000.00, status=ProcurementStatus.PENDING_APPROVAL)
         db.add_all([po1, po2, po3, po4])
         await db.flush()
 

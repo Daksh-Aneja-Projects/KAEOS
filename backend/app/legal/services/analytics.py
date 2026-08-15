@@ -1,14 +1,23 @@
 """
 KAEOS Legal — Analytics Service
-Contract portfolio composition, renewal exposure and clause risk, computed
-live from tenant rows.
+Contract portfolio composition, renewal exposure and clause risk, obligation
+overdue rate, DSAR SLA risk and litigation exposure by stage - computed live
+from tenant rows.
 """
 from datetime import date, timedelta
 
 from sqlalchemy import and_, case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.legal.models.compliance import ComplianceObligation, ObligationStatus
 from app.legal.models.contracts import Contract, ContractClause, ContractStatus
+from app.legal.models.litigation import Case
+from app.legal.models.privacy import DataSubjectRequest, DsarStatus
+
+# A DSAR is "at risk" once its statutory deadline is within this window (or
+# already past it) and it has not reached a terminal status.
+_DSAR_RISK_WINDOW_DAYS = 7
+_DSAR_TERMINAL = (DsarStatus.COMPLETED, DsarStatus.FAILED)
 
 
 async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
@@ -62,6 +71,45 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
     clause_risk = {(r.value if hasattr(r, "value") else str(r)): int(c) for r, c in risk_q.all()}
     high_risk_clauses = clause_risk.get("HIGH", 0)
 
+    # Obligation overdue rate — null (never 0/fake) when there are no
+    # obligations to rate at all, honoring the honesty contract.
+    ob_q = await db.execute(
+        select(sqlfunc.count(),
+               sqlfunc.coalesce(sqlfunc.sum(case((ComplianceObligation.status == ObligationStatus.OVERDUE, 1), else_=0)), 0))
+        .where(ComplianceObligation.tenant_id == tenant_id)
+    )
+    ob_total, ob_overdue = ob_q.one()
+    ob_total, ob_overdue = int(ob_total or 0), int(ob_overdue or 0)
+    overdue_rate = (ob_overdue / ob_total * 100.0) if ob_total else None
+
+    # DSAR SLA risk — requests not yet terminal whose statutory deadline is
+    # within the risk window (or already past it).
+    dsar_q = await db.execute(
+        select(sqlfunc.count())
+        .where(DataSubjectRequest.tenant_id == tenant_id,
+               DataSubjectRequest.status.notin_(_DSAR_TERMINAL),
+               DataSubjectRequest.deadline_date <= today + timedelta(days=_DSAR_RISK_WINDOW_DAYS))
+    )
+    dsar_at_risk = int(dsar_q.scalar() or 0)
+
+    # Litigation exposure by stage — chart-only.
+    exposure_by_stage: list[dict] = []
+    if charts:
+        stage_q = await db.execute(
+            select(Case.stage, sqlfunc.coalesce(sqlfunc.sum(Case.exposure_amount), 0))
+            .where(Case.tenant_id == tenant_id)
+            .group_by(Case.stage)
+        )
+        exposure_by_stage = [
+            {"label": (s.value if hasattr(s, "value") else str(s)), "value": float(v or 0)}
+            for s, v in stage_q.all()
+        ]
+    total_exposure_q = await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.sum(Case.exposure_amount), 0))
+        .where(Case.tenant_id == tenant_id)
+    )
+    total_litigation_exposure = float(total_exposure_q.scalar() or 0)
+
     insights = []
     if expiring_count:
         insights.append({"severity": "warning",
@@ -72,8 +120,17 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
     if in_review:
         insights.append({"severity": "info",
                          "message": f"{in_review} contracts are sitting in legal review."})
+    if ob_overdue:
+        insights.append({"severity": "critical",
+                         "message": f"{ob_overdue} of {ob_total} compliance obligations are overdue."})
+    if dsar_at_risk:
+        insights.append({"severity": "warning",
+                         "message": f"{dsar_at_risk} data subject request(s) are within {_DSAR_RISK_WINDOW_DAYS} days of their statutory deadline."})
+    if total_litigation_exposure:
+        insights.append({"severity": "info",
+                         "message": f"Total litigation exposure across open cases is ${total_litigation_exposure:,.0f}."})
     if not insights:
-        insights.append({"severity": "info", "message": "Contract portfolio has no urgent exposure."})
+        insights.append({"severity": "info", "message": "Legal portfolio has no urgent exposure."})
 
     return {
         "domain": "legal",
@@ -84,6 +141,9 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
             {"key": "expiring", "label": "Expiring ≤90d", "value": int(expiring_count or 0), "format": "number"},
             {"key": "high_risk", "label": "High-Risk Clauses", "value": high_risk_clauses, "format": "number"},
             {"key": "avg_risk", "label": "Avg AI Risk Score", "value": float(avg_risk) if avg_risk is not None else None, "format": "number"},
+            {"key": "obligation_overdue_rate", "label": "Obligation Overdue Rate", "value": overdue_rate, "format": "percent"},
+            {"key": "dsar_at_risk", "label": "DSARs Near Deadline", "value": dsar_at_risk, "format": "number"},
+            {"key": "litigation_exposure", "label": "Litigation Exposure", "value": total_litigation_exposure, "format": "currency"},
         ],
         "charts": [
             {"key": "status_mix", "title": "Contracts by Status", "type": "donut",
@@ -91,6 +151,8 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
             {"key": "value_by_type", "title": "Contract Value by Type", "type": "bar", "items": value_by_type},
             {"key": "clause_risk", "title": "Clause Risk Levels", "type": "bar",
              "items": [{"label": k, "value": v} for k, v in clause_risk.items()]},
+            {"key": "exposure_by_stage", "title": "Litigation Exposure by Stage", "type": "bar",
+             "items": exposure_by_stage},
         ] if charts else [],
         "insights": insights,
     }

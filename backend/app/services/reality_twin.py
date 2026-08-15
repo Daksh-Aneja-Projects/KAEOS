@@ -31,6 +31,9 @@ GROUPS = {
     "Contract": 11,
     "Incident": 12,
     "PurchaseOrder": 13,
+    "Encounter": 14,
+    "LoanApplication": 15,
+    "Requisition": 16,
 }
 
 # Per department, how many of each headline entity to weave into the twin. Enough
@@ -207,6 +210,38 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
                              name_fn=lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60])
             except Exception:
                 logger.warning("Reality twin: failed to weave PurchaseOrder domain", exc_info=True)
+        try:
+            from app.healthcare.models.core import PatientEncounter as _Encounter
+        except ImportError:
+            pass
+        else:
+            try:
+                await _weave(_Encounter, "Encounter", "healthcare", "TREATS", "encounter_number",
+                             name_fn=lambda e: f"Encounter {getattr(e, 'encounter_number', '') or ''}".strip() or "Encounter")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Encounter domain", exc_info=True)
+        try:
+            from app.lending.models.core import LoanApplication as _LoanApplication
+        except ImportError:
+            pass
+        else:
+            try:
+                await _weave(_LoanApplication, "LoanApplication", "lending", "UNDERWRITES", "applicant_name",
+                             name_fn=lambda l: getattr(l, "applicant_name", None) or getattr(l, "application_number", None) or "Loan Application")
+            except Exception:
+                logger.warning("Reality twin: failed to weave LoanApplication domain", exc_info=True)
+        try:
+            # The dedicated Procurement department's headline record: internal
+            # purchase claims before a PO is issued (distinct from Operations'
+            # PurchaseOrder weave above, which tracks the PO once it exists).
+            from app.operations.models.procurement import PurchaseRequest as _Requisition
+        except ImportError:
+            pass
+        else:
+            try:
+                await _weave(_Requisition, "Requisition", "procurement", "REQUESTS", "item_description")
+            except Exception:
+                logger.warning("Reality twin: failed to weave Requisition domain", exc_info=True)
 
     return nodes, edges
 

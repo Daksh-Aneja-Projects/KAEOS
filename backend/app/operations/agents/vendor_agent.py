@@ -9,7 +9,7 @@ from typing import Any, Dict
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.operations.agents.gated_runner import run_gated_operations_skill
+from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.vendors import VendorContract, VendorPerformance
 from app.services.json_utils import plain_facts
 
@@ -42,7 +42,7 @@ class VendorAgent:
             "latest_overall_performance_score": perf.overall_performance_score if perf else None,
         }
         facts = plain_facts(facts)
-        return await run_gated_operations_skill(
+        result = await run_gated_operations_skill(
             skill_id="operations_vendor_risk",
             steps=[{"step": 1, "name": "Evaluate",
                     "prompt": f"Evaluate this vendor relationship for risk and renewal readiness: {facts}"}],
@@ -52,3 +52,27 @@ class VendorAgent:
             },
             tenant_id=tenant_id,
         )
+
+        if result.get("status") == "SUCCESS_CLEAN":
+            decision = extract_decision(result)
+            # A labeled AI opinion, kept deliberately separate from the
+            # measured risk_level badge (/vendors derives that one from real
+            # VendorPerformance scores — never from this narrative).
+            note_parts = []
+            risk = decision.get("risk_level")
+            if risk:
+                note_parts.append(f"AI risk assessment: {str(risk).title()}.")
+            renew = decision.get("renew_recommendation")
+            if renew:
+                note_parts.append(f"Renewal: {renew}.")
+            concerns = decision.get("concerns")
+            if concerns:
+                concerns_text = concerns if isinstance(concerns, str) else ", ".join(str(c) for c in concerns)
+                if concerns_text.strip():
+                    note_parts.append(f"Concerns: {concerns_text}.")
+            contract.ai_recommendation = " ".join(note_parts) if note_parts else None
+            db.add(contract)
+            await db.commit()
+            result = {**result, "decision": decision}
+
+        return result

@@ -35,22 +35,22 @@ def _stage(c: Candidate) -> CandidateStage:
 
 
 async def build_cohort_outcomes(
-    db: AsyncSession, tenant_id: str, requisition_id: str,
+    db: AsyncSession, tenant_id: str, requisition_id: Optional[str],
     attributes: Optional[tuple] = None,
 ) -> dict:
     """Aggregate decided candidates into {attr: {group: {selected, total}}}.
 
     Protected attributes come only from ``Candidate.eeoc_data`` (voluntary
     self-ID); a candidate with no eeoc_data is skipped (never guessed). Returns
-    ``{"cohorts": {...}, "decided_total": int}``.
+    ``{"cohorts": {...}, "decided_total": int}``. ``requisition_id=None``
+    aggregates every requisition tenant-wide — used by the org-wide EEOC
+    compliance-report generator, not just the per-requisition sweep.
     """
     attrs = tuple(attributes or _DEFAULT_ATTRS)
-    rows = (await db.execute(
-        select(Candidate).where(
-            Candidate.tenant_id == tenant_id,
-            Candidate.requisition_id == requisition_id,
-        )
-    )).scalars().all()
+    stmt = select(Candidate).where(Candidate.tenant_id == tenant_id)
+    if requisition_id is not None:
+        stmt = stmt.where(Candidate.requisition_id == requisition_id)
+    rows = (await db.execute(stmt)).scalars().all()
 
     cohorts: dict = {}
     decided_total = 0

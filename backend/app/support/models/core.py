@@ -2,7 +2,7 @@
 KAEOS Support Domain — Core Models
 Support agents and channel routing.
 """
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -48,7 +48,10 @@ class SupportAgent(Base):
     
     is_ai = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    avg_csat = Column(Enum(ChannelType), nullable=True) # Used for channel affinity if needed, or ignored
+    # Average CSAT rating (1.00-5.00) across surveys tied to tickets this agent
+    # resolved. Computed + persisted by GET /support/agents/leaderboard - never
+    # hand-set, so it always reflects real CustomerSatisfaction rows.
+    avg_csat = Column(Numeric(3, 2), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

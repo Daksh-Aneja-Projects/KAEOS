@@ -51,6 +51,30 @@ export interface ClinicalTaskRow {
   detail: Record<string, any>;
 }
 
+/** Result of an agent action run through the gated 7-gate pipeline. always_hitl
+ * is on for every healthcare skill, so a clean run normally lands on
+ * PENDING_HITL - that is the expected governed outcome, not a failure. */
+export interface HealthcareAgentResult {
+  encounter_id: string;
+  task_id?: string;
+  priority?: string;             // ROUTINE | URGENT | EMERGENT (triage only)
+  status: string;                // gated-pipeline status (PENDING_HITL | SUCCESS_CLEAN | BLOCKED_* | ...)
+  suggested_codes?: string[] | null;   // coding suggestion only
+  recommendation?: string | null;      // prior-auth only
+  execution_id?: string | null;
+}
+
+export interface ComplianceReportRow {
+  id: string;
+  framework: string;
+  report_name: string;
+  period_year: number;
+  status: string;
+  generated_at: string | null;
+  submitted_at: string | null;
+  data: Record<string, any>;
+}
+
 const q = (status?: string) => (status ? `?status=${encodeURIComponent(status)}` : '');
 
 export const healthcareApi = {
@@ -79,4 +103,17 @@ export const healthcareApi = {
     request<ClinicalTaskRow[]>(`/healthcare/tasks${q(status)}`),
   createHealthcareTask: (body: { task_type: string; encounter_id?: string; assignee?: string }) =>
     request<any>('/healthcare/tasks', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Agent actions - each runs through the gated 7-gate AgentExecutor pipeline
+  // (Compliance -> Fairness -> Confidence/HITL -> Debate -> Execute -> Audit).
+  triageEncounter: (encounterId: string) =>
+    request<HealthcareAgentResult>(`/healthcare/encounters/${encounterId}/triage`, { method: 'POST' }),
+  suggestEncounterCodes: (encounterId: string) =>
+    request<HealthcareAgentResult>(`/healthcare/encounters/${encounterId}/suggest-codes`, { method: 'POST' }),
+  requestPriorAuth: (encounterId: string, body: { procedure: string; payer?: string }) =>
+    request<HealthcareAgentResult>(`/healthcare/encounters/${encounterId}/prior-auth`,
+      { method: 'POST', body: JSON.stringify(body) }),
+
+  getHealthcareWorkflows: () => request<Record<string, any>>('/healthcare/workflows'),
+  getHealthcareComplianceReports: () => request<ComplianceReportRow[]>('/healthcare/compliance-reports'),
 };

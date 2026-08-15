@@ -44,6 +44,9 @@ class LeadScoringAgent:
             steps=steps,
             context={
                 "lead_id": lead_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: scoring an inbound/outbound lead
+                # against the ICP is a legitimate business interest.
+                "legal_basis": "legitimate_interests:sales_lead_qualification",
                 "instruction": "Output strict JSON: {icp_score, intent_level, recommended_action}.",
             },
             tenant_id=tenant_id,

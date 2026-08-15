@@ -26,19 +26,25 @@ export const TYPE_COLORS: Record<string, string> = {
   Contract: '#f472b6',       // legal contracts (pink)
   Incident: '#f87171',       // engineering incidents (red)
   PurchaseOrder: '#a3e635',  // operations POs (lime)
+  Encounter: '#14b8a6',      // healthcare encounters (teal, matches DEPARTMENT_COLORS.healthcare)
+  LoanApplication: '#d97706',// lending applications (amber, matches DEPARTMENT_COLORS.lending)
+  Requisition: '#facc15',    // procurement requisitions (gold)
   // Neural Map entities.
   Task: '#f59e0b',           // skills an agent runs (amber)
   Connector: '#22d3ee',      // integrations feeding a department (cyan)
   Brain: '#fb923c',          // the company knowledge core (warm coral)
   Knowledge: '#fbbf24',      // ingested notes/documents
 };
-/** One hue per department: hub node, territory glow, and legend entry all match. */
+/** One hue per department: hub node, territory glow, and legend entry all match.
+ *  12 distinct hues so 10+ departments never wrap and collide (index i % length). */
 export const DEPT_PALETTE = [
-  '#6366f1', '#f97316', '#14b8a6', '#e879f9', '#3b82f6', '#facc15', '#34d399', '#f472b6',
+  '#6366f1', '#f97316', '#14b8a6', '#e879f9', '#3b82f6', '#facc15',
+  '#34d399', '#f472b6', '#a78bfa', '#22d3ee', '#ef4444', '#84cc16',
 ];
 export const TYPE_RADIUS: Record<string, number> = {
   Department: 16, Capability: 7, Agent: 6, Process: 6, Employee: 5, Vendor: 7, Project: 7,
   Customer: 5, Account: 5.5, Ticket: 5, Contract: 6, Incident: 6, PurchaseOrder: 5,
+  Encounter: 5, LoanApplication: 6, Requisition: 5,
   Task: 5, Connector: 6.5, Brain: 22, Knowledge: 4,
 };
 
@@ -64,6 +70,45 @@ export const CY = H / 2;
 /** ViewBox size, exported so callers can compute custom seed positions. */
 export const TWIN_W = W;
 export const TWIN_H = H;
+
+/**
+ * Department name-label sizing. Labels render in a fixed monospace font
+ * under each hub; at low department counts there is plenty of room, but a
+ * fixed viewBox (TWIN_W) divided across more departments shrinks the gap
+ * between neighboring labels. 'Labels always visible' is a locked product
+ * decision (no hiding behind a zoom threshold), so instead each label gets
+ * the largest font size that still fits half the distance to its nearest
+ * neighboring department, down to a floor size, truncating with an ellipsis
+ * only past that floor - the full name stays reachable via the node's hover
+ * tooltip (TwinGraph's existing setHover panel).
+ */
+export const DEPT_LABEL_BASE_FONT = 10.5;
+export const DEPT_LABEL_MIN_FONT = 7;
+export const DEPT_LABEL_LETTER_SPACING = 0.8;
+// ponytail: heuristic char width for ui-monospace (~0.6x font-size), not a
+// measured glyph metric - upgrade to a real getBBox() measurement if a
+// non-monospace fallback font ever gets used for these labels.
+export const DEPT_LABEL_CHAR_WIDTH = 0.6;
+
+export function fitDeptLabel(name: string, halfWidthBudget: number): { fontSize: number; maxChars: number } {
+  const len = (name || '').length;
+  if (!len) return { fontSize: DEPT_LABEL_BASE_FONT, maxChars: Infinity };
+  const widthAt = (fs: number) =>
+    len * DEPT_LABEL_CHAR_WIDTH * fs + Math.max(0, len - 1) * DEPT_LABEL_LETTER_SPACING;
+  if (widthAt(DEPT_LABEL_BASE_FONT) / 2 <= halfWidthBudget) {
+    return { fontSize: DEPT_LABEL_BASE_FONT, maxChars: Infinity };
+  }
+  const fit = (2 * halfWidthBudget - Math.max(0, len - 1) * DEPT_LABEL_LETTER_SPACING)
+    / (len * DEPT_LABEL_CHAR_WIDTH);
+  if (fit >= DEPT_LABEL_MIN_FONT) {
+    return { fontSize: Math.round(fit * 10) / 10, maxChars: Infinity };
+  }
+  const maxChars = Math.max(3, Math.floor(
+    (2 * halfWidthBudget + DEPT_LABEL_LETTER_SPACING)
+    / (DEPT_LABEL_CHAR_WIDTH * DEPT_LABEL_MIN_FONT + DEPT_LABEL_LETTER_SPACING),
+  ));
+  return { fontSize: DEPT_LABEL_MIN_FONT, maxChars };
+}
 
 export type SimNode = GraphNode & {
   x: number; y: number; vx: number; vy: number;

@@ -1,7 +1,7 @@
 """
 KAEOS Operations Domain — Procurement Models
 """
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Numeric, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Numeric, Boolean, UniqueConstraint, Text
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -35,6 +35,11 @@ class PurchaseRequest(Base):
     
     requested_by = Column(String(128), nullable=True) # Employee ID/Name
     department = Column(String(64), nullable=True)
+
+    # ProcurementAgent's plain-English policy/price audit note. The human still
+    # moves status through the governed workflow transitions (/transition) —
+    # this is advisory, not a bypass of that audit trail.
+    ai_audit_note = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

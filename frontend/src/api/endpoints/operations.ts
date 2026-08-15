@@ -1,6 +1,26 @@
 import { request, uploadForm, downloadFile, API_BASE } from '../http';
 import type { AppNotification, AutomationRule, BulkTransitionResult, DomainAnalytics, EntityComment, FoundryBuildResult, FoundryExample, FoundryFeedbackInput, FoundryStats, MyWorkItem, OrgPulse, RuleItem, SLABreach, SavedSegment, TransitionResult, WorkflowEvent, WorkflowSpec } from '../types';
 
+/** A facility work order — bound to app/operations/api/v1/router.py's
+ * /operations/work-orders shape (WorkOrder model). */
+export interface WorkOrderRow {
+  id: string;
+  facility_name: string;
+  issue_title: string;
+  description: string | null;
+  category: string;             // MAINTENANCE | SAFETY | DECOMMISSION
+  severity: string | null;
+  status: string;                // OPEN | IN_PROGRESS | RESOLVED | CLOSED
+  priority: string | null;       // URGENT | MEDIUM | LOW | NEEDS_TRIAGE (set by FacilityAgent)
+  assigned_team: string | null;
+  scheduled_hours: number | null;
+  safety_flagged: boolean;
+  reported_by: string | null;
+  ai_notes: string | null;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
 export const operationsApi = {
   // ─── AI Foundry (v2, Phase 2: Learning Intelligence) ───
   // Curates the platform's governed execution history into an exportable
@@ -57,6 +77,12 @@ export const operationsApi = {
     }),
   createDomainEntity: (domain: string, entityPath: string, body: Record<string, any>) =>
     request<any>(`/${domain}/${entityPath}`, { method: 'POST', body: JSON.stringify(body) }),
+  // ─── Operations: facility work orders (FacilityAgent) ───
+  // Create uses the generic createDomainEntity('operations', 'work-orders', body).
+  getOperationsWorkOrders: () => request<WorkOrderRow[]>('/operations/work-orders'),
+  triageOperationsWorkOrder: (workOrderId: string) =>
+    request<any>(`/operations/work-orders/${workOrderId}/triage`, { method: 'POST' }),
+
   getOrgPulse: () => request<OrgPulse>('/org/pulse'),
   getOrgActivity: (limit = 50) => request<WorkflowEvent[]>(`/org/activity?limit=${limit}`),
   getOrgStale: (domain?: string) =>

@@ -5,5 +5,9 @@ from app.healthcare.models.core import (
     ConsentRecord,
     ClinicalTask,
 )
+from app.healthcare.models.compliance import ComplianceReport, ComplianceViolation
 
-__all__ = ["PatientEncounter", "PHIDisclosure", "ConsentRecord", "ClinicalTask"]
+__all__ = [
+    "PatientEncounter", "PHIDisclosure", "ConsentRecord", "ClinicalTask",
+    "ComplianceReport", "ComplianceViolation",
+]

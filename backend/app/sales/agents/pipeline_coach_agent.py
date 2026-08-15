@@ -43,6 +43,9 @@ class PipelineCoachAgent:
                     "prompt": f"Coach the rep on advancing this opportunity: {facts}"}],
             context={
                 "opp_id": opp_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 audit basis: coaching a rep on an open deal is a
+                # legitimate interest of running the sales pipeline.
+                "legal_basis": "legitimate_interests:sales_pipeline_management",
                 "instruction": "Output strict JSON: {next_step, risk_flags, win_probability_assessment}.",
             },
             tenant_id=tenant_id,

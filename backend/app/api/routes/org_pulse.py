@@ -2,7 +2,7 @@
 KAEOS — Org Pulse (cross-domain intelligence layer)
 
 One call that answers "how is the whole company doing right now": aggregates
-the seven domain analytics services, scores each domain's health from its
+the ten domain analytics services, scores each domain's health from its
 insight severities, and merges every domain's insights into a single
 severity-ranked feed. /activity exposes the cross-domain workflow transition
 stream (the same audit trail each domain shows individually).
@@ -26,13 +26,16 @@ from app.support.services.analytics import support_analytics
 from app.operations.services.analytics import operations_analytics
 from app.legal.services.analytics import legal_analytics
 from app.engineering.services.analytics import engineering_analytics
+from app.healthcare.services.analytics import healthcare_analytics
+from app.lending.services.analytics import lending_analytics
+from app.procurement.services.analytics import procurement_analytics
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/org", tags=["Org Pulse"])
 
 # Sequential on one session by design: AsyncSession is not safe for concurrent
-# use, and these are seven fast aggregate queries.
+# use, and these are ten fast aggregate queries.
 _DOMAIN_ANALYTICS = [
     ("finance", finance_analytics),
     ("hr", hr_analytics),
@@ -41,6 +44,9 @@ _DOMAIN_ANALYTICS = [
     ("operations", operations_analytics),
     ("legal", legal_analytics),
     ("engineering", engineering_analytics),
+    ("healthcare", healthcare_analytics),
+    ("lending", lending_analytics),
+    ("procurement", procurement_analytics),
 ]
 
 # Every registered workflow spec across the platform — the SLA sweep walks this.

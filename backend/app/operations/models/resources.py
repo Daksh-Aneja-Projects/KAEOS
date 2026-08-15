@@ -1,7 +1,7 @@
 """
 KAEOS Operations Domain — Resource Models
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Float, Numeric
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Float, Numeric, Text
 from sqlalchemy.sql import func
 import uuid
 
@@ -35,6 +35,9 @@ class ResourceAllocation(Base):
 
     allocated_hours = Column(Float, default=0.00)
     utilization_percentage = Column(Float, default=0.00) # 0 to 100
+
+    # ResourceAgent's plain-English overload/rebalance advisory.
+    ai_rebalance_note = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
