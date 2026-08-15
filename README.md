@@ -21,7 +21,7 @@ rate.
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![Node](https://img.shields.io/badge/Node-22-green.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-900%20%28441%20e2e%20%2B%20459%20unit%29-brightgreen.svg)](docs/TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-1494%20%281053%20unit%20%2B%20441%20e2e%29-brightgreen.svg)](docs/TESTING.md)
 [![Ollama](https://img.shields.io/badge/Local_LLM-Ollama_qwen2.5--coder-purple.svg)](https://ollama.ai)
 
 <br />

@@ -11,6 +11,27 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-15 - "Ten Departments, Governed"
+
+The 2.0 line: KAEOS ships **ten governed departments** at full depth, with the
+pre-launch gate cleared, the 441-test e2e lane green on real local inference
+(qwen2.5-coder:7b, 1h16m), the unit suite at 1053 green, migrations validated
+on real Postgres 16, and - for the first time in the repo's recent history -
+**every CI lane green** (backend-test, backend-e2e-mock, backend-lint,
+security-scan, frontend-build, sbom).
+
+Everything between v1.9.0 and this tag is described in the dated sections
+below, which were written as the work landed. The arc, in one paragraph: the
+three new regulated departments (Healthcare, Procurement, Banking & Lending)
+joined the original seven as full packages with deterministic fail-closed
+compliance checkers; a 14-agent audit then drove all ten to depth parity (107
+gaps closed, including production-breakers like a missing engineering
+migration and a sales audit-gate that failed on every call); the pre-launch
+audit fixed 1 critical and 7 high findings (Stripe entitlement sync, HITL
+department-scope, PHI-safe ingest, lending erasure, retention sweep, rate-limit
+middleware order, default LLM spend ceilings); and the CI repair fixed the test
+architecture and three Postgres-only seed bugs that SQLite had been hiding.
+
 ### Depth pass: every department audited, then taken to parity
 
 A 14-agent audit of all ten departments and the cross-cutting surfaces found 107
