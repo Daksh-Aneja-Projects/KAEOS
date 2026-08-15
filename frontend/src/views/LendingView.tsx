@@ -3,7 +3,7 @@ import {
   Landmark, FileText, Gavel, MailWarning, Search, RefreshCw, Loader2,
   Bot, CheckCircle2, XCircle, Scale, ShieldCheck, AlertTriangle,
   Wallet, SlidersHorizontal, PhoneCall, ChevronDown, ChevronUp, Pencil,
-  Save, X as XIcon, Mail, Clock,
+  Save, X as XIcon, Mail, Clock, BarChart3,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -18,13 +18,14 @@ import { MiniDonut } from '../components/shared/MiniDonut';
 import TableCard from '../components/shared/TableCard';
 import LiveBadge from '../components/LiveBadge';
 import GateTrace, { type GateTraceResult } from '../components/GateTrace';
+import DomainAnalytics from '../components/DomainAnalytics';
 import { humanize, formatCurrency, formatDate } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 const ACCENT = '#d97706';
 
-type Tab = 'overview' | 'applications' | 'underwriting' | 'adverse' | 'servicing' | 'policy';
+type Tab = 'overview' | 'applications' | 'underwriting' | 'adverse' | 'servicing' | 'policy' | 'analytics';
 const VALID: Tab[] = ['overview', 'applications', 'underwriting', 'adverse', 'servicing', 'policy'];
 
 const APPROVABLE = ['RECEIVED', 'IN_REVIEW'];
@@ -229,6 +230,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
     { key: 'adverse', label: 'Adverse Action', icon: MailWarning },
     { key: 'servicing', label: 'Servicing', icon: Wallet },
     { key: 'policy', label: 'Policy', icon: SlidersHorizontal },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3 },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
   const moveTab = (e: React.KeyboardEvent, i: number) => {
@@ -898,6 +900,8 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                 )}
               </div>
             )}
+
+            {tab === 'analytics' && <DomainAnalytics domain="lending" />}
           </>
         )}
       </div>

@@ -12,6 +12,17 @@ import time
 # Ensure the backend directory is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Seeded data carries emoji connector icons, and a Windows console defaults to
+# cp1252, which raises UnicodeEncodeError mid-log and aborts the phase that was
+# logging. Widen the streams before any handler binds to them.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        try:
+            _reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("seed_master")
 
@@ -26,7 +37,7 @@ async def run_all_seeds():
     logger.info("\n[Phase 0] Initializing database tables...")
     from app.core.database import init_db
     await init_db()
-    logger.info("[Phase 0] Database tables initialized ✓")
+    logger.info("[Phase 0] Database tables initialized")
 
     # Phase 1: Core seed (rules, skills, employees, connectors, etc.)
     logger.info("\n[Phase 1] Core Knowledge Base seed...")
@@ -41,23 +52,23 @@ async def run_all_seeds():
     async with AsyncSessionLocal() as session:
         seeded = await seed_database(session)
         if seeded:
-            logger.info("[Phase 1] Core KB seeded (rules, skills, employees, connectors, conflicts, marketplace) ✓")
+            logger.info("[Phase 1] Core KB seeded (rules, skills, employees, connectors, conflicts, marketplace)")
         else:
-            logger.info("[Phase 1] Core KB already seeded — skipping ✓")
+            logger.info("[Phase 1] Core KB already seeded — skipping")
 
     # Phase 1b: Root admin account (from ADMIN_EMAIL/ADMIN_PASSWORD config)
     logger.info("\n[Phase 1b] Root admin account...")
     async with AsyncSessionLocal() as session:
         from app.services.auth import AuthService
         await AuthService.seed_admin_user(session)
-    logger.info("[Phase 1b] Admin account provisioned ✓")
+    logger.info("[Phase 1b] Admin account provisioned")
 
     # Phase 2: Department domains (HR, Finance, Legal, Sales, Support, Operations,
     # Engineering, Healthcare, Lending; Procurement piggybacks on Operations)
     logger.info("\n[Phase 2] Domain-specific seeds...")
     from app.core.domain_seed import seed_domains_if_empty, _DOMAINS
     await seed_domains_if_empty()
-    logger.info(f"[Phase 2] All {len(_DOMAINS)} domain seeds completed ✓")
+    logger.info(f"[Phase 2] All {len(_DOMAINS)} domain seeds completed")
 
     # Phase 3: Workforce layer (domain packs, departments)
     logger.info("\n[Phase 3] Workforce domain packs...")
@@ -65,7 +76,7 @@ async def run_all_seeds():
         async with AsyncSessionLocal() as session:
             from app.workforce.domain_packs.engine import DomainPackEngine
             await DomainPackEngine.sync_built_in_packs(session)
-        logger.info("[Phase 3] Built-in domain packs synced ✓")
+        logger.info("[Phase 3] Built-in domain packs synced")
     except Exception as e:
         logger.warning(f"[Phase 3] Domain pack sync failed (non-fatal): {e}")
 
@@ -80,7 +91,7 @@ async def run_all_seeds():
     try:
         from app.core.workforce_seed import seed_workforce_graph
         summary = await seed_workforce_graph()
-        logger.info(f"[Phase 3b] Org-graph backbone seeded: {summary} ✓")
+        logger.info(f"[Phase 3b] Org-graph backbone seeded: {summary}")
     except Exception as e:
         logger.warning(f"[Phase 3b] Org-graph backbone seed failed (non-fatal): {e}")
 
@@ -89,7 +100,7 @@ async def run_all_seeds():
     try:
         from scripts.seed_agent_factory import seed as seed_agent_factory
         await seed_agent_factory()
-        logger.info("[Phase 4] Agent Factory seeded ✓")
+        logger.info("[Phase 4] Agent Factory seeded")
     except Exception as e:
         logger.warning(f"[Phase 4] Agent Factory seed failed (non-fatal): {e}")
 
@@ -98,7 +109,7 @@ async def run_all_seeds():
     try:
         from scripts.seed_integrations import seed as seed_integrations
         await seed_integrations()
-        logger.info("[Phase 5] Integrations seeded ✓")
+        logger.info("[Phase 5] Integrations seeded")
     except Exception as e:
         logger.warning(f"[Phase 5] Integrations seed failed (non-fatal): {e}")
 
@@ -107,7 +118,7 @@ async def run_all_seeds():
     try:
         from scripts.seed_infrastructure import seed as seed_infrastructure
         await seed_infrastructure()
-        logger.info("[Phase 6] Infrastructure seeded ✓")
+        logger.info("[Phase 6] Infrastructure seeded")
     except Exception as e:
         logger.warning(f"[Phase 6] Infrastructure seed failed (non-fatal): {e}")
 
@@ -116,7 +127,7 @@ async def run_all_seeds():
     try:
         from app.core.domain_seed import rollup_department_metrics
         await rollup_department_metrics()
-        logger.info("[Phase 7] Department metrics rolled up ✓")
+        logger.info("[Phase 7] Department metrics rolled up")
     except Exception as e:
         logger.warning(f"[Phase 7] Metric rollup failed (non-fatal): {e}")
 

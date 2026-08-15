@@ -29,7 +29,7 @@ export interface ShockPulse {
   ts: number;
 }
 
-import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, TWIN_W, TWIN_H, W, H, fitDeptLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_LETTER_SPACING } from './TwinGraph.layout';
+import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, TWIN_W, TWIN_H, W, H, fitDeptLabel, deptGraphLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_LETTER_SPACING } from './TwinGraph.layout';
 import type { GraphNode, GraphData, SimNode } from './TwinGraph.layout';
 export { TWIN_W, TWIN_H } from './TwinGraph.layout';
 
@@ -101,7 +101,7 @@ export default function TwinGraph({
         if (dist < minDist) minDist = dist;
       }
       const budget = Number.isFinite(minDist) ? Math.max(20, minDist / 2 - 6) : 200;
-      deptLabels.set(d.id, fitDeptLabel(d.name, budget));
+      deptLabels.set(d.id, fitDeptLabel(deptGraphLabel(d.name), budget));
     });
     // per-department cluster: hub index + member indices, for the territory glow
     const clusters = departments.map(d => ({
@@ -653,7 +653,8 @@ export default function TwinGraph({
                 {n.label === 'Connector' && <circle r={2} fill={color} />}
                 {n.label === 'Department' ? (() => {
                   const lbl = deptLabels.get(n.id) || { fontSize: DEPT_LABEL_BASE_FONT, maxChars: Infinity };
-                  const cased = labelsAlways ? (n.name || '').toUpperCase() : (n.name || '');
+                  const short = deptGraphLabel(n.name || '');
+                  const cased = labelsAlways ? short.toUpperCase() : short;
                   const text = cased.length > lbl.maxChars
                     ? cased.slice(0, Math.max(1, lbl.maxChars - 1)).trimEnd() + '…'
                     : cased;

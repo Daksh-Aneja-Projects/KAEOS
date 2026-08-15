@@ -98,6 +98,17 @@ async def lending_dashboard(tenant_id: str = Depends(get_tenant_id),
     return await lending_analytics(db, tenant_id, charts=True)
 
 
+@router.get("/analytics")
+async def get_lending_analytics(tenant_id: str = Depends(get_tenant_id),
+                                db: AsyncSession = Depends(get_db)):
+    """Same payload as /dashboard, on the path every other department uses.
+
+    The shared DomainAnalytics component fetches /{domain}/analytics, so without
+    this lending is the one department whose analytics tab cannot render.
+    """
+    return await lending_analytics(db, tenant_id, charts=True)
+
+
 @router.get("/applications")
 async def list_applications(tenant: dict = Depends(require_role("viewer")),
                             status: Optional[str] = None,

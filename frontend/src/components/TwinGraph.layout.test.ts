@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEPT_PALETTE, fitDeptLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_MIN_FONT,
-  DEPT_LABEL_LETTER_SPACING, DEPT_LABEL_CHAR_WIDTH,
+  DEPT_LABEL_LETTER_SPACING, DEPT_LABEL_CHAR_WIDTH, deptGraphLabel,
 } from './TwinGraph.layout';
 import { DEPARTMENT_LABELS } from '../lib/departments';
 
@@ -61,6 +61,39 @@ describe('fitDeptLabel', () => {
       // Half-width must stay inside the budget - i.e. inside its own slot -
       // so it can never reach a neighboring department's label.
       expect(half).toBeLessThanOrEqual(budget + 0.1);
+    }
+  });
+});
+
+describe('deptGraphLabel', () => {
+  it('uses the short name people actually say for the long department names', () => {
+    expect(deptGraphLabel('Human Resources')).toBe('HR');
+    expect(deptGraphLabel('Customer Support')).toBe('Support');
+    expect(deptGraphLabel('Engineering & IT Ops')).toBe('Engineering');
+    expect(deptGraphLabel('Banking & Lending')).toBe('Lending');
+  });
+
+  it('leaves already-short names alone', () => {
+    for (const n of ['Finance', 'Legal', 'Sales', 'Operations', 'Healthcare', 'Procurement']) {
+      expect(deptGraphLabel(n)).toBe(n);
+    }
+  });
+
+  it('drops a trailing qualifier clause for unknown names', () => {
+    expect(deptGraphLabel('Research & Development')).toBe('Research');
+    expect(deptGraphLabel('')).toBe('');
+  });
+
+  it('every real department label fits its ten-department slot without clipping', () => {
+    // NeuralMap band at n=10: slot = (960 - 120) / 10 = 84, budget = 84/2 - 6.
+    const budget = 84 / 2 - 6;
+    for (const full of Object.values(DEPARTMENT_LABELS)) {
+      const short = deptGraphLabel(full);
+      const { fontSize, maxChars } = fitDeptLabel(short, budget);
+      // No ellipsis: the whole short name survives.
+      expect(short.length).toBeLessThanOrEqual(maxChars);
+      expect(fontSize).toBeGreaterThanOrEqual(DEPT_LABEL_MIN_FONT);
+      expect(renderedHalfWidth(short.length, fontSize)).toBeLessThanOrEqual(budget + 0.1);
     }
   });
 });

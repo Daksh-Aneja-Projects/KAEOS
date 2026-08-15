@@ -760,7 +760,9 @@ export default function NeuralMapView({ onOpenDept }: { onOpenDept?: (slug: stri
           </div>
 
           {/* Ingest bar (top-right) */}
-          <div className="absolute top-3 right-3 z-20 w-[min(480px,46%)]">
+          {/* 46% of a phone viewport is too narrow for the ingest controls, so
+              take the full width between the gutters until there is room. */}
+          <div className="absolute top-3 right-3 z-20 w-[calc(100%-1.5rem)] sm:w-[min(480px,46%)]">
             <BrainIngestBar compact onLearned={() => load(true)} />
           </div>
 

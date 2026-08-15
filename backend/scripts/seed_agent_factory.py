@@ -370,7 +370,7 @@ async def seed():
 
         await db.commit()
         print(
-            f"[AgentFactory Seed] ✓ {len(blueprints)} blueprints, "
+            f"[AgentFactory Seed] {len(blueprints)} blueprints, "
             f"{len(deployed_agents)} deployed agents, {len(feed_events)} feed events"
         )
 

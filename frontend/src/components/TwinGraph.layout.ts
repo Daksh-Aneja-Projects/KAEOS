@@ -90,6 +90,27 @@ export const DEPT_LABEL_LETTER_SPACING = 0.8;
 // non-monospace fallback font ever gets used for these labels.
 export const DEPT_LABEL_CHAR_WIDTH = 0.6;
 
+/**
+ * The graph label for a department. Full names like "Engineering & IT Ops" have
+ * to shrink or clip to fit their slot once there are ten departments, and a
+ * mid-word clip ("ENGINEERING &…") reads worse than the name people actually
+ * use. Prefer the short form and let fitDeptLabel size what remains.
+ */
+export function deptGraphLabel(name: string): string {
+  const n = (name || '').trim();
+  const known: Record<string, string> = {
+    'human resources': 'HR',
+    'customer support': 'Support',
+    'engineering & it ops': 'Engineering',
+    'banking & lending': 'Lending',
+  };
+  const hit = known[n.toLowerCase()];
+  if (hit) return hit;
+  // Generic fallback: drop a trailing qualifier clause ("Foo & Bar Ops" -> "Foo").
+  const amp = n.split(' & ')[0].trim();
+  return amp.length >= 3 ? amp : n;
+}
+
 export function fitDeptLabel(name: string, halfWidthBudget: number): { fontSize: number; maxChars: number } {
   const len = (name || '').length;
   if (!len) return { fontSize: DEPT_LABEL_BASE_FONT, maxChars: Infinity };
