@@ -105,7 +105,28 @@ class RecruitingAgent:
             if status != "SUCCESS_CLEAN":
                 # Fairness/compliance/debate gate intervened, or HITL/override.
                 logger.warning(f"RecruitingAgent screening gated: {status} for {candidate_id}")
-                candidate.stage = CandidateStage.RECRUITER_SCREEN  # hold for human review
+                # Persist a human-readable trace of the gated outcome so the
+                # record is never silently blank while a human resolves it. A
+                # pre-execution gate (compliance/fairness/HITL) has no structured
+                # decision yet; if one exists (e.g. debate produced a chain),
+                # keep its score/red-flags too.
+                gated_note = {
+                    "PENDING_HITL": "Screening paused for human approval before a recommendation was recorded.",
+                    "BLOCKED_COMPLIANCE": "Screening was stopped by a compliance rule; no AI recommendation was recorded.",
+                    "BLOCKED_DEBATE": "Screening was held after the internal debate check; no recommendation was recorded.",
+                    "HUMAN_OVERRIDDEN": "A reviewer overrode the screening before a recommendation was recorded.",
+                }.get(status, "Screening was held for human review before a recommendation was recorded.")
+                partial = extract_decision(result)
+                candidate.ai_summary = partial.get("summary") or gated_note
+                if partial.get("score") is not None:
+                    candidate.ai_score = partial.get("score")
+                if partial.get("red_flags"):
+                    candidate.ai_red_flags = partial.get("red_flags")
+                # A compliance block means screening was refused, not that the
+                # candidate cleared it - do not advance them. Other gated states
+                # (pending approval, fairness/debate hold) park them for a human.
+                if status != "BLOCKED_COMPLIANCE":
+                    candidate.stage = CandidateStage.RECRUITER_SCREEN  # hold for human review
                 db.add(candidate)
                 await db.commit()
                 return {
@@ -124,10 +145,12 @@ class RecruitingAgent:
             candidate.ai_summary = eval_data.get("summary")
             candidate.ai_red_flags = eval_data.get("red_flags", [])
 
-            if eval_data.get("recommend_advance"):
-                candidate.stage = CandidateStage.RECRUITER_SCREEN
-            else:
-                candidate.stage = CandidateStage.REJECTED
+            # Governance: AI screening never autonomously sets the terminal
+            # REJECTED stage. Whether or not the model recommends advancing, the
+            # candidate is parked at RECRUITER_SCREEN for a human recruiter, who
+            # makes any adverse (reject) call. The AI's score/summary/red-flags
+            # persisted above inform that review.
+            candidate.stage = CandidateStage.RECRUITER_SCREEN
 
             db.add(candidate)
             await db.commit()

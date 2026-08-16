@@ -165,24 +165,33 @@ async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("opera
 async def list_resources(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(ResourceAllocation).where(ResourceAllocation.tenant_id == tenant_id).limit(200))
     allocs = q.scalars().all()
-    
+
+    # Batch the resource + project lookups instead of two queries per allocation
+    # (the old N+1), exactly as list_projects above.
+    resource_ids = {a.resource_id for a in allocs if a.resource_id}
+    project_ids = {a.project_id for a in allocs if a.project_id}
+    resources: dict[str, Resource] = {}
+    if resource_ids:
+        resources = {r.id: r for r in (await db.execute(
+            select(Resource).where(
+                Resource.tenant_id == tenant_id, Resource.id.in_(resource_ids))
+        )).scalars().all()}
+    project_names: dict[str, str] = {}
+    if project_ids:
+        project_names = {p.id: p.name for p in (await db.execute(
+            select(Project).where(
+                Project.tenant_id == tenant_id, Project.id.in_(project_ids))
+        )).scalars().all()}
+
     alloc_list = []
     for a in allocs:
-        res_q = await db.execute(select(Resource).where(
-            Resource.id == a.resource_id, Resource.tenant_id == tenant_id))
-        res = res_q.scalar()
-        project_name = None
-        if a.project_id:
-            proj_q = await db.execute(select(Project).where(
-                Project.id == a.project_id, Project.tenant_id == tenant_id))
-            proj = proj_q.scalar_one_or_none()
-            project_name = proj.name if proj else None
+        res = resources.get(a.resource_id)
         if res:
             alloc_list.append({
                 "id": a.id,
                 "name": res.name,
                 "type": res.resource_type,
-                "project": project_name,
+                "project": project_names.get(a.project_id) if a.project_id else None,
                 "utilization": float(a.utilization_percentage or 0),
                 "available_from": res.is_available.isoformat() if res.is_available else None,
                 "ai_rebalance_note": a.ai_rebalance_note,
@@ -268,21 +277,28 @@ async def list_procurements(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
     from app.operations.models.procurement import PurchaseOrder
     q = await db.execute(select(PurchaseRequest).where(PurchaseRequest.tenant_id == tenant_id).limit(200))
     requests = q.scalars().all()
+
+    # Batch the PO lookup instead of one query per request (the old N+1).
+    request_ids = [r.id for r in requests]
+    vendor_by_request: dict[str, str] = {}
+    if request_ids:
+        for po in (await db.execute(
+            select(PurchaseOrder).where(
+                PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.purchase_request_id.in_(request_ids))
+        )).scalars().all():
+            # First PO seen per request wins, matching the old .first().
+            vendor_by_request.setdefault(po.purchase_request_id, po.vendor_name)
+
     result = []
     for r in requests:
-        vendor = None
-        po_q = await db.execute(select(PurchaseOrder).where(
-            PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.purchase_request_id == r.id))
-        po = po_q.scalars().first()
-        if po:
-            vendor = po.vendor_name
         result.append({
             "id": r.id,
             "description": r.item_description,
             "requestor": r.requested_by,
             "status": r.status.value if hasattr(r.status, 'value') else str(r.status),
             "amount": float(r.total_estimated_cost or 0),
-            "vendor": vendor,
+            "vendor": vendor_by_request.get(r.id),
             "submitted_at": str(getattr(r, 'created_at', '') or ''),
             "ai_audit_note": r.ai_audit_note,
         })
@@ -312,26 +328,41 @@ async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     from app.operations.models.quality import NonConformance, QualityStandard
     q = await db.execute(select(Inspection).where(Inspection.tenant_id == tenant_id).limit(200))
     inspections = q.scalars().all()
+
+    # Batch the non-conformance + standard lookups instead of two queries per
+    # inspection (the old N+1), exactly as list_projects above.
+    inspection_ids = [i.id for i in inspections]
+    standard_ids = {i.standard_id for i in inspections if i.standard_id}
+    ncs_by_inspection: dict[str, list] = {}
+    if inspection_ids:
+        for nc in (await db.execute(
+            select(NonConformance).where(
+                NonConformance.tenant_id == tenant_id,
+                NonConformance.inspection_id.in_(inspection_ids))
+        )).scalars().all():
+            ncs_by_inspection.setdefault(nc.inspection_id, []).append(nc)
+    standard_names: dict[str, str] = {}
+    if standard_ids:
+        standard_names = {s.id: s.name for s in (await db.execute(
+            select(QualityStandard).where(
+                QualityStandard.tenant_id == tenant_id, QualityStandard.id.in_(standard_ids))
+        )).scalars().all()}
+
     # Real defect count/severity -> score, not a 3-rung status lookup.
     _IMPACT_DEDUCTION = {"HIGH": 20, "MEDIUM": 10, "LOW": 5}
     result = []
     for i in inspections:
-        nc_rows = (await db.execute(select(NonConformance).where(
-            NonConformance.tenant_id == tenant_id, NonConformance.inspection_id == i.id))).scalars().all()
+        nc_rows = ncs_by_inspection.get(i.id, [])
         defects = len(nc_rows)
         deduction = sum(
             _IMPACT_DEDUCTION.get(str(nc.impact_rating or "MEDIUM").upper(), 10) for nc in nc_rows
         )
         score = max(0, 100 - deduction)
-        standard = (await db.execute(
-            select(QualityStandard).where(
-                QualityStandard.id == i.standard_id, QualityStandard.tenant_id == tenant_id)
-        )).scalar_one_or_none()
         status_val = i.status.value if hasattr(i.status, 'value') else str(i.status)
         result.append({
             "id": i.id,
             "title": i.inspected_item,
-            "area": standard.name if standard else None,
+            "area": standard_names.get(i.standard_id) if i.standard_id else None,
             "status": status_val,
             "score": score,
             "defects": defects,
@@ -455,6 +486,17 @@ async def transition_purchase_order(
 ):
     """Move a PO through approval, ordered, received (or cancel)."""
     return await apply_transition(db, WORKFLOW_SPECS["purchase_order"], order_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/work-orders/{work_order_id}/transition")
+async def transition_work_order(
+    work_order_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a work order through open, in progress, resolved, closed.
+    Entering RESOLVED stamps resolved_at (see operations.services.workflows)."""
+    return await apply_transition(db, WORKFLOW_SPECS["work_order"], work_order_id,
                                   body.to_state, tenant, note=body.note)
 
 # ═══════════════════════════════════════════════════════════════════════

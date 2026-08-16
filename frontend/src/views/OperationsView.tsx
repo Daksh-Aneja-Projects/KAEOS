@@ -15,6 +15,8 @@ import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import DomainAnalytics from '../components/DomainAnalytics';
 import CreateEntityModal from '../components/CreateEntityModal';
+import WorkflowActions from '../components/WorkflowActions';
+import type { WorkflowSpec } from '../api/client';
 import { Plus as PlusIcon } from 'lucide-react';
 
 type OpsTab = 'projects' | 'resources' | 'vendors' | 'procurement' | 'quality' | 'facilities' | 'analytics';
@@ -45,6 +47,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [procurements, setProcurements] = useState<OpsProcurement[]>([]);
   const [inspections, setInspections] = useState<OpsInspection[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [createWOOpen, setCreateWOOpen] = useState(false);
 
@@ -73,11 +76,12 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     const results = await Promise.allSettled([
       api.getOperationsProjects(), api.getOperationsResources(), api.getOperationsVendors(),
       api.getOperationsProcurements(), api.getOperationsInspections(),
-      operationsApi.getOperationsWorkOrders(),
+      operationsApi.getOperationsWorkOrders(), api.getDomainWorkflows('operations'),
     ]);
     const val = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value || [] : [];
     setProjects(val(0)); setResources(val(1)); setVendors(val(2)); setProcurements(val(3)); setInspections(val(4));
     setWorkOrders(val(5));
+    if (results[6].status === 'fulfilled') setWorkflows((results[6] as any).value || {});
     setLoading(false);
   };
 
@@ -478,7 +482,7 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
               <div className="rounded-xl overflow-x-auto" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                 <table className="w-full text-[12px]">
                   <thead><tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                    {['Facility', 'Issue', 'Category', 'Status', 'Priority', 'Assigned Team', 'AI Triage'].map(h => (
+                    {['Facility', 'Issue', 'Category', 'Status', 'Priority', 'Assigned Team', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                     ))}
                   </tr></thead>
@@ -504,6 +508,11 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                             {runningAgent === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
                             Triage
                           </button>
+                          <div className="mt-1">
+                            <WorkflowActions domain="operations" entityPath="work-orders" entityId={w.id}
+                              currentState={w.status} transitions={workflows['work_order']?.transitions}
+                              onDone={async (m) => { setActionMsg(m); await loadData(); }} />
+                          </div>
                         </td>
                       </tr>
                     ))}

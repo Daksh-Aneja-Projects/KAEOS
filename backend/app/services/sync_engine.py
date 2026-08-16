@@ -62,6 +62,16 @@ _ENTITY_CATEGORY = {
     "contact": "crm",
 }
 
+# Providers _write_via_adapter can actually deliver to (each has a real branch
+# there). Category routing for a no-provider write MUST skip a same-category
+# connector whose provider is NOT here (datadog/sentry/gitlab/sap/...), or it
+# dead-letters a write that a writable sibling in the same category could have
+# delivered. Keep in sync with the provider branches in _write_via_adapter.
+_WRITABLE_PROVIDERS = frozenset({
+    "generic_rest", "servicenow", "zendesk", "jira", "slack",
+    "hubspot", "github", "pagerduty", "salesforce", "workday",
+})
+
 
 # ── Inbound: signature + normalization ────────────────────────────────────────
 
@@ -487,7 +497,11 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
             soql = f"SELECT Id FROM {sobject} WHERE Description LIKE '%{marker}%' LIMIT 1"  # nosec B608
             probe = await client.get(f"{instance}/services/data/{api}/query",
                                      headers=headers, params={"q": soql})
-            if probe.status_code < 400 and (probe.json().get("records") or []):
+            # Fail closed: a probe error is retried, never read as "not found"
+            # (which would duplicate the record on the lost-response retry).
+            if probe.status_code >= 400:
+                return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+            if probe.json().get("records"):
                 return None
             payload = dict(write.payload or {})
             desc = str(payload.get("Description") or "").strip()
@@ -562,7 +576,11 @@ async def _write_servicenow(config: Dict[str, Any], secrets: Dict[str, Any],
         probe = await client.get(base, headers=headers, params={
             "sysparm_query": f"correlation_id={idem}", "sysparm_limit": 1,
             "sysparm_fields": "sys_id"})
-        if probe.status_code < 400 and (probe.json().get("result") or []):
+        # Fail closed: a probe error is retried, never read as "not found"
+        # (which would duplicate the record on the lost-response retry).
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("result"):
             return None
         fields = {**fields, "correlation_id": idem}
         resp = await client.post(base, json=fields, headers=headers)
@@ -610,7 +628,11 @@ async def _write_zendesk(config: Dict[str, Any], secrets: Dict[str, Any],
         # CREATE - idempotent on the ticket's external_id field.
         probe = await client.get(f"{base}/api/v2/search.json", headers=headers,
                                  params={"query": f"type:ticket external_id:{idem}"})
-        if probe.status_code < 400 and (probe.json().get("results") or []):
+        # Fail closed: a probe error is retried, never read as "not found"
+        # (which would duplicate the ticket on the lost-response retry).
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("results"):
             return None
         resp = await client.post(f"{base}/api/v2/tickets.json",
                                  json={"ticket": {**fields, "external_id": idem}},
@@ -664,7 +686,11 @@ async def _write_jira(config: Dict[str, Any], secrets: Dict[str, Any],
         label = "kaeos-" + re.sub(r"[^A-Za-z0-9_.-]", "-", idem)[:60]
         probe = await client.get(f"{base}/rest/api/3/search", headers=headers,
                                  params={"jql": f'labels = "{label}"', "maxResults": 1})
-        if probe.status_code < 400 and (probe.json().get("issues") or []):
+        # Fail closed: a probe error is retried, never read as "not found"
+        # (which would duplicate the issue on the lost-response retry).
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("issues"):
             return None
         create_fields: Dict[str, Any] = {}
         if config.get("project_key"):
@@ -769,12 +795,25 @@ async def _write_hubspot(config: Dict[str, Any], secrets: Dict[str, Any],
             "filterGroups": [{"filters": [{"propertyName": "kaeos_idem",
                                            "operator": "EQ", "value": idem}]}],
             "limit": 1})
-        if probe.status_code < 400 and (probe.json().get("results") or []):
+        # Fail closed: only a clean 2xx-with-no-hits proceeds to create. A probe
+        # that errored (rate-limit, 5xx, search-index lag surfacing as non-2xx)
+        # is retried, never read as "not found" - which would duplicate on the
+        # lost-response retry. (A missing kaeos_idem property still 400s both,
+        # an honest fail, unchanged.)
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("results"):
             return None
         resp = await client.post(objects, headers=headers,
                                  json={"properties": {**fields, "kaeos_idem": idem}})
         if resp.status_code >= 400:
             return f"HTTP {resp.status_code}: {resp.text[:300]}"
+        # Durable idempotency: capture the created object id so any reprocess of
+        # this row PATCHes by id instead of creating a second object.
+        try:
+            write.external_id = str(resp.json().get("id") or "") or write.external_id
+        except Exception:
+            pass
     return None
 
 
@@ -835,7 +874,12 @@ async def _write_github(config: Dict[str, Any], secrets: Dict[str, Any],
         probe = await client.get(f"{base}/search/issues", headers=headers,
                                  params={"q": f'repo:{owner}/{repo} in:body "{marker}"',
                                          "per_page": 1})
-        if probe.status_code < 400 and (probe.json().get("items") or []):
+        # Fail closed: only a clean 2xx-with-no-hits proceeds to create. A probe
+        # that errored (403 rate-limit, 5xx) is retried, never read as "not
+        # found" - that is exactly how a lost-response retry duplicates an issue.
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("items"):
             return None
         if not fields.get("title"):
             return "github issue create needs a title in the payload"
@@ -845,6 +889,13 @@ async def _write_github(config: Dict[str, Any], secrets: Dict[str, Any],
         resp = await client.post(issues, json=payload, headers=headers)
         if resp.status_code >= 400:
             return f"HTTP {resp.status_code}: {resp.text[:300]}"
+        # Durable idempotency: capture the created issue number so any reprocess
+        # of this row PATCHes by id instead of creating a second issue (GitHub's
+        # search index lags, so the marker probe alone is racy on a lost retry).
+        try:
+            write.external_id = str(resp.json().get("number") or "") or write.external_id
+        except Exception:
+            pass
     return None
 
 
@@ -897,7 +948,11 @@ async def _write_pagerduty(config: Dict[str, Any], secrets: Dict[str, Any],
         # duplicate key with HTTP 400, which must read as success on a retry).
         probe = await client.get(f"{base}/incidents", headers=headers,
                                  params={"incident_key": idem, "limit": 1})
-        if probe.status_code < 400 and (probe.json().get("incidents") or []):
+        # Fail closed: a probe error is retried, never read as "not found". (A
+        # created incident still natively dedups on incident_key as a backstop.)
+        if probe.status_code >= 400:
+            return f"idempotency probe failed HTTP {probe.status_code}: {probe.text[:200]}"
+        if probe.json().get("incidents"):
             return None
         service_id = fields.get("service_id") or config.get("service_id")
         if not service_id:
@@ -997,7 +1052,8 @@ async def _deliver_one(db: AsyncSession, w: OutboundWrite) -> Optional[str]:
         if w.provider and prov == w.provider:
             target = (c, cred)
             break
-        if not w.provider and w.category and (c.category or "").lower() == w.category:
+        if (not w.provider and w.category and (c.category or "").lower() == w.category
+                and prov in _WRITABLE_PROVIDERS):
             target = (c, cred)
             break
         if not w.provider and prov == "servicenow" and w.entity_type in _SN_ENTITIES:

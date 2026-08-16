@@ -779,6 +779,64 @@ class AgentExecutor:
         # the world was not changed.
         _actuation = skill.get("actuation") if isinstance(skill, dict) else None
         if _actuation and isinstance(_actuation, dict):
+            # Re-gate the WRITE against its department's statutory checkers (SOX
+            # four-eyes, ECOA, ...) right before it lands. A mission's advisory
+            # recommendation step is not tagged with the write's frameworks, so
+            # Gate 1 only saw the untagged advisory skill; without this, a governed
+            # write-back could reach a system of record with NO statutory check at
+            # all. Tags come from the real skill (its own compliance_tags), the
+            # honest source of what this write must clear. Fail-closed: any BLOCKER
+            # refuses the write and marks the execution failed.
+            _write_tags = list(
+                getattr(skill_obj, "compliance_tags", None)
+                or (skill.get("compliance_tags") if isinstance(skill, dict) else None)
+                or []
+            )
+            # Fail-closed for the crown-jewel case: an untagged FINANCE write still
+            # gets SOX four-eyes, so a missing tag cannot buy a free money-move.
+            _wdept = str((isinstance(skill, dict) and skill.get("department"))
+                         or getattr(skill_obj, "department", "") or "").lower()
+            if not _write_tags and _wdept in ("finance", "accounting"):
+                _write_tags = ["SOX", "GAAP"]
+            if _write_tags:
+                _wblk = [v for v in
+                         await self.compliance.check_before_execution(_write_tags, context)
+                         if v.get("severity") == "BLOCKER"]
+                if _wblk:
+                    _reason = "; ".join(v.get("reason", "") for v in _wblk) or "compliance blocker"
+                    _tgt = (f"{_actuation.get('system', 'sandbox')}:"
+                            f"{_actuation.get('external_id', exec_id)}")
+                    logger.error(
+                        f"[Gate 5b] governed write {exec_id} ({_tgt}) BLOCKED by "
+                        f"compliance; refused fail-closed: {_reason}"
+                    )
+                    await self._mark_execution_failed(exec_id, "BLOCKED_ACTUATION")
+                    await self._emit_gate(context, "execute", "failed",
+                                          f"governed write to {_tgt} blocked: {_reason}")
+                    from app.models.agent_factory import ActivityEventType, ActivitySeverity
+                    await self.activity_feed.emit(
+                        event_type=ActivityEventType.AGENT_FAILED,
+                        title=f"Governed write blocked by compliance: {skill.get('skill_id', 'unknown')}",
+                        description=f"The approved write to {_tgt} was refused: {_reason}",
+                        tenant_id=context["tenant_id"],
+                        severity=ActivitySeverity.ACTION_REQUIRED,
+                        source_type="execution",
+                        source_id=exec_id,
+                        requires_action=True,
+                    )
+                    return {
+                        "status": "BLOCKED_ACTUATION",
+                        "execution_id": exec_id,
+                        "reason": f"Approved write to {_tgt} blocked by compliance: {_reason}",
+                        "violations": _wblk,
+                        "skill_output_produced": True,
+                        "actuation_target": _tgt,
+                        "reasoning_chain": exec_result.get("reasoning_chain", []),
+                        "steps_completed": exec_result.get("steps_completed", 0),
+                        "duration_ms": exec_result.get("duration_ms", 0),
+                        "cost": exec_result.get("cost"),
+                        "warnings": warnings,
+                    }
             try:
                 from app.services.actuation import Actuator
                 from app.core.database import AsyncSessionLocal

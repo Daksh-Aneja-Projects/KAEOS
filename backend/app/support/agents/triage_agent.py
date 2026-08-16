@@ -42,6 +42,8 @@ class TriageAgent:
         context = {
             "ticket_id": ticket_id, "tenant_id": tenant_id,
             **facts,
+            # GDPR/CCPA lawful basis for the Gate 6 post-execution audit.
+            "legal_basis": "legitimate_interests:customer_support",
             "instruction": "Output strict JSON: {severity, category, recommended_priority, queue}.",
         }
         return await run_gated_support_skill(

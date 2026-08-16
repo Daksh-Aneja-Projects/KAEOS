@@ -35,6 +35,10 @@ class AutoResolveAgent:
                     "prompt": f"Draft a resolution response for this ticket: {facts}"}],
             context={
                 "ticket_id": ticket_id, "tenant_id": tenant_id, **facts,
+                # Drafting a customer reply fulfils the support contract; this is
+                # the GDPR/CCPA lawful basis the Gate 6 audit requires (also on
+                # the HITL-resume path, where this run reaches Gate 6).
+                "legal_basis": "contract:support_response",
                 "instruction": "Output strict JSON: {response_draft, resolution_confidence, needs_human}.",
             },
             tenant_id=tenant_id,

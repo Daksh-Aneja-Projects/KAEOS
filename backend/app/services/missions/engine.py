@@ -149,9 +149,12 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
         "tool": "none",
     }
     # Advisory planning processes no transaction and no personal data, so the
-    # transactional audit tags (SOX amount, GDPR lawful basis) do not apply here;
-    # they are enforced at actuation time. Fairness still engages for people-facing
-    # recommendations.
+    # transactional audit tags (SOX amount, GDPR lawful basis) do not apply to the
+    # recommendation itself. The governed WRITE-BACK is a different matter: runtime
+    # Gate 5b re-gates any actuation against the skill's own statutory checkers
+    # (SOX four-eyes, ECOA, ...) before it lands, so an untagged advisory step
+    # cannot smuggle a write past compliance. Fairness still engages for
+    # people-facing recommendations.
     people_facing = dept.lower() in ("hr", "human_resources", "people", "workforce", "recruiting")
     skill_dict = {
         "skill_id": skill.skill_id,
@@ -180,6 +183,13 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
         # hitl_required: the flag carries the real approver identity so the
         # downstream SOX check attributes the action to an actual human.
         "has_human_approver": step.approved_by if step_approved else False,
+        # Four-eyes (SoD): the mission's initiator is the MAKER, the step's human
+        # approver is the APPROVER. check_sox blocks when they are the same
+        # identity, so a governed financial write-back cannot be both created and
+        # approved by one person. mission.created_by may be a human, "event-mesh",
+        # or None (a None maker fails four-eyes closed at Gate 5b).
+        "maker": mission.created_by,
+        "approver": step.approved_by if step_approved else None,
     }
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     try:

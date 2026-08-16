@@ -170,6 +170,81 @@ def _contact(days_ago, hour_local, channel, notes):
             "harassment": False, "notes": notes, "actor": "collections_agent"}
 
 
+async def _seed_servicing(db):
+    """Fund the approved applications selected in _SERVICING and open FDCPA-
+    governed collections cases on the delinquent ones. Independently idempotent:
+    guarded on a ServicedLoan sentinel (NOT LoanApplication) so a tenant seeded
+    before this wave still backfills servicing. Application ids come from the DB
+    so it works whether the apps were just created or already existed. The
+    caller commits."""
+    existing_loans = (await db.execute(
+        select(sqlfunc.count()).select_from(ServicedLoan)
+        .where(ServicedLoan.tenant_id == TENANT))).scalar() or 0
+    if existing_loans:
+        return
+
+    app_ids_by_number = {num: aid for num, aid in (await db.execute(
+        select(LoanApplication.application_number, LoanApplication.id)
+        .where(LoanApplication.tenant_id == TENANT))).all()}
+
+    apps_by_number = {row[0]: row for row in _APPS}
+    loans_by_number: dict[str, tuple] = {}
+    for num, delinquent_days in _SERVICING.items():
+        (_n, name, product, amount, term, score, _income, _dti, _pclass,
+         decided_ago) = apps_by_number[num]
+        loan, dpd = _fund_loan(app_ids_by_number[num], num, name, product, amount,
+                               term, score, decided_ago, delinquent_days)
+        db.add(loan)
+        loans_by_number[num] = (loan, dpd)
+
+    # Persist the serviced loans before the collection cases reference them
+    # (Postgres enforces the serviced_loan_id FK; SQLite defers it).
+    await db.flush()
+
+    # LN-1002: 30-59-day DPD bucket, an open collections case with a short
+    # contact history - validation notice mailed, one call, one follow-up.
+    loan_1002, dpd_1002 = loans_by_number["LN-1002"]
+    db.add(CollectionCase(
+        id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1002.id,
+        status=CollectionCaseStatus.IN_PROGRESS.value,
+        delinquency_bucket=delinquency_bucket(dpd_1002),
+        validation_notice_sent=True, validation_notice_sent_at=_ago(14),
+        contact_log=[
+            _contact(14, 9, "mail", "FDCPA validation notice mailed."),
+            _contact(9, 11, "phone",
+                    "Outbound call - borrower acknowledged the missed payment and "
+                    "promised to pay within the week."),
+            _contact(3, 15, "phone",
+                    "Follow-up call - no answer, left a voicemail requesting a callback."),
+        ],
+        last_contact_at=_ago(3), opened_at=_ago(15),
+    ))
+
+    # LN-1005: 90+ bucket, escalated - a longer contact history spanning
+    # several weeks, every contact inside the 8am-9pm FDCPA window.
+    loan_1005, dpd_1005 = loans_by_number["LN-1005"]
+    db.add(CollectionCase(
+        id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1005.id,
+        status=CollectionCaseStatus.ESCALATED.value,
+        delinquency_bucket=delinquency_bucket(dpd_1005),
+        validation_notice_sent=True, validation_notice_sent_at=_ago(63),
+        contact_log=[
+            _contact(64, 9, "mail", "FDCPA validation notice mailed."),
+            _contact(58, 10, "phone", "Outbound call - borrower requested a hardship review."),
+            _contact(45, 14, "phone",
+                    "Follow-up call - borrower disputed the amount; dispute logged."),
+            _contact(30, 11, "phone", "Outbound call - no answer, left a voicemail."),
+            _contact(16, 16, "phone",
+                    "Outbound call - borrower proposed a partial-payment plan."),
+            _contact(4, 13, "phone", "Follow-up call confirming the partial-payment plan terms."),
+        ],
+        last_contact_at=_ago(4), opened_at=_ago(65),
+    ))
+
+    print(f"   - {len(loans_by_number)} serviced loans, 2 collection cases "
+          f"(FDCPA-governed contact log)")
+
+
 async def seed():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -183,17 +258,19 @@ async def seed():
             .where(LoanApplication.tenant_id == TENANT))).scalar() or 0
         if existing:
             print(f"[SKIP] Lending already seeded for {TENANT} ({existing} applications) - skipping.")
+            # Servicing/collections were added in a later wave; backfill them if
+            # this tenant predates it (guarded on its own ServicedLoan sentinel).
+            await _seed_servicing(db)
+            await db.commit()
             return
 
         for product, p in _POLICIES.items():
             db.add(CreditPolicy(id=_id(), tenant_id=TENANT, product=product,
                                 is_active=True, **p))
 
-        app_ids_by_number: dict[str, str] = {}
         approvals = denials = pending = 0
         for (num, name, product, amount, term, score, income, dti, pclass, decided_ago) in _APPS:
             app_id = _id()
-            app_ids_by_number[num] = app_id
             if decided_ago is None:
                 status = LoanStatus.RECEIVED.value
             else:
@@ -246,70 +323,14 @@ async def seed():
                     sent_at=_ago(decided_ago - 1 if decided_ago > 1 else 0),
                     within_30_days=True))
 
-        # ── Servicing: fund the approved applications selected in _SERVICING,
-        # seasoned to match how long ago each was decided, and open FDCPA-
-        # governed collections cases on the ones that are delinquent. ──────
-        apps_by_number = {row[0]: row for row in _APPS}
-        loans_by_number: dict[str, tuple] = {}
-        for num, delinquent_days in _SERVICING.items():
-            (_n, name, product, amount, term, score, _income, _dti, _pclass,
-             decided_ago) = apps_by_number[num]
-            loan, dpd = _fund_loan(app_ids_by_number[num], num, name, product, amount,
-                                   term, score, decided_ago, delinquent_days)
-            db.add(loan)
-            loans_by_number[num] = (loan, dpd)
-
-        # Persist the serviced loans before the collection cases reference them
-        # (Postgres enforces the serviced_loan_id FK; SQLite defers it).
-        await db.flush()
-
-        # LN-1002: 30-59-day DPD bucket, an open collections case with a short
-        # contact history - validation notice mailed, one call, one follow-up.
-        loan_1002, dpd_1002 = loans_by_number["LN-1002"]
-        db.add(CollectionCase(
-            id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1002.id,
-            status=CollectionCaseStatus.IN_PROGRESS.value,
-            delinquency_bucket=delinquency_bucket(dpd_1002),
-            validation_notice_sent=True, validation_notice_sent_at=_ago(14),
-            contact_log=[
-                _contact(14, 9, "mail", "FDCPA validation notice mailed."),
-                _contact(9, 11, "phone",
-                        "Outbound call - borrower acknowledged the missed payment and "
-                        "promised to pay within the week."),
-                _contact(3, 15, "phone",
-                        "Follow-up call - no answer, left a voicemail requesting a callback."),
-            ],
-            last_contact_at=_ago(3), opened_at=_ago(15),
-        ))
-
-        # LN-1005: 90+ bucket, escalated - a longer contact history spanning
-        # several weeks, every contact inside the 8am-9pm FDCPA window.
-        loan_1005, dpd_1005 = loans_by_number["LN-1005"]
-        db.add(CollectionCase(
-            id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1005.id,
-            status=CollectionCaseStatus.ESCALATED.value,
-            delinquency_bucket=delinquency_bucket(dpd_1005),
-            validation_notice_sent=True, validation_notice_sent_at=_ago(63),
-            contact_log=[
-                _contact(64, 9, "mail", "FDCPA validation notice mailed."),
-                _contact(58, 10, "phone", "Outbound call - borrower requested a hardship review."),
-                _contact(45, 14, "phone",
-                        "Follow-up call - borrower disputed the amount; dispute logged."),
-                _contact(30, 11, "phone", "Outbound call - no answer, left a voicemail."),
-                _contact(16, 16, "phone",
-                        "Outbound call - borrower proposed a partial-payment plan."),
-                _contact(4, 13, "phone", "Follow-up call confirming the partial-payment plan terms."),
-            ],
-            last_contact_at=_ago(4), opened_at=_ago(65),
-        ))
+        # Servicing + collections (independently idempotent - see _seed_servicing).
+        await _seed_servicing(db)
 
         await db.commit()
         print("[SUCCESS] Seeded Lending database:")
         print(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
               f"{pending} in intake), {len(_POLICIES)} credit policies, "
               f"{denials} adverse-action notices")
-        print(f"   - {len(loans_by_number)} serviced loans, 2 collection cases "
-              f"(FDCPA-governed contact log)")
 
 
 if __name__ == "__main__":

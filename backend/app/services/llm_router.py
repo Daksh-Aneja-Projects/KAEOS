@@ -30,6 +30,7 @@ from app.services.llm_support import (  # noqa: F401  (re-exported for callers)
     _embed_cache_put,
     _EMBED_CACHE_STATS,
     embedding_dim,
+    configured_embedding_model,
     pseudo_embedding,
     BudgetExceededError,
     NoLLMProviderError,
@@ -842,7 +843,7 @@ class LLMRouter:
     async def embed(
         self,
         texts: list[str],
-        model: str = "text-embedding-3-small",
+        model: Optional[str] = None,
         tenant_api_keys: Optional[dict] = None,
     ) -> list[list[float]]:
         """Generate embeddings using the configured embedding model.
@@ -853,6 +854,10 @@ class LLMRouter:
         pseudo-vectors (unit-normalized, correct dimension) only when no provider
         is available at all. Sets ``self.embeddings_simulated``.
         """
+        # Default to the model the pgvector columns are sized for. Otherwise a
+        # deployment that sets EMBEDDING_MODEL resizes the columns but embed()
+        # still uses the old 1536-dim default, and every insert dim-mismatches.
+        model = model or configured_embedding_model()
         model, api_base = await self._resolve_embedding_model(model, tenant_api_keys)
         self.last_embedding_model = model
         dim = embedding_dim(model)

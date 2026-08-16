@@ -50,6 +50,8 @@ class CSATAgent:
                     "prompt": f"Analyze this customer satisfaction survey: {facts}"}],
             context={
                 "batch_id": survey_batch_id, "tenant_id": tenant_id, **facts,
+                # GDPR/CCPA lawful basis for the Gate 6 post-execution audit.
+                "legal_basis": "legitimate_interests:customer_support",
                 "instruction": "Output strict JSON: {sentiment, themes, follow_up_needed}.",
             },
             tenant_id=tenant_id,

@@ -18,7 +18,7 @@ from app.legal.models.compliance import (
 )
 from app.legal.models.litigation import Case, CaseEvent, CaseStage, CourtFiling
 from app.legal.models.ip import Patent, Trademark, TradeSecret
-from app.legal.models.privacy import DataProcessingRecord, DataSubjectRequest, PrivacyImpactAssessment
+from app.legal.models.privacy import DataProcessingRecord, DataSubjectRequest, DsarStatus, PrivacyImpactAssessment
 
 # Agents
 from app.legal.agents.contract_review_agent import ContractReviewAgent
@@ -48,10 +48,13 @@ async def legal_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
     )
     active_contracts = contract_q.scalar() or 0
 
-    # Pending DSARs
+    # In-flight DSARs — every request not yet terminal (COMPLETED/FAILED), so
+    # ones being verified or processed still count against their statutory
+    # deadline instead of dropping off the moment they leave RECEIVED. Matches
+    # the terminal set legal_analytics uses.
     dsar_q = await db.execute(
         select(sqlfunc.count()).select_from(DataSubjectRequest).where(DataSubjectRequest.tenant_id == tenant_id)
-        .where(DataSubjectRequest.status == "RECEIVED")
+        .where(DataSubjectRequest.status.notin_([DsarStatus.COMPLETED, DsarStatus.FAILED]))
     )
     pending_dsars = dsar_q.scalar() or 0
 

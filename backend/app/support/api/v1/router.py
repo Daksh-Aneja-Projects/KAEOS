@@ -604,12 +604,15 @@ async def list_escalation_events(
     return result
 
 # --- SLA ---
-@router.get("/sla/metrics")
-async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+async def compute_sla_policy_metrics(db: AsyncSession, tenant_id: str) -> list:
     """Per-policy SLA compliance, computed live from each matching ticket's
     first_response_at/resolved_at against that policy's targets - never from
     a cached aggregate. A policy with no measurable tickets returns an honest
-    null, not a fabricated number."""
+    null, not a fabricated number.
+
+    Shared by GET /sla/metrics and the SLA Monitor agent so the two read the
+    exact same live breach math (the agent used to read an always-empty
+    sup_sla_breaches table instead)."""
     policies_q = await db.execute(select(SLAPolicy).where(SLAPolicy.tenant_id == tenant_id))
     policies = policies_q.scalars().all()
     if not policies:
@@ -666,6 +669,12 @@ async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
             "breached_count": breached,
         })
     return result
+
+
+@router.get("/sla/metrics")
+async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
+    """Per-policy SLA compliance, computed live from ticket timestamps."""
+    return await compute_sla_policy_metrics(db, tenant_id)
 
 @router.post("/sla/check")
 async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):

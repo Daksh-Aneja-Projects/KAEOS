@@ -278,13 +278,19 @@ async def generate_adverse_action(
 
     reasons = list(decision.reasons or [])
     today = date.today()
+    # Feed the ECOA checker the REAL elapsed days between the decision and this
+    # notice so its >30-day (12 CFR 1002.9(a)(1)) BLOCK can actually fire on a
+    # late notice - a hardcoded notice_days=0 made that branch unreachable and
+    # let a late notice be attested as timely.
+    decided_on = decision.decided_at.date() if decision.decided_at else today
+    elapsed = (today - decided_on).days
     body = _render_notice(app, reasons)
 
     # Validate against the ECOA checker BEFORE persisting (fail-closed).
     gate = run_checks(["ECOA"], {
         "decision": "DENY",
-        "decision_date": str(today),
-        "adverse_action": {"reasons": reasons, "notice_days": 0,
+        "decision_date": str(decided_on),
+        "adverse_action": {"reasons": reasons, "notice_days": elapsed,
                            "prohibited_basis_used": False},
     })
     if not gate["verified"]:
@@ -294,8 +300,8 @@ async def generate_adverse_action(
 
     notice = AdverseActionNotice(
         tenant_id=tenant_id, application_id=app.id, decision_id=decision.id,
-        specific_reasons=reasons, body=body, decision_date=today,
-        sent_at=datetime.now(timezone.utc), within_30_days=True,
+        specific_reasons=reasons, body=body, decision_date=decided_on,
+        sent_at=datetime.now(timezone.utc), within_30_days=elapsed <= 30,
     )
     await append_ledger_event(
         db, tenant_id=tenant_id, event_type="ADVERSE_ACTION_NOTICE",
@@ -325,3 +331,18 @@ def _render_notice(app: LoanApplication, reasons: list[str]) -> str:
         "Opportunity Act (15 U.S.C. 1691) and Regulation B (12 CFR 1002.9).",
     ]
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    # Self-check: a notice sent >30 days after the decision MUST block the ECOA
+    # gate. This is the exact regression the elapsed-days fix restores - the old
+    # hardcoded notice_days=0 could never trip the checker's late-notice branch.
+    from datetime import timedelta as _td
+    _elapsed = (date.today() - (date.today() - _td(days=45))).days
+    _g = run_checks(["ECOA"], {
+        "decision": "DENY", "decision_date": "2020-01-01",
+        "adverse_action": {
+            "reasons": ["Debt-to-income ratio of 62% exceeds the 45% program limit"],
+            "notice_days": _elapsed, "prohibited_basis_used": False}})
+    assert _elapsed == 45 and not _g["verified"], "late notice must BLOCK the ECOA gate"
+    print("underwriting self-check ok: 45-day-late notice blocks the ECOA gate")

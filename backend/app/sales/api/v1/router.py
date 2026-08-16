@@ -16,6 +16,10 @@ from app.sales.models.pipeline import Opportunity, OpportunityStage
 from app.sales.models.leads import Lead, LeadScore
 from app.sales.models.accounts import Account
 from app.sales.models.forecasting import SalesForecast
+# Single source of truth for "open" pipeline stages, so the dashboard's
+# pipeline_total and /analytics' open_pipeline count the exact same stages
+# (CLOSED_WON must not leak into open pipeline).
+from app.sales.services.analytics import _OPEN_STAGES
 
 # Agents
 from app.sales.agents.pipeline_coach_agent import PipelineCoachAgent
@@ -40,7 +44,9 @@ async def sales_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
     pipeline_q = await db.execute(
         select(sqlfunc.coalesce(sqlfunc.sum(Opportunity.amount), 0))
         .select_from(Opportunity).where(Opportunity.tenant_id == tenant_id)
-        .where(Opportunity.stage != OpportunityStage.CLOSED_LOST)
+        # Open pipeline only: excluding just CLOSED_LOST counted CLOSED_WON deals
+        # as open, contradicting /analytics open_pipeline.
+        .where(Opportunity.stage.in_(_OPEN_STAGES))
     )
     pipeline_total = float(pipeline_q.scalar() or 0.00)
 
@@ -86,11 +92,20 @@ async def list_leads(
 ):
     q = await db.execute(select(Lead).where(Lead.tenant_id == tenant_id).limit(limit).offset(offset))
     leads = q.scalars().all()
+    # Latest score per lead in ONE query instead of one per row: order ascending
+    # so the most recent row overwrites and wins in the dict.
+    lead_ids = [l.id for l in leads]
+    latest_score: dict = {}
+    if lead_ids:
+        scores_q = await db.execute(
+            select(LeadScore.lead_id, LeadScore.overall_score)
+            .where(LeadScore.tenant_id == tenant_id, LeadScore.lead_id.in_(lead_ids))
+            .order_by(LeadScore.created_at.asc())
+        )
+        for lead_id, overall in scores_q.all():
+            latest_score[lead_id] = overall
     lead_list = []
     for l in leads:
-        score_q = await db.execute(select(LeadScore).where(
-            LeadScore.tenant_id == tenant_id, LeadScore.lead_id == l.id).order_by(LeadScore.created_at.desc()))
-        score = score_q.scalars().first()
         lead_list.append({
             "id": l.id,
             "name": l.contact_name,
@@ -98,7 +113,7 @@ async def list_leads(
             "email": l.email,
             "source": l.source.value if hasattr(l.source, 'value') else str(l.source),
             "status": "CONVERTED" if l.is_converted else "OPEN",
-            "score": round((score.overall_score or 0) / 20) if score else 0,  # 0-100 → 0-5 stars
+            "score": round((latest_score.get(l.id) or 0) / 20),  # 0-100 → 0-5 stars
         })
     return lead_list
 
@@ -128,17 +143,18 @@ async def list_accounts(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.sales.models.core import SalesRep
     q = await db.execute(select(Account).where(Account.tenant_id == tenant_id).limit(limit).offset(offset))
     accounts = q.scalars().all()
+    # Resolve rep names once, not per row.
+    rep_ids = {a.assigned_rep_id for a in accounts if a.assigned_rep_id}
+    rep_names = {}
+    if rep_ids:
+        r_q = await db.execute(select(SalesRep.id, SalesRep.name).where(
+            SalesRep.tenant_id == tenant_id, SalesRep.id.in_(rep_ids)))
+        rep_names = {rid: name for rid, name in r_q.all()}
     result = []
     for a in accounts:
-        rep_name = None
-        if a.assigned_rep_id:
-            rep_q = await db.execute(select(SalesRep).where(
-                SalesRep.id == a.assigned_rep_id, SalesRep.tenant_id == tenant_id))
-            rep = rep_q.scalar_one_or_none()
-            rep_name = rep.name if rep else None
+        rep_name = rep_names.get(a.assigned_rep_id)
         health_score = float(a.health_score or 0)
         health_label = "HEALTHY" if health_score >= 0.8 else ("AT_RISK" if health_score >= 0.5 else "CHURNED")
         result.append({
@@ -199,18 +215,19 @@ async def list_opportunities(
 ):
     q = await db.execute(select(Opportunity).where(Opportunity.tenant_id == tenant_id).limit(limit).offset(offset))
     opps = q.scalars().all()
+    # Resolve account names once, not per row.
+    account_ids = {o.account_id for o in opps if o.account_id}
+    account_names = {}
+    if account_ids:
+        a_q = await db.execute(select(Account.id, Account.name).where(
+            Account.tenant_id == tenant_id, Account.id.in_(account_ids)))
+        account_names = {aid: name for aid, name in a_q.all()}
     result = []
     for o in opps:
-        account_name = None
-        if o.account_id:
-            acct_q = await db.execute(select(Account).where(
-                Account.id == o.account_id, Account.tenant_id == tenant_id))
-            acct = acct_q.scalar_one_or_none()
-            account_name = acct.name if acct else None
         result.append({
             "id": o.id,
             "name": o.name,
-            "account": account_name,
+            "account": account_names.get(o.account_id),
             "stage": o.stage.value if hasattr(o.stage, 'value') else str(o.stage),
             "value": float(o.amount or 0),
             "close_date": str(o.close_date) if o.close_date else None,
@@ -281,25 +298,35 @@ async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     from app.sales.models.forecasting import ForecastLine
     q = await db.execute(select(SalesForecast).where(SalesForecast.tenant_id == tenant_id).limit(200))
     fcs = q.scalars().all()
+
+    # Batch all forecast lines and their rep names once, instead of one query
+    # per forecast plus one more per line.
+    fc_ids = [f.id for f in fcs]
+    lines_by_fc: dict = {}
+    rep_ids = set()
+    if fc_ids:
+        lines_q = await db.execute(select(ForecastLine).where(
+            ForecastLine.tenant_id == tenant_id, ForecastLine.forecast_id.in_(fc_ids)))
+        for ln in lines_q.scalars().all():
+            lines_by_fc.setdefault(ln.forecast_id, []).append(ln)
+            if ln.rep_id:
+                rep_ids.add(ln.rep_id)
+    rep_names = {}
+    if rep_ids:
+        rep_q = await db.execute(select(SalesRep.id, SalesRep.name).where(
+            SalesRep.tenant_id == tenant_id, SalesRep.id.in_(rep_ids)))
+        rep_names = {rid: name for rid, name in rep_q.all()}
+
     result = []
     for f in fcs:
-        lines_q = await db.execute(select(ForecastLine).where(
-            ForecastLine.tenant_id == tenant_id, ForecastLine.forecast_id == f.id))
-        lines = lines_q.scalars().all()
+        lines = lines_by_fc.get(f.id, [])
         # Build one row per rep line, plus one aggregate row
         if lines:
             for ln in lines:
-                rep_name = None
-                if ln.rep_id:
-                    from app.sales.models.core import SalesRep
-                    rep_q = await db.execute(select(SalesRep).where(
-                        SalesRep.id == ln.rep_id, SalesRep.tenant_id == tenant_id))
-                    rep = rep_q.scalar_one_or_none()
-                    rep_name = rep.name if rep else None
                 result.append({
                     "id": ln.id,
                     "period": f.quarter,
-                    "rep": rep_name,
+                    "rep": rep_names.get(ln.rep_id),
                     "committed": float(ln.commit_amount or 0),
                     "best_case": float(ln.best_case_amount or 0),
                     "pipeline": float(ln.pipeline_amount or 0),

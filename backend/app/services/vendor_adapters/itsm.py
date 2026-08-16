@@ -12,10 +12,12 @@ class ServiceNowAdapter(_RestAdapter):
 
     Incremental + paginated pull: an opaque ``_cursor`` (the sys_updated_on of
     the newest record seen last sync) is passed by the sync engine and turned
-    into a ``sys_updated_on>`` filter, so each pull only fetches records changed
+    into a ``sys_updated_on>=`` filter, so each pull only fetches records changed
     since the last one instead of re-reading the whole table every time. Within
     one sync it pages through sysparm_offset until the table is drained or the
-    page cap is hit.
+    page cap is hit. ``to_signal`` surfaces each record's ``sys_updated_on`` as
+    ``updated_at`` so the scheduler advances the cursor from the data (SN's own
+    clock), never from KAEOS's wall clock.
     """
     domain, entity, authority = "operations", "incident", 0.95
 
@@ -35,8 +37,10 @@ class ServiceNowAdapter(_RestAdapter):
         base = config.get("query", "ORDERBYsys_updated_on")
         cursor = config.get("_cursor")
         if cursor:
-            # Only records updated strictly after the last watermark.
-            return f"sys_updated_on>{cursor}^{base}"
+            # Records updated at-or-after the last watermark. '>=' (not '>') so a
+            # record sharing the boundary second is never skipped; the natural-key
+            # upsert absorbs the re-fetched boundary row as a harmless update.
+            return f"sys_updated_on>={cursor}^{base}"
         return base
 
     def fetch_params(self, config):
@@ -74,6 +78,9 @@ class ServiceNowAdapter(_RestAdapter):
             "summary": f"[{r.get('number', '?')}] {r.get('short_description', '')} - "
                        f"state={r.get('state', '?')} priority={r.get('priority', '?')}",
             "domain": self.domain, "authority": self.authority, "pii": False,
+            # Source-reported high-water mark; the sync scheduler advances the
+            # delta cursor from max(updated_at), tracking SN's own clock.
+            "updated_at": r.get("sys_updated_on"),
         }
 
 

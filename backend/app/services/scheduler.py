@@ -2,6 +2,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, and_
 from datetime import datetime, timezone
+from typing import Optional
 from app.core.config import get_settings
 from app.core.database import MaintenanceSessionLocal
 from app.models.domain import Rule
@@ -308,10 +309,30 @@ async def run_outbound_sync_dispatch():
 _PULL_CONNECTOR_LIMIT = 25
 
 
+def _max_watermark(records: list) -> Optional[str]:
+    """Highest source-reported ``updated_at`` across fetched records, or None.
+
+    The delta cursor advances from the DATA - the newest update timestamp the
+    source itself reported - never from KAEOS's wall clock, so skew / timezone
+    drift between KAEOS and the source cannot silently drop records. ServiceNow
+    watermarks are fixed-width ``YYYY-MM-DD HH:MM:SS``, so a lexical max is the
+    chronological max. Only adapters that surface ``updated_at`` (ServiceNow
+    today) advance a cursor; the rest return None here and keep their cursor.
+    """
+    return max((r.get("updated_at") for r in records
+                if isinstance(r, dict) and r.get("updated_at")), default=None)
+
+
 async def run_connector_pull_sync():
-    """Leader-guarded incremental pull: fetch changed records from every
-    credentialed CONNECTED connector, dedup them into the twin, and advance
-    each connector's persisted cursor so the next pass only fetches deltas.
+    """Leader-guarded pull: fetch recent records from every credentialed
+    CONNECTED connector and dedup them into the twin (natural-key upsert, so a
+    re-pull updates in place instead of duplicating).
+
+    True incremental delta today is ServiceNow-only: it advances a persisted
+    cursor from its own ``sys_updated_on`` high-water mark, so the next pass
+    fetches only what changed since. Every other adapter pulls its most-recently-
+    updated window (bounded by ``batch_size``) each pass and does NOT advance a
+    cursor - an honest fixed-window pull, not a false delta promise.
 
     Per-connector isolation: one unreachable source fails only its own row.
     """
@@ -335,16 +356,20 @@ async def run_connector_pull_sync():
 
     synced = 0
     for cid, tid, name, cursor, provider, config, enc in targets:
-        # ServiceNow-format watermark; a 60s overlap re-fetches a few boundary
-        # records, and the natural-key upsert makes that harmless.
         started = datetime.now(timezone.utc)
-        new_cursor = started.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
         token = current_tenant_id.set(tid)
         try:
             async with AsyncSessionLocal() as db:
                 secrets = decrypt_secrets(enc)
                 records = await LiveConnectorService.fetch_records(
                     provider, {**config, "_cursor": cursor}, secrets)
+                # Advance the delta cursor from the DATA, not KAEOS's wall clock:
+                # the watermark is the newest source-reported update timestamp we
+                # actually saw, so skew / timezone drift between KAEOS and the
+                # source can no longer silently drop records. Only ServiceNow
+                # surfaces one today; every other provider returns None here and
+                # keeps its prior cursor (see the run_connector_pull_sync docs).
+                watermark = _max_watermark(records)
                 signals = LiveConnectorService.records_to_signals(records, tid, name)
                 stats = await LiveConnectorService.persist_signals(db, signals)
                 conn = (await db.execute(
@@ -353,7 +378,8 @@ async def run_connector_pull_sync():
                     conn.events_ingested = (conn.events_ingested or 0) + len(records)
                     conn.signals_extracted = (conn.signals_extracted or 0) + stats["inserted"]
                     conn.last_sync_at = started
-                    conn.sync_cursor = new_cursor
+                    if watermark:
+                        conn.sync_cursor = watermark
                 await db.commit()
                 if stats["inserted"] or stats["updated"]:
                     synced += 1
@@ -588,3 +614,18 @@ def init_scheduler() -> AsyncIOScheduler:
         id='metrics_rollup_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     return scheduler
+
+
+if __name__ == "__main__":
+    # Self-check for the delta-cursor watermark: lexical max == chronological max
+    # for fixed-width ServiceNow timestamps, missing/blank timestamps are skipped,
+    # and an empty batch yields None (so the cursor is left untouched, not blanked).
+    assert _max_watermark([]) is None
+    assert _max_watermark([{"external_id": "1"}, {"updated_at": None}]) is None
+    assert _max_watermark([
+        {"updated_at": "2026-08-16 09:00:00"},
+        {"updated_at": "2026-08-16 11:30:00"},
+        {"updated_at": "2026-08-16 09:59:59"},
+        {"no_ts": True},
+    ]) == "2026-08-16 11:30:00"
+    print("scheduler _max_watermark self-check ok")

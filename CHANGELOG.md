@@ -11,6 +11,52 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - Gap-hunt remediation (2026-08-16)
+
+A 52-finding adversarial gap-hunt across the 10 departments + platform was
+remediated in 48 files, each fix independently verified (unit suite 1094 green,
+ruff/bandit clean, frontend build+lint+tests green). Highlights:
+
+- **Governance:** SOX segregation-of-duties is now enforceable (maker/approver
+  identities populated + fail-closed four-eyes); mission-driven financial
+  write-backs are re-gated against SOX/GAAP at actuation instead of bypassing
+  the compliance engine.
+- **Lending:** ECOA adverse-action 30-day clock is computed from the decision
+  date (was hardcoded, could attest a late notice as timely); cured/paid-off
+  loans leave the collections queue; the delinquency queue is bounded and its
+  bucket computed live.
+- **Healthcare:** the PHI Part 2 / authorization disclosure gate binds the
+  encounter's stored SUD codes and the consent store (was trusting caller JSON,
+  so consent revocation had no teeth).
+- **Privacy:** right-to-erasure now covers Sales, Finance and Healthcare PII
+  (was HR + lending only, returning a false "erased" receipt); tenant purge
+  collects Legal document blobs; SOAR containment cannot lock out the last admin.
+- **HR:** AI screening can no longer autonomously reject a candidate; the
+  performance / offboarding / compensation routes run through the 7-gate
+  pipeline; the exit interview is recorded even when the model is unavailable.
+- **Finance:** invoice accrual / void-reversal now runs on bulk-transition and
+  the AP agent (was single-endpoint only, desyncing the ledger); three-way match
+  tracks billed-to-date to block split-invoice over-billing; invoice/PO vendor
+  identity is reconciled.
+- **Support / Sales:** governed support agents now supply legal_basis (was
+  failing Gate 6 on every run); the SLA monitor computes breaches live;
+  escalations persist an event; sales N+1s batched; the dashboard pipeline
+  figure matches analytics.
+- **Workforce:** the pack loader warns on undefined capability processes; a
+  pack's confidence-floor is applied as an AutonomyPolicy; seed_knowledge and
+  deploy_agents are idempotent per-capability; a cross-tenant deployment read is
+  closed.
+- **Platform:** the ServiceNow sync cursor derives from record timestamps (was
+  wall-clock, silently dropping records); outbound write-back idempotency probes
+  fail closed across all seven SoR adapters and capture external ids; SKIPPED
+  write-backs are requeueable; DLQ / webhook-secret operator surfaces emit audit
+  events; VectorStore initializes once per process (was taking ACCESS EXCLUSIVE
+  locks on every search/upsert); the embedding model is unified so EMBEDDING_MODEL
+  actually drives RAG.
+- **Legal / Operations:** a work-order lifecycle state machine + transition UI;
+  compliance obligations auto-flag overdue; the DSAR pending count is corrected;
+  operations N+1s batched; IP renewal deadlines surfaced.
+
 ## [2.0.0] - 2026-08-15 - "Ten Departments, Governed"
 
 The 2.0 line: KAEOS ships **ten governed departments** at full depth, with the

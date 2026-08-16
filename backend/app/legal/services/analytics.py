@@ -6,11 +6,12 @@ from tenant rows.
 """
 from datetime import date, timedelta
 
-from sqlalchemy import and_, case, func as sqlfunc, select
+from sqlalchemy import and_, case, func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.models.compliance import ComplianceObligation, ObligationStatus
 from app.legal.models.contracts import Contract, ContractClause, ContractStatus
+from app.legal.models.ip import IPStatus, Patent, Trademark
 from app.legal.models.litigation import Case
 from app.legal.models.privacy import DataSubjectRequest, DsarStatus
 
@@ -71,11 +72,22 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
     clause_risk = {(r.value if hasattr(r, "value") else str(r)): int(c) for r, c in risk_q.all()}
     high_risk_clauses = clause_risk.get("HIGH", 0)
 
-    # Obligation overdue rate — null (never 0/fake) when there are no
-    # obligations to rate at all, honoring the honesty contract.
+    # Obligation overdue rate — an obligation is overdue if it is not yet
+    # satisfied (not COMPLETED/WAIVED) AND either its due_date has already
+    # passed OR it was manually flagged OVERDUE. Deriving from due_date at read
+    # time means a PENDING obligation whose deadline slipped is no longer
+    # silently excluded (nothing sweeps the enum to OVERDUE). Null (never
+    # 0/fake) when there are no obligations to rate at all, per the honesty
+    # contract.
+    overdue_obligation = and_(
+        ComplianceObligation.status.notin_((ObligationStatus.COMPLETED, ObligationStatus.WAIVED)),
+        or_(ComplianceObligation.status == ObligationStatus.OVERDUE,
+            and_(ComplianceObligation.due_date.isnot(None),
+                 ComplianceObligation.due_date < today)),
+    )
     ob_q = await db.execute(
         select(sqlfunc.count(),
-               sqlfunc.coalesce(sqlfunc.sum(case((ComplianceObligation.status == ObligationStatus.OVERDUE, 1), else_=0)), 0))
+               sqlfunc.coalesce(sqlfunc.sum(case((overdue_obligation, 1), else_=0)), 0))
         .where(ComplianceObligation.tenant_id == tenant_id)
     )
     ob_total, ob_overdue = ob_q.one()
@@ -91,6 +103,28 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
                DataSubjectRequest.deadline_date <= today + timedelta(days=_DSAR_RISK_WINDOW_DAYS))
     )
     dsar_at_risk = int(dsar_q.scalar() or 0)
+
+    # IP renewal exposure — registered marks / granted patents whose renewal or
+    # expiry falls within 90 days (past-due included) and that are still legally
+    # live (not ABANDONED/EXPIRED). Mirrors the contract-expiry pass so lapsing
+    # trademarks and patents surface instead of only being echoed raw per-row.
+    ip_cutoff = today + timedelta(days=90)
+    _ip_terminal = (IPStatus.ABANDONED, IPStatus.EXPIRED)
+    tm_due = int((await db.execute(
+        select(sqlfunc.count()).where(
+            Trademark.tenant_id == tenant_id,
+            Trademark.status.notin_(_ip_terminal),
+            Trademark.renewal_date.isnot(None),
+            Trademark.renewal_date <= ip_cutoff)
+    )).scalar() or 0)
+    pat_due = int((await db.execute(
+        select(sqlfunc.count()).where(
+            Patent.tenant_id == tenant_id,
+            Patent.status.notin_(_ip_terminal),
+            Patent.expiry_date.isnot(None),
+            Patent.expiry_date <= ip_cutoff)
+    )).scalar() or 0)
+    ip_renewals_due = tm_due + pat_due
 
     # Litigation exposure by stage — chart-only.
     exposure_by_stage: list[dict] = []
@@ -126,6 +160,9 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
     if dsar_at_risk:
         insights.append({"severity": "warning",
                          "message": f"{dsar_at_risk} data subject request(s) are within {_DSAR_RISK_WINDOW_DAYS} days of their statutory deadline."})
+    if ip_renewals_due:
+        insights.append({"severity": "warning",
+                         "message": f"{ip_renewals_due} trademark/patent renewal(s) fall due within 90 days."})
     if total_litigation_exposure:
         insights.append({"severity": "info",
                          "message": f"Total litigation exposure across open cases is ${total_litigation_exposure:,.0f}."})
@@ -143,6 +180,7 @@ async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True)
             {"key": "avg_risk", "label": "Avg AI Risk Score", "value": float(avg_risk) if avg_risk is not None else None, "format": "number"},
             {"key": "obligation_overdue_rate", "label": "Obligation Overdue Rate", "value": overdue_rate, "format": "percent"},
             {"key": "dsar_at_risk", "label": "DSARs Near Deadline", "value": dsar_at_risk, "format": "number"},
+            {"key": "ip_renewals_due", "label": "IP Renewals ≤90d", "value": ip_renewals_due, "format": "number"},
             {"key": "litigation_exposure", "label": "Litigation Exposure", "value": total_litigation_exposure, "format": "currency"},
         ],
         "charts": [

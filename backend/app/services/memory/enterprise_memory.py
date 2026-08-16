@@ -18,11 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.polystore import get_vector_store
 from app.services.llm_router import get_tenant_router
+from app.services.llm_support import configured_embedding_model
 
 logger = logging.getLogger(__name__)
 
 _MEMORY_NAMESPACE = "enterprise_memory"
-_EMBED_MODEL = "text-embedding-3-small"  # 1536-dim; router degrades to pseudo-vectors
 
 
 class EnterpriseMemoryService:
@@ -37,7 +37,10 @@ class EnterpriseMemoryService:
         re-embedded (model changed) or excluded (non-semantic pseudo-vectors).
         """
         router = await get_tenant_router(tenant_id)
-        vectors = await router.embed([text_value], model=_EMBED_MODEL)
+        # Embed on the SAME model that sizes the pgvector column width
+        # (configured_embedding_model), so a changed EMBEDDING_MODEL never
+        # dim-mismatches the store. See the matching fix in llm_router.embed.
+        vectors = await router.embed([text_value], model=configured_embedding_model())
         return (vectors[0] if vectors else []), router.embedding_metadata()
 
     @staticmethod

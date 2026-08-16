@@ -309,52 +309,77 @@ class WorkforceGenerator:
         is what lets a pre-seeded department (created by onboarding, with no
         capabilities) still get its full workforce backbone on (re)deploy.
         """
-        existing_caps_q = await db.execute(
-            select(Capability).where(Capability.department_id == dept.id)
-        )
-        existing_slugs = {c.slug for c in existing_caps_q.scalars().all()}
+        existing_caps = {
+            c.slug: c
+            for c in (await db.execute(
+                select(Capability).where(Capability.department_id == dept.id)
+            )).scalars().all()
+        }
+        # Process dedup is department-wide (per slug), NOT per-capability: a
+        # process referenced by two capabilities (e.g. procurement `po_approval`,
+        # engineering `pull_request_review`) must yield one BusinessProcess, not
+        # one per capability. An adopted department may already hold some rows.
+        existing_proc_slugs = {
+            p.slug for p in (await db.execute(
+                select(BusinessProcess).where(BusinessProcess.department_id == dept.id)
+            )).scalars().all()
+        }
         capabilities_created: list = []
         processes_created: list = []
+
+        def _ensure_processes(cap, proc_ids):
+            for proc_id in proc_ids:
+                if proc_id in existing_proc_slugs:
+                    continue
+                proc_def = next((p for p in pack.process_definitions if p["id"] == proc_id), None)
+                if not proc_def:
+                    continue  # dangling ref (warned at pack load); nothing to create
+                proc = BusinessProcess(
+                    tenant_id=tenant_id,
+                    capability_id=cap.id,
+                    department_id=dept.id,
+                    name=proc_def["name"],
+                    slug=proc_def["id"],
+                    sla_hours=proc_def.get("sla_hours"),
+                    steps=proc_def.get("steps", []),
+                )
+                db.add(proc)
+                existing_proc_slugs.add(proc_id)
+                processes_created.append(proc.id)
+
         for cap_def in pack.capabilities:
             selected = (not deployment.selected_capabilities) or (
                 cap_def["id"] in deployment.selected_capabilities
             )
-            if not selected or cap_def["id"] in existing_slugs:
+            if not selected:
                 continue
-            cap = Capability(
-                tenant_id=tenant_id,
-                department_id=dept.id,
-                name=cap_def["name"],
-                slug=cap_def["id"],
-                description=cap_def.get("description", ""),
-                icon=cap_def.get("icon", "⚡"),
-                # A deployed capability is live, not merely planned.
-                status=CapabilityStatus.ACTIVE,
-                agent_definitions=cap_def.get("agents", []),
-                process_definitions=cap_def.get("processes", []),
-                compliance_tags=cap_def.get("compliance", []),
-            )
-            db.add(cap)
-            await db.commit()
-            await db.refresh(cap)
-            capabilities_created.append(cap.id)
-            for proc_id in cap.process_definitions:
-                proc_def = next((p for p in pack.process_definitions if p["id"] == proc_id), None)
-                if proc_def:
-                    proc = BusinessProcess(
-                        tenant_id=tenant_id,
-                        capability_id=cap.id,
-                        department_id=dept.id,
-                        name=proc_def["name"],
-                        slug=proc_def["id"],
-                        sla_hours=proc_def.get("sla_hours"),
-                        steps=proc_def.get("steps", []),
-                    )
-                    db.add(proc)
-                    processes_created.append(proc.id)
+            cap = existing_caps.get(cap_def["id"])
+            if cap is None:
+                cap = Capability(
+                    tenant_id=tenant_id,
+                    department_id=dept.id,
+                    name=cap_def["name"],
+                    slug=cap_def["id"],
+                    description=cap_def.get("description", ""),
+                    icon=cap_def.get("icon", "⚡"),
+                    # A deployed capability is live, not merely planned.
+                    status=CapabilityStatus.ACTIVE,
+                    agent_definitions=cap_def.get("agents", []),
+                    process_definitions=cap_def.get("processes", []),
+                    compliance_tags=cap_def.get("compliance", []),
+                )
+                db.add(cap)
+                await db.commit()
+                await db.refresh(cap)
+                existing_caps[cap.slug] = cap
+                capabilities_created.append(cap.id)
+            # Reconcile processes for BOTH new and already-existing capabilities:
+            # a capability created before its process_definitions existed still
+            # gets the now-defined ones backfilled instead of being skipped whole.
+            _ensure_processes(cap, cap_def.get("processes", []))
         await db.commit()
 
-        if capabilities_created:
+        if capabilities_created or processes_created:
             deployment.capabilities_activated = (deployment.capabilities_activated or []) + capabilities_created
             deployment.processes_created = (deployment.processes_created or []) + processes_created
             db.add(deployment)
@@ -455,23 +480,44 @@ class WorkforceGenerator:
         """Creates DepartmentAgent records and triggers KAEOS blueprint/agent generation."""
         logger.info(f"Deploying agents for department {department_id}")
         
-        # Idempotency: don't re-deploy if this department already has agents.
-        existing_agents_q = await db.execute(
-            select(DepartmentAgent).where(DepartmentAgent.department_id == department_id)
-        )
-        if existing_agents_q.scalars().first() is not None:
-            logger.info(
-                f"[Generator] Department {department_id} already has agents — "
-                f"skipping deploy_agents (idempotent)."
-            )
-            return
-        
+        # Idempotency is PER-CAPABILITY, not per-department: a redeploy that adds
+        # new capabilities must still populate agents for them. Returning on the
+        # first agent found department-wide left new capabilities with zero agents
+        # while the deployment still reported ACTIVE.
+        existing_agent_caps = {
+            da.capability_id for da in (await db.execute(
+                select(DepartmentAgent).where(DepartmentAgent.department_id == department_id)
+            )).scalars().all()
+        }
+
         q = await db.execute(select(WorkforceDeployment).where(WorkforceDeployment.id == deployment_id))
         deployment = q.scalar_one_or_none()
-        
+
         pack_q = await db.execute(select(DomainPack).where(DomainPack.id == deployment.domain_pack_id))
         pack = pack_q.scalar_one_or_none()
-        
+
+        # Apply the pack's declared confidence floor as this domain's Autonomy Dial
+        # so Gate 3 enforces it instead of silently falling back to the platform
+        # default. Create-if-absent: never clobber a floor an executive or the
+        # autonomy governor has already tuned for this domain.
+        from app.models.settings import AutonomyPolicy
+        floor = (pack.deployment_config or {}).get("default_confidence_floor")
+        if floor is not None:
+            has_policy = (await db.execute(
+                select(AutonomyPolicy).where(
+                    AutonomyPolicy.tenant_id == tenant_id,
+                    AutonomyPolicy.domain == pack.slug,
+                )
+            )).scalar_one_or_none()
+            if has_policy is None:
+                db.add(AutonomyPolicy(
+                    tenant_id=tenant_id, domain=pack.slug,
+                    min_confidence=float(floor), auto_managed=False,
+                ))
+                await db.commit()
+                from app.services.autonomy_policy import invalidate
+                invalidate(tenant_id, pack.slug)
+
         agents_created = []
         
         # Find active capabilities
@@ -482,6 +528,14 @@ class WorkforceGenerator:
         from app.models.domain import Skill
         
         for cap in capabilities:
+            # Per-capability idempotency: a capability that already has agents is
+            # skipped, but sibling capabilities with none still get deployed.
+            if cap.id in existing_agent_caps:
+                logger.info(
+                    f"[Generator] Capability {cap.slug} already has agents — "
+                    f"skipping (idempotent)."
+                )
+                continue
             # Match agent definitions from the pack belonging to this capability or matching by name/type
             matched_defs = []
             for a in pack.agent_definitions:
@@ -620,14 +674,20 @@ class WorkforceGenerator:
                 db.add(event)
                 await db.commit()
                     
-        deployment.agents_created = agents_created
+        # Append, don't replace: a redeploy that added agents for new capabilities
+        # must not drop the ids recorded by earlier runs.
+        deployment.agents_created = (deployment.agents_created or []) + agents_created
         db.add(deployment)
-        
+
         dept_q = await db.execute(select(Department).where(Department.id == department_id))
         dept = dept_q.scalar_one()
-        dept.agent_count = len(agents_created)
+        # Recount department-wide: agents_created holds only THIS run's new agents.
+        total_agents = (await db.execute(
+            select(DepartmentAgent).where(DepartmentAgent.department_id == department_id)
+        )).scalars().all()
+        dept.agent_count = len(total_agents)
         db.add(dept)
-        
+
         await db.commit()
 
     async def seed_knowledge(self, db: AsyncSession, tenant_id: str, deployment_id: str, department_id: str):
@@ -642,7 +702,22 @@ class WorkforceGenerator:
         
         # 1. Create Workflow and Rule entries based on pack definitions
         from app.models.domain import Workflow, Rule, ConfidenceTier
-        
+
+        # Idempotency: workflows + rules are seeded once per department. Without
+        # this guard a re-run of the pipeline duplicated every Workflow and Rule
+        # (the wf id carries a random suffix, so there was no natural key to dedup).
+        already_seeded = (await db.execute(
+            select(Workflow).where(
+                Workflow.tenant_id == tenant_id, Workflow.department == pack.slug
+            )
+        )).scalars().first()
+        if already_seeded is not None:
+            logger.info(
+                f"[Generator] Knowledge already seeded for department {department_id} "
+                f"({pack.slug}) — skipping (idempotent)."
+            )
+            return
+
         # Find active capabilities
         cap_q = await db.execute(select(Capability).where(Capability.department_id == department_id))
         capabilities = cap_q.scalars().all()
@@ -696,8 +771,11 @@ class WorkforceGenerator:
             tenant_id=tenant_id,
             event_type=ActivityEventType.BLUEPRINT_APPROVED,
             severity=ActivitySeverity.INFO,
-            title=f"{pack.name} Knowledge Base Seeded",
-            description=f"Compliance frameworks {', '.join(pack.compliance_frameworks or [])} mapped and initial knowledge base policies indexed.",
+            title=f"{pack.name} Governance Baseline Seeded",
+            # Honest: this step creates governance rules + workflow templates and
+            # maps the compliance frameworks. It does NOT index knowledge documents
+            # (pack.knowledge_templates are not materialized), so do not claim it does.
+            description=f"Compliance frameworks {', '.join(pack.compliance_frameworks or [])} mapped and governance rules and workflow templates seeded for {pack.name}.",
             source_type="department",
             source_id=department_id
         )

@@ -66,35 +66,35 @@ class PerformanceAgent:
             raise
 
     async def execute_via_pipeline(self, db, tenant_id: str, task_payload: dict) -> dict:
-        """Execute this agent's task through the 7-gate SkillExecutionEngine pipeline.
-        Ensures Compliance -> Fairness -> Confidence -> HITL -> Debate -> Execute -> Provenance."""
-        from app.services.skill_executor import SkillExecutionEngine
-        import uuid
+        """Execute 360-feedback synthesis through the full 7-gate AgentExecutor
+        pipeline (Compliance -> Fairness -> Confidence/HITL -> Debate -> Execute
+        -> Audit). The caller persists the returned decision onto the review."""
+        from app.hr.agents.gated_runner import run_gated_hr_skill
 
-        engine = SkillExecutionEngine()
-        skill_def = {
-            "skill_id": "hr_performance_synthesis",
-            "department": "hr",
-            "steps": [
-                {
-                    "id": "step_1",
-                    "action": "Execute the HR task described in the context",
-                    "tool": "none",
-                    "condition": "Always",
-                    "thresholds": "None"
-                }
-            ]
-        }
-        execution_id = str(uuid.uuid4())
-        return await engine.execute(
-            db=db,
-            tenant_id=tenant_id,
-            skill=skill_def,
+        steps = [
+            {
+                "id": "synth_1",
+                "action": "Synthesize the peer feedback into a constructive, bias-free summary; output strict JSON with strengths, growth_areas, summary, suggested_rating",
+                "tool": "none",
+                "condition": "Always",
+                "thresholds": "None",
+            }
+        ]
+        return await run_gated_hr_skill(
+            skill_id="hr_performance_synthesis",
+            steps=steps,
             context={
-                "task": task_payload,
                 "persona": self.persona,
+                "task": task_payload,
+                "intent": "synthesize 360 performance feedback",
+                # A rating decision touches protected attributes - score for bias.
+                "affected_entity_type": "Employee",
+                "affected_count": 1,
+                "legal_basis": "legitimate_interests:performance_management",
+                "instruction": "Output strict JSON in the decision field with keys: strengths (list), growth_areas (list), summary (string), suggested_rating (integer 1-5). Remove biased language.",
             },
-            execution_id=execution_id,
-            route_type="HR_AGENT",
+            tenant_id=tenant_id,
+            compliance_tags=["EEOC", "GDPR"],
+            requires_fairness=True,
         )
 

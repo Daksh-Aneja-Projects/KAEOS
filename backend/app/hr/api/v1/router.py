@@ -897,12 +897,21 @@ async def compensation_market_analysis(
         raise HTTPException(404, "Linked employee not found")
 
     from app.hr.agents.compensation_agent import CompensationAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = CompensationAgent()
     # ponytail: Compensation stores a single point value, not a band, so a
     # +/-10% envelope around the real current pay stands in for "current
     # band" here — upgrade to real min/max columns if banded comp is modeled.
     current_band = {"min": round(comp.base_amount * 0.9, 2), "max": round(comp.base_amount * 1.1, 2)}
-    analysis = await agent.analyze_salary_band(emp.job_title, emp.location or "Remote", current_band)
+    # Through the 7-gate pipeline (not the ungated agent method): only trust the
+    # decision when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "analyze_salary_band",
+        "job_title": emp.job_title, "location": emp.location or "Remote",
+        "current_band": current_band,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
 
     reasoning = str(analysis.get("reasoning") or "")[:100]
     if reasoning:
@@ -912,8 +921,8 @@ async def compensation_market_analysis(
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
         actor=tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="compensation", resource_id=compensation_id,
-        details={"is_competitive": analysis.get("is_competitive")})
-    return {"compensation_id": compensation_id, "analysis": analysis}
+        details={"is_competitive": analysis.get("is_competitive"), "status": status})
+    return {"compensation_id": compensation_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── Onboarding & Offboarding (BoardingPlan / BoardingTask) ────────────────────
@@ -925,7 +934,7 @@ _DEFAULT_ONBOARDING_TASKS = [
 ]
 _DEFAULT_OFFBOARDING_TASKS = [
     "Revoke system access", "Return company equipment",
-    "Final paycheck and COBRA notice", "Exit interview",
+    "Final paycheck and COBRA notice", "Exit Interview",
 ]
 
 
@@ -1109,24 +1118,45 @@ async def offboarding_exit_interview(
         raise HTTPException(404, "Employee not found")
 
     from app.hr.agents.offboarding_agent import OffboardingAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = OffboardingAgent()
-    analysis = await agent.analyze_exit_interview(employee_id, body.survey_responses)
+    # Through the 7-gate pipeline (not the ungated agent method); only trust the
+    # analysis when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "analyze_exit_interview",
+        "survey_responses": body.survey_responses,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
 
     plan = (await db.execute(select(BoardingPlan).where(
         BoardingPlan.tenant_id == tenant_id, BoardingPlan.employee_id == employee_id,
         BoardingPlan.plan_type == BoardingType.OFFBOARDING,
     ).order_by(BoardingPlan.start_date.desc()))).scalars().first()
     if not plan:
+        # Seed the standard offboarding task list so total_tasks reflects the
+        # real work (access revocation, equipment return, final pay, exit
+        # interview). Completing only the AI exit-interview must not flip a
+        # brand-new plan to COMPLETED and hide that nothing else was done.
         plan = BoardingPlan(
             tenant_id=tenant_id, employee_id=employee_id, plan_type=BoardingType.OFFBOARDING,
-            start_date=datetime.now(timezone.utc), total_tasks=0, completed_tasks=0, status="ACTIVE",
+            start_date=datetime.now(timezone.utc),
+            total_tasks=len(_DEFAULT_OFFBOARDING_TASKS), completed_tasks=0, status="ACTIVE",
         )
         db.add(plan)
         await db.flush()
+        for title in _DEFAULT_OFFBOARDING_TASKS:
+            db.add(BoardingTask(
+                tenant_id=tenant_id, plan_id=plan.id, title=title,
+                due_date=datetime.now(timezone.utc), status=TaskStatus.PENDING,
+            ))
+        await db.flush()
 
+    # Case-insensitive match so the seeded "Exit interview" is reused instead of
+    # spawning a duplicate "Exit Interview" task.
     task = (await db.execute(select(BoardingTask).where(
-        BoardingTask.plan_id == plan.id, BoardingTask.title == "Exit Interview",
-    ))).scalar_one_or_none()
+        BoardingTask.plan_id == plan.id, sqlfunc.lower(BoardingTask.title) == "exit interview",
+    ))).scalars().first()
     if not task:
         task = BoardingTask(
             tenant_id=tenant_id, plan_id=plan.id, title="Exit Interview",
@@ -1134,12 +1164,22 @@ async def offboarding_exit_interview(
         )
         db.add(task)
         plan.total_tasks = (plan.total_tasks or 0) + 1
+        await db.flush()
 
-    task.automation_result = analysis
+    # The exit interview is a human survey: record that it was conducted
+    # regardless of the model's availability. The gated AI analysis only ENRICHES
+    # the task when the run cleared every gate - a down or gate-blocked model must
+    # neither fabricate an analysis nor prevent the interview from being logged.
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.now(timezone.utc)
     task.is_automated = True
     task.automation_action = "analyze_exit_interview"
+    task.automation_result = analysis or {
+        "survey_responses": body.survey_responses,
+        "ai_analysis": None,
+        "summary": "Exit interview recorded. Automated analysis was not applied "
+                   "on this run, so no AI insight is attached.",
+    }
     db.add(task)
 
     done = (await db.execute(select(sqlfunc.count()).select_from(BoardingTask).where(
@@ -1153,8 +1193,9 @@ async def offboarding_exit_interview(
 
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
         actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
-        details={"boarding_plan_id": plan.id})
-    return {"employee_id": employee_id, "boarding_plan_id": plan.id, "task_id": task.id, "analysis": analysis}
+        details={"boarding_plan_id": plan.id, "status": status})
+    return {"employee_id": employee_id, "boarding_plan_id": plan.id, "task_id": task.id,
+            "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── Learning & Development ────────────────────────────────────────────────────
@@ -2088,12 +2129,25 @@ async def synthesize_review_feedback(
     if not review:
         raise HTTPException(404, "Performance review not found")
     from app.hr.agents.performance_agent import PerformanceAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = PerformanceAgent()
-    analysis = await agent.synthesize_feedback(db, review_id, body.raw_feedback)
+    # Through the 7-gate pipeline (not the ungated agent method); persist the
+    # synthesis onto the review only when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "synthesize_360_feedback",
+        "raw_feedback": body.raw_feedback,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
+    if analysis:
+        review.ai_feedback_summary = analysis.get("summary")
+        review.ai_growth_areas = analysis.get("growth_areas", [])
+        db.add(review)
+        await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
         actor=tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
-    return {"review_id": review_id, "analysis": analysis}
+    return {"review_id": review_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── BambooHR Connector ─────────────────────────────────────────────────────────

@@ -66,8 +66,12 @@ async def run_gated_support_skill(
         "_skill_obj": skill_obj,
     }
 
-    if "GDPR" in compliance_tags or "CCPA" in compliance_tags:
-        ctx["data_processing_basis_logged"] = True
+    # Gate 6 audit flag: derive from context, never hardcode True. A hardcoded
+    # flag asserted "lawful basis logged" even when no basis was ever supplied,
+    # so every GDPR/CCPA-tagged support run failed Gate 6 (FAILED_AUDIT) because
+    # the audit also requires a real legal_basis. Mirrors sales/agents/gated_runner.
+    if any(t in compliance_tags for t in ("GDPR", "HIPAA", "CCPA")):
+        ctx.setdefault("data_processing_basis_logged", bool(context.get("legal_basis")))
 
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)

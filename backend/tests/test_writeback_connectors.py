@@ -409,6 +409,7 @@ async def test_slack_ok_false_is_a_failure_not_silent_success():
 async def test_hubspot_create_is_idempotent_on_kaeos_idem_property():
     server, url = _serve(_HubSpot)
     _HubSpot.posts = 0
+    _HubSpot.patches = 0
     _HubSpot.idems = set()
     try:
         from app.services.sync_engine import _write_hubspot
@@ -419,11 +420,15 @@ async def test_hubspot_create_is_idempotent_on_kaeos_idem_property():
         secrets = {"access_token": "hs"}
 
         assert await _write_hubspot(cfg, secrets, w, "idem-h") is None
-        # Retry with the SAME token (lost response on attempt 1) -> no duplicate.
+        # The create stamped kaeos_idem AND captured the returned object id, so a
+        # reprocess of the same row PATCHes by that id (durable idempotency)
+        # rather than re-creating - no duplicate deal.
         assert await _write_hubspot(cfg, secrets, w, "idem-h") is None
         assert _HubSpot.posts == 1, "duplicate deal created on retry"
-        assert _HubSpot.last_properties.get("dealname") == "Acme expansion"
-        assert _HubSpot.last_properties.get("kaeos_idem") == "idem-h"
+        assert _HubSpot.patches == 1, "retry must PATCH by captured id, not re-create"
+        # The create stamped kaeos_idem (the dedup key relied on when a lost
+        # response leaves external_id uncaptured and the retry must re-probe).
+        assert "idem-h" in _HubSpot.idems, "create must stamp kaeos_idem for dedup"
     finally:
         server.shutdown()
 

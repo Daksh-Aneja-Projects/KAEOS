@@ -13,6 +13,20 @@ logger = logging.getLogger(__name__)
 PACKS_DIR = os.path.join(os.path.dirname(__file__), "packs")
 
 
+def _dangling_process_ids(pack: Dict[str, Any]) -> set:
+    """Capability-referenced process ids that have no matching process_definition.
+
+    The generator silently skips these at deploy, so the department ends up with
+    fewer processes than its capabilities advertise and any governance rule keyed
+    on the id becomes dead code. Surfacing them is the standing to-author list.
+    """
+    defined = {p.get("id") for p in pack.get("process_definitions", [])}
+    referenced = {
+        pid for cap in pack.get("capabilities", []) for pid in cap.get("processes", [])
+    }
+    return referenced - defined
+
+
 class DomainPackLoader:
     
     @staticmethod
@@ -43,4 +57,23 @@ class DomainPackLoader:
             if field not in pack:
                 logger.error(f"Invalid domain pack: missing required field '{field}'")
                 return False
+        # Warn (do NOT reject) on capability processes with no process_definition:
+        # rejecting would drop the whole department, which is worse than deploying
+        # the defined subset. This makes the gap observable instead of silent.
+        dangling = _dangling_process_ids(pack)
+        if dangling:
+            logger.warning(
+                "Domain pack '%s': %d capability process id(s) have no "
+                "process_definition and will be skipped at deploy: %s",
+                pack.get("slug"), len(dangling), ", ".join(sorted(dangling)),
+            )
         return True
+
+
+if __name__ == "__main__":
+    _p = {
+        "capabilities": [{"processes": ["a", "b"]}, {"processes": ["b", "c"]}],
+        "process_definitions": [{"id": "a"}],
+    }
+    assert _dangling_process_ids(_p) == {"b", "c"}, "dangling detection broken"
+    print("loader self-check ok")

@@ -8,6 +8,7 @@ approver/decider is derived from the authenticated principal, never client input
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,7 +25,8 @@ from app.lending.agents.intake_agent import IntakeAgent
 from app.lending.agents.underwriter_agent import UnderwriterAgent
 from app.lending.models.core import (AdverseActionNotice, CreditPolicy,
                                      LoanApplication, LoanStatus)
-from app.lending.models.servicing import CollectionCase, ServicedLoan
+from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
+                                          ServicedLoan, ServicingStatus)
 from app.lending.services.analytics import lending_analytics
 from app.lending.services.servicing import (CaseNotFound, CollectionGateError,
                                             delinquency_bucket)
@@ -321,9 +323,12 @@ async def list_delinquencies(tenant: dict = Depends(require_role("viewer")),
     """Every open collections case, bucketed by days-past-due, with its
     loan context and full contact log - the servicing team's working queue."""
     tenant_id = tenant["tenant_id"]
+    # Open cases only (a resolved/cured case leaves the queue), bounded like
+    # every sibling list endpoint.
     cases = (await db.execute(select(CollectionCase).where(
-        CollectionCase.tenant_id == tenant_id)
-        .order_by(CollectionCase.opened_at.desc()))).scalars().all()
+        CollectionCase.tenant_id == tenant_id,
+        CollectionCase.status != CollectionCaseStatus.RESOLVED.value)
+        .order_by(CollectionCase.opened_at.desc()).limit(200))).scalars().all()
 
     loan_ids = list({c.serviced_loan_id for c in cases})
     loans_by_id = {}
@@ -337,7 +342,10 @@ async def list_delinquencies(tenant: dict = Depends(require_role("viewer")),
     cases_out = []
     for c in cases:
         loan = loans_by_id.get(c.serviced_loan_id)
-        bucket = c.delinquency_bucket or "1-29"
+        # Live bucket from the loan's current DPD, not the frozen stored value
+        # (a cured loan's stored bucket would otherwise misreport it).
+        bucket = (delinquency_bucket(loan.days_past_due) if loan
+                  else (c.delinquency_bucket or "1-29"))
         buckets[bucket] = buckets.get(bucket, 0) + 1
         cases_out.append({
             "id": c.id, "serviced_loan_id": c.serviced_loan_id,
@@ -425,6 +433,20 @@ async def transition_serviced_loan(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     """Guarded serviced-loan delinquency lifecycle action (cure, escalate to
-    default, pay off)."""
-    return await apply_transition(db, WORKFLOW_SPECS["serviced_loan"],
-                                  loan_id, body.to_state, tenant, note=body.note)
+    default, pay off). Curing (CURRENT) or paying off also resolves the loan's
+    open collections case(s) so they leave the /delinquencies queue - the
+    workflow on-enter hook runs without a DB session and cannot reach them."""
+    result = await apply_transition(db, WORKFLOW_SPECS["serviced_loan"],
+                                    loan_id, body.to_state, tenant, note=body.note)
+    if body.to_state in (ServicingStatus.CURRENT.value, ServicingStatus.PAID_OFF.value):
+        open_cases = (await db.execute(select(CollectionCase).where(
+            CollectionCase.tenant_id == tenant["tenant_id"],
+            CollectionCase.serviced_loan_id == loan_id,
+            CollectionCase.status != CollectionCaseStatus.RESOLVED.value))).scalars().all()
+        if open_cases:
+            now = datetime.now(timezone.utc)
+            for case in open_cases:
+                case.status = CollectionCaseStatus.RESOLVED.value
+                case.closed_at = now
+            await db.commit()
+    return result
