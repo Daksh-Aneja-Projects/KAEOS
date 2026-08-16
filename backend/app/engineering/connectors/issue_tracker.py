@@ -11,7 +11,7 @@ writes itself.
 import logging
 from typing import Any, Dict, List, Optional
 
-import httpx
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class GitHubIssueTrackerConnector:
         return f"{owner}/{repo}"
 
     async def _get(self, url: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with guarded_async_client(timeout=30.0) as client:
             try:
                 res = await client.get(url, headers=self.headers, params=params)
                 res.raise_for_status()

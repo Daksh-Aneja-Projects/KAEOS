@@ -12,7 +12,7 @@ from sqlalchemy import case, select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.engineering.agents.code_review_agent import CodeReviewAgent
 from app.engineering.agents.deploy_risk_agent import DeployRiskAgent
@@ -259,7 +259,7 @@ async def review_pull_request(
         result = await CodeReviewAgent().review_pull_request(db, pr_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="pull_request", resource_id=pr_id,
         )
         return result
@@ -334,7 +334,7 @@ async def assess_deployment(
         result = await DeployRiskAgent().assess_deployment(db, deployment_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="deployment", resource_id=deployment_id,
         )
         return result
@@ -409,7 +409,7 @@ async def triage_incident(
         result = await IncidentAgent().triage_incident(db, incident_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="incident", resource_id=incident_id,
         )
         return result
@@ -481,12 +481,74 @@ async def transition_incident(
                                   body.to_state, tenant, note=body.note)
 
 
+# ── Change-management gate for direct deploy rollouts ─────────────────────────
+# The deploy-risk AGENT path runs every production rollout through the SOC2 /
+# ISO 27001 / CHANGE_FREEZE checkers (DEPLOY_COMPLIANCE). The direct transition
+# endpoint drove a deployment to IN_PROGRESS (rollout start) with NO such gate,
+# so an operator could ship into a change freeze or on failing CI. Close that
+# bypass at the service layer, the way lending/healthcare enforce.
+from app.compliance.registry import run_checks  # noqa: E402
+from app.engineering.agents.gated_runner import DEPLOY_COMPLIANCE  # noqa: E402
+
+
+def _deploy_change_context(deploy, pr) -> dict:
+    """Facts the engineering change-management checkers read, mirroring the
+    deploy-risk agent's fact shape (environment + linked-PR CI/risk). A
+    change-freeze signal has no column yet, so it is read defensively and stays
+    None until one exists (NOT_APPLICABLE, never a silent fail-open).
+
+    SCHEMA-TODO(integrator): eng_deployments.change_freeze_active (Boolean),
+    .is_emergency (Boolean), .emergency_approver (String) to make CHANGE_FREEZE
+    enforceable on the direct path as well as the agent path.
+    """
+    return {
+        "environment": deploy.environment,
+        "pr_ci_passing": pr.ci_passing if pr is not None else None,
+        "pr_risk": pr.ai_risk_level.value if pr is not None and pr.ai_risk_level else None,
+        "change_freeze_active": getattr(deploy, "change_freeze_active", None),
+        "emergency": getattr(deploy, "is_emergency", None),
+        "emergency_approver": getattr(deploy, "emergency_approver", None),
+    }
+
+
+async def _gate_deploy_rollout(db: AsyncSession, deploy, tenant_id: str) -> None:
+    """Fail-closed: refuse to start a rollout a deterministic change-management
+    checker BLOCKs (failing CI on production, or an active change freeze)."""
+    pr = None
+    if deploy.pull_request_id:
+        pr = (await db.execute(
+            select(PullRequest).where(
+                PullRequest.id == deploy.pull_request_id,
+                PullRequest.tenant_id == tenant_id,
+            )
+        )).scalar_one_or_none()
+    verdict = run_checks(DEPLOY_COMPLIANCE, _deploy_change_context(deploy, pr))
+    if not verdict["verified"]:
+        raise HTTPException(409, detail={
+            "error": "change_management_blocked",
+            "blocking": verdict["blocking"],
+        })
+
+
 @router.post("/deployments/{deployment_id}/transition")
 async def transition_deployment(
     deployment_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Promote / fail / roll back a deployment through the guarded engine."""
+    """Promote / fail / roll back a deployment through the guarded engine.
+
+    Starting a rollout (-> IN_PROGRESS) is gated by the same change-management
+    checkers the deploy-risk agent enforces, so the direct path cannot ship into
+    a change freeze or on failing CI."""
+    if body.to_state == "IN_PROGRESS":
+        deploy = (await db.execute(
+            select(Deployment).where(
+                Deployment.id == deployment_id,
+                Deployment.tenant_id == tenant["tenant_id"],
+            )
+        )).scalar_one_or_none()
+        if deploy is not None:  # None -> let apply_transition raise the 404
+            await _gate_deploy_rollout(db, deploy, tenant["tenant_id"])
     return await apply_transition(db, WORKFLOW_SPECS["deployment"], deployment_id,
                                   body.to_state, tenant, note=body.note)
 
@@ -527,7 +589,7 @@ async def create_incident(
     await db.refresh(inc)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="incident", resource_id=inc.id,
     )
     return {"id": inc.id, "number": inc.incident_number, "title": inc.title,
@@ -545,3 +607,27 @@ async def bulk_transition_engineering(
     if not spec:
         raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
     return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+
+
+if __name__ == "__main__":  # security-path self-check: the deploy gate has teeth
+    from types import SimpleNamespace as _NS
+
+    def _prod(**kw):
+        return _NS(environment="production", pull_request_id=None,
+                   change_freeze_active=kw.get("freeze"),
+                   is_emergency=kw.get("emergency"), emergency_approver=kw.get("approver"))
+
+    def _pr(ci):
+        return _NS(ci_passing=ci, ai_risk_level=None)
+
+    # failing CI on production is refused
+    assert not run_checks(DEPLOY_COMPLIANCE, _deploy_change_context(_prod(), _pr(False)))["verified"]
+    # passing CI, no freeze -> allowed
+    assert run_checks(DEPLOY_COMPLIANCE, _deploy_change_context(_prod(), _pr(True)))["verified"]
+    # active freeze, non-emergency -> refused
+    assert not run_checks(DEPLOY_COMPLIANCE,
+                          _deploy_change_context(_prod(freeze=True), _pr(True)))["verified"]
+    # active freeze, emergency + named approver -> allowed
+    assert run_checks(DEPLOY_COMPLIANCE, _deploy_change_context(
+        _prod(freeze=True, emergency=True, approver="vp.eng@acme.com"), _pr(True)))["verified"]
+    print("engineering deploy change-management gate self-check passed.")

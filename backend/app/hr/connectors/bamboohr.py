@@ -5,12 +5,13 @@ Implementation of HRISBaseConnector for BambooHR.
 Handles pulling employee records, org charts, and time-off data.
 """
 import logging
-import httpx
 from datetime import date
 from typing import List, Dict, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class BambooHRConnector:
         """Fetch employee directory from BambooHR."""
         url = f"{self.base_url}/employees/directory"
         
-        async with httpx.AsyncClient() as client:
+        async with guarded_async_client() as client:
             try:
                 # In a real implementation, we handle pagination if needed
                 res = await client.get(url, auth=self.auth, headers=self.headers)
@@ -46,7 +47,7 @@ class BambooHRConnector:
         fields = "firstName,lastName,jobTitle,department,location,hireDate,workEmail,mobilePhone,status,supervisorEId"
         url = f"{self.base_url}/employees/{employee_id}/?fields={fields}"
         
-        async with httpx.AsyncClient() as client:
+        async with guarded_async_client() as client:
             try:
                 res = await client.get(url, auth=self.auth, headers=self.headers)
                 res.raise_for_status()
@@ -59,7 +60,7 @@ class BambooHRConnector:
         """Fetch time off requests for a given date range (YYYY-MM-DD)."""
         url = f"{self.base_url}/time_off/requests?start={start_date}&end={end_date}"
         
-        async with httpx.AsyncClient() as client:
+        async with guarded_async_client() as client:
             try:
                 res = await client.get(url, auth=self.auth, headers=self.headers)
                 res.raise_for_status()
@@ -72,7 +73,7 @@ class BambooHRConnector:
         """Fetch a custom report from BambooHR (e.g. Compensation data)."""
         url = f"{self.base_url}/reports/{report_id}?format=json"
         
-        async with httpx.AsyncClient() as client:
+        async with guarded_async_client() as client:
             try:
                 res = await client.get(url, auth=self.auth, headers=self.headers)
                 res.raise_for_status()

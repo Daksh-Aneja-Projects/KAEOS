@@ -7,6 +7,7 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -24,7 +25,7 @@ class SalesTeam(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class SalesRep(Base):
+class SalesRep(Base, LegalHoldMixin):
     """Sales representatives, account executives, and business development reps."""
     __tablename__ = "sls_reps"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.

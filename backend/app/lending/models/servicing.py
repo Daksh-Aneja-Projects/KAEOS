@@ -20,6 +20,7 @@ from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
 from sqlalchemy.sql import func
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 
 def _uuid():
@@ -40,7 +41,7 @@ class CollectionCaseStatus(str, enum.Enum):
     ESCALATED = "ESCALATED"
 
 
-class ServicedLoan(Base):
+class ServicedLoan(Base, LegalHoldMixin):
     """A funded loan under active servicing. ``payment_schedule`` is the full
     amortization schedule (one JSON row per installment) so the servicing team
     can see exactly what is due and what has posted, without a separate
@@ -79,7 +80,7 @@ class ServicedLoan(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class CollectionCase(Base):
+class CollectionCase(Base, LegalHoldMixin):
     """A collections case opened once a serviced loan is delinquent. The
     contact log is an append-only record of every collection communication -
     exactly the shape app.compliance.checkers.lending.check_fdcpa reads

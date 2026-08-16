@@ -1,11 +1,11 @@
 """
 KAEOS L0 — Universal REST API Connector (KAEOS Data Fabric)
 """
-import httpx
 from typing import AsyncIterator, Optional
 from app.connectors.base import (
     BaseConnector, SourceRecord, RecordBatch, SyncCursor, SourceSchema,
 )
+from app.core.outbound import guarded_async_client, assert_safe_outbound_url
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class RESTAPIConnector(BaseConnector):
         if not base_url:
             return False
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with guarded_async_client(timeout=30) as client:
                 resp = await client.get(base_url, headers=self._build_headers())
                 return resp.status_code < 500
         except Exception as e:
@@ -32,7 +32,7 @@ class RESTAPIConnector(BaseConnector):
 
     async def health_check(self) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with guarded_async_client(timeout=10) as client:
                 resp = await client.get(self.config.get("base_url", ""), headers=self._build_headers())
                 return {"status": "healthy" if resp.status_code < 400 else "unhealthy", "message": f"Status {resp.status_code}"}
         except Exception as e:
@@ -60,8 +60,12 @@ class RESTAPIConnector(BaseConnector):
             params["per_page"] = batch_size
 
         url = f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}" if endpoint else base_url
+        # base_url is tenant-supplied and the response body is returned to the
+        # caller, so reject metadata/private targets up front; the guarded client
+        # below re-vets at connect time to close any DNS-rebind window.
+        assert_safe_outbound_url(url)
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with guarded_async_client(timeout=60) as client:
             resp = await client.get(url, headers=self._build_headers(), params=params)
             resp.raise_for_status()
             data = resp.json()

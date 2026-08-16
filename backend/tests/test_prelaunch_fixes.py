@@ -89,7 +89,8 @@ async def test_stripe_subscription_created_syncs_plan(db):
 
     res = await handle_webhook_event(db, {
         "id": "evt_up_1", "type": "customer.subscription.created",
-        "data": {"object": {"customer": "cus_up", "id": "sub_up", "items": {"data": [
+        "data": {"object": {"customer": "cus_up", "id": "sub_up", "status": "active",
+                            "items": {"data": [
             {"id": "si_up", "quantity": 3,
              "price": {"lookup_key": "team", "recurring": {"usage_type": "metered"}}},
         ]}}},
@@ -97,6 +98,30 @@ async def test_stripe_subscription_created_syncs_plan(db):
     assert res["status"] == "processed"
     plan = await db.scalar(select(Tenant.plan).where(Tenant.tenant_id == "tenant_up"))
     assert plan == "team"
+
+
+@pytest.mark.asyncio
+async def test_stripe_incomplete_subscription_does_not_grant_plan(db):
+    """Fail-closed: a non-paying (incomplete/unpaid) subscription must NOT grant the
+    paid tier — only active/trialing may. Locks in the status gate on entitlements."""
+    from app.models.auth import Tenant
+    from app.models.billing import BillingAccount
+    from app.services.stripe_bridge import handle_webhook_event
+
+    db.add(Tenant(tenant_id="tenant_inc", name="Incomplete", plan="free"))
+    db.add(BillingAccount(tenant_id="tenant_inc", stripe_customer_id="cus_inc"))
+    await db.commit()
+
+    await handle_webhook_event(db, {
+        "id": "evt_inc_1", "type": "customer.subscription.created",
+        "data": {"object": {"customer": "cus_inc", "id": "sub_inc", "status": "incomplete",
+                            "items": {"data": [
+            {"id": "si_inc", "quantity": 1,
+             "price": {"lookup_key": "team", "recurring": {"usage_type": "metered"}}},
+        ]}}},
+    })
+    plan = await db.scalar(select(Tenant.plan).where(Tenant.tenant_id == "tenant_inc"))
+    assert plan == "free", "an unpaid subscription must not unlock the paid tier"
 
 
 @pytest.mark.asyncio
@@ -131,6 +156,32 @@ async def test_erasure_tombstones_lending_applicant_and_borrower(db):
     bname = await db.scalar(
         select(ServicedLoan.borrower_name).where(ServicedLoan.application_id == app_row.id))
     assert bname != "Jane Borrower"
+
+
+@pytest.mark.asyncio
+async def test_erasure_preserves_rows_under_legal_hold(db):
+    """Legal/litigation hold OVERRIDES right-to-erasure: a row with
+    on_legal_hold=True must survive erase_subject untouched (GDPR Art.17(3);
+    FRCP 37(e) anti-spoliation). Without the on_legal_hold column + guard this
+    silently regresses to destroying held evidence."""
+    from app.lending.models.core import LoanApplication
+    from app.services.privacy_erasure import erase_subject
+
+    held = LoanApplication(
+        tenant_id=TENANT, application_number="APP-HOLD",
+        applicant_name="Held Subject", applicant_ref="cust-hold",
+        amount=25000, product="personal_loan", status="RECEIVED",
+        on_legal_hold=True,
+    )
+    db.add(held)
+    await db.commit()
+    await db.refresh(held)
+
+    await erase_subject(db, TENANT, subject_ref="cust-hold", _journal=False)
+
+    name = await db.scalar(
+        select(LoanApplication.applicant_name).where(LoanApplication.id == held.id))
+    assert name == "Held Subject", "a row under legal hold must not be erased"
 
 
 def test_recent_migrations_downgrade_and_reupgrade(tmp_path):

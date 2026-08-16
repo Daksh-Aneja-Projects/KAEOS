@@ -2,7 +2,7 @@
 KAEOS Operations Domain — V1 API Router
 CRUD and agent triggers.
 """
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.operations.models.core import OpsTeamMember
 from app.operations.models.projects import Project, Task, ProjectStatus
 from app.operations.models.resources import Resource, ResourceAllocation
 from app.operations.models.vendors import VendorContract, VendorPerformance
-from app.operations.models.procurement import PurchaseRequest, ProcurementStatus
+from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, ProcurementStatus
 from app.operations.models.quality import Inspection, QualityStatus
 from app.operations.models.facilities import WorkOrder
 
@@ -150,7 +150,7 @@ async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("opera
         result = await agent.evaluate_project(db, task_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="project", resource_id=task_id,
         )
         return result
@@ -206,7 +206,7 @@ async def check_overload(allocation_id: str, tenant: dict = Depends(require_role
         result = await agent.check_overload(db, allocation_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="resource_allocation", resource_id=allocation_id,
         )
         return result
@@ -261,7 +261,7 @@ async def evaluate_vendor(contract_id: str, tenant: dict = Depends(require_role(
         result = await agent.evaluate_vendor(db, contract_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="vendor_contract", resource_id=contract_id,
         )
         return result
@@ -312,7 +312,7 @@ async def audit_procurement(request_id: str, tenant: dict = Depends(require_role
         result = await agent.audit_request(db, request_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="purchase_request", resource_id=request_id,
         )
         return result
@@ -380,7 +380,7 @@ async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_ro
         result = await agent.inspect_qa(db, inspection_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="inspection", resource_id=inspection_id,
         )
         return result
@@ -425,7 +425,7 @@ async def triage_work_order(work_order_id: str, tenant: dict = Depends(require_r
         result = await agent.triage_work_order(db, work_order_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="work_order", resource_id=work_order_id,
         )
         return result
@@ -469,12 +469,49 @@ async def get_operations_workflow_events(
                                       entity_type=entity_type, entity_id=entity_id)
 
 
+# ── Four-eyes segregation of duties on purchase approval ──────────────────────
+# The direct approval transition previously let a single identity both request
+# and approve a purchase (no SoD anywhere on the ops procure-to-pay path). Gate
+# the APPROVED transition through the existing deterministic
+# SEGREGATION_OF_DUTIES checker, fail-closed, so self-approval is refused.
+from app.compliance.registry import run_checks  # noqa: E402
+
+
+async def _four_eyes_purchase_approval(db, tenant: dict, requester) -> None:
+    """SOX 404 / COSO segregation of duties: the identity that requested a
+    purchase may not also approve it. The approver is the AUTHENTICATED
+    principal (approver_identity), never a client field. Fail-closed on a
+    self-approval; advisory (allowed) when the requester is unknown, so a thin
+    record is never a silent block.
+
+    SCHEMA-TODO(integrator): the ops purchase models store no approver identity
+    or delegated authority limit, so a full maker/checker + SPEND_AUTHORIZATION
+    gate needs ops_purchase_requests.approved_by / ops_purchase_orders.approved_by
+    (String) and an approver authority-limit column.
+    """
+    verdict = run_checks(["SEGREGATION_OF_DUTIES"], {
+        "roles": {"requester": requester, "approver": approver_identity(tenant)},
+    })
+    if not verdict["verified"]:
+        raise HTTPException(409, detail={
+            "error": "segregation_of_duties",
+            "blocking": verdict["blocking"],
+        })
+
+
 @router.post("/purchase-requests/{request_id}/transition")
 async def transition_purchase_request(
     request_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Move a purchase request through draft, approval, ordered, received."""
+    """Move a purchase request through draft, approval, ordered, received.
+    Approving it enforces four-eyes SoD: the requester may not self-approve."""
+    if body.to_state == "APPROVED":
+        pr = (await db.execute(select(PurchaseRequest).where(
+            PurchaseRequest.id == request_id,
+            PurchaseRequest.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        if pr is not None:  # None -> let apply_transition raise the 404
+            await _four_eyes_purchase_approval(db, tenant, getattr(pr, "requested_by", None))
     return await apply_transition(db, WORKFLOW_SPECS["purchase_request"], request_id,
                                   body.to_state, tenant, note=body.note)
 
@@ -484,7 +521,21 @@ async def transition_purchase_order(
     order_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Move a PO through approval, ordered, received (or cancel)."""
+    """Move a PO through approval, ordered, received (or cancel).
+    Approving it enforces four-eyes SoD against the originating request's
+    requester."""
+    if body.to_state == "APPROVED":
+        po = (await db.execute(select(PurchaseOrder).where(
+            PurchaseOrder.id == order_id,
+            PurchaseOrder.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        if po is not None:  # None -> let apply_transition raise the 404
+            requester = None
+            if po.purchase_request_id:
+                pr = (await db.execute(select(PurchaseRequest).where(
+                    PurchaseRequest.id == po.purchase_request_id,
+                    PurchaseRequest.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+                requester = getattr(pr, "requested_by", None) if pr else None
+            await _four_eyes_purchase_approval(db, tenant, requester)
     return await apply_transition(db, WORKFLOW_SPECS["purchase_order"], order_id,
                                   body.to_state, tenant, note=body.note)
 
@@ -534,7 +585,7 @@ async def create_purchase_request(
     await db.refresh(pr)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_request", resource_id=pr.id,
     )
     return {"id": pr.id, "item_description": pr.item_description,
@@ -572,7 +623,7 @@ async def create_work_order(
     await db.refresh(wo)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="work_order", resource_id=wo.id,
     )
     return {"id": wo.id, "issue_title": wo.issue_title, "category": wo.category, "status": wo.status}
@@ -588,3 +639,16 @@ async def bulk_transition_operations(
     if not spec:
         raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
     return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+
+
+if __name__ == "__main__":  # security-path self-check: four-eyes SoD has teeth
+    def _roles(req, appr):
+        return {"roles": {"requester": req, "approver": appr}}
+
+    # same identity requests and approves -> blocked
+    assert not run_checks(["SEGREGATION_OF_DUTIES"], _roles("dev_user", "dev_user"))["verified"]
+    # distinct identities -> allowed
+    assert run_checks(["SEGREGATION_OF_DUTIES"], _roles("alice@acme.com", "bob@acme.com"))["verified"]
+    # unknown requester -> advisory, allowed (never a silent fail-open block)
+    assert run_checks(["SEGREGATION_OF_DUTIES"], _roles(None, "bob@acme.com"))["verified"]
+    print("operations four-eyes SoD gate self-check passed.")

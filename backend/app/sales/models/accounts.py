@@ -6,6 +6,7 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -29,7 +30,7 @@ class Account(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-class Contact(Base):
+class Contact(Base, LegalHoldMixin):
     """Contacts associated with customer accounts."""
     __tablename__ = "sls_contacts"
 

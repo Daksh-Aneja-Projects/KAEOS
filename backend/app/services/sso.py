@@ -22,12 +22,12 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-import httpx
 import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.outbound import guarded_async_client
 from app.models.auth import User, UserRole
 from app.models.sso import SSOConnection
 from app.services.auth import _create_token  # session minting (single source of truth)
@@ -91,7 +91,7 @@ async def discover(issuer: str) -> dict:
     if issuer in _DISCOVERY_CACHE:
         return _DISCOVERY_CACHE[issuer]
     url = f"{issuer}/.well-known/openid-configuration"
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with guarded_async_client(timeout=_HTTP_TIMEOUT) as client:
         resp = await client.get(url)
     if resp.status_code != 200:
         raise SSOError(f"OIDC discovery failed ({resp.status_code}) for {issuer}")
@@ -137,7 +137,7 @@ async def exchange_code(disc: dict, conn: SSOConnection, code: str, redirect: st
         "client_id": conn.client_id,
         "client_secret": client_secret,
     }
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with guarded_async_client(timeout=_HTTP_TIMEOUT) as client:
         resp = await client.post(disc["token_endpoint"], data=data,
                                  headers={"Accept": "application/json"})
     if resp.status_code != 200:

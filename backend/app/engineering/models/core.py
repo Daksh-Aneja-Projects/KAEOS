@@ -12,6 +12,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 
 def _uuid():
@@ -31,7 +32,7 @@ class ServiceHealth(str, enum.Enum):
     MAINTENANCE = "MAINTENANCE"
 
 
-class Engineer(Base):
+class Engineer(Base, LegalHoldMixin):
     """An engineer in the delivery org (distinct from the HRIS record)."""
     __tablename__ = "eng_engineers"
 

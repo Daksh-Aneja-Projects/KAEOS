@@ -39,6 +39,32 @@ from app.services.llm_support import (  # noqa: F401  (re-exported for callers)
 from app.services.llm_simulation import simulated_completion
 
 
+# ── Per-tenant config memo ───────────────────────────────────────────────────
+# for_tenant() ran a TenantLLMConfig SELECT + Fernet decrypt on EVERY call
+# (~4-5x per governed execution). A short-TTL in-process memo keyed by tenant_id
+# keeps that off the hot path. Mirrors app/services/autonomy_policy._cache:
+# 30s TTL + invalidate-on-write. Keyed by tenant_id so a cached config can NEVER
+# cross tenants.
+_CONFIG_TTL_SECONDS = 30.0
+# tenant_id -> (expires_at, (tiers, chains, keys, profiles))
+_config_cache: dict[str, tuple[float, tuple[dict, dict, dict, dict]]] = {}
+_CONFIG_CACHE_STATS = {"hits": 0, "misses": 0}
+
+
+def invalidate_tenant_cache(tenant_id: Optional[str] = None) -> None:
+    """Drop cached tenant LLM config so a change takes effect promptly.
+
+    MUST be called on any TenantLLMConfig write (model/key/profile change or
+    delete) — the 30s TTL is only a backstop, exactly like
+    autonomy_policy.invalidate() on the /config/autonomy write path. Passing
+    None clears every tenant.
+    """
+    if tenant_id is None:
+        _config_cache.clear()
+    else:
+        _config_cache.pop(tenant_id, None)
+
+
 class LLMRouter:
     """
     Provider-agnostic LLM gateway — BYOK model.
@@ -110,6 +136,22 @@ class LLMRouter:
         # config load below fails (missing table, transient DB error) — it then
         # simply runs on the platform defaults rather than losing tenant identity.
         router.tenant_id = tenant_id
+
+        # Fast path: serve a fresh memo without a SELECT + Fernet decrypt. Hand
+        # each router its own copies so a later mutation can never corrupt the
+        # shared entry (or another tenant's router).
+        now = time.monotonic()
+        cached = _config_cache.get(tenant_id)
+        if cached and cached[0] > now:
+            _CONFIG_CACHE_STATS["hits"] += 1
+            tiers, chains, keys, profiles = cached[1]
+            router.MODEL_TIERS = dict(tiers)
+            router.FALLBACK_CHAINS = {k: list(v) for k, v in chains.items()}
+            router.api_keys = dict(keys)
+            router.tenant_profiles = dict(profiles)
+            return router
+        _CONFIG_CACHE_STATS["misses"] += 1
+
         try:
             from sqlalchemy import select
             from app.core.database import AsyncSessionLocal
@@ -152,6 +194,18 @@ class LLMRouter:
             router.FALLBACK_CHAINS = chains
             router.api_keys = keys
             router.tenant_profiles = profiles
+            # Cache copies (not the router's own dicts) keyed by tenant. Do NOT
+            # cache on the failure path below — a partial/failed load must be
+            # retried next call, never memoized (fail-closed, like autonomy_policy).
+            _config_cache[tenant_id] = (
+                now + _CONFIG_TTL_SECONDS,
+                (
+                    dict(tiers),
+                    {k: list(v) for k, v in chains.items()},
+                    dict(keys),
+                    dict(profiles),
+                ),
+            )
         except Exception as e:
             logger.warning(f"[LLM] tenant config load failed for {tenant_id}: {e} — using defaults")
         return router
@@ -971,3 +1025,23 @@ async def get_tenant_router(tenant_id: Optional[str] = None) -> LLMRouter:
     if not tid:
         return LLMRouter()
     return await LLMRouter.for_tenant(tid)
+
+
+if __name__ == "__main__":
+    # Memo self-check: miss stores, hit returns, invalidate + TTL evict, and
+    # keys never cross tenants. Exercises the primitives without a DB/loop.
+    _config_cache.clear()
+    _CONFIG_CACHE_STATS.update(hits=0, misses=0)
+    _payload = ({"reasoning": "m"}, {"reasoning": ["m"]}, {"openai": "sk-1"}, {})
+    _config_cache["tA"] = (time.monotonic() + _CONFIG_TTL_SECONDS, _payload)
+    assert _config_cache.get("tA"), "miss: entry not stored"
+    assert _config_cache["tA"][1][2]["openai"] == "sk-1", "hit: wrong payload"
+    assert "tB" not in _config_cache, "keys must not cross tenants"
+    invalidate_tenant_cache("tA")
+    assert _config_cache.get("tA") is None, "invalidate: entry not cleared"
+    _config_cache["tC"] = (time.monotonic() - 1.0, _payload)  # already expired
+    _entry = _config_cache.get("tC")
+    assert _entry and _entry[0] <= time.monotonic(), "ttl: expired entry is past-due"
+    invalidate_tenant_cache()  # clear-all
+    assert not _config_cache, "invalidate-all: cache not emptied"
+    print("llm_router tenant-config memo self-check passed")

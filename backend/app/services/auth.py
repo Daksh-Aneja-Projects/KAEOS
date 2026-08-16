@@ -576,6 +576,27 @@ class AuthService:
         if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
             return {"error": "email_already_exists"}
 
+        # Seat cap: managed cloud only, so self-host stays unlimited and
+        # byte-identical. An invite consumes a seat, so refuse once active users
+        # already fill the purchased seats. ponytail: counts active users only, so
+        # pending invites are not yet charged against seats; enforce at
+        # accept_invite too if strict provisioning matters. Fail-closed: an
+        # unknown/absent seat count defaults to 1.
+        from app.core.entitlements import _managed_cloud
+        if _managed_cloud():
+            from sqlalchemy import func
+            from app.models.billing import BillingAccount
+            acct = await db.get(BillingAccount, tenant_id)
+            seats = max(1, int(acct.seats or 1)) if acct is not None else 1
+            active_users = (await db.execute(
+                select(func.count()).select_from(User).where(
+                    User.tenant_id == tenant_id,
+                    User.is_active == True,  # noqa: E712
+                )
+            )).scalar_one()
+            if active_users >= seats:
+                return {"error": "seat_limit_reached"}
+
         user = User(
             email=email, display_name=display_name or email,
             hashed_password=await _hash_password(secrets.token_urlsafe(32)),  # unusable until accepted

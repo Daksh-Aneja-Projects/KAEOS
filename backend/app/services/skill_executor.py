@@ -10,6 +10,7 @@ Responsibilities:
   - Trigger EvolutionEngine on failure so the KB self-heals
   - Append a ProvenanceLedger entry for the execution event
 """
+import asyncio
 import json
 import logging
 
@@ -26,6 +27,10 @@ from app.services.provenance import ProvenanceEngine
 from app.core.context import current_execution_id, current_skill_id, current_tenant_id
 
 logger = logging.getLogger(__name__)
+
+# Strong references to fire-and-forget evolution tasks so they are not
+# garbage-collected mid-flight (see app/services/notifier.py for the pattern).
+_BACKGROUND_TASKS: set = set()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 _EXEC_SYSTEM_PROMPT = """\
@@ -191,16 +196,21 @@ class SkillExecutionEngine:
                 succeeded=(final_status == "SUCCESS_CLEAN"),
             )
 
-        # ── Trigger Evolution on failure ───────────────────────────────────
+        # ── Trigger Evolution on failure — truly fire-and-forget ───────────
+        # Runs only on failure; scheduled (not awaited) so a slow KB self-heal
+        # never adds latency to the execution response. Snapshot the context so
+        # a caller mutating it after run() returns cannot race the background task.
         if final_status != "SUCCESS_CLEAN" and failed_step:
-            await self._trigger_evolution(
+            _evo_task = asyncio.create_task(self._trigger_evolution(
                 execution_id=execution_id,
                 task_intent=context.get("intent", skill_id),
-                context_data=context,
+                context_data=dict(context),
                 skill_id=skill_id,
                 department=skill.get("department", "general"),
                 tenant_id=tenant_id,
-            )
+            ))
+            _BACKGROUND_TASKS.add(_evo_task)
+            _evo_task.add_done_callback(_BACKGROUND_TASKS.discard)
 
         # ── Provenance ledger entry ────────────────────────────────────────
         if skill_obj is not None:
@@ -575,7 +585,9 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
         department: str,
         tenant_id: str,
     ) -> None:
-        """Async fire-and-forget — don't block the execution response."""
+        """KB self-heal on failure. Scheduled fire-and-forget by run() (never
+        awaited on the execution path); swallows all errors so a failed
+        self-heal can never crash the response."""
         try:
             from app.services.evolution import EvolutionEngine
             await EvolutionEngine.handle_agent_failure(

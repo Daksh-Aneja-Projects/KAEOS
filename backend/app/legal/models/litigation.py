@@ -7,6 +7,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -59,7 +60,7 @@ class CaseEvent(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class CourtFiling(Base):
+class CourtFiling(Base, LegalHoldMixin):
     """Submissions, summons, briefs filed in court."""
     __tablename__ = "leg_court_filings"
 

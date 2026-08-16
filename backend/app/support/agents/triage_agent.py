@@ -42,6 +42,10 @@ class TriageAgent:
         context = {
             "ticket_id": ticket_id, "tenant_id": tenant_id,
             **facts,
+            # Untrusted customer text under a PII_REDACTION-scanned key so the
+            # Luhn/SSN/secret control fires on inbound content before the model
+            # ever ingests it (subject/description are not scanned keys).
+            "ticket_text": f"{facts.get('subject') or ''}\n{facts.get('description') or ''}",
             # GDPR/CCPA lawful basis for the Gate 6 post-execution audit.
             "legal_basis": "legitimate_interests:customer_support",
             "instruction": "Output strict JSON: {severity, category, recommended_priority, queue}.",

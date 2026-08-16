@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -62,7 +63,7 @@ class CandidateStage(str, enum.Enum):
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
 
-class Candidate(Base):
+class Candidate(Base, LegalHoldMixin):
     __tablename__ = "hr_candidates"
 
     id = Column(String, primary_key=True, default=_uuid)

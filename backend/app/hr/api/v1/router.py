@@ -166,7 +166,7 @@ async def create_requisition(
     await db.refresh(req)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="requisition", resource_id=req.id,
     )
     return {"id": req.id, "title": req.title, "status": req.status.value}
@@ -204,7 +204,7 @@ async def add_candidate(
     await db.refresh(candidate)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate.id,
     )
     return {"id": candidate.id, "stage": candidate.stage.value}
@@ -240,7 +240,7 @@ async def trigger_screening(
 
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate_id,
     )
 
@@ -290,7 +290,7 @@ async def run_requisition_fairness_sweep_route(
     result = await run_requisition_fairness_sweep(db, tenant_id, requisition_id)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="requisition", resource_id=requisition_id,
         details={"sweep_status": result.get("status")},
     )
@@ -352,7 +352,7 @@ async def advance_candidate_stage(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate_id,
     )
     return {"candidate_id": candidate_id, "stage": target.value}
@@ -609,7 +609,7 @@ async def create_time_off_request(
     await db.refresh(req)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="time_off_request", resource_id=req.id,
     )
     return {"id": req.id, "employee_id": req.employee_id,
@@ -702,7 +702,7 @@ async def create_benefit_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="benefit_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="benefit_plan", resource_id=plan.id)
     return {"id": plan.id, "name": plan.name}
 
 
@@ -754,7 +754,7 @@ async def create_benefit_enrollment(
     await db.commit()
     await db.refresh(enrollment)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="benefit_enrollment", resource_id=enrollment.id)
     return {"id": enrollment.id, "status": enrollment.status.value}
 
@@ -806,7 +806,7 @@ async def verify_benefit_enrollment(
         db.add(enrollment)
         await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="benefit_enrollment", resource_id=enrollment_id,
         details={"verified": verified, "status": status})
     return {"enrollment_id": enrollment_id, "verified": verified, "status": status, "execution_id": _exec_id(result)}
@@ -875,7 +875,7 @@ async def create_compensation(
     await db.commit()
     await db.refresh(comp)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="compensation", resource_id=comp.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="compensation", resource_id=comp.id)
     return {"id": comp.id, "base_amount": comp.base_amount}
 
 
@@ -919,7 +919,7 @@ async def compensation_market_analysis(
         db.add(comp)
         await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compensation", resource_id=compensation_id,
         details={"is_competitive": analysis.get("is_competitive"), "status": status})
     return {"compensation_id": compensation_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
@@ -992,7 +992,7 @@ async def create_boarding_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="boarding_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="boarding_plan", resource_id=plan.id)
     return {"id": plan.id, "total_tasks": plan.total_tasks}
 
 
@@ -1041,7 +1041,7 @@ async def create_boarding_task(
     await db.commit()
     await db.refresh(task)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="boarding_task", resource_id=task.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="boarding_task", resource_id=task.id)
     return {"id": task.id, "status": task.status.value}
 
 
@@ -1093,7 +1093,7 @@ async def onboarding_checkin(
     agent = OnboardingAgent()
     result = await agent.check_in_with_new_hire(db, employee_id, body.week_num, body.response)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
         details={"week_num": body.week_num, "status": result.get("status")})
     return {"employee_id": employee_id, "week_num": body.week_num, **result}
 
@@ -1192,7 +1192,7 @@ async def offboarding_exit_interview(
     await db.commit()
 
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
         details={"boarding_plan_id": plan.id, "status": status})
     return {"employee_id": employee_id, "boarding_plan_id": plan.id, "task_id": task.id,
             "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
@@ -1231,7 +1231,7 @@ async def create_course(
     await db.commit()
     await db.refresh(course)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="course", resource_id=course.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="course", resource_id=course.id)
     return {"id": course.id, "title": course.title}
 
 
@@ -1278,7 +1278,7 @@ async def create_course_enrollment(
     await db.commit()
     await db.refresh(enrollment)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="course_enrollment", resource_id=enrollment.id)
     return {"id": enrollment.id, "status": enrollment.status.value}
 
@@ -1342,7 +1342,7 @@ async def create_er_case(
     await db.commit()
     await db.refresh(case)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case.id)
     return {"id": case.id, "status": case.status.value}
 
 
@@ -1378,7 +1378,7 @@ async def triage_er_case(
     agent = EmployeeRelationsAgent()
     result = await agent.triage_case(db, case_id)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case_id,
         details={"status": result.get("status")})
     return {"case_id": case_id, **result}
 
@@ -1421,7 +1421,7 @@ async def create_headcount_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="headcount_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="headcount_plan", resource_id=plan.id)
     return {"id": plan.id, "status": plan.status.value}
 
 
@@ -1470,7 +1470,7 @@ async def create_payroll_run(
     await db.commit()
     await db.refresh(run)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run.id)
     return {"id": run.id, "status": run.status.value}
 
 
@@ -1532,7 +1532,7 @@ async def generate_payslips(
         db.add(run)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run_id,
         details={"created": created, "skipped_no_compensation": skipped_no_comp, "skipped_existing": skipped_existing})
     return {"run_id": run_id, "created": created,
             "skipped_no_compensation": skipped_no_comp, "skipped_existing": skipped_existing}
@@ -1592,7 +1592,7 @@ async def create_compliance_report(
     await db.commit()
     await db.refresh(report)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_report", resource_id=report.id)
     return {"id": report.id, "framework": report.framework.value}
 
@@ -1629,7 +1629,7 @@ async def generate_eeoc_compliance_report(
     await db.commit()
     await db.refresh(report)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_report", resource_id=report.id, details={"passed": test_result["passed"]})
     return {"id": report.id, "passed": test_result["passed"], "flagged": test_result["flagged"],
             "decided_total": built["decided_total"]}
@@ -1670,7 +1670,7 @@ async def resolve_compliance_violation(
     db.add(v)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_violation", resource_id=violation_id)
     return {"id": violation_id, "resolved": True}
 
@@ -1810,7 +1810,7 @@ async def schedule_interview(
     await db.commit()
     await db.refresh(interview)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview.id)
     return {"id": interview.id, "scheduled_at": interview.scheduled_at.isoformat()}
 
 
@@ -1837,7 +1837,7 @@ async def submit_interview_feedback(
     db.add(interview)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview_id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview_id)
     return {"id": interview_id, "feedback_submitted": True, "recommendation": interview.recommendation}
 
 
@@ -1888,7 +1888,7 @@ async def create_employee_document(
     await db.commit()
     await db.refresh(doc)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="employee_document", resource_id=doc.id)
     return {"id": doc.id, "title": doc.title}
 
@@ -1907,7 +1907,7 @@ async def sign_employee_document(
     db.add(doc)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="employee_document", resource_id=document_id)
     return {"id": document_id, "is_signed": True}
 
@@ -1960,7 +1960,7 @@ async def create_timesheet(
     await db.commit()
     await db.refresh(ts)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="timesheet", resource_id=ts.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="timesheet", resource_id=ts.id)
     return {"id": ts.id, "status": ts.status}
 
 
@@ -2002,7 +2002,7 @@ async def create_performance_cycle(
     await db.commit()
     await db.refresh(cycle)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="review_cycle", resource_id=cycle.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="review_cycle", resource_id=cycle.id)
     return {"id": cycle.id, "name": cycle.name}
 
 
@@ -2037,7 +2037,7 @@ async def create_performance_review(
     await db.commit()
     await db.refresh(review)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review.id)
     return {"id": review.id, "status": review.status}
 
@@ -2080,7 +2080,7 @@ async def submit_self_rating(
     db.add(_workflow_event(tenant_id, "performance_review", review_id, from_state, "PENDING_MANAGER", tenant))
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
     return {"id": review_id, "status": review.status}
 
@@ -2106,7 +2106,7 @@ async def submit_manager_rating(
     db.add(_workflow_event(tenant_id, "performance_review", review_id, from_state, "COMPLETED", tenant))
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
     return {"id": review_id, "status": review.status}
 
@@ -2145,7 +2145,7 @@ async def synthesize_review_feedback(
         db.add(review)
         await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
     return {"review_id": review_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
@@ -2172,7 +2172,7 @@ async def sync_bamboohr(
     if not result.get("ok"):
         raise HTTPException(502, detail=result.get("error") or "BambooHR sync failed")
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="hr_connector", resource_id="bamboohr",
         details={"created": result.get("created"), "updated": result.get("updated")})
     return result

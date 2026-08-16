@@ -4,6 +4,7 @@ from fastapi import Depends, APIRouter
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 from app.core.database import get_db
+from app.core.result_cache import get_or_compute
 from app.models.domain import Rule, SkillExecution
 
 logger = logging.getLogger(__name__)
@@ -17,58 +18,72 @@ async def get_overview(
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Executive statistics — live, tenant-scoped DB counts."""
-    from app.hr.models.core import HREmployee
-    from app.finance.models.accounts_payable import Vendor
-    from app.operations.models.projects import Project
-    from app.workforce.models.core import Capability, Department
+    """Executive statistics — live, tenant-scoped DB counts.
 
-    rules_res = await db.execute(
-        select(sqlfunc.count(Rule.id))
-        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+    Polled by the dashboard and fans out to ~8 count queries. A short per-tenant
+    TTL cache (the same result_cache the /benchmark reads use) collapses repeated
+    polls within the window onto one computation.
+    """
+
+    async def _compute() -> dict:
+        from app.hr.models.core import HREmployee
+        from app.finance.models.accounts_payable import Vendor
+        from app.operations.models.projects import Project
+        from app.workforce.models.core import Capability, Department
+
+        rules_res = await db.execute(
+            select(sqlfunc.count(Rule.id))
+            .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+        )
+        total_rules = rules_res.scalar() or 0
+
+        execs_res = await db.execute(
+            select(sqlfunc.count(SkillExecution.id))
+            .where(SkillExecution.tenant_id == tenant_id)
+        )
+        total_execs = execs_res.scalar() or 0
+
+        depts_count = (await db.execute(
+            select(sqlfunc.count(Department.id)).where(Department.tenant_id == tenant_id)
+        )).scalar() or 0
+
+        employees = (await db.execute(
+            select(sqlfunc.count(HREmployee.id)).where(HREmployee.tenant_id == tenant_id)
+        )).scalar() or 0
+        capabilities = (await db.execute(
+            select(sqlfunc.count(Capability.id)).where(Capability.tenant_id == tenant_id)
+        )).scalar() or 0
+        projects = (await db.execute(
+            select(sqlfunc.count(Project.id)).where(Project.tenant_id == tenant_id)
+        )).scalar() or 0
+        vendors = (await db.execute(
+            select(sqlfunc.count(Vendor.id)).where(Vendor.tenant_id == tenant_id)
+        )).scalar() or 0
+
+        # Open risks = rules in SPECULATIVE confidence tier (real signal of instability)
+        risks_res = await db.execute(
+            select(sqlfunc.count(Rule.id))
+            .where(Rule.tenant_id == tenant_id, Rule.confidence_tier == "SPECULATIVE")
+        )
+        open_risks = risks_res.scalar() or 0
+
+        return {
+            "employees": employees,
+            "capabilities": capabilities,
+            "projects": projects,
+            "vendors": vendors,
+            "open_risks": open_risks,
+            "active_decisions": total_execs,
+            "total_rules": total_rules,
+            "departments_active": depts_count,
+        }
+
+    # ponytail: per-tenant TTL cache (30s) — bounded-staleness dashboard read,
+    # not input-fingerprinted; add a cheap-count fingerprint if 30s lag matters.
+    result, _cached = await get_or_compute(
+        "executive_overview", tenant_id, [tenant_id], _compute, ttl=30
     )
-    total_rules = rules_res.scalar() or 0
-
-    execs_res = await db.execute(
-        select(sqlfunc.count(SkillExecution.id))
-        .where(SkillExecution.tenant_id == tenant_id)
-    )
-    total_execs = execs_res.scalar() or 0
-
-    depts_count = (await db.execute(
-        select(sqlfunc.count(Department.id)).where(Department.tenant_id == tenant_id)
-    )).scalar() or 0
-
-    employees = (await db.execute(
-        select(sqlfunc.count(HREmployee.id)).where(HREmployee.tenant_id == tenant_id)
-    )).scalar() or 0
-    capabilities = (await db.execute(
-        select(sqlfunc.count(Capability.id)).where(Capability.tenant_id == tenant_id)
-    )).scalar() or 0
-    projects = (await db.execute(
-        select(sqlfunc.count(Project.id)).where(Project.tenant_id == tenant_id)
-    )).scalar() or 0
-    vendors = (await db.execute(
-        select(sqlfunc.count(Vendor.id)).where(Vendor.tenant_id == tenant_id)
-    )).scalar() or 0
-
-    # Open risks = rules in SPECULATIVE confidence tier (real signal of instability)
-    risks_res = await db.execute(
-        select(sqlfunc.count(Rule.id))
-        .where(Rule.tenant_id == tenant_id, Rule.confidence_tier == "SPECULATIVE")
-    )
-    open_risks = risks_res.scalar() or 0
-
-    return {
-        "employees": employees,
-        "capabilities": capabilities,
-        "projects": projects,
-        "vendors": vendors,
-        "open_risks": open_risks,
-        "active_decisions": total_execs,
-        "total_rules": total_rules,
-        "departments_active": depts_count,
-    }
+    return result
 
 
 @router.get("/health")
@@ -174,57 +189,69 @@ async def get_trust(
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Compute trust score from real rule confidence and skill execution data."""
-    # Average confidence scalar across all active rules
-    avg_conf_res = await db.execute(
-        select(sqlfunc.avg(Rule.confidence_scalar))
-        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+    """Compute trust score from real rule confidence and skill execution data.
+
+    Polled read-model; the same short per-tenant TTL cache as /overview keeps
+    repeated polls off the DB (and off EnterpriseTrustModel) within the window.
+    """
+
+    async def _compute() -> dict:
+        # Average confidence scalar across all active rules
+        avg_conf_res = await db.execute(
+            select(sqlfunc.avg(Rule.confidence_scalar))
+            .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+        )
+        avg_conf = avg_conf_res.scalar() or 0.0
+
+        # Fairness: fraction of rules not in SPECULATIVE tier
+        total_res = await db.execute(
+            select(sqlfunc.count(Rule.id))
+            .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+        )
+        total = total_res.scalar() or 1
+
+        spec_res = await db.execute(
+            select(sqlfunc.count(Rule.id))
+            .where(Rule.tenant_id == tenant_id, Rule.confidence_tier == "SPECULATIVE")
+        )
+        spec_count = spec_res.scalar() or 0
+
+        fairness = round(1.0 - (spec_count / max(total, 1)), 3)
+
+        execs_count = (await db.execute(
+            select(sqlfunc.count(SkillExecution.id))
+            .where(SkillExecution.tenant_id == tenant_id)
+        )).scalar() or 0
+
+        explainability = round(min(1.0, fairness + 0.05), 3)
+
+        # Enterprise Trust Score: the real weighted formula (0.35 prediction / 0.35
+        # causal / 0.20 recommendation / 0.10 simulation) over this tenant's stored
+        # TrustMetrics, instead of reusing avg_conf as a stand-in.
+        from app.services.trust.enterprise_trust import EnterpriseTrustModel
+        trust_scores = await EnterpriseTrustModel.get_trust_scores(db, tenant_id)
+
+        return {
+            "trust_score": round(avg_conf * 100, 1),
+            "fairness": fairness,
+            "explainability": explainability,
+            "auditability": 1.0,  # ProvenanceLedger captures every decision
+            "total_rules": total,
+            "speculative_rules": spec_count,
+            # Fields consumed by the Executive Trust Center panel
+            "enterprise_trust_score": trust_scores["enterprise_trust_score"],
+            "prediction_trust": fairness,
+            "causal_trust": explainability,
+            "simulation_trust": round(min(1.0, 0.5 + execs_count / 250), 3),
+            "brier_score_avg": round(max(0.0, 1.0 - avg_conf) * 0.25, 3),
+            "learning_progress": f"{execs_count} executions tracked",
+        }
+
+    # ponytail: per-tenant TTL cache (30s), same bounded-staleness read as /overview.
+    result, _cached = await get_or_compute(
+        "executive_trust", tenant_id, [tenant_id], _compute, ttl=30
     )
-    avg_conf = avg_conf_res.scalar() or 0.0
-
-    # Fairness: fraction of rules not in SPECULATIVE tier
-    total_res = await db.execute(
-        select(sqlfunc.count(Rule.id))
-        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
-    )
-    total = total_res.scalar() or 1
-
-    spec_res = await db.execute(
-        select(sqlfunc.count(Rule.id))
-        .where(Rule.tenant_id == tenant_id, Rule.confidence_tier == "SPECULATIVE")
-    )
-    spec_count = spec_res.scalar() or 0
-
-    fairness = round(1.0 - (spec_count / max(total, 1)), 3)
-
-    execs_count = (await db.execute(
-        select(sqlfunc.count(SkillExecution.id))
-        .where(SkillExecution.tenant_id == tenant_id)
-    )).scalar() or 0
-
-    explainability = round(min(1.0, fairness + 0.05), 3)
-
-    # Enterprise Trust Score: the real weighted formula (0.35 prediction / 0.35
-    # causal / 0.20 recommendation / 0.10 simulation) over this tenant's stored
-    # TrustMetrics, instead of reusing avg_conf as a stand-in.
-    from app.services.trust.enterprise_trust import EnterpriseTrustModel
-    trust_scores = await EnterpriseTrustModel.get_trust_scores(db, tenant_id)
-
-    return {
-        "trust_score": round(avg_conf * 100, 1),
-        "fairness": fairness,
-        "explainability": explainability,
-        "auditability": 1.0,  # ProvenanceLedger captures every decision
-        "total_rules": total,
-        "speculative_rules": spec_count,
-        # Fields consumed by the Executive Trust Center panel
-        "enterprise_trust_score": trust_scores["enterprise_trust_score"],
-        "prediction_trust": fairness,
-        "causal_trust": explainability,
-        "simulation_trust": round(min(1.0, 0.5 + execs_count / 250), 3),
-        "brier_score_avg": round(max(0.0, 1.0 - avg_conf) * 0.25, 3),
-        "learning_progress": f"{execs_count} executions tracked",
-    }
+    return result
 
 
 @router.get("/risks")

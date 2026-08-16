@@ -52,6 +52,11 @@ class EscalationAgent:
                               f"policy that isn't listed): {facts}"}],
             context={
                 "ticket_id": ticket_id, "tenant_id": tenant_id, **facts,
+                # Untrusted customer text under a PII_REDACTION-scanned key so the
+                # Luhn/SSN/secret control fires on inbound content (subject/
+                # description are not scanned keys). A PAN/SSN here blocks the run
+                # at Gate 1, before any escalation record is written.
+                "ticket_text": f"{facts.get('subject') or ''}\n{facts.get('description') or ''}",
                 # GDPR/CCPA lawful basis for the Gate 6 post-execution audit.
                 "legal_basis": "legitimate_interests:customer_support",
                 "instruction": "Output strict JSON: {escalate, target_tier, urgency, rationale}.",

@@ -7,11 +7,12 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
 
-class OpsTeamMember(Base):
+class OpsTeamMember(Base, LegalHoldMixin):
     """Roster of internal operations coordinators, project managers, and facilities handlers."""
     __tablename__ = "ops_team_members"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.

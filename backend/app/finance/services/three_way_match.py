@@ -38,6 +38,17 @@ PRICE_PCT_TOL = Decimal("0.02")   # 2% of PO unit price
 PRICE_ABS_TOL = Decimal("1.00")   # or $1.00, whichever is larger
 QTY_TOL = 0                       # invoice may bill at most what was received
 
+# Statuses that do NOT represent a live claim on the PO's received qty and so
+# must not count toward billed-to-date. A DRAFT may be abandoned and a DISPUTED
+# invoice is rejected/contested - counting either would permanently force the
+# genuine invoice to EXCEPTION; VOIDED is cancelled. PENDING_APPROVAL and every
+# status past it (APPROVED/PARTIALLY_PAID/PAID/OVERDUE) ARE counted, so two
+# concurrent in-flight invoices cannot each pass independently and over-bill the
+# receipt (the exact hole this cumulative control closes).
+_NOT_BILLED_TO_DATE = (
+    InvoiceStatus.DRAFT, InvoiceStatus.DISPUTED, InvoiceStatus.VOIDED,
+)
+
 
 def _result(status: str, *, po_matched: bool = False, receipt_matched: bool = False,
             lines: Optional[list] = None, reasons: Optional[list] = None,

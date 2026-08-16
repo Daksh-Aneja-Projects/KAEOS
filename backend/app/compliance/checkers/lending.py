@@ -185,6 +185,7 @@ def check_tila(context: dict) -> CheckResult:
 _FDCPA_EARLIEST_HOUR = 8
 _FDCPA_LATEST_HOUR = 21  # 9pm
 _VALIDATION_DAYS = 5
+_REG_F_CALL_CAP = 7  # 12 CFR 1006.14(b): >7 phone calls in 7 consecutive days
 
 
 @register("FDCPA", department=_DEPT,
@@ -197,12 +198,28 @@ def check_fdcpa(context: dict) -> CheckResult:
 
     NOT_APPLICABLE when the action is not a collection communication. Reads
     ``context['collection']`` = ``{communications: [{hour_local}], harassment: bool,
-    validation_notice_sent: bool, days_since_initial: int}``."""
+    validation_notice_sent: bool, days_since_initial: int,
+    phone_contacts_last_7d: int}``."""
     coll = context.get("collection")
     if not coll:
         return CheckResult("FDCPA", CheckStatus.NOT_APPLICABLE, [], method="deterministic")
 
     findings = []
+
+    # 12 CFR 1006.14(b)(2)(i) (Reg F): a debt collector is presumed to violate the
+    # FDCPA by placing MORE THAN 7 telephone calls to a consumer within 7
+    # consecutive days. If 7 calls have already landed in the trailing 7 days,
+    # THIS contact is the 8th - block it (fail-closed).
+    recent_calls = coll.get("phone_contacts_last_7d")
+    if recent_calls is not None:
+        try:
+            if int(recent_calls) >= _REG_F_CALL_CAP:
+                findings.append(Finding("call_cap_7in7",
+                                        f"{recent_calls} phone contacts already occurred "
+                                        "in the trailing 7 days; a further call exceeds "
+                                        "the Reg F 7-in-7 cap (12 CFR 1006.14(b)).", "HIGH"))
+        except (TypeError, ValueError):
+            pass
     for comm in coll.get("communications") or []:
         hour = comm.get("hour_local")
         if hour is None:
@@ -234,3 +251,69 @@ def check_fdcpa(context: dict) -> CheckResult:
 
     status = CheckStatus.BLOCK if findings else CheckStatus.PASS
     return CheckResult("FDCPA", status, findings, method="deterministic")
+
+
+# -- LENDING_SOD: segregation of duties on a credit decision ------------------
+# Identities NOT attributable to a real, distinct human (mirrors finance.py): a
+# constant email-link approver or a runtime fallback cannot satisfy four-eyes.
+_NON_ATTRIBUTABLE = {"", "none", "null", "system", "email-approver", "human-approver"}
+
+
+def _attributable(identity) -> bool:
+    return identity is not None and str(identity).strip().lower() not in _NON_ATTRIBUTABLE
+
+
+@register("LENDING_SOD", department=_DEPT,
+          title="Lending segregation of duties (policy maker != underwriter)",
+          citation="OCC Comptroller's Handbook (Credit); SOX 404; four-eyes")
+def check_lending_sod(context: dict) -> CheckResult:
+    """Segregation of duties on a credit decision: the identity that last set or
+    RELAXED the governing credit policy cannot also approve the underwrite that
+    the policy authorizes (a single admin relaxing /credit-policies then
+    self-approving the underwrite was the hole this closes).
+
+    Reads ``context['lending_sod']`` = {policy_maker, underwriter}.
+    NOT_APPLICABLE when no policy maker is on record (the built-in default policy,
+    or the maker identity is not captured yet) - there is nothing to segregate.
+    Fail-closed: when a maker IS recorded but the approver is not attributable,
+    four-eyes is unverifiable and BLOCKS."""
+    sod = context.get("lending_sod")
+    if not sod:
+        return CheckResult("LENDING_SOD", CheckStatus.NOT_APPLICABLE, [],
+                           method="deterministic")
+    maker = sod.get("policy_maker")
+    approver = sod.get("underwriter") or sod.get("approver")
+    if not _attributable(maker):
+        # No attributable policy override to segregate against.
+        return CheckResult("LENDING_SOD", CheckStatus.NOT_APPLICABLE, [],
+                           method="deterministic")
+    if not _attributable(approver):
+        return CheckResult("LENDING_SOD", CheckStatus.BLOCK,
+                           [Finding("sod_unverifiable",
+                                    "Segregation of duties cannot be verified: the credit "
+                                    "policy was set by an attributable maker but the "
+                                    "underwriter identity is not attributable.", "HIGH")],
+                           method="deterministic")
+    if str(maker).strip().lower() == str(approver).strip().lower():
+        return CheckResult("LENDING_SOD", CheckStatus.BLOCK,
+                           [Finding("policy_maker_is_underwriter",
+                                    "Segregation of duties: the identity that set or "
+                                    "relaxed the credit policy cannot also approve the "
+                                    "underwriting decision it governs (four-eyes).", "HIGH")],
+                           method="deterministic")
+    return CheckResult("LENDING_SOD", CheckStatus.PASS, [], method="deterministic")
+
+
+if __name__ == "__main__":  # pragma: no cover - runnable self-check for the branches
+    # Reg F 7-in-7: 7 prior phone contacts in the trailing week blocks the 8th.
+    assert check_fdcpa({"collection": {"phone_contacts_last_7d": 7}}).status is CheckStatus.BLOCK
+    assert check_fdcpa({"collection": {"phone_contacts_last_7d": 6}}).status is CheckStatus.PASS
+    # Lending SoD: the policy maker cannot also be the underwriter.
+    assert check_lending_sod({"lending_sod": {
+        "policy_maker": "admin@bank", "underwriter": "admin@bank"}}).status is CheckStatus.BLOCK
+    assert check_lending_sod({"lending_sod": {
+        "policy_maker": "admin@bank", "underwriter": "uw@bank"}}).status is CheckStatus.PASS
+    # No recorded policy maker -> nothing to segregate (default policy).
+    assert check_lending_sod({"lending_sod": {
+        "underwriter": "uw@bank"}}).status is CheckStatus.NOT_APPLICABLE
+    print("lending checkers self-check passed")

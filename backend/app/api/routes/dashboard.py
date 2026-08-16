@@ -65,21 +65,27 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
             trend="up" if avg_conf and avg_conf > 0.7 else "stable",
         ))
 
-    # Confidence distribution
-    all_rules = await db.execute(
-        select(Rule.confidence_tier).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+    # Confidence distribution — counted in the DB (GROUP BY), not by loading
+    # every rule's tier into Python. Keys come back as whatever the column
+    # yields (enum members), so lookups by ConfidenceTier match exactly what the
+    # old ``list.count(<enum>)`` did.
+    tier_rows = await db.execute(
+        select(Rule.confidence_tier, sqlfunc.count(Rule.id))
+        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+        .group_by(Rule.confidence_tier)
     )
-    tiers = [r[0] for r in all_rules.all()]
-    tier_total = max(len(tiers), 1)
+    tier_counts = {tier: count for tier, count in tier_rows.all()}
+    tier_total = max(sum(tier_counts.values()), 1)
+
+    def _tier_share(*wanted) -> float:
+        return round(sum(tier_counts.get(t, 0) for t in wanted) / tier_total, 3)
+
     conf_dist = ConfidenceDistribution(
-        speculative=round(tiers.count(ConfidenceTier.SPECULATIVE) / tier_total, 3),
-        inferred=round(tiers.count(ConfidenceTier.INFERRED) / tier_total, 3),
-        validated_peer=round(tiers.count(ConfidenceTier.VALIDATED_PEER) / tier_total, 3),
-        validated_dh=round(
-            (tiers.count(ConfidenceTier.VALIDATED_DH) +
-             tiers.count(ConfidenceTier.VALIDATED_MANAGER)) / tier_total, 3
-        ),
-        verified=round(tiers.count(ConfidenceTier.VERIFIED) / tier_total, 3),
+        speculative=_tier_share(ConfidenceTier.SPECULATIVE),
+        inferred=_tier_share(ConfidenceTier.INFERRED),
+        validated_peer=_tier_share(ConfidenceTier.VALIDATED_PEER),
+        validated_dh=_tier_share(ConfidenceTier.VALIDATED_DH, ConfidenceTier.VALIDATED_MANAGER),
+        verified=_tier_share(ConfidenceTier.VERIFIED),
     )
 
     # Decay alerts — rules where confidence has decayed significantly
@@ -227,18 +233,22 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         top_contributors=contributors,
     )
 
-    # Freshness
+    # Freshness — select only the 3 columns the bucketing needs instead of
+    # hydrating every (fast-growing, wide) Rule ORM row. Per-row interval math
+    # (days elapsed vs half_life_days) is not portable SQL across SQLite and
+    # Postgres, so the bucketing stays in Python over lightweight column rows.
     within_hl = 0
     decaying = 0
     expired = 0
-    all_exec_rules = await db.execute(
-        select(Rule).where(Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True)
+    fresh_rows = await db.execute(
+        select(Rule.validated_at, Rule.created_at, Rule.half_life_days)
+        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True)
     )
-    for r in all_exec_rules.scalars().all():
-        val_date = r.validated_at or r.created_at
+    for validated_at, created_at, half_life_days in fresh_rows.all():
+        val_date = validated_at or created_at
         if val_date:
             days = (now - val_date.replace(tzinfo=timezone.utc)).days
-            ratio = days / max(r.half_life_days, 1)
+            ratio = days / max(half_life_days, 1)
             if ratio < 0.5:
                 within_hl += 1
             elif ratio < 1.0:

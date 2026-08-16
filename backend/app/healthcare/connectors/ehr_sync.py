@@ -14,7 +14,7 @@ connector only fetches and returns the raw resources.
 import logging
 from typing import Any, Dict, List, Optional
 
-import httpx
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class EHRSyncConnector:
         return {"Accept": "application/fhir+json", "Authorization": f"Bearer {token}"}
 
     async def _get(self, resource_path: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with guarded_async_client(timeout=30.0) as client:
             try:
                 res = await client.get(
                     f"{self.base_url}/{resource_path}", headers=self.headers, params=params,

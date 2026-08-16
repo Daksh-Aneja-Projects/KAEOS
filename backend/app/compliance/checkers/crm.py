@@ -22,6 +22,43 @@ _LAWFUL_BASES = {
     "public_task", "legitimate_interests",
 }
 
+# GDPR Art 9(1) special categories - processing these needs an Art 9(2) condition
+# IN ADDITION to an Art 6 basis, and "legitimate interests" is NEVER available.
+# Detected from an explicit flag or from field/category name tokens. (Plain
+# sex/gender is NOT special-category, so those tokens are deliberately absent.)
+_SPECIAL_CATEGORY_TOKENS = {
+    "health", "medical", "diagnosis", "diagnoses", "eeoc", "disability",
+    "genetic", "biometric", "race", "racial", "ethnic", "ethnicity",
+    "religion", "religious", "political", "union", "sexual", "orientation",
+}
+# GDPR Art 9(2)(a)-(j) conditions that can lawfully ground special-category data.
+_ART9_CONDITIONS = {
+    "explicit_consent", "employment", "employment_social_security",
+    "social_security", "vital_interests", "not_for_profit", "made_public",
+    "legal_claims", "substantial_public_interest", "health_care", "medical",
+    "public_health", "research", "archiving",
+}
+
+
+def _name_tokens(*values) -> set:
+    """Split field/category names into their ``_``-segments for token matching."""
+    out: set = set()
+    for v in values:
+        if isinstance(v, dict):
+            v = list(v.keys())
+        if isinstance(v, str):
+            v = [v]
+        for item in (v or []):
+            out.update(str(item).strip().lower().replace("-", "_").split("_"))
+    return out
+
+
+def _is_special_category(proc: dict) -> bool:
+    if proc.get("special_category") or proc.get("special_categories"):
+        return True
+    return bool(_name_tokens(proc.get("fields"), proc.get("data_categories"),
+                             proc.get("categories")) & _SPECIAL_CATEGORY_TOKENS)
+
 # Actions that constitute a "sale" or "share" of personal data under CCPA/CPRA.
 _SALE_ACTIONS = {"sell", "sell_data", "share", "share_data", "sale"}
 
@@ -37,6 +74,7 @@ _CONSENT_REQUIRED_ACTIONS = {"sms", "text", "robocall", "autodial", "prerecorded
 # as a date, below); CCPA is a flat day-count.
 _DSAR_REGIMES = {"GDPR", "CCPA"}
 _CCPA_DEADLINE_DAYS = 45
+_CCPA_EXTENSION_DAYS = 45   # 1798.130(a)(2): one further 45-day extension, max
 _FULFILLED = {"fulfilled", "completed", "closed", "done", "resolved"}
 
 
@@ -99,6 +137,34 @@ def check_gdpr_lawful_basis(context: dict) -> CheckResult:
                                     "Consent-based processing requires affirmative "
                                     "consent (consent=true); none is recorded.", "HIGH")],
                            method="deterministic")
+
+    # GDPR Art 9: special-category data (health, genetic/biometric, racial/ethnic,
+    # religious/political/union, sexual orientation) needs a SEPARATE Art 9(2)
+    # condition on top of the Art 6 basis - and "legitimate interests" is NEVER an
+    # available ground for it. Validating only Art 6 would wave through, e.g.,
+    # health data processed on a bare legitimate-interests basis.
+    if _is_special_category(proc):
+        if basis == "legitimate_interests":
+            return CheckResult("GDPR", CheckStatus.BLOCK,
+                               [Finding("art9_legitimate_interests_invalid",
+                                        "Legitimate interests is not a lawful ground "
+                                        "for special-category (Art 9) data; an Art 9(2) "
+                                        "condition is required.", "HIGH")],
+                               method="deterministic")
+        condition = str(proc.get("art9_condition")
+                        or proc.get("special_category_condition") or "").strip().lower()
+        if condition not in _ART9_CONDITIONS:
+            return CheckResult("GDPR", CheckStatus.BLOCK,
+                               [Finding("no_art9_condition",
+                                        "Special-category (Art 9) processing requires a "
+                                        "valid Art 9(2) condition; none is recorded.", "HIGH")],
+                               method="deterministic")
+        if condition == "explicit_consent" and proc.get("consent") is not True:
+            return CheckResult("GDPR", CheckStatus.BLOCK,
+                               [Finding("no_explicit_consent",
+                                        "The Art 9 explicit-consent condition requires "
+                                        "affirmative consent; none is recorded.", "HIGH")],
+                               method="deterministic")
     return CheckResult("GDPR", CheckStatus.PASS, [], method="deterministic")
 
 
@@ -263,10 +329,22 @@ def check_dsar_deadline(context: dict) -> CheckResult:
         deadline_date = requested + timedelta(days=_CCPA_DEADLINE_DAYS)
         limit_desc = f"{_CCPA_DEADLINE_DAYS} days"
 
-    # Art 12(3)/1798.130(b): a further extension when timely notice was given.
+    # Art 12(3)/1798.130(b): a further extension when timely notice was given -
+    # but only up to the STATUTORY ceiling (GDPR two further months, CCPA one
+    # 45-day extension). An uncapped extension_days would let a huge claimed
+    # extension launder an arbitrarily late response as timely.
     ext = dsar.get("extension_days")
     if ext and dsar.get("extension_noticed"):
-        deadline_date = deadline_date + timedelta(days=int(ext))
+        try:
+            ext_days = max(0, int(ext))
+        except (TypeError, ValueError):
+            ext_days = 0
+        if regime == "GDPR":
+            ceiling = _add_calendar_month(_add_calendar_month(deadline_date))
+            deadline_date = min(deadline_date + timedelta(days=ext_days), ceiling)
+        else:
+            deadline_date = deadline_date + timedelta(
+                days=min(ext_days, _CCPA_EXTENSION_DAYS))
 
     if reference > deadline_date:
         verb = "was fulfilled" if is_fulfilled else "has been open"
@@ -277,3 +355,25 @@ def check_dsar_deadline(context: dict) -> CheckResult:
                                     f"{limit_desc}.", "HIGH")],
                            method="deterministic")
     return CheckResult("DSAR", CheckStatus.PASS, [], method="deterministic")
+
+
+if __name__ == "__main__":  # pragma: no cover - runnable self-check for the branches
+    # GDPR Art 9: health data on a bare legitimate-interests basis must BLOCK.
+    assert check_gdpr_lawful_basis({"processing": {
+        "lawful_basis": "legitimate_interests",
+        "fields": ["diagnosis_codes"]}}).status is CheckStatus.BLOCK
+    # Special-category data with a valid Art 9(2) condition + consent -> pass.
+    assert check_gdpr_lawful_basis({"processing": {
+        "lawful_basis": "consent", "consent": True,
+        "fields": ["health_status"], "art9_condition": "explicit_consent"}}
+    ).status is CheckStatus.PASS
+    # Non-special processing on legitimate interests is unchanged -> pass.
+    assert check_gdpr_lawful_basis({"processing": {
+        "lawful_basis": "legitimate_interests", "fields": ["email"]}}
+    ).status is CheckStatus.PASS
+    # DSAR extension is capped: a bogus 9000-day GDPR extension is still bounded
+    # to two further months, so an 11-month-late fulfilment BLOCKS.
+    assert check_dsar_deadline({"dsar": {
+        "regime": "GDPR", "request_date": "2026-01-01", "fulfilled_date": "2026-12-01",
+        "extension_days": 9000, "extension_noticed": True}}).status is CheckStatus.BLOCK
+    print("crm checkers self-check passed")

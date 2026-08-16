@@ -778,6 +778,10 @@ class AgentExecutor:
         # `skill_output_produced` says the reasoning succeeded, the status says
         # the world was not changed.
         _actuation = skill.get("actuation") if isinstance(skill, dict) else None
+        # Remembered so Gate 6 (post-execution audit) can COMPENSATE a write that
+        # already committed here if the audit then fails - a committed SoR change
+        # must not survive a failed audit.
+        _actuation_record_id = None
         if _actuation and isinstance(_actuation, dict):
             # Re-gate the WRITE against its department's statutory checkers (SOX
             # four-eyes, ECOA, ...) right before it lands. A mission's advisory
@@ -857,6 +861,7 @@ class AgentExecutor:
                                else None) or skill.get("skill_id", "agent"),
                         idempotency_key=_actuation.get("idempotency_key"),
                     )
+                    _actuation_record_id = _rec.id
                     logger.info(f"[Gate 5b] actuated {_rec.system}:{_rec.external_id} -> {_rec.status}")
             except Exception as e:
                 _target = (f"{_actuation.get('system', 'sandbox')}:"
@@ -901,6 +906,44 @@ class AgentExecutor:
         )
         if not audit_passed:
             logger.error("Audit post-execution checks failed.")
+            # Gate 6 runs AFTER the Gate-5b write already committed. A failed audit
+            # on an action that changed a system of record must not leave that
+            # change standing: reverse it via the recorded compensator so the SoR
+            # returns to its pre-write state, then report FAILED_AUDIT_REVERSED.
+            # Fail-closed: if the reversal itself fails, keep FAILED_AUDIT (the
+            # write stands, flagged) so the failure is never silently hidden.
+            if _actuation_record_id:
+                try:
+                    from app.services.actuation import Actuator
+                    from app.core.database import AsyncSessionLocal
+                    async with AsyncSessionLocal() as _rdb:
+                        await Actuator.reverse_action(
+                            _rdb, tenant_id=context["tenant_id"],
+                            action_id=_actuation_record_id,
+                            actor="gate6-audit-compensation",
+                        )
+                    await self._mark_execution_failed(exec_id, "FAILED_AUDIT_REVERSED")
+                    await self._emit_gate(context, "audit", "failed",
+                                          "post-execution audit failed; governed write reversed")
+                    logger.error(
+                        f"[Gate 6] audit failed after actuation {exec_id}; governed "
+                        f"write reversed (action {_actuation_record_id})"
+                    )
+                    return {"status": "FAILED_AUDIT_REVERSED",
+                            "execution_id": exec_id, "actuation_reversed": True,
+                            "warnings": warnings}
+                except Exception as e:
+                    await self._mark_execution_failed(exec_id, "FAILED_AUDIT")
+                    await self._emit_gate(context, "audit", "failed",
+                                          "post-execution audit failed; compensation ALSO failed")
+                    logger.error(
+                        f"[Gate 6] audit failed AND compensation failed for {exec_id}; "
+                        f"the governed write STANDS and is flagged (fail-closed): {e}"
+                    )
+                    return {"status": "FAILED_AUDIT",
+                            "execution_id": exec_id, "actuation_reversed": False,
+                            "compensation_error": str(e), "warnings": warnings}
+            await self._emit_gate(context, "audit", "failed")
             return {"status": "FAILED_AUDIT", "warnings": warnings}
         await self._emit_gate(context, "audit", "passed")
 

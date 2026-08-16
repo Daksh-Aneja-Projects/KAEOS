@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -21,7 +22,7 @@ class CustomerStatus(str, enum.Enum):
     COLLECTIONS = "COLLECTIONS"
 
 
-class Customer(Base):
+class Customer(Base, LegalHoldMixin):
     """Customer / client master record for receivables."""
     __tablename__ = "fin_customers"
 

@@ -15,7 +15,6 @@ from typing import Optional
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.database import AsyncSessionLocal
 from app.services.llm_router import LLMRouter
@@ -203,7 +202,9 @@ class PolystoreEngine:
             out.append(rec)
         return out[:top_k]
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    # Single attempt on this user-facing query path: a down provider must fail
+    # fast to the honest empty-result path, not stall the request behind retries.
+    # (The inner try/except already returns None on any error rather than raising.)
     async def _generate_embedding_for_text(self, text_: str,
                                             tenant_id: Optional[str] = None) -> Optional[list]:
         """Embed a plain text string (used for semantic_search queries).

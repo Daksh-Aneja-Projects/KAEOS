@@ -17,6 +17,7 @@ import enum
 import uuid
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 
 def _uuid():
@@ -32,7 +33,7 @@ class LoanStatus(str, enum.Enum):
     WITHDRAWN = "WITHDRAWN"
 
 
-class LoanApplication(Base):
+class LoanApplication(Base, LegalHoldMixin):
     """A consumer credit application. Business key (tenant_id, application_number)
     is tenant-scoped, never globally unique."""
     __tablename__ = "lnd_loan_applications"
@@ -134,6 +135,9 @@ class CreditPolicy(Base):
     max_amount = Column(Numeric(18, 2), nullable=False, default=50000)
     base_apr = Column(Numeric(9, 4), nullable=False, default=12.5)
     is_active = Column(Boolean, default=True)
+    # Identity that last set/relaxed this policy — feeds LENDING_SOD four-eyes so
+    # the underwriter cannot also be the policy maker (segregation of duties).
+    updated_by = Column(String(160), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

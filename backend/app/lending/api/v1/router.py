@@ -269,6 +269,12 @@ async def put_credit_policy(product: str, body: CreditPolicyIn,
     row.max_amount = body.max_amount
     row.base_apr = body.base_apr
     row.is_active = body.is_active
+    # Capture the policy maker for lending segregation-of-duties: the underwriter
+    # must differ from whoever set/relaxed the policy (LENDING_SOD in underwriting).
+    # Written defensively - the CreditPolicy.updated_by column may not exist yet
+    # (FLAG: lnd_credit_policies.updated_by String(160) nullable). Inert until then.
+    if hasattr(CreditPolicy, "updated_by"):
+        row.updated_by = approver_identity(tenant)
 
     await db.commit()
     await db.refresh(row)

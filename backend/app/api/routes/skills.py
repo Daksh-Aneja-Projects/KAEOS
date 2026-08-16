@@ -9,6 +9,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
+from app.core.entitlements import require_execution_allowance
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.services.knowledge import PolystoreEngine
@@ -110,9 +111,14 @@ async def execute_skill(
     body: SkillExecutionRequest,
     background_tasks: BackgroundTasks,
     tenant: dict = Depends(require_role("operator")),
+    _allowance: dict = Depends(require_execution_allowance()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Execute a skill — full L9 pipeline: route → execute → report to L10. Requires operator role."""
+    """Execute a skill — full L9 pipeline: route → execute → report to L10. Requires operator role.
+
+    Managed cloud only: fails closed with 429 past the plan's runaway hard cap
+    (overage up to the cap is allowed because it is billed). No-op for self-host.
+    """
     tenant_id = tenant["tenant_id"]
     # 1. Find skill — this tenant's. Was found by id alone, so any tenant could
     # RUN another tenant's skill (writing an execution under the victim tenant).

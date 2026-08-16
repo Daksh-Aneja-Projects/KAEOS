@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -21,7 +22,7 @@ class VendorStatus(str, enum.Enum):
     ON_HOLD = "ON_HOLD"
 
 
-class Vendor(Base):
+class Vendor(Base, LegalHoldMixin):
     """Supplier / vendor master record."""
     __tablename__ = "fin_vendors"
 
@@ -80,7 +81,7 @@ class InvoiceStatus(str, enum.Enum):
     VOIDED = "VOIDED"
 
 
-class Invoice(Base):
+class Invoice(Base, LegalHoldMixin):
     """Accounts Payable invoice from a vendor."""
     __tablename__ = "fin_invoices"
 

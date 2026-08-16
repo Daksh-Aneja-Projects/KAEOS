@@ -7,6 +7,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -25,7 +26,7 @@ class DsarStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
-class DataSubjectRequest(Base):
+class DataSubjectRequest(Base, LegalHoldMixin):
     """DSAR requests submitted under GDPR / CCPA privacy laws."""
     __tablename__ = "leg_data_subject_requests"
 

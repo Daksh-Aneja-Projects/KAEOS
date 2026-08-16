@@ -298,7 +298,7 @@ async def get_ontology(
     return res.scalars().all()
 
 @router.post("/ontology", response_model=OntologyItem)
-async def update_ontology(item: OntologyItem, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+async def update_ontology(item: OntologyItem, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     # Scoped to (tenant, department): `department` alone was globally unique, so
     # this write landed on whichever tenant's row existed.
     tenant_id = tenant["tenant_id"]
@@ -344,7 +344,7 @@ async def get_federated(
     return res.scalars().all()
 
 @router.post("/federated", response_model=FederatedItem)
-async def update_federated(item: FederatedItem, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
+async def update_federated(item: FederatedItem, tenant: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     # Scoped to (tenant, department). This flips a PRIVACY CONSENT flag for
     # federated data sharing; keyed on `department` alone it flipped whichever
     # tenant's row existed first.

@@ -205,6 +205,7 @@ docs/NAV_AND_MOCKDATA_PLAN.md
 docs/PERF_OPTIMIZATION_PLAN.md
 docs/*_PLAN.md
 docs/PLAN_*.md
+docs/HANDOFF_*.md
 .token
 
 # Polymorphic-engine generated tools: LLM-authored Python written at runtime into

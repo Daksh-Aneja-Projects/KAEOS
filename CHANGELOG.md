@@ -11,6 +11,61 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - 20-lens review remediation, Wave 0 (2026-08-17)
+
+A 20-lens autonomous review of the gap-hunt remediation found the safety-critical
+tail. Wave 0 (this change) closes it; several fixes shipped as inert
+column-absent no-ops and are now activated by migration `0050` so they are real,
+not decorative.
+
+- **Egress / SSRF (HIGH):** the tenant-supplied `/pipeline/run` REST connector,
+  every dormant per-department connector, and the legacy-ERP bridge now route
+  through the SSRF-guarded outbound client (cloud-metadata / private targets
+  refused, resolved IP re-vetted at connect time). Host resolution on the
+  outbound connect path is now non-blocking, so one tenant's slow DNS can no
+  longer stall the event loop for every tenant.
+- **Billing / entitlements (CRIT):** checkout creates the metered overage price
+  item (overage was silently unbillable) and bills the tenant's real seat count
+  (was hardcoded to 1); `invite_user` enforces the seat limit; the paid tier is
+  granted only for an active/trialing subscription (an unpaid/incomplete sub no
+  longer unlocks it) and revoked on cancel/unpaid; a repeat checkout is refused
+  (was double-subscribing); an out-of-order webhook cannot re-grant a cancelled
+  tenant (`billing_accounts.last_subscription_event_at` cursor); a managed-cloud
+  hard execution-allowance cap (429 past the runaway multiple) is enforced on
+  `/skills/{id}/execute`.
+- **Governance robustness (HIGH):** `is_high_consequence` now escalates a DELETE
+  actuation and a finance money-moving UPDATE regardless of tags (a destructive
+  skill contract could otherwise run autonomously); the Compliance and Fairness
+  LLM gates route their untrusted context through `prompt_guard` and fail closed
+  on injection risk (a prompt-injected ticket could otherwise silence a blocker).
+- **Legal hold (HIGH):** an `on_legal_hold` flag on the 24 record/document tables
+  a litigation hold targets; `erase_subject`, `purge_tenant` and retention now
+  preserve held rows (GDPR Art.17(3)(b)/(e); FRCP 37(e) anti-spoliation) instead
+  of destroying evidence under hold.
+- **Right-to-erasure completeness (HIGH):** erasure now also tombstones Support,
+  Engineering, Operations and Legal person records and the DSAR requestor's own
+  identity; tenant-purge blob collection covers finance invoice/receipt/report
+  and legal DSAR evidence paths; per-subject unique tombstones avoid UNIQUE
+  collisions.
+- **Lending (HIGH):** the ECOA 30-day clock is re-anchored to the completed-
+  application receipt date (12 CFR 1002.9(a)(1)), not the internal decision date;
+  the FDCPA Reg F 7-in-7 call-frequency cap (12 CFR 1006.14(b)) is enforced; a
+  new `LENDING_SOD` four-eyes checker blocks a policy-maker from self-approving
+  the underwrite the policy authorizes (`lnd_credit_policies.updated_by`).
+- **Support (CRIT):** the PII-redaction and SLA-breach compliance checkers now
+  actually run on outbound customer content (the default tag set named a
+  non-existent `SLA` checker, so the PCI/PII control was dead and PANs/SSNs could
+  egress ungated).
+- **Finance:** cumulative three-way match counts only APPROVED/PAID prior
+  invoices (an abandoned draft no longer forces a real invoice to EXCEPTION).
+- **Performance:** the per-tenant LLM router config is memoized (30s TTL,
+  invalidate-on-write) off the governed-execution hot path; hot dashboard
+  aggregates offloaded.
+- **Frontend:** the HR dashboard surfaces a failed fetch instead of silently
+  dropping panels (`allSettled` + error state, matching the other six); a shared
+  `EmptyState` card replaces the byte-identical per-view copies; Legal/Finance
+  raw enums render through `humanize()`.
+
 ### Fixed - Gap-hunt remediation (2026-08-16)
 
 A 52-finding adversarial gap-hunt across the 10 departments + platform was

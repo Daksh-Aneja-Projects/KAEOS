@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -33,7 +34,7 @@ class ReportStatus(str, enum.Enum):
     ARCHIVED = "ARCHIVED"
 
 
-class FinancialReport(Base):
+class FinancialReport(Base, LegalHoldMixin):
     """Generated financial report snapshot."""
     __tablename__ = "fin_reports"
 

@@ -176,6 +176,12 @@ async def apply_for_tenant(db: AsyncSession, tenant_id: str, *, dry_run: bool = 
         cutoff = _cutoff(policy["retain_days"])
         ts_col = table.c[cls.ts_column]
         where = (table.c.tenant_id == tenant_id) & (ts_col < cutoff)
+        # Legal/litigation hold OVERRIDES retention: never purge held rows. Uses
+        # IS NOT TRUE so NULL is treated as not-held (fail-closed: only True is
+        # skipped). Defensive - inert until an `on_legal_hold` boolean (default
+        # False) is added to the retention-class tables (FLAGGED for the integrator).
+        if "on_legal_hold" in table.c:
+            where = where & table.c.on_legal_hold.isnot(True)
 
         if dry_run:
             count = (await db.execute(

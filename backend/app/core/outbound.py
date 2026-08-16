@@ -21,6 +21,7 @@ ponytail: per-request re-resolution is the ceiling. An allowlist of egress IPs
 or a dedicated egress proxy is the upgrade if these endpoints ever face fully
 untrusted tenants at scale.
 """
+import asyncio
 import ipaddress
 import socket
 from urllib.parse import urlparse
@@ -36,11 +37,7 @@ _METADATA_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata"}
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
-def _resolved_ips(host: str) -> list:
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return []
+def _ips_from(infos) -> list:
     out = []
     for info in infos:
         try:
@@ -48,6 +45,23 @@ def _resolved_ips(host: str) -> list:
         except ValueError:
             continue
     return out
+
+
+def _resolved_ips(host: str) -> list:
+    try:
+        return _ips_from(socket.getaddrinfo(host, None))
+    except socket.gaierror:
+        return []
+
+
+async def _aresolved_ips(host: str) -> list:
+    """Non-blocking host resolution for the per-request connect path, so a
+    slow-DNS tenant cannot stall the event loop (and every other tenant on it).
+    ``loop.getaddrinfo`` runs the lookup in a threadpool under the hood."""
+    try:
+        return _ips_from(await asyncio.get_running_loop().getaddrinfo(host, None))
+    except socket.gaierror:
+        return []
 
 
 def check_outbound_url(url: str, *, allow_private: bool | None = None) -> str | None:
@@ -89,12 +103,8 @@ def assert_safe_outbound_url(url: str, *, allow_private: bool | None = None) -> 
         raise ValueError(reason)
 
 
-def _pick_safe_ip(host: str, *, allow_private: bool | None = None) -> str:
-    """Resolve `host`, reject if ANY resolved address is unsafe, return one vetted IP.
-
-    Resolution and validation happen together here and the returned IP is what the
-    caller connects to, so there is no window for the record to change in between.
-    """
+def _prepare_host(host: str, allow_private: bool | None) -> tuple[str, bool]:
+    """Normalise the host, refuse the metadata hostname, resolve the private gate."""
     host = (host or "").strip("[]").lower()
     if not host:
         raise ValueError("URL must include a host")
@@ -102,21 +112,42 @@ def _pick_safe_ip(host: str, *, allow_private: bool | None = None) -> str:
         raise ValueError("URL may not target the cloud metadata service")
     if allow_private is None:
         allow_private = get_settings().DEV_MODE
+    return host, allow_private
 
-    candidates = _resolved_ips(host)
+
+def _vet_candidates(host: str, candidates: list, *, allow_private: bool) -> str:
+    """Reject if ANY resolved address is unsafe; return one vetted IP to dial.
+
+    Single source of the egress rules, shared by the sync and async resolve paths.
+    """
     try:
         candidates.append(ipaddress.ip_address(host))
     except ValueError:
         pass
     if not candidates:
         raise ValueError(f"Cannot resolve host: {host}")
-
     for ip in candidates:
         if ip.is_link_local or ip.is_reserved or ip.is_multicast:
             raise ValueError("URL may not target a link-local or reserved address")
         if not allow_private and (ip.is_private or ip.is_loopback):
             raise ValueError("URL may not target a private or loopback address")
     return str(candidates[0])
+
+
+def _pick_safe_ip(host: str, *, allow_private: bool | None = None) -> str:
+    """Resolve `host`, reject if ANY resolved address is unsafe, return one vetted IP.
+
+    Resolution and validation happen together here and the returned IP is what the
+    caller connects to, so there is no window for the record to change in between.
+    """
+    host, allow_private = _prepare_host(host, allow_private)
+    return _vet_candidates(host, _resolved_ips(host), allow_private=allow_private)
+
+
+async def _apick_safe_ip(host: str, *, allow_private: bool | None = None) -> str:
+    """Async twin of ``_pick_safe_ip``: non-blocking resolve, same vetting + pin."""
+    host, allow_private = _prepare_host(host, allow_private)
+    return _vet_candidates(host, await _aresolved_ips(host), allow_private=allow_private)
 
 
 class GuardedTransport(httpx.AsyncHTTPTransport):
@@ -134,7 +165,7 @@ class GuardedTransport(httpx.AsyncHTTPTransport):
 
     async def handle_async_request(self, request):
         host = request.url.host
-        safe_ip = _pick_safe_ip(host, allow_private=self._allow_private)
+        safe_ip = await _apick_safe_ip(host, allow_private=self._allow_private)
         # Preserve TLS cert validation (SNI + hostname) against the original host,
         # then connect to the vetted IP literal.
         request.extensions = {**request.extensions, "sni_hostname": host}
@@ -179,6 +210,25 @@ def _demo() -> None:
         _socket.getaddrinfo = _orig
     # A public literal is fine and is returned for dialing.
     assert _pick_safe_ip("93.184.216.34", allow_private=False) == "93.184.216.34"
+
+    # Async path must preserve the same pin without blocking the loop: a host
+    # that resolves to the metadata IP is still refused, a public literal passes.
+    async def _acheck() -> None:
+        try:
+            await _apick_safe_ip("93.184.216.34", allow_private=False)
+        except ValueError:
+            raise AssertionError("public literal should pass async vetting")
+        _orig2 = _socket.getaddrinfo
+        _socket.getaddrinfo = lambda h, *a, **k: [(2, 1, 6, "", ("169.254.169.254", 0))]
+        try:
+            await _apick_safe_ip("rebind.example.com", allow_private=True)
+            raise AssertionError("async rebind to link-local should have been refused")
+        except ValueError:
+            pass
+        finally:
+            _socket.getaddrinfo = _orig2
+
+    asyncio.run(_acheck())
     print("outbound._demo OK")
 
 

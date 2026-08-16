@@ -193,12 +193,22 @@ async def underwrite_application(
     reasons = verdict["reasons"]
 
     # Build the compliance context and run the checkers that APPLY as hard gates.
-    frameworks = ["FAIR_LENDING"]
+    frameworks = ["FAIR_LENDING", "LENDING_SOD"]
     ctx: dict = {
         "decision": decision,
         "credit_purpose": app.credit_purpose,
         "approval_cohorts": approval_cohorts,
         "business_necessity": business_necessity,
+        # Segregation of duties: the identity that last set/relaxed the credit
+        # policy (maker) must differ from the underwriter (approver), so one admin
+        # cannot relax the policy then self-approve the underwrite it authorizes.
+        # policy.updated_by may not exist yet on the CreditPolicy row - getattr
+        # keeps this inert (LENDING_SOD -> NOT_APPLICABLE) until the column lands
+        # and the /credit-policies PUT populates it. See FLAG in the router.
+        "lending_sod": {
+            "policy_maker": getattr(policy, "updated_by", None),
+            "underwriter": decided_by,
+        },
     }
     disclosures = None
     if decision == "DENY":
@@ -278,18 +288,23 @@ async def generate_adverse_action(
 
     reasons = list(decision.reasons or [])
     today = date.today()
-    # Feed the ECOA checker the REAL elapsed days between the decision and this
-    # notice so its >30-day (12 CFR 1002.9(a)(1)) BLOCK can actually fire on a
-    # late notice - a hardcoded notice_days=0 made that branch unreachable and
-    # let a late notice be attested as timely.
+    # 12 CFR 1002.9(a)(1): the notice must be sent within 30 days of receiving the
+    # COMPLETED APPLICATION - NOT the internal decision date. Anchor the ECOA
+    # clock to the application's receipt date (LoanApplication.created_at) so a
+    # notice that is timely vs the decision but late vs receipt still trips the
+    # >30-day BLOCK. (Anchoring to the decision date understated elapsed time and
+    # could attest a genuinely late notice as timely.)
+    received_on = app.created_at.date() if getattr(app, "created_at", None) else today
     decided_on = decision.decided_at.date() if decision.decided_at else today
-    elapsed = (today - decided_on).days
+    elapsed = (today - received_on).days
     body = _render_notice(app, reasons)
 
-    # Validate against the ECOA checker BEFORE persisting (fail-closed).
+    # Validate against the ECOA checker BEFORE persisting (fail-closed). The
+    # checker's clock is receipt-anchored: decision_date carries the receipt date
+    # and notice_days carries the receipt-based elapsed count.
     gate = run_checks(["ECOA"], {
         "decision": "DENY",
-        "decision_date": str(decided_on),
+        "decision_date": str(received_on),
         "adverse_action": {"reasons": reasons, "notice_days": elapsed,
                            "prohibited_basis_used": False},
     })
