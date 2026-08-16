@@ -15,6 +15,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Full strict mode - the codebase is already strict-clean (verified via
+       tsc --strict, 0 errors). Kept as the single `strict` flag rather than the
+       piecemeal family so it stays honest as new code lands. */
+    "strict": true,
+
     /* Linting */
     "noUnusedLocals": false,
     "noUnusedParameters": false,
