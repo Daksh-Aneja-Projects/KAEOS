@@ -208,6 +208,10 @@ docs/PLAN_*.md
 docs/HANDOFF_*.md
 .token
 
+# DR-safe deletion journal (external append-only sink; runtime data, not source).
+# Prod points KAEOS_DELETION_JOURNAL_PATH at a real var dir / object store.
+/data/deletion_journal.log
+
 # Polymorphic-engine generated tools: LLM-authored Python written at runtime into
 # the dynamic MCP tool dir. Never commit generated code. The two committed
 # modules in this dir (the registry and the legacy bridge) are re-allowed below.
@@ -221,3 +225,5 @@ KAEOS_REVIEW_*.md
 _review_preview_tmp.html
 docs/CAMPAIGN_AUDIT_*.md
 docs/CAMPAIGN_MILESTONE_REVIEW_*.md
+/scratch_*.txt
+/scratch_*.log

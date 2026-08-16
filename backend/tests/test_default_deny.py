@@ -2,8 +2,9 @@
 Phase 2A — router-level default-deny enforcement.
 
 Every state-changing route (POST/PUT/PATCH/DELETE) must be protected by an
-authorization gate — either ``require_role(...)`` or the out-of-band
-``verify_admin_secret`` (ADMIN_SECRET header). The only exceptions are an
+authorization gate — ``require_role(...)`` / ``require_service_or_role(...)``,
+the super-admin router gate ``require_superadmin`` (Operator Console), or the
+out-of-band ``verify_admin_secret`` (ADMIN_SECRET header). The only exceptions are an
 explicit, reviewed allowlist of routes that are intentionally public, viewer-
 level self-actions, or internal service/agent-mesh calls.
 
@@ -79,7 +80,8 @@ def _is_protected(route) -> bool:
     for dep in route.router_dependencies:
         call = getattr(dep, "dependency", dep)
         qn = getattr(call, "__qualname__", "") or ""
-        if "require_role" in qn or "require_service_or_role" in qn:
+        if ("require_role" in qn or "require_service_or_role" in qn
+                or "require_superadmin" in qn):
             return True
 
     stack = list(getattr(route.dependant, "dependencies", []) or [])
@@ -90,7 +92,8 @@ def _is_protected(route) -> bool:
         if seen > 500:
             break
         qn = getattr(getattr(dep, "call", None), "__qualname__", "") or ""
-        if "require_role" in qn or "require_service_or_role" in qn:
+        if ("require_role" in qn or "require_service_or_role" in qn
+                or "require_superadmin" in qn):
             return True
         stack.extend(dep.dependencies)
     try:

@@ -137,6 +137,16 @@ class JournalEntryIn(BaseModel):
     reference: Optional[str] = None
     source_module: str = "MANUAL"
     source_document_id: Optional[str] = None
+    # Maker-checker four-eyes: the preparer (maker). The authenticated poster is
+    # the approver; the two must be distinct, attributable identities.
+    prepared_by: Optional[str] = None
+
+
+# Source modules reserved for AUTOMATED postings (accruals, payments, matching).
+# Those callers reach post_journal_entry directly at the service layer and never
+# transit this HTTP route, so a hand-posted system source here is a four-eyes
+# dodge (masquerading a manual JE as an automated one) and is refused.
+_SYSTEM_JE_SOURCES = {"AP", "AP_ACCRUAL", "AR", "PAYROLL", "PAYMENT", "THREE_WAY_MATCH"}
 
 
 def _entry_dict(e) -> dict:
@@ -159,9 +169,33 @@ async def post_gl_entry(body: JournalEntryIn, tenant: dict = Depends(require_rol
     Fail-closed double entry: unbalanced, zero-amount, or unknown-account
     entries are refused with nothing posted. Balances move atomically with
     the entry, and the posting lands in the signed provenance ledger."""
+    from app.compliance.registry import run_checks
     from app.core.tenant import approver_identity
     from app.finance.services.gl import GLPostingError, post_journal_entry
     tenant_id = tenant["tenant_id"]
+    poster = approver_identity(tenant)
+    src = (body.source_module or "MANUAL").strip().upper()
+    if src in _SYSTEM_JE_SOURCES:
+        raise HTTPException(403, detail=(
+            f"source_module '{src}' is reserved for automated postings and cannot "
+            "be hand-posted; use MANUAL or ADJUSTING for a manual journal entry."))
+    # SOX 302/404 maker-checker on manual JEs: the preparer (maker) and the
+    # posting operator (approver) must be two distinct, attributable identities.
+    # Fail-closed via the finance SOX checker - a self-prepared or unattributable
+    # manual JE is BLOCKED (mirrors the operations four-eyes SoD gate).
+    maker = body.prepared_by
+    verdict = run_checks(["SOX"], {
+        "is_financial": True, "has_human_approver": poster,
+        "maker": maker, "approver": poster,
+    })
+    if not verdict["verified"]:
+        raise HTTPException(403, detail={
+            "error": "segregation_of_duties",
+            "message": ("A manual journal entry needs maker-checker four-eyes: set "
+                        "prepared_by to a distinct, attributable preparer; the posting "
+                        "operator approves. A self-prepared or unattributable JE is blocked."),
+            "blocking": verdict["blocking"],
+        })
     try:
         entry = await post_journal_entry(
             db, tenant_id,
@@ -170,7 +204,8 @@ async def post_gl_entry(body: JournalEntryIn, tenant: dict = Depends(require_rol
             reference=body.reference,
             source_module=body.source_module,
             source_document_id=body.source_document_id,
-            created_by=approver_identity(tenant),
+            created_by=maker,
+            approved_by=poster,
         )
     except GLPostingError as e:
         raise HTTPException(400, str(e))
@@ -179,7 +214,8 @@ async def post_gl_entry(body: JournalEntryIn, tenant: dict = Depends(require_rol
         actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
         resource_type="journal_entry", resource_id=entry.id,
         details={"entry_number": entry.entry_number,
-                 "total": float(entry.total_debit or 0)},
+                 "total": float(entry.total_debit or 0),
+                 "prepared_by": maker, "approved_by": poster},
     )
     return _entry_dict(entry)
 

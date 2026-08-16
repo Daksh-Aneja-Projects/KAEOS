@@ -12,6 +12,30 @@ logger = logging.getLogger(__name__)
 
 _BATCH_LIMIT = 500
 
+# Last-run heartbeat for every scheduled job, keyed by name -> {ok, at, error}.
+# Exposed via GET /ops/scheduler so an operator can see a job that dies every tick
+# while /health and /status stay green. Populated by _tracked below.
+# ponytail: in-process dict on the leader only; aggregate across replicas via a
+# shared store (Redis/DB) if multi-worker heartbeat visibility is ever needed.
+_LAST_RUN: dict[str, dict] = {}
+
+
+async def _tracked(name: str, fn) -> None:
+    """Run a scheduled coroutine-function ``fn`` and record its outcome in _LAST_RUN.
+
+    NOTE: most jobs catch and log their own exceptions, so they return normally and
+    record ok=True (a heartbeat/last-run timestamp is still the point). A job that
+    lets an exception propagate is recorded ok=False with the error, which is what
+    makes an every-tick failure visible instead of silent.
+    """
+    at = datetime.now(timezone.utc).isoformat()
+    try:
+        await fn()
+        _LAST_RUN[name] = {"ok": True, "at": at, "error": None}
+    except Exception as e:
+        _LAST_RUN[name] = {"ok": False, "at": at, "error": str(e)[:500]}
+        logger.error("[Scheduler] job %s raised: %s", name, e)
+
 
 def _is_leader() -> bool:
     """Belt-and-suspenders: only the elected leader runs scheduled jobs.
@@ -504,6 +528,67 @@ async def run_usage_metering():
         logger.info("[Scheduler] usage metering rated %d tenant(s)", rated)
 
 
+# A mission RUNNING with no ledger event newer than this is presumed abandoned by
+# a crashed/restarted worker (its in-process runner + _RUNNING_MISSIONS guard were
+# wiped). Above the step-level _STEP_STALE_AFTER (10 min) so we only re-kick truly
+# stalled missions, never one that is mid-step.
+_MISSION_STALE_AFTER_MINUTES = 15
+
+
+async def run_mission_reaper():
+    """Re-invoke missions left RUNNING by a crashed worker.
+
+    ``start_mission_run`` is only called from the missions route and ``_RUNNING_MISSIONS``
+    is in-process (wiped on restart), so a mission that was RUNNING when the worker
+    died never advances again; the step-level ``_recover_stale`` only runs once
+    ``advance_mission`` is called, which nothing does. This leader-guarded sweep finds
+    RUNNING missions whose most recent ledger event is older than the threshold and
+    re-kicks ``start_mission_run`` (idempotent via ``_RUNNING_MISSIONS``; the step-level
+    FOR UPDATE SKIP LOCKED claim prevents any double governed execution). Mission has no
+    ``updated_at`` column, so the max ``MissionEvent.created_at`` is the freshness signal.
+    """
+    if not _is_leader():
+        return
+    from datetime import timedelta
+
+    from sqlalchemy import func as safunc
+
+    from app.core.context import current_tenant_id
+    from app.models.missions import Mission, MissionEvent
+    from app.services.missions import engine as missions
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=_MISSION_STALE_AFTER_MINUTES)
+    try:
+        async with MaintenanceSessionLocal() as db:
+            rows = (await db.execute(
+                select(Mission.tenant_id, Mission.id, safunc.max(MissionEvent.created_at))
+                .join(MissionEvent, MissionEvent.mission_id == Mission.id)
+                .where(Mission.status == "RUNNING")
+                .group_by(Mission.id, Mission.tenant_id)
+            )).all()
+        stale = []
+        for tid, mid, last in rows:
+            if last is None:
+                continue
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last < cutoff:
+                stale.append((tid, mid))
+        # Set the tenant contextvar before start_mission_run: it spawns the runner
+        # via asyncio.create_task, which snapshots the current context, so the
+        # background runner inherits the right tenant for its RLS-enforced session.
+        for tid, mid in stale:
+            token = current_tenant_id.set(tid)
+            try:
+                await missions.start_mission_run(tid, mid)
+            finally:
+                current_tenant_id.reset(token)
+        if stale:
+            logger.info("[Scheduler] mission reaper re-invoked %d stalled mission(s)", len(stale))
+    except Exception as e:
+        logger.error(f"[Scheduler] mission reaper failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -513,69 +598,78 @@ def init_scheduler() -> AsyncIOScheduler:
         logger.error(f"[Scheduler] Failed to register job handlers: {e}")
 
     scheduler = AsyncIOScheduler()
+    # Every job runs through _tracked(name, fn) so its last-run/last-success/error is
+    # recorded in _LAST_RUN and visible at GET /ops/scheduler. args=[name, fn] feed the
+    # wrapper; the trigger + id/coalesce/max_instances kwargs are unchanged.
     scheduler.add_job(
-        run_decay_checks, 'interval', minutes=60,
+        _tracked, 'interval', minutes=60, args=['decay_checks', run_decay_checks],
         id='decay_checks_job', replace_existing=True
     )
     # Durable job queue: drain due jobs frequently (deployments start within a
     # tick), and reap jobs a crashed worker left RUNNING.
     scheduler.add_job(
-        run_job_queue, 'interval', seconds=15,
+        _tracked, 'interval', seconds=15, args=['job_queue', run_job_queue],
         id='job_queue_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     scheduler.add_job(
-        run_job_queue_reaper, 'interval', minutes=5,
+        _tracked, 'interval', minutes=5, args=['job_queue_reaper', run_job_queue_reaper],
         id='job_queue_reaper_job', replace_existing=True
+    )
+    # Re-invoke missions left RUNNING by a crashed worker (in-process runner state is
+    # wiped on restart). Idempotent; the step-level row claim prevents double-run.
+    scheduler.add_job(
+        _tracked, 'interval', minutes=5, args=['mission_reaper', run_mission_reaper],
+        id='mission_reaper_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Bidirectional sync: push queued governed mutations out to connected
     # external systems every minute (inbound is realtime via webhooks; this is
     # the outbound half plus retry of transient failures).
     scheduler.add_job(
-        run_outbound_sync_dispatch, 'interval', minutes=1,
+        _tracked, 'interval', minutes=1, args=['outbound_sync', run_outbound_sync_dispatch],
         id='outbound_sync_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Inbound pull half: incremental delta pull from credentialed connectors on
     # an interval (real-time connectors push via webhooks; this catches systems
     # that cannot push, and backfills what a missed webhook dropped).
     scheduler.add_job(
-        run_connector_pull_sync, 'interval', minutes=5,
+        _tracked, 'interval', minutes=5, args=['connector_pull_sync', run_connector_pull_sync],
         id='connector_pull_sync_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Executive digest: Monday 08:00 in the server's timezone. Tenants without
     # a subscribed notification channel simply receive nothing.
     scheduler.add_job(
-        run_weekly_digest, 'cron', day_of_week='mon', hour=8, minute=0,
+        _tracked, 'cron', day_of_week='mon', hour=8, minute=0, args=['weekly_digest', run_weekly_digest],
         id='weekly_digest_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Retention enforcement runs daily — windows are day-granular, so an hourly
     # sweep would be pure churn. Only tenants that opted a data class in are touched.
     scheduler.add_job(
-        run_retention_sweep, 'interval', hours=24,
+        _tracked, 'interval', hours=24, args=['retention_sweep', run_retention_sweep],
         id='retention_sweep_job', replace_existing=True
     )
     # Audit tamper-evidence: anchor each tenant's recent audit window into the
     # signed provenance ledger every 12h (windows are 24h, so consecutive
     # checkpoints overlap and no row goes unanchored).
     scheduler.add_job(
-        run_audit_checkpoints, 'interval', hours=12,
+        _tracked, 'interval', hours=12, args=['audit_checkpoints', run_audit_checkpoints],
         id='audit_checkpoint_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # AI Foundry: mine governed executions into training examples on a cadence so
     # the improvement loop is continuous, not manual. Promotion stays human-gated.
     scheduler.add_job(
-        run_foundry_mining, 'interval', hours=6,
+        _tracked, 'interval', hours=6, args=['foundry_mining', run_foundry_mining],
         id='foundry_mining_job', replace_existing=True
     )
     # L5-reverse autonomy governor: adapt per-domain dials from the measured
     # safe-autonomy-rate on a cadence (bounded nudges; human-set dials untouched).
     scheduler.add_job(
-        run_autonomy_governor_job, 'interval', hours=6,
+        _tracked, 'interval', hours=6, args=['autonomy_governor', run_autonomy_governor_job],
         id='autonomy_governor_job', replace_existing=True
     )
     # Drift detection: flag systems-of-record rows changed outside the actuation
     # path. Detection only - reconciliation stays a human-gated governed action.
     scheduler.add_job(
-        run_drift_detection_job, 'interval', hours=1,
+        _tracked, 'interval', hours=1, args=['drift_detection', run_drift_detection_job],
         id='drift_detection_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Keep the two expensive benchmark analyses warm so opening the lane is
@@ -583,25 +677,25 @@ def init_scheduler() -> AsyncIOScheduler:
     # have not moved, because the cache already answers. max_instances=1 so a
     # slow pass never overlaps itself and doubles the model load.
     scheduler.add_job(
-        run_benchmark_warmup, 'interval', minutes=30,
+        _tracked, 'interval', minutes=30, args=['benchmark_warmup', run_benchmark_warmup],
         id='benchmark_warmup_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # L2 fine-tune bridge: poll external jobs to completion + auto-eval (5 min).
     scheduler.add_job(
-        run_finetune_poll, 'interval', minutes=5,
+        _tracked, 'interval', minutes=5, args=['finetune_poll', run_finetune_poll],
         id='finetune_poll_job', replace_existing=True
     )
     # Recover deployments orphaned by a worker crash/restart (fire-and-forget
     # pipeline has no durable queue yet); frequent + cheap.
     scheduler.add_job(
-        run_deployment_reaper, 'interval', minutes=15,
+        _tracked, 'interval', minutes=15, args=['deployment_reaper', run_deployment_reaper],
         id='deployment_reaper_job', replace_existing=True
     )
     # Usage metering: rate governed executions per tenant and push overage to the
     # billing provider (no-op self-host). Hourly is ample — Stripe bills on the
     # period total (action=set), so cadence only affects freshness, not amount.
     scheduler.add_job(
-        run_usage_metering, 'interval', hours=1,
+        _tracked, 'interval', hours=1, args=['usage_metering', run_usage_metering],
         id='usage_metering_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Time-series metrics rollup: snapshot each tenant's current-hour safe-autonomy
@@ -609,8 +703,9 @@ def init_scheduler() -> AsyncIOScheduler:
     # dashboards read a stored series. Idempotent per (tenant, metric, hour bucket),
     # so hourly cadence with coalesce means at most one row per bucket.
     scheduler.add_job(
-        run_metrics_rollup, 'interval',
+        _tracked, 'interval',
         minutes=int(getattr(get_settings(), "METRICS_ROLLUP_INTERVAL_MINUTES", 60)),
+        args=['metrics_rollup', run_metrics_rollup],
         id='metrics_rollup_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     return scheduler
@@ -629,3 +724,18 @@ if __name__ == "__main__":
         {"no_ts": True},
     ]) == "2026-08-16 11:30:00"
     print("scheduler _max_watermark self-check ok")
+
+    # _tracked records ok=True on success and ok=False + error on a throwing coro.
+    import asyncio as _asyncio
+
+    async def _ok():
+        return None
+
+    async def _boom():
+        raise RuntimeError("nope")
+
+    _asyncio.run(_tracked("t_ok", _ok))
+    assert _LAST_RUN["t_ok"]["ok"] is True and _LAST_RUN["t_ok"]["error"] is None
+    _asyncio.run(_tracked("t_boom", _boom))
+    assert _LAST_RUN["t_boom"]["ok"] is False and "nope" in _LAST_RUN["t_boom"]["error"]
+    print("scheduler _tracked self-check ok")

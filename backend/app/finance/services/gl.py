@@ -153,6 +153,7 @@ async def post_journal_entry(
     source_module: str = "MANUAL",
     source_document_id: Optional[str] = None,
     created_by: Optional[str] = None,
+    approved_by: Optional[str] = None,
     ai_categorized: bool = False,
     ai_confidence: Optional[float] = None,
 ) -> JournalEntry:
@@ -250,6 +251,11 @@ async def post_journal_entry(
             total_debit=total_debit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             total_credit=total_credit,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             created_by=created_by,
+            # Maker-checker evidence: the API route records the preparer as
+            # created_by and the distinct posting operator as approved_by. Service
+            # callers (accruals, payments) leave approved_by None.
+            approved_by=approved_by,
+            approved_at=datetime.now(timezone.utc) if approved_by else None,
             ai_categorized=ai_categorized,
             ai_confidence=ai_confidence,  # type: ignore[arg-type]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
             fiscal_year=year,

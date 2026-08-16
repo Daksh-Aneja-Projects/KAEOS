@@ -158,6 +158,38 @@ async def process_jobs(max_jobs: int = _DEFAULT_MAX_JOBS_PER_TICK) -> dict:
     return counts
 
 
+async def list_jobs(status: Optional[str] = None, limit: int = 100) -> list[Job]:
+    """List jobs (optionally filtered by status), newest first, on the owner session.
+
+    Powers the operator console: a terminally FAILED job (e.g. a human-approved
+    hitl_resume that exhausted retries) is invisible until someone can see it here.
+    """
+    async with MaintenanceSessionLocal() as db:
+        stmt = select(Job).order_by(Job.created_at.desc()).limit(limit)
+        if status:
+            stmt = stmt.where(Job.status == status.upper())
+        return list((await db.execute(stmt)).scalars().all())
+
+
+async def requeue_failed(job_id: str) -> bool:
+    """Resurrect a terminally FAILED job: FAILED -> QUEUED, attempts reset, eligible now.
+
+    Conditional on status='FAILED' so it can only revive a terminal job, never
+    disturb one that is QUEUED/RUNNING. Returns True iff a row was revived (False
+    for unknown id or non-FAILED status, which the route maps to 404). Owner session.
+    """
+    now = datetime.now(timezone.utc)
+    async with MaintenanceSessionLocal() as db:
+        res = await db.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status == "FAILED")
+            .values(status="QUEUED", attempts=0, run_after=now,
+                    locked_by=None, locked_at=None, last_error=None, updated_at=now)
+        )
+        await db.commit()
+        return res.rowcount == 1
+
+
 async def requeue_stuck_jobs(stuck_after_minutes: int = 30) -> list:
     """Recover jobs a crashed worker left RUNNING (at-least-once backstop).
 

@@ -179,6 +179,61 @@ async def overview():
     }
 
 
+@router.get("/jobs")
+async def list_jobs(status: str | None = None):
+    """Durable job queue rows, newest first (optionally ?status=FAILED).
+
+    Surfaces terminally FAILED jobs so an operator can requeue one — e.g. a
+    human-approved hitl_resume that exhausted its retries and would otherwise die
+    invisibly. Owner session; super-admin only.
+    """
+    from app.services import job_queue
+
+    jobs = await job_queue.list_jobs(status=status)
+    return {
+        "count": len(jobs),
+        "jobs": [
+            {
+                "id": j.id,
+                "tenant_id": j.tenant_id,
+                "job_type": j.job_type,
+                "status": j.status,
+                "attempts": j.attempts,
+                "max_attempts": j.max_attempts,
+                "run_after": j.run_after.isoformat() if j.run_after else None,
+                "last_error": j.last_error,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+            }
+            for j in jobs
+        ],
+    }
+
+
+@router.post("/jobs/{job_id}/requeue")
+async def requeue_job(job_id: str):
+    """Resurrect a terminally FAILED job (FAILED -> QUEUED, attempts reset, eligible
+    now). 404 if the job doesn't exist or isn't FAILED. Owner session; super-admin only.
+    """
+    from app.services import job_queue
+
+    if not await job_queue.requeue_failed(job_id):
+        raise HTTPException(404, "No FAILED job with that id to requeue")
+    return {"id": job_id, "status": "QUEUED", "requeued": True}
+
+
+@router.get("/scheduler")
+async def scheduler_heartbeat():
+    """Last-run heartbeat for each scheduled background job: {ok, at, error}.
+
+    In-process on the leader; a stale ``at`` or ``ok: false`` means a job is failing
+    while /health and /status stay green. Super-admin only.
+    """
+    from app.services.scheduler import _LAST_RUN
+
+    return {"jobs": dict(_LAST_RUN)}
+
+
 @status_router.get("/status")
 async def status(response: Response):
     """PUBLIC status page — no auth, no per-tenant data.

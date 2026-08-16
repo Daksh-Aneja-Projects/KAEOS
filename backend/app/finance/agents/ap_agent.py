@@ -1,8 +1,10 @@
 """
 KAEOS Finance Domain — Accounts Payable Agent
 
-Handles 3-way matching (PO ↔ Receipt ↔ Invoice), auto-approval
-for invoices under configurable thresholds, and duplicate detection.
+Handles 3-way matching (PO ↔ Receipt ↔ Invoice) and duplicate detection, then
+routes each invoice to a human-review state. It NEVER auto-approves: SOX
+four-eyes forbids a humanless financial approval (the gated SOX gate blocks it),
+so approval + accrual happen only on the operator-driven transition path.
 
 Runs through the gated 7-gate pipeline (Compliance -> Fairness -> HITL -> Debate -> Execute -> Audit)
 with SOX compliance enforcement. Low-confidence decisions go to HITL.
@@ -160,37 +162,18 @@ Check if math is correct.""",
             # NOTE: three_way_match_status is NOT taken from the LLM. It was set
             # by the deterministic matcher above and must not be overwritten.
 
-            # An EXCEPTION match is a hard control: never auto-approve, route to
-            # DISPUTED for human resolution regardless of what the LLM recommends.
-            if invoice.three_way_match_status == "EXCEPTION":
-                invoice.status = InvoiceStatus.DISPUTED
-            # Auto-approve only for a clean match, low amounts, high confidence.
-            elif (decision.get("recommendation") == "APPROVE"
-                  and invoice.three_way_match_status == "MATCHED"
-                  and float(invoice.total_amount) < 2000 and confidence_score > 0.88):
-                # Approve through the SAME controls the human path stamps, not a
-                # bare status write: record the approver (else four-eyes at
-                # payment finds no approver and the invoice is APPROVED-but-
-                # unpayable) and accrue the liability to the GL (else it sits
-                # off-books). The approver is an attributable agent identity,
-                # distinct from any human payer so four-eyes still holds.
-                from datetime import datetime, timezone
-                from app.finance.services.gl import GLPostingError
-                from app.finance.services.payments import PaymentError, accrue_invoice
-                invoice.status = InvoiceStatus.APPROVED
-                invoice.approved_by = "KAEOS AP Agent"
-                invoice.approved_at = datetime.now(timezone.utc)
-                try:
-                    await accrue_invoice(db, tenant_id, invoice, actor="KAEOS AP Agent")
-                except (GLPostingError, PaymentError) as e:
-                    # Approval is valid and stands; accrual retries idempotently
-                    # at payment time (a missing expense/AP account raises
-                    # PaymentError). Surface the COA gap, do not hide it.
-                    logger.warning("[AP] auto-approval accrual of %s failed: %s", invoice_id, e)
-            elif decision.get("recommendation") == "REJECT":
+            # SOX four-eyes forbids a humanless financial approval, so this agent
+            # NEVER auto-approves: the gated pipeline's SOX gate blocks any
+            # financial action without a distinct human approver (BLOCKED_COMPLIANCE,
+            # handled above), which is why an auto-approve+accrue branch here was
+            # unreachable dead code. The agent only ever routes an invoice to a
+            # human-review state; approval + accrual happen on the operator-driven
+            # /invoices/{id}/transition path, which records the approver identity.
+            if (invoice.three_way_match_status == "EXCEPTION"
+                    or decision.get("recommendation") == "REJECT"):
                 invoice.status = InvoiceStatus.DISPUTED
             else:
-                # Medium amounts, lower confidence, or unconfirmed match → hold.
+                # Clean or unconfirmed match → hold for human approval.
                 invoice.status = InvoiceStatus.PENDING_APPROVAL
 
             db.add(invoice)
