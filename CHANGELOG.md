@@ -11,6 +11,44 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - 20-lens review remediation, Wave 1 safety fixes (2026-08-17)
+
+A 12-agent verification pass mapped every 20-lens finding to its true state
+against the Wave-0 HEAD (most were already closed); this closes the remaining
+confirmed-open HIGH safety findings. No schema changes required.
+
+- **DR-safe erasure journal (HIGH):** the deletion journal now also writes to an
+  external append-only file sink (`KAEOS_DELETION_JOURNAL_PATH`) outside the DB
+  restore boundary, with a replay path — a restore that resurrects PII can be
+  re-erased even though it wiped the in-DB journal (file sink is the floor;
+  object storage / WORM is the upgrade).
+- **Right-to-erasure completeness (HIGH):** `erase_subject` now also anonymises
+  customer-authored support ticket content, procurement person fields
+  (requested_by / receiver_name / vendor_name) and legal contract counterparty
+  — closing the last of the 10-department Art.17 coverage gap.
+- **Background-job observability (HIGH):** `/ops/jobs` lists durable jobs and
+  requeues a terminal-FAILED one (a human-approved `hitl_resume` that exhausted
+  retries was previously invisible and never ran); the scheduler records a
+  per-job heartbeat surfaced at `/ops/scheduler` (a job dying every tick was
+  invisible while `/health` stayed green); a mission reaper re-drives missions
+  left RUNNING by a crashed worker (crash-recovery logic that nothing invoked).
+- **Finance governance (HIGH):** the AP agent's dead humanless auto-approve /
+  accrual branch (unreachable behind the SOX Gate-1 block) is removed; manual GL
+  journal entries now enforce SOX maker-checker four-eyes (a single operator
+  could post an unapproved manual JE).
+- **Per-recipient approval identity (HIGH):** HITL notifications now mint one
+  approval link per resolved recipient carrying that human's real identity as
+  the token subject, so a link-based approval can satisfy four-eyes (the sole
+  caller previously passed no recipient, so every link carried the constant
+  `email-approver` subject that four-eyes rejects).
+- **CI honesty gates (HIGH):** a new harvest test runs every module's `__main__`
+  self-check under pytest (they were inert — CI never executed them), turning
+  ~22 statutory/security invariants into real CI gates; added explicit tests for
+  the mission Gate-5b `BLOCKED_ACTUATION` re-gate, the ECOA >30-day
+  adverse-action block, and the HIPAA Part-2 consent check (all were untested).
+  Fixed the `core/net.py` self-check (it patched the wrong `get_settings`
+  binding, so its trusted-proxy assertions never ran).
+
 ### Fixed - 20-lens review remediation, Wave 0 (2026-08-17)
 
 A 20-lens autonomous review of the gap-hunt remediation found the safety-critical

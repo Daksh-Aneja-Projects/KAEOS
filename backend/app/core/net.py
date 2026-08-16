@@ -66,13 +66,17 @@ def _demo() -> None:
             self.client = _C(host)
             self.headers = {"x-forwarded-for": xff} if xff else {}
 
-    import app.core.config as cfg
-
     class _S:
         TRUSTED_PROXIES: list = []
 
-    orig = cfg.get_settings
-    cfg.get_settings = lambda: _S()
+    # Patch the get_settings bound in THIS running module's globals (client_ip /
+    # _trusted_networks read net.py's own name, imported at module top). Using
+    # globals() targets the actually-executing module whether run as __main__
+    # (python -m / runpy) or imported — patching app.core.config, or re-importing
+    # app.core.net, would leave the real settings in force on the running copy.
+    g = globals()
+    orig = g["get_settings"]
+    g["get_settings"] = lambda: _S()
     try:
         # No trusted proxies -> always the peer, XFF ignored even if present.
         assert client_ip(_R("10.0.0.1", "1.2.3.4")) == "10.0.0.1"
@@ -82,7 +86,7 @@ def _demo() -> None:
         # Untrusted peer -> spoofed XFF ignored.
         assert client_ip(_R("203.0.113.7", "1.2.3.4")) == "203.0.113.7"
     finally:
-        cfg.get_settings = orig
+        g["get_settings"] = orig
     print("net._demo OK")
 
 

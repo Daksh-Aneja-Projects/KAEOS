@@ -172,30 +172,61 @@ class HITLManager:
         # Scheduled AFTER the pause is durably persisted: never announce an
         # approval that is not yet in the queue.
         from app.services.notifier import notify_fire_and_forget
-        # One-click decide links so an approver living in email/Slack never has
-        # to log in to unblock autonomy (signed, single-purpose, 7-day TTL).
-        try:
-            from app.core.config import get_settings
-            from app.api.routes.approvals import approval_links
-            base = get_settings().PUBLIC_BASE_URL or "http://localhost:8001"
-            links = approval_links(exec_id, tenant_id, base)
-            link_lines = (f"\nApprove: {links['approve']}\n"
-                          f"Reject:  {links['reject']}\n")
-        except Exception:
-            logger.warning("HITL approval-link build failed for exec %s", exec_id, exc_info=True)
-            links, link_lines = {}, ""
-        notify_fire_and_forget(
-            tenant_id, "hitl.pending",
-            subject=f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}",
-            body=(f"A governed execution paused for human approval.\n"
-                  f"Skill: {skill.get('skill_id', 'unknown')}\n"
-                  f"Department: {skill.get('department', 'general')}\n"
-                  f"Execution: {exec_id}\n"
-                  f"{link_lines}"
-                  f"Or review it in KAEOS under My Work."),
-            data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
-                  **({"approval_links": links} if links else {})},
-        )
+        from app.core.config import get_settings
+        from app.api.routes.approvals import approval_links
+        base = get_settings().PUBLIC_BASE_URL or "http://localhost:8001"
+        subject = f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}"
+
+        def _body(links: Dict[str, Any]) -> str:
+            lines = (f"\nApprove: {links['approve']}\nReject:  {links['reject']}\n"
+                     if links else "")
+            return (f"A governed execution paused for human approval.\n"
+                    f"Skill: {skill.get('skill_id', 'unknown')}\n"
+                    f"Department: {skill.get('department', 'general')}\n"
+                    f"Execution: {exec_id}\n"
+                    f"{lines}"
+                    f"Or review it in KAEOS under My Work.")
+
+        def _mint(recipient: str | None) -> Dict[str, Any]:
+            # One-click decide links (signed, single-purpose, 7-day TTL) so an
+            # approver in email/Slack never has to log in. `recipient` becomes
+            # the token subject: a real, attributable identity that satisfies
+            # SOX four-eyes. None falls back to the non-attributable
+            # 'email-approver' subject, which check_sox BLOCKS for financial
+            # writes (fail-closed) - an anonymous link can never clear SoD.
+            try:
+                return approval_links(exec_id, tenant_id, base, recipient=recipient)
+            except Exception:
+                logger.warning("HITL approval-link build failed for exec %s",
+                               exec_id, exc_info=True)
+                return {}
+
+        # Mint one link set PER real recipient under their own identity, and
+        # deliver it to them - so the emailed link a specific human clicks is
+        # attributable to that human, not a shared constant.
+        recipients = await self._resolve_notification_recipients(tenant_id)
+        if recipients:
+            # ponytail: slack/webhook channels (which have no single human
+            # identity) receive one copy per recipient. Acceptable - governance
+            # alerts are at-least-once; upgrade path is per-recipient link
+            # minting inside notifier.notify()'s channel fan-out.
+            for addr in recipients:
+                links = _mint(addr)
+                notify_fire_and_forget(
+                    tenant_id, "hitl.pending", subject=subject, body=_body(links),
+                    data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
+                          **({"approval_links": links} if links else {})},
+                    to_override=[addr],
+                )
+        else:
+            # No resolvable recipient identity: single notification with a
+            # fail-closed, non-attributable link set.
+            links = _mint(None)
+            notify_fire_and_forget(
+                tenant_id, "hitl.pending", subject=subject, body=_body(links),
+                data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
+                      **({"approval_links": links} if links else {})},
+            )
 
         # Return immediately with execution_id so caller can poll or subscribe for updates
         return {
@@ -204,6 +235,54 @@ class HITLManager:
             "execution_id": exec_id,
             "reason": "Awaiting human approval",
         }
+
+    async def _resolve_notification_recipients(self, tenant_id: str) -> list[str]:
+        """The real email identities the hitl.pending one-click links reach.
+
+        Reads the tenant's enabled SMTP notification channels subscribed to
+        hitl.pending and returns their to_addrs, de-duplicated in order. Each
+        becomes the token subject of that recipient's approval link, so a click
+        is attributable to a real human (SOX four-eyes). SMTP is the only
+        channel kind with an individual human address; Slack/webhook are group
+        targets with no single principal, so they are deliberately excluded.
+
+        Never raises: on any error returns [] and the caller falls back to a
+        single non-attributable, fail-closed link set.
+        """
+        try:
+            from sqlalchemy import select
+            from app.models.notifications import NotificationChannel
+            from app.services.live_connectors import decrypt_secrets
+            async with AsyncSessionLocal() as db:
+                channels = (await db.execute(
+                    select(NotificationChannel).where(
+                        NotificationChannel.tenant_id == tenant_id,
+                        NotificationChannel.kind == "smtp",
+                        NotificationChannel.enabled.is_(True),
+                    )
+                )).scalars().all()
+            addrs: list[str] = []
+            seen: set[str] = set()
+            for ch in channels:
+                events = ch.events or []
+                if events and "hitl.pending" not in events:
+                    continue
+                try:
+                    cfg = decrypt_secrets(ch.config_encrypted)
+                except Exception:
+                    continue
+                to = cfg.get("to_addrs") or []
+                if isinstance(to, str):
+                    to = [to]
+                for a in to:
+                    if a and a not in seen:
+                        seen.add(a)
+                        addrs.append(a)
+            return addrs
+        except Exception:
+            logger.warning("[HITL] recipient resolution failed for %s",
+                           tenant_id, exc_info=True)
+            return []
 
     async def _get_record(self, execution_id: str) -> Dict[str, Any] | None:
         """Fetch a HITL record from Redis, falling back to the memory store."""

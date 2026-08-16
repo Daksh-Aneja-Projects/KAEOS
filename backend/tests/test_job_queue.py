@@ -145,3 +145,42 @@ async def test_reaper_fails_stuck_job_when_attempts_exhausted():
     assert job_id in recovered
     job = await _get(job_id)
     assert job.status == "FAILED"          # no attempts left -> surfaced as failed
+
+
+async def test_list_jobs_and_requeue_failed_revives_terminal_job():
+    # A durable job that exhausted retries is FAILED and, before this fix, invisible.
+    async def boom(payload):
+        raise RuntimeError("dead")
+    job_queue.register_handler("t_dead", boom)
+    job_id = await _enqueue("t_dead", {"n": 1}, max_attempts=1)
+    await job_queue.process_jobs()
+    assert (await _get(job_id)).status == "FAILED"
+
+    # list_jobs surfaces it (both unfiltered and filtered by status).
+    ids = [j.id for j in await job_queue.list_jobs()]
+    assert job_id in ids
+    failed_ids = [j.id for j in await job_queue.list_jobs(status="FAILED")]
+    assert job_id in failed_ids
+
+    # requeue_failed flips FAILED -> QUEUED with attempts reset and lock cleared.
+    assert await job_queue.requeue_failed(job_id) is True
+    job = await _get(job_id)
+    assert job.status == "QUEUED"
+    assert job.attempts == 0
+    assert job.locked_by is None
+
+    # It is no longer FAILED, so a second requeue is a no-op (guard holds).
+    assert await job_queue.requeue_failed(job_id) is False
+
+
+async def test_tracked_records_error_for_throwing_coro():
+    from app.services import scheduler
+
+    async def _boom():
+        raise RuntimeError("nope")
+
+    await scheduler._tracked("t_boom_wrap", _boom)
+    entry = scheduler._LAST_RUN["t_boom_wrap"]
+    assert entry["ok"] is False
+    assert "nope" in entry["error"]
+    assert entry["at"]

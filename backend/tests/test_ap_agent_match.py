@@ -87,6 +87,31 @@ async def test_llm_cannot_fake_a_match(db, monkeypatch):
     assert po_id in (rows[0].evidence_ids or [])
 
 
+async def test_real_gate_blocks_humanless_approval(db):
+    """No gate stub: the SOX four-eyes gate blocks the humanless financial action
+    at compliance (BLOCKED_COMPLIANCE), so the agent never reaches an auto-approve
+    path - proof the removed auto-approve+accrual branch is unreachable dead code.
+    Even a clean MATCHED invoice lands DISPUTED, is never APPROVED, and no accrual
+    journal entry is posted off-books."""
+    from app.finance.models.core import JournalEntry
+
+    tenant = _t()
+    invoice_id, _ = await _chain(db, tenant, inv_price="3545.00")  # MATCHED
+
+    result = await APAgent().process_invoice(db, invoice_id, tenant)
+    assert result.get("status") == "BLOCKED_COMPLIANCE"
+
+    db.expire_all()
+    inv = (await db.execute(select(Invoice).where(Invoice.id == invoice_id))).scalar_one()
+    assert inv.status == InvoiceStatus.DISPUTED
+    assert inv.status != InvoiceStatus.APPROVED
+    assert inv.approved_by is None
+    # The dead branch's off-books accrual side effect is gone: nothing posted.
+    jes = (await db.execute(select(JournalEntry).where(
+        JournalEntry.tenant_id == tenant))).scalars().all()
+    assert jes == []
+
+
 async def test_clean_invoice_matches(db, monkeypatch):
     tenant = _t()
     invoice_id, _ = await _chain(db, tenant, inv_price="3545.00")  # exact

@@ -19,7 +19,13 @@ COVERAGE (read honestly before relying on this):
     the blob layer (``app/core/polystore/blob_store`` — local FS + best-effort
     S3/GCS), and the vector store (subject embeddings). Backups are covered
     indirectly via the deletion journal + ``replay_deletions``, not by reaching
-    into the backup files.
+    into the backup files. The journal is written to TWO sinks: the DB table AND a
+    DR-safe external file (``deletion_sink``) that survives a restore which wipes
+    the DB table — replay it with ``replay_deletions_from_external``.
+  * Erasure reaches CUSTOMER-authored support ticket content (description/comment
+    body), procurement person fields (requested_by / receiver_name / vendor_name)
+    and legal contract counterparty, in addition to the HR/sales/finance/
+    healthcare/lending identifiers.
   * Provenance/foundry/ledger records retain HASHED references (not raw PII) by
     design so the append-only integrity trail stays verifiable; those hashes are
     not reversed. Free-text prose elsewhere that may mention a name is out of scope.
@@ -32,6 +38,8 @@ from typing import Optional
 
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services import deletion_sink
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +75,30 @@ async def _record_deletion(
     *, employee_id: Optional[str] = None, email: Optional[str] = None,
 ) -> None:
     """Append a deletion-journal entry (for backup-restore replay). Best-effort:
-    a journaling failure must never abort the erasure that already committed."""
+    a journaling failure must never abort the erasure that already committed.
+
+    Written to TWO places: the DB table (fast, tenant-scoped replay) AND a DR-safe
+    EXTERNAL file sink that survives a restore which wipes the DB table (see
+    ``deletion_sink`` / ``replay_deletions_from_external``)."""
+    from datetime import datetime, timezone
+    email_hash = _email_hash(email)
+
+    # External sink FIRST: it is the record that survives a DB restore, so it must
+    # not depend on the DB commit below succeeding. Already self-guarded (no raise).
+    deletion_sink.append({
+        "operation": operation,
+        "tenant_id": tenant_id,
+        "employee_id": employee_id,
+        "email_hash": email_hash,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    })
+
     try:
         from app.models.settings import DeletionJournal
         db.add(DeletionJournal(
             tenant_id=tenant_id, operation=operation,
             subject_employee_id=employee_id,
-            subject_email_hash=_email_hash(email),
+            subject_email_hash=email_hash,
         ))
         await db.commit()
     except Exception as exc:  # pragma: no cover - defensive
@@ -195,6 +220,60 @@ async def erase_subject(
     # hash of the email, so re-runs stay idempotent but distinct subjects differ.
     tomb_email = _TOMBSTONE_EMAIL_FMT.format(
         employee_id or (_email_hash(email)[:16] if email else "subject"))
+
+    # Collected UP FRONT — before the tombstones below overwrite the matching keys:
+    #  - subject_names: the subject's human name(s), to reach free-text PERSON fields
+    #    that carry a NAME rather than an id/email (procurement receiver, legal
+    #    counterparty). No id/email key exists on those columns.
+    #  - customer_ids / vendor_ids: the subject's finance-master ids, to reach rows
+    #    keyed by those ids (support tickets by fin_customers.id, purchase orders by
+    #    fin_vendors.id) AFTER the email key on the master has been tombstoned.
+    subject_names: set[str] = set()
+    customer_ids: list[str] = []
+    vendor_ids: list[str] = []
+
+    def _add_name(*parts) -> None:
+        full = " ".join(p.strip() for p in parts if p and p.strip())
+        if full:
+            subject_names.add(full)
+
+    for _tn, _idc, _emailcs in (
+        ("hr_employees", "id", ("email", "personal_email")),
+        ("hr_candidates", "id", ("email",)),
+    ):
+        _t = tables.get(_tn)
+        if _t is None or not {"first_name", "last_name"} <= set(_t.c.keys()):
+            continue
+        _conds = []
+        if employee_id and _idc in _t.c:
+            _conds.append(_t.c[_idc] == employee_id)
+        for _ec in _emailcs:
+            if email and _ec in _t.c:
+                _conds.append(_t.c[_ec] == email)
+        if not _conds:
+            continue
+        for _fn, _ln in (await db.execute(
+            select(_t.c.first_name, _t.c.last_name)
+            .where(_t.c.tenant_id == tenant_id).where(or_(*_conds))
+        )).all():
+            _add_name(_fn, _ln)
+
+    if email:
+        for _tn, _bucket in (("fin_customers", customer_ids), ("fin_vendors", vendor_ids)):
+            _t = tables.get(_tn)
+            if _t is None or "email" not in _t.c or "tenant_id" not in _t.c:
+                continue
+            _cols = [_t.c.id]
+            if "name" in _t.c:
+                _cols.append(_t.c.name)
+            if "primary_contact" in _t.c:
+                _cols.append(_t.c.primary_contact)
+            for _row in (await db.execute(
+                select(*_cols).where(_t.c.tenant_id == tenant_id).where(_t.c.email == email)
+            )).all():
+                _bucket.append(_row[0])
+                for _v in _row[1:]:
+                    _add_name(_v)
 
     # ── hr_employees ──────────────────────────────────────────────────────
     emp = tables.get("hr_employees")
@@ -438,6 +517,83 @@ async def erase_subject(
             if res.rowcount:
                 affected["leg_data_subject_requests"] = int(res.rowcount)
 
+    # ── Support: CUSTOMER-authored ticket content (free-text; can carry PANs/SSNs)
+    # Keyed via the subject's customer master id (fin_customers.id -> customer_id),
+    # NOT email. description/body are NOT NULL, so tombstoned rather than nulled.
+    if customer_ids:
+        tkt = tables.get("sup_tickets")
+        ticket_ids: list[str] = []
+        if tkt is not None and "customer_id" in tkt.c and "description" in tkt.c:
+            ticket_ids = list((await db.execute(
+                select(tkt.c.id).where(tkt.c.tenant_id == tenant_id)
+                .where(tkt.c.customer_id.in_(customer_ids))
+            )).scalars().all())
+            if ticket_ids:
+                res = await db.execute(_skip_held(
+                    update(tkt).where(tkt.c.tenant_id == tenant_id)
+                    .where(tkt.c.customer_id.in_(customer_ids))
+                    .values(description=_TOMBSTONE), tkt
+                ))
+                affected["sup_tickets"] = int(res.rowcount or 0)
+        cmt = tables.get("sup_ticket_comments")
+        if cmt is not None and ticket_ids and {"ticket_id", "body"} <= set(cmt.c.keys()):
+            stmt = (update(cmt).where(cmt.c.tenant_id == tenant_id)
+                    .where(cmt.c.ticket_id.in_(ticket_ids)))
+            # Only the CUSTOMER's own words are the subject's PII; agent/system
+            # comments belong to other people and stay.
+            if "author_type" in cmt.c:
+                stmt = stmt.where(cmt.c.author_type == "CUSTOMER")
+            res = await db.execute(_skip_held(stmt.values(body=_TOMBSTONE), cmt))
+            if res.rowcount:
+                affected["sup_ticket_comments"] = int(res.rowcount)
+
+    # ── Procurement + Legal: free-text PERSON/party fields ─────────────────
+    # vendor_name is reachable via the subject's vendor master id (reliable FK).
+    if vendor_ids:
+        po = tables.get("ops_purchase_orders")
+        if po is not None and {"vendor_id", "vendor_name"} <= set(po.c.keys()):
+            res = await db.execute(_skip_held(
+                update(po).where(po.c.tenant_id == tenant_id)
+                .where(po.c.vendor_id.in_(vendor_ids)).values(vendor_name=_TOMBSTONE), po
+            ))
+            if res.rowcount:
+                affected["ops_purchase_orders"] = int(res.rowcount)
+
+    # requested_by holds an employee id OR a name; receiver_name / counterparty hold
+    # a name only. No id/email key exists on these columns, so they are matched
+    # against the subject's collected identity (id + name(s)), tenant-scoped.
+    # ponytail: exact tenant-scoped name match is the floor — it can over-erase a
+    # namesake or miss a spelling variant. A real party-master FK on these columns
+    # is the correct upgrade; add it when procurement/legal grow one.
+    pr_match = list(subject_names) + ([employee_id] if employee_id else [])
+    if pr_match:
+        pr = tables.get("ops_purchase_requests")
+        if pr is not None and "requested_by" in pr.c:
+            res = await db.execute(_skip_held(
+                update(pr).where(pr.c.tenant_id == tenant_id)
+                .where(pr.c.requested_by.in_(pr_match)).values(requested_by=_TOMBSTONE), pr
+            ))
+            if res.rowcount:
+                affected["ops_purchase_requests"] = int(res.rowcount)
+    if subject_names:
+        names = list(subject_names)
+        gr = tables.get("ops_goods_receipts")
+        if gr is not None and "receiver_name" in gr.c:
+            res = await db.execute(_skip_held(
+                update(gr).where(gr.c.tenant_id == tenant_id)
+                .where(gr.c.receiver_name.in_(names)).values(receiver_name=_TOMBSTONE), gr
+            ))
+            if res.rowcount:
+                affected["ops_goods_receipts"] = int(res.rowcount)
+        lc = tables.get("leg_contracts")
+        if lc is not None and "counterparty" in lc.c:
+            res = await db.execute(_skip_held(
+                update(lc).where(lc.c.tenant_id == tenant_id)
+                .where(lc.c.counterparty.in_(names)).values(counterparty=_TOMBSTONE), lc
+            ))
+            if res.rowcount:
+                affected["leg_contracts"] = int(res.rowcount)
+
     await db.commit()
 
     # ── Blob layer: delete the actual stored files ────────────────────────
@@ -479,9 +635,11 @@ async def erase_subject(
         "embeddings_deleted": embeddings_deleted,
         "note": (
             "Direct identifiers tombstoned across the HR, sales, finance, support, "
-            "engineering, operations, legal, healthcare and lending tables; stored "
-            "files deleted from the blob layer; subject embeddings purged from the "
-            "vector store; rows under legal hold preserved; erasure journaled for "
+            "engineering, operations, legal, healthcare and lending tables; customer "
+            "support ticket content, procurement person fields and legal contract "
+            "counterparty anonymised; stored files deleted from the blob layer; "
+            "subject embeddings purged from the vector store; rows under legal hold "
+            "preserved; erasure journaled to the DB and a DR-safe external sink for "
             "backup-restore replay. Hash-chained ledger references are retained by design."
         ),
     }
@@ -528,6 +686,59 @@ async def replay_deletions(db: AsyncSession, tenant_id: Optional[str] = None) ->
     return {"entries": len(entries), "replayed": replayed}
 
 
+async def replay_deletions_from_external(
+    db: AsyncSession, tenant_id: Optional[str] = None
+) -> dict:
+    """Replay erasures from the DR-safe EXTERNAL sink after a restore wiped the DB
+    journal table.
+
+    The DB-backed journal lives in the same database a restore wipes, so
+    ``replay_deletions`` alone cannot see erasures that predate the backup. The
+    external file sink survives the restore; this re-applies each of its entries
+    that is NOT already present as a live DB journal row. Erasure is idempotent, so
+    replaying an entry that the restore happened to keep is harmless.
+    """
+    from app.models.settings import DeletionJournal
+    import app.core.database  # noqa: F401
+
+    external = deletion_sink.read_all()
+
+    # Keys the DB journal still knows (survived the restore or were re-created since).
+    q = select(
+        DeletionJournal.tenant_id, DeletionJournal.operation,
+        DeletionJournal.subject_employee_id, DeletionJournal.subject_email_hash,
+    )
+    if tenant_id:
+        q = q.where(DeletionJournal.tenant_id == tenant_id)
+    known = {tuple(r) for r in (await db.execute(q)).all()}
+
+    seen = replayed = 0
+    for e in external:
+        etid = e.get("tenant_id")
+        if tenant_id and etid != tenant_id:
+            continue
+        seen += 1
+        key = (etid, e.get("operation"), e.get("employee_id"), e.get("email_hash"))
+        if key in known:
+            continue  # already reflected in the DB after restore — nothing to do
+        try:
+            op = e.get("operation")
+            if op == "PURGE_TENANT":
+                await purge_tenant(db, etid)
+            elif e.get("employee_id"):
+                await erase_subject(db, etid, employee_id=e["employee_id"], _journal=False)
+            elif e.get("email_hash"):
+                email = await _find_email_by_hash(db, etid, e["email_hash"])
+                if email:
+                    await erase_subject(db, etid, email=email, _journal=False)
+            replayed += 1
+        except Exception as exc:  # one bad entry must not abort the replay
+            logger.warning("[PrivacyErasure] external-sink replay failed for %s: %s", key, exc)
+    logger.info(
+        "[PrivacyErasure] external-sink replay: %d/%d entries re-applied", replayed, seen)
+    return {"external_entries": seen, "replayed": replayed}
+
+
 async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str) -> Optional[str]:
     """Locate a live email whose SHA-256 matches, without storing raw email."""
     from app.models.domain import Base
@@ -565,8 +776,13 @@ if __name__ == "__main__":  # tiny schema self-check for the erasure targets.
         "hlth_encounters": ("patient_ref", "reason"),
         "hlth_phi_disclosures": ("encounter_id", "minimum_necessary_justification", "recipient"),
         "hlth_consent_records": ("patient_ref",),
-        "leg_contracts": ("document_path",),
+        "leg_contracts": ("document_path", "counterparty"),
         "leg_court_filings": ("document_path",),
+        "sup_tickets": ("customer_id", "description"),
+        "sup_ticket_comments": ("ticket_id", "body", "author_type"),
+        "ops_purchase_requests": ("requested_by",),
+        "ops_goods_receipts": ("receiver_name",),
+        "ops_purchase_orders": ("vendor_id", "vendor_name"),
         "sls_reps": ("email", "name"),
         "sup_agents": ("email", "name"),
         "eng_engineers": ("email", "name", "github_handle"),
