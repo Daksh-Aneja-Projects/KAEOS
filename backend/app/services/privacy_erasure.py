@@ -6,9 +6,11 @@ Operations, deliberately separated by blast radius:
   belongs to a tenant, across every tenant-scoped table, AND delete the blobs
   those rows referenced. Irreversible.
 - ``erase_subject`` — Art.17 right-to-erasure for a single data subject: replace
-  direct identifiers (name/email/phone) with a tombstone, null free-text PII on
-  the main HR tables, delete the subject's stored files (resume/documents) from
-  the blob layer, and purge the subject's vector embeddings.
+  direct identifiers (name/email/phone) with a tombstone, null free-text PII
+  across the HR, sales, finance, support, engineering, operations, legal,
+  healthcare and lending tables, delete the subject's stored files
+  (resume/documents/receipts/evidence) from the blob layer, and purge the
+  subject's vector embeddings. Rows under legal/litigation hold are preserved.
 - ``replay_deletions`` — after restoring a backup (which predates an erasure),
   re-apply every recorded erasure so the backup cannot resurrect deleted PII.
 
@@ -44,6 +46,20 @@ def _email_hash(email: Optional[str]) -> Optional[str]:
     if not email:
         return None
     return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+
+
+def _skip_held(stmt, table):
+    """Exclude legal-hold rows from a destructive statement, when the table has
+    the column. Legal/litigation hold OVERRIDES the right-to-erasure and tenant
+    purge: held rows must survive (preservation beats Art.17). Fails CLOSED via
+    ``IS NOT TRUE`` so NULL is treated as not-held and only True is skipped.
+
+    Defensive: a no-op until an ``on_legal_hold`` boolean (default False) is added
+    to the erasable tables (FLAGGED for the integrator).
+    """
+    if "on_legal_hold" in table.c:
+        return stmt.where(table.c.on_legal_hold.isnot(True))
+    return stmt
 
 
 async def _record_deletion(
@@ -86,7 +102,7 @@ async def purge_tenant(db: AsyncSession, tenant_id: str) -> dict:
         if "tenant_id" not in table.c:
             continue
         result = await db.execute(
-            delete(table).where(table.c.tenant_id == tenant_id)
+            _skip_held(delete(table).where(table.c.tenant_id == tenant_id), table)
         )
         deleted[table.name] = int(result.rowcount or 0)
 
@@ -115,14 +131,30 @@ async def _collect_tenant_blob_paths(db: AsyncSession, tenant_id: str) -> list[s
 
     tables = Base.metadata.tables
     paths: list[str] = []
-    for tname, col in (("hr_candidates", "resume_path"), ("hr_employee_documents", "file_path")):
+    for tname, col in (
+        ("hr_candidates", "resume_path"),
+        ("hr_employee_documents", "file_path"),
+        ("leg_contracts", "document_path"),
+        ("leg_court_filings", "document_path"),
+        ("leg_data_subject_requests", "evidence_path"),
+        ("fin_invoices", "attachment_paths"),   # JSON list of scanned-invoice URIs
+        ("fin_expense_items", "receipt_path"),
+        ("fin_control_tests", "evidence_path"),
+        ("fin_reports", "export_path"),
+    ):
         t = tables.get(tname)
         if t is None or col not in t.c or "tenant_id" not in t.c:
             continue
-        rows = (await db.execute(
-            select(t.c[col]).where(t.c.tenant_id == tenant_id)
-        )).scalars().all()
-        paths.extend(p for p in rows if p)
+        rows = (await db.execute(_skip_held(
+            select(t.c[col]).where(t.c.tenant_id == tenant_id), t
+        ))).scalars().all()
+        for v in rows:
+            if not v:
+                continue
+            if isinstance(v, (list, tuple)):    # JSON-list columns (attachment_paths)
+                paths.extend(p for p in v if p)
+            else:
+                paths.append(v)
     return paths
 
 
@@ -138,7 +170,8 @@ async def erase_subject(
     """Irreversibly anonymise a single data subject across DB, blobs and vectors.
 
     Matches on employee/candidate id, email, and/or external subject ref (the
-    lending applicant/borrower id) - at least one required. For every matching
+    lending applicant/borrower id or the healthcare patient ref) - at least one
+    required. For every matching
     row, overwrites direct identifiers with a tombstone, nulls free-text PII,
     DELETES the subject's stored files, and purges the subject's vector
     embeddings. Rows are kept (not deleted) so FK-linked history stays consistent
@@ -156,7 +189,12 @@ async def erase_subject(
     tables = Base.metadata.tables
     affected: dict[str, int] = {}
     blob_paths: list[str] = []
-    tomb_email = _TOMBSTONE_EMAIL_FMT.format(employee_id or "subject")
+    # Per-subject unique tombstone: some target tables have UNIQUE(tenant_id, email)
+    # (sup_agents, ops_team_members, sls_reps). A shared literal would collide when a
+    # second subject in the same tenant is erased. Key on employee_id, else a stable
+    # hash of the email, so re-runs stay idempotent but distinct subjects differ.
+    tomb_email = _TOMBSTONE_EMAIL_FMT.format(
+        employee_id or (_email_hash(email)[:16] if email else "subject"))
 
     # ── hr_employees ──────────────────────────────────────────────────────
     emp = tables.get("hr_employees")
@@ -184,9 +222,9 @@ async def erase_subject(
                 values["communication_preferences"] = {}
             if "accessibility_needs" in emp.c:
                 values["accessibility_needs"] = {}
-            res = await db.execute(
-                update(emp).where(emp.c.tenant_id == tenant_id).where(or_(*conds)).values(**values)
-            )
+            res = await db.execute(_skip_held(
+                update(emp).where(emp.c.tenant_id == tenant_id).where(or_(*conds)).values(**values), emp
+            ))
             affected["hr_employees"] = int(res.rowcount or 0)
 
     # ── hr_candidates (collect resume blob BEFORE nulling the pointer) ─────
@@ -199,9 +237,9 @@ async def erase_subject(
             conds.append(cand.c.email == email)
         if conds:
             if "resume_path" in cand.c:
-                paths = (await db.execute(
-                    select(cand.c.resume_path).where(cand.c.tenant_id == tenant_id).where(or_(*conds))
-                )).scalars().all()
+                paths = (await db.execute(_skip_held(
+                    select(cand.c.resume_path).where(cand.c.tenant_id == tenant_id).where(or_(*conds)), cand
+                ))).scalars().all()
                 blob_paths.extend(p for p in paths if p)
             values = {}
             if "first_name" in cand.c:
@@ -220,19 +258,19 @@ async def erase_subject(
                 values["ai_red_flags"] = []
             if "eeoc_data" in cand.c:
                 values["eeoc_data"] = None
-            res = await db.execute(
-                update(cand).where(cand.c.tenant_id == tenant_id).where(or_(*conds)).values(**values)
-            )
+            res = await db.execute(_skip_held(
+                update(cand).where(cand.c.tenant_id == tenant_id).where(or_(*conds)).values(**values), cand
+            ))
             affected["hr_candidates"] = int(res.rowcount or 0)
 
     # ── hr_employee_documents (collect file blob BEFORE tombstoning) ──────
     docs = tables.get("hr_employee_documents")
     if docs is not None and employee_id and "employee_id" in docs.c:
         if "file_path" in docs.c:
-            paths = (await db.execute(
+            paths = (await db.execute(_skip_held(
                 select(docs.c.file_path).where(docs.c.tenant_id == tenant_id)
-                .where(docs.c.employee_id == employee_id)
-            )).scalars().all()
+                .where(docs.c.employee_id == employee_id), docs
+            ))).scalars().all()
             blob_paths.extend(p for p in paths if p)
         values = {}
         if "file_path" in docs.c:
@@ -240,10 +278,10 @@ async def erase_subject(
         if "title" in docs.c:
             values["title"] = _TOMBSTONE
         if values:
-            res = await db.execute(
+            res = await db.execute(_skip_held(
                 update(docs).where(docs.c.tenant_id == tenant_id)
-                .where(docs.c.employee_id == employee_id).values(**values)
-            )
+                .where(docs.c.employee_id == employee_id).values(**values), docs
+            ))
             affected["hr_employee_documents"] = int(res.rowcount or 0)
 
     # ── Lending vertical: applicant/borrower direct identifiers ───────────
@@ -264,10 +302,10 @@ async def erase_subject(
             if "applicant_ref" in apps.c:
                 values["applicant_ref"] = None
             if app_ids and values:
-                res = await db.execute(
+                res = await db.execute(_skip_held(
                     update(apps).where(apps.c.tenant_id == tenant_id)
-                    .where(apps.c.applicant_ref == ref).values(**values)
-                )
+                    .where(apps.c.applicant_ref == ref).values(**values), apps
+                ))
                 affected["lnd_loan_applications"] = int(res.rowcount or 0)
 
         # Serviced loans link to the application; cascade the borrower name.
@@ -279,23 +317,126 @@ async def erase_subject(
                 .where(loans.c.application_id.in_(app_ids))
             )).scalars().all())
             if "borrower_name" in loans.c and loan_ids:
-                res = await db.execute(
+                res = await db.execute(_skip_held(
                     update(loans).where(loans.c.tenant_id == tenant_id)
                     .where(loans.c.application_id.in_(app_ids))
-                    .values(borrower_name=_TOMBSTONE)
-                )
+                    .values(borrower_name=_TOMBSTONE), loans
+                ))
                 affected["lnd_serviced_loans"] = int(res.rowcount or 0)
 
         # Collection cases carry a free-text contact log (phone/notes); clear it.
         cases = tables.get("lnd_collection_cases")
         if cases is not None and loan_ids and "serviced_loan_id" in cases.c \
                 and "contact_log" in cases.c:
-            res = await db.execute(
+            res = await db.execute(_skip_held(
                 update(cases).where(cases.c.tenant_id == tenant_id)
                 .where(cases.c.serviced_loan_id.in_(loan_ids))
-                .values(contact_log=[])
-            )
+                .values(contact_log=[]), cases
+            ))
             affected["lnd_collection_cases"] = int(res.rowcount or 0)
+
+        # ── Healthcare: patient PHI keyed on the pseudonymous patient_ref ──────
+        # patient_ref is NOT NULL on encounters/consents, so it is tombstoned
+        # (not nulled). Disclosures link only by encounter_id, so they are matched
+        # through this patient's encounters (collected before the tombstone lands).
+        enc = tables.get("hlth_encounters")
+        enc_ids: list[str] = []
+        if enc is not None and "patient_ref" in enc.c:
+            enc_ids = list((await db.execute(
+                select(enc.c.id).where(enc.c.tenant_id == tenant_id)
+                .where(enc.c.patient_ref == ref)
+            )).scalars().all())
+            if enc_ids:
+                values = {"patient_ref": _TOMBSTONE}
+                if "reason" in enc.c:
+                    values["reason"] = None
+                res = await db.execute(_skip_held(
+                    update(enc).where(enc.c.tenant_id == tenant_id)
+                    .where(enc.c.patient_ref == ref).values(**values), enc
+                ))
+                affected["hlth_encounters"] = int(res.rowcount or 0)
+
+        consent = tables.get("hlth_consent_records")
+        if consent is not None and "patient_ref" in consent.c:
+            res = await db.execute(_skip_held(
+                update(consent).where(consent.c.tenant_id == tenant_id)
+                .where(consent.c.patient_ref == ref).values(patient_ref=_TOMBSTONE), consent
+            ))
+            if res.rowcount:
+                affected["hlth_consent_records"] = int(res.rowcount)
+
+        disc = tables.get("hlth_phi_disclosures")
+        if disc is not None and enc_ids and "encounter_id" in disc.c:
+            values = {}
+            if "minimum_necessary_justification" in disc.c:
+                values["minimum_necessary_justification"] = _TOMBSTONE
+            if "recipient" in disc.c:
+                values["recipient"] = _TOMBSTONE
+            if values:
+                res = await db.execute(_skip_held(
+                    update(disc).where(disc.c.tenant_id == tenant_id)
+                    .where(disc.c.encounter_id.in_(enc_ids)).values(**values), disc
+                ))
+                affected["hlth_phi_disclosures"] = int(res.rowcount or 0)
+
+    # ── Sales, Finance, Support, Engineering, Operations: person rosters &
+    #    external-person direct identifiers (email-matched) ─────────────────────
+    # Sales contacts/leads, finance vendor/customer masters, and the support-agent /
+    # engineer / ops-team-member rosters all hold a person's direct identifiers
+    # keyed by their email. Same tombstone contract as the HR tables.
+    if email:
+        # (table, name-cols -> tombstone, cols -> null); each applied only if present.
+        for tname, name_cols, null_cols in (
+            ("sls_contacts", ("first_name", "last_name"), ("phone",)),
+            ("sls_leads", ("contact_name",), ("phone",)),
+            ("fin_vendors", (),
+             ("phone", "tax_id", "bank_routing_number", "bank_account_number", "primary_contact")),
+            ("fin_customers", (), ("phone", "tax_id", "primary_contact")),
+            ("sls_reps", ("name",), ()),
+            ("sup_agents", ("name",), ()),
+            ("eng_engineers", ("name",), ("github_handle",)),
+            ("ops_team_members", ("name",), ()),
+        ):
+            t = tables.get(tname)
+            if t is None or "email" not in t.c or "tenant_id" not in t.c:
+                continue
+            values: dict = {"email": tomb_email}
+            for c in name_cols:
+                if c in t.c:
+                    values[c] = _TOMBSTONE
+            for c in null_cols:
+                if c in t.c:
+                    values[c] = None
+            res = await db.execute(_skip_held(
+                update(t).where(t.c.tenant_id == tenant_id).where(t.c.email == email).values(**values), t
+            ))
+            if res.rowcount:
+                affected[tname] = int(res.rowcount)
+
+        # ── Legal DSAR register: the request record's OWN requestor identity ──────
+        # A DSAR row stores the requestor's name/email plus any uploaded evidence
+        # file. Anonymise the subject's own request (matched on requestor_email) and
+        # collect its evidence blob for deletion. Distinct email column, so handled
+        # outside the loop above.
+        dsar = tables.get("leg_data_subject_requests")
+        if dsar is not None and "requestor_email" in dsar.c and "tenant_id" in dsar.c:
+            if "evidence_path" in dsar.c:
+                ev = (await db.execute(_skip_held(
+                    select(dsar.c.evidence_path).where(dsar.c.tenant_id == tenant_id)
+                    .where(dsar.c.requestor_email == email), dsar
+                ))).scalars().all()
+                blob_paths.extend(p for p in ev if p)
+            values = {"requestor_email": tomb_email}
+            if "requestor_name" in dsar.c:
+                values["requestor_name"] = _TOMBSTONE
+            if "evidence_path" in dsar.c:
+                values["evidence_path"] = None
+            res = await db.execute(_skip_held(
+                update(dsar).where(dsar.c.tenant_id == tenant_id)
+                .where(dsar.c.requestor_email == email).values(**values), dsar
+            ))
+            if res.rowcount:
+                affected["leg_data_subject_requests"] = int(res.rowcount)
 
     await db.commit()
 
@@ -337,10 +478,11 @@ async def erase_subject(
         "blobs_attempted": blobs["attempted"],
         "embeddings_deleted": embeddings_deleted,
         "note": (
-            "Direct identifiers tombstoned on the HR tables; stored files deleted "
-            "from the blob layer; subject embeddings purged from the vector store; "
-            "erasure journaled for backup-restore replay. Hash-chained ledger "
-            "references are retained by design."
+            "Direct identifiers tombstoned across the HR, sales, finance, support, "
+            "engineering, operations, legal, healthcare and lending tables; stored "
+            "files deleted from the blob layer; subject embeddings purged from the "
+            "vector store; rows under legal hold preserved; erasure journaled for "
+            "backup-restore replay. Hash-chained ledger references are retained by design."
         ),
     }
 
@@ -392,7 +534,9 @@ async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str)
     import app.core.database  # noqa: F401
 
     tables = Base.metadata.tables
-    for tname in ("hr_employees", "hr_candidates"):
+    for tname in ("hr_employees", "hr_candidates",
+                  "sls_contacts", "sls_leads", "sls_reps", "fin_vendors", "fin_customers",
+                  "sup_agents", "eng_engineers", "ops_team_members"):
         t = tables.get(tname)
         if t is None or "email" not in t.c or "tenant_id" not in t.c:
             continue
@@ -403,3 +547,53 @@ async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str)
             if e and _email_hash(e) == email_hash:
                 return e
     return None
+
+
+if __name__ == "__main__":  # tiny schema self-check for the erasure targets.
+    # The `if col in table.c` guards above fail OPEN: a renamed table/column
+    # silently stops erasing that PII. Assert the columns erasure relies on still
+    # exist, so a schema drift breaks loudly here instead of leaking quietly.
+    import app.core.database  # noqa: F401 — register every table
+    from app.models.domain import Base as _Base
+
+    _t = _Base.metadata.tables
+    _expected = {
+        "sls_contacts": ("email", "first_name", "last_name", "phone"),
+        "sls_leads": ("email", "contact_name", "phone"),
+        "fin_vendors": ("email", "tax_id", "bank_routing_number"),
+        "fin_customers": ("email", "tax_id"),
+        "hlth_encounters": ("patient_ref", "reason"),
+        "hlth_phi_disclosures": ("encounter_id", "minimum_necessary_justification", "recipient"),
+        "hlth_consent_records": ("patient_ref",),
+        "leg_contracts": ("document_path",),
+        "leg_court_filings": ("document_path",),
+        "sls_reps": ("email", "name"),
+        "sup_agents": ("email", "name"),
+        "eng_engineers": ("email", "name", "github_handle"),
+        "ops_team_members": ("email", "name"),
+        "leg_data_subject_requests": ("requestor_email", "requestor_name", "evidence_path"),
+        "fin_invoices": ("attachment_paths",),
+        "fin_expense_items": ("receipt_path",),
+        "fin_control_tests": ("evidence_path",),
+        "fin_reports": ("export_path",),
+    }
+    for _name, _cols in _expected.items():
+        assert _name in _t, f"erasure target table missing: {_name}"
+        for _c in _cols:
+            assert _c in _t[_name].c, f"{_name}.{_c} renamed; erasure now skips it"
+    print("privacy_erasure schema self-check OK")
+
+    # Legal-hold guard: the filter must be added only when the column exists, and
+    # must exclude held rows (fail-closed) while a plain table is left untouched.
+    from sqlalchemy import (
+        Table as _Tbl, Column as _Col, MetaData as _MD, String as _Str,
+        Boolean as _Bool, delete as _del,
+    )
+    _md = _MD()
+    _held = _Tbl("_t_held", _md, _Col("tenant_id", _Str), _Col("on_legal_hold", _Bool))
+    _plain = _Tbl("_t_plain", _md, _Col("tenant_id", _Str))
+    _s = _del(_held).where(_held.c.tenant_id == "x")
+    assert "on_legal_hold" in str(_skip_held(_s, _held)), "hold guard must exclude held rows"
+    _p = _del(_plain).where(_plain.c.tenant_id == "x")
+    assert _skip_held(_p, _plain) is _p, "hold guard must be a no-op without the column"
+    print("privacy_erasure legal-hold guard self-check OK")

@@ -69,7 +69,11 @@ _HIPAA_IDENTIFIER_TOKENS = {
     "geographic_subdivision": ("address", "street", "city", "county", "zip",
                                "postal", "precinct"),
     "dates": ("birth", "dob", "admission", "admit_date", "discharge",
-              "death_date", "date_of_"),
+              "death_date", "date_of_", "service_date", "dates_of_service",
+              # Safe Harbor removes ALL date elements finer than a year, so a
+              # general date/dates segment is an identifier - not just the
+              # enumerated ones above (service dates were slipping through).
+              "date", "dates"),
     "phone": ("phone", "telephone"),
     "fax": ("fax",),
     "email": ("email",),

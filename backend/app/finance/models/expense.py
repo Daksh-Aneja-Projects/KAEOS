@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -86,7 +87,7 @@ class ExpenseReport(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class ExpenseItem(Base):
+class ExpenseItem(Base, LegalHoldMixin):
     """Individual line item within an expense report."""
     __tablename__ = "fin_expense_items"
 

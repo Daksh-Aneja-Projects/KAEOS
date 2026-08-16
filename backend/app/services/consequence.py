@@ -17,6 +17,28 @@ from typing import Any
 
 from app.core.config import get_settings
 
+# Field-name tokens that mark an actuation payload as money-moving. Checked
+# against a finance/accounting UPDATE's payload keys so a wire/amount/balance
+# change forces a human even when the skill carries no matching tag.
+_MONEY_TOKENS = ("amount", "total", "balance", "payment", "wire", "transfer",
+                 "debit", "credit", "price", "cost", "value", "usd", "invoice",
+                 "payout", "disburse", "refund", "sum")
+
+
+def _moves_money(payload: Any) -> bool:
+    """Heuristic: does this finance actuation payload move money?
+
+    Checks field NAMES for monetary tokens. Fail-closed bias: an empty or opaque
+    payload on a finance write is treated as money-moving, so a missing or renamed
+    field can never buy autonomous execution of a financial mutation.
+    """
+    # ponytail: name-token heuristic; swap for a typed payload schema if actuation
+    # payloads ever carry declared field semantics.
+    if not isinstance(payload, dict) or not payload:
+        return True
+    keys = " ".join(str(k).lower() for k in payload.keys())
+    return any(tok in keys for tok in _MONEY_TOKENS)
+
 
 def is_high_consequence(skill: Any) -> bool:
     """True when this skill must always route to a human, regardless of
@@ -34,6 +56,22 @@ def is_high_consequence(skill: Any) -> bool:
     if bool(get("always_hitl", False)):
         return True
 
+    # 1b. Actuation intent: an irreversible/money-moving WRITE is high-consequence
+    # regardless of naming. Gate 5b performs the actual write, but the confidence
+    # gate (Gate 3) only forces HITL when THIS returns True - so a skill carrying a
+    # DELETE actuation (or a finance/accounting money-moving UPDATE) with no
+    # always_hitl flag and no matching tag would otherwise execute autonomously.
+    # Escalate-only, like the tag inference below.
+    actuation = get("actuation")
+    if isinstance(actuation, dict):
+        op = str(actuation.get("operation") or "").strip().upper()
+        if op == "DELETE":
+            return True
+        if op == "UPDATE":
+            dept = str(get("department") or "").lower()
+            if dept in ("finance", "accounting") and _moves_money(actuation.get("payload")):
+                return True
+
     # 2. Naming-convention inference: escalate-only fallback.
     parts = list(get("compliance_tags") or []) + list(get("tags") or [])
     for key in ("department", "skill_id"):
@@ -42,3 +80,25 @@ def is_high_consequence(skill: Any) -> bool:
             parts.append(str(val))
     blob = " ".join(str(x).lower() for x in parts)
     return any(t in blob for t in get_settings().HIGH_CONSEQUENCE_TAGS)
+
+
+if __name__ == "__main__":  # tiny self-check of the actuation-consequence branch
+    # A DELETE actuation forces HITL even with no flag/tag.
+    assert is_high_consequence({"actuation": {"operation": "DELETE"}})
+    # A finance money-moving UPDATE forces HITL.
+    assert is_high_consequence({"department": "finance", "actuation": {
+        "operation": "UPDATE", "payload": {"amount": 100}}})
+    # An opaque finance UPDATE is treated as money-moving (fail-closed).
+    assert is_high_consequence({"department": "finance", "actuation": {
+        "operation": "UPDATE", "payload": {}}})
+    # A non-finance, non-money UPDATE with no risky naming does NOT escalate here.
+    assert not is_high_consequence({"department": "support", "skill_id": "reply_ack",
+                                    "actuation": {"operation": "UPDATE",
+                                                  "payload": {"note": "ok"}}})
+    # A finance UPDATE touching only a non-money field does NOT escalate on money.
+    assert not is_high_consequence({"department": "finance", "skill_id": "memo_update",
+                                    "actuation": {"operation": "UPDATE",
+                                                  "payload": {"memo": "x"}}})
+    # The explicit flag still wins.
+    assert is_high_consequence({"always_hitl": True})
+    print("consequence actuation self-check passed")

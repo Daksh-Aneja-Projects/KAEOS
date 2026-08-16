@@ -147,7 +147,10 @@ async def advance_deployment(
 ):
     """Advance the deployment to the next state. Uses the DeploymentStateMachine. Requires operator role."""
     result = await db.execute(
-        select(WorkforceDeployment).where(WorkforceDeployment.id == deployment_id)
+        select(WorkforceDeployment).where(
+            (WorkforceDeployment.id == deployment_id) &
+            (WorkforceDeployment.tenant_id == tenant["tenant_id"])
+        )
     )
     deployment = result.scalar_one_or_none()
     if not deployment:

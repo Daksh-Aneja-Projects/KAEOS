@@ -138,8 +138,29 @@ async def respond_to_security_event(connector_id: str, signature: Optional[str],
                 ))).scalar_one_or_none()
                 if target is not None:
                     if meta["severity"] == "CRITICAL":
-                        target.is_active = False
-                        actions_taken.append(f"disable_user: {affected_email} deactivated")
+                        # Mirror AuthService.deactivate_user's last-admin guard:
+                        # auto-disabling the tenant's last active admin would lock
+                        # everyone out (reactivation itself needs an admin session).
+                        from app.models.auth import UserRole
+                        from sqlalchemy import func as _func
+                        last_admin = False
+                        if target.role == UserRole.ADMIN and target.is_active:
+                            active_admins = (await db.execute(
+                                select(_func.count()).select_from(User).where(
+                                    User.tenant_id == tenant_id,
+                                    User.role == UserRole.ADMIN,
+                                    User.is_active == True,  # noqa: E712
+                                )
+                            )).scalar_one()
+                            last_admin = active_admins <= 1
+                        if last_admin:
+                            recommended.append(
+                                f"disable_user {affected_email} held: last active admin, "
+                                f"auto-disable would lock the tenant out. Reassign admin first, "
+                                f"then disable.")
+                        else:
+                            target.is_active = False
+                            actions_taken.append(f"disable_user: {affected_email} deactivated")
                     else:
                         recommended.append(
                             f"disable_user {affected_email} (needs a human below CRITICAL)")

@@ -217,13 +217,23 @@ async def get_department_capabilities(
     )
     capabilities = cap_result.scalars().all()
 
+    # One query for every capability's processes instead of one per capability
+    # (N+1). Tenant-scoped: capabilities are already tenant-filtered, and the
+    # tenant_id predicate keeps the batch fail-closed to this tenant's rows.
+    cap_ids = [c.id for c in capabilities]
+    procs_by_cap: dict[str, list] = {}
+    if cap_ids:
+        proc_rows = await db.execute(
+            select(BusinessProcess)
+            .where(BusinessProcess.capability_id.in_(cap_ids))
+            .where(BusinessProcess.tenant_id == tenant_id)
+        )
+        for p in proc_rows.scalars().all():
+            procs_by_cap.setdefault(p.capability_id, []).append(p)
+
     result = []
     for cap in capabilities:
-        proc_result = await db.execute(
-            select(BusinessProcess)
-            .where(BusinessProcess.capability_id == cap.id)
-        )
-        procs = proc_result.scalars().all()
+        procs = procs_by_cap.get(cap.id, [])
 
         result.append({
             "id": cap.id,
@@ -365,8 +375,15 @@ async def autonomy_graduations(
     # Same threshold the confidence gate uses, read from config rather than
     # re-typed here, so the dashboard cannot drift from the runtime rule.
     THRESHOLD = get_settings().CONFIDENCE_AUTONOMOUS_EXEC
+    # Bound the scan of the fast-growing Skill table. Only executed skills can
+    # graduate, so ordering by execution_count keeps the rows that matter when a
+    # tenant exceeds the cap; the output is re-sorted below regardless.
+    # ponytail: 2000-row cap covers any realistic tenant; page it if that breaks.
     skills = (await db.execute(
-        select(Skill).where(Skill.tenant_id == tenant_id)
+        select(Skill)
+        .where(Skill.tenant_id == tenant_id)
+        .order_by(Skill.execution_count.desc())
+        .limit(2000)
     )).scalars().all()
     ran = [s for s in skills if (s.execution_count or 0) > 0]
 

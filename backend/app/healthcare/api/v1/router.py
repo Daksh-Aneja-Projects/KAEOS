@@ -22,6 +22,7 @@ from app.healthcare.models.core import (
     ClinicalTask, ConsentRecord, PatientEncounter, PHIDisclosure,
 )
 from app.healthcare.services.analytics import healthcare_analytics
+from app.healthcare.services.phi_disclosure import resolve_consent_facts
 from app.healthcare.services.workflows import SPECS as WORKFLOW_SPECS
 
 logger = logging.getLogger(__name__)
@@ -223,21 +224,46 @@ async def create_disclosure(body: DisclosureCreate, tenant: dict = Depends(requi
     from app.healthcare.agents.phi_guard_agent import PHIGuardAgent
 
     tenant_id = tenant["tenant_id"]
-    # Validate the encounter belongs to this tenant (404, not 403, on a foreign id).
+    # The gate's consent facts default to the request body ONLY for an ad-hoc,
+    # encounter-less disclosure. When the disclosure is bound to an encounter,
+    # the encounter's stored SUD codes and the patient's ACTIVE consent records
+    # are the source of truth: the body may strengthen the verdict but never
+    # weaken it (a revoked consent stays revoked, an omitted SUD code still
+    # triggers Part 2). Otherwise consent revocation would have no teeth.
+    authorization, diagnosis_codes, part2_consent = (
+        body.authorization, body.diagnosis_codes, body.part2_consent)
     if body.encounter_id:
-        enc = (await db.execute(select(PatientEncounter.id).where(
+        # Validate the encounter belongs to this tenant (404, not 403, on a foreign id).
+        enc = (await db.execute(select(
+            PatientEncounter.patient_ref, PatientEncounter.diagnosis_codes).where(
             PatientEncounter.id == body.encounter_id,
-            PatientEncounter.tenant_id == tenant_id))).scalar_one_or_none()
+            PatientEncounter.tenant_id == tenant_id))).one_or_none()
         if not enc:
             raise HTTPException(404, "Encounter not found")
+        consents = (await db.execute(select(
+            ConsentRecord.scope, ConsentRecord.part2, ConsentRecord.revoked_at).where(
+            ConsentRecord.tenant_id == tenant_id,
+            ConsentRecord.patient_ref == enc.patient_ref))).all()
+        resolved = resolve_consent_facts(
+            purpose=body.purpose,
+            stored_diagnosis_codes=enc.diagnosis_codes or [],
+            stored_consents=[{"scope": c.scope, "part2": c.part2,
+                              "active": c.revoked_at is None} for c in consents],
+            diagnosis_codes=body.diagnosis_codes,
+            authorization=body.authorization,
+            part2_consent=body.part2_consent,
+        )
+        authorization = resolved["authorization"]
+        diagnosis_codes = resolved["diagnosis_codes"]
+        part2_consent = resolved["part2_consent"]
 
     result = await PHIGuardAgent().review_disclosure(
         db, tenant_id,
         purpose=body.purpose, recipient=body.recipient, fields=body.fields,
         minimum_necessary_justification=body.minimum_necessary_justification,
-        encounter_id=body.encounter_id, authorization=body.authorization,
-        diagnosis_codes=body.diagnosis_codes, part2_records=body.part2_records,
-        part2_consent=body.part2_consent, recorded_by=approver_identity(tenant),
+        encounter_id=body.encounter_id, authorization=authorization,
+        diagnosis_codes=diagnosis_codes, part2_records=body.part2_records,
+        part2_consent=part2_consent, recorded_by=approver_identity(tenant),
     )
     if not result.get("recorded"):
         # Governance refusal - surface WHY, keep it a 422 (the request was well

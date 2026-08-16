@@ -168,7 +168,25 @@ Check if math is correct.""",
             elif (decision.get("recommendation") == "APPROVE"
                   and invoice.three_way_match_status == "MATCHED"
                   and float(invoice.total_amount) < 2000 and confidence_score > 0.88):
+                # Approve through the SAME controls the human path stamps, not a
+                # bare status write: record the approver (else four-eyes at
+                # payment finds no approver and the invoice is APPROVED-but-
+                # unpayable) and accrue the liability to the GL (else it sits
+                # off-books). The approver is an attributable agent identity,
+                # distinct from any human payer so four-eyes still holds.
+                from datetime import datetime, timezone
+                from app.finance.services.gl import GLPostingError
+                from app.finance.services.payments import PaymentError, accrue_invoice
                 invoice.status = InvoiceStatus.APPROVED
+                invoice.approved_by = "KAEOS AP Agent"
+                invoice.approved_at = datetime.now(timezone.utc)
+                try:
+                    await accrue_invoice(db, tenant_id, invoice, actor="KAEOS AP Agent")
+                except (GLPostingError, PaymentError) as e:
+                    # Approval is valid and stands; accrual retries idempotently
+                    # at payment time (a missing expense/AP account raises
+                    # PaymentError). Surface the COA gap, do not hide it.
+                    logger.warning("[AP] auto-approval accrual of %s failed: %s", invoice_id, e)
             elif decision.get("recommendation") == "REJECT":
                 invoice.status = InvoiceStatus.DISPUTED
             else:

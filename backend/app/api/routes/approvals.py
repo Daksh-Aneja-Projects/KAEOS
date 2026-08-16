@@ -34,19 +34,38 @@ def mint_approval_token(execution_id: str, tenant_id: str, approved: bool,
         "tenant_id": tenant_id,
         "approved": approved,
         "approver": approver,
+        # Standard subject = the approving identity, so the audit trail and the
+        # SOX four-eyes check see WHO decided, not a constant.
+        "sub": approver,
         "aud": _AUD,
         "iat": now,
         "exp": now + timedelta(days=LINK_TTL_DAYS),
     }, _get_secret_key(), algorithm=_ALG)
 
 
-def approval_links(execution_id: str, tenant_id: str, base_url: str) -> dict:
+def approval_links(execution_id: str, tenant_id: str, base_url: str,
+                   recipient: str | None = None) -> dict:
+    """One-click approve/reject links for ONE notification recipient.
+
+    ``recipient`` is that human's real identity (their notification address /
+    principal). It becomes the token subject, so when they decide, the audit and
+    the SOX four-eyes check compare a real, attributable approver against the
+    maker - a maker approving their own financial write via their own link is then
+    caught, and two distinct humans pass.
+
+    When the recipient is unknown, the link falls back to the non-attributable
+    ``email-approver`` subject, which check_sox treats as UNVERIFIABLE and BLOCKS
+    for financial actions (fail-closed) - an anonymous link can never satisfy
+    segregation of duties. To carry real identities the caller (the HITL notifier)
+    must mint one link set per resolved recipient and pass ``recipient=<their id>``.
+    """
     base = (base_url or "").rstrip("/")
+    approver = recipient or "email-approver"
     return {
         "approve": f"{base}/api/v1/approvals/decide?token="
-                   f"{mint_approval_token(execution_id, tenant_id, True)}",
+                   f"{mint_approval_token(execution_id, tenant_id, True, approver)}",
         "reject": f"{base}/api/v1/approvals/decide?token="
-                  f"{mint_approval_token(execution_id, tenant_id, False)}",
+                  f"{mint_approval_token(execution_id, tenant_id, False, approver)}",
     }
 
 
@@ -79,7 +98,9 @@ async def decide(token: str):
     execution_id = claims.get("execution_id")
     tenant_id = claims.get("tenant_id")
     approved = bool(claims.get("approved"))
-    approver = claims.get("approver") or "email-approver"
+    # Prefer the standard subject (the real recipient identity when the link was
+    # minted per-recipient); fall back to the legacy claim, then the constant.
+    approver = claims.get("sub") or claims.get("approver") or "email-approver"
 
     from app.services.hitl_manager import hitl_manager
     success = await hitl_manager.resolve_hitl(

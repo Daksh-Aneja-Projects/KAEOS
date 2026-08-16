@@ -82,6 +82,7 @@ opentelemetry-api==1.42.1
 opentelemetry-sdk==1.42.1
 opentelemetry-instrumentation-fastapi==0.63b1   # pairs with otel-sdk 1.42.x
 opentelemetry-exporter-otlp-proto-http==1.42.1  # OTLP/HTTP span exporter (telemetry.py imports it)
+sentry-sdk[fastapi]==2.68.0                     # error tracking; init only when SENTRY_DSN set (main.py), tracing stays OTLP's job
 structlog==24.4.0
 
 # Test/lint tooling has moved to requirements-dev.txt so the production image

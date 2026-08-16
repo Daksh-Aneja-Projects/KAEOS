@@ -9,6 +9,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
+from app.core.entitlements import require_execution_allowance
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.services.knowledge import PolystoreEngine
@@ -110,9 +111,14 @@ async def execute_skill(
     body: SkillExecutionRequest,
     background_tasks: BackgroundTasks,
     tenant: dict = Depends(require_role("operator")),
+    _allowance: dict = Depends(require_execution_allowance()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Execute a skill — full L9 pipeline: route → execute → report to L10. Requires operator role."""
+    """Execute a skill — full L9 pipeline: route → execute → report to L10. Requires operator role.
+
+    Managed cloud only: fails closed with 429 past the plan's runaway hard cap
+    (overage up to the cap is allowed because it is billed). No-op for self-host.
+    """
     tenant_id = tenant["tenant_id"]
     # 1. Find skill — this tenant's. Was found by id alone, so any tenant could
     # RUN another tenant's skill (writing an execution under the victim tenant).
@@ -518,8 +524,9 @@ async def compile_skill(body: CompileRequest, tenant: dict = Depends(require_rol
         existing_skill.mcp_tool_bindings = contract["mcp_tool_bindings"]
         existing_skill.compliance_tags = contract["compliance_tags"]
         existing_skill.confidence_tier = existing_skill.confidence_tier or "INFERRED"
+        skill_row = existing_skill
     else:
-        db.add(Skill(
+        skill_row = Skill(
             id=str(uuid.uuid4()), skill_id=contract["skill_id"],
             tenant_id=tenant_id, department=body.domain, domain=body.domain,
             version=contract["version"], confidence=contract["confidence"],
@@ -527,8 +534,14 @@ async def compile_skill(body: CompileRequest, tenant: dict = Depends(require_rol
             triggers=[], steps=contract["steps"],
             mcp_tool_bindings=contract["mcp_tool_bindings"],
             compliance_tags=contract["compliance_tags"],
-        ))
+        )
+        db.add(skill_row)
     await db.commit()
+
+    # Refresh the semantic index (non-blocking: embed_skill never raises, so a
+    # failed embed never fails the compile).
+    from app.services.knowledge import embed_skill
+    await embed_skill(skill_row, tenant_id)
 
     yaml_output = compiler.export_to_yaml(contract)
     return {"status": "COMPILED", "skill_id": contract["skill_id"], "yaml": yaml_output}

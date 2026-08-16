@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -31,7 +32,7 @@ class SupportTeam(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class SupportAgent(Base):
+class SupportAgent(Base, LegalHoldMixin):
     """Support agents (both human reps and AI digital twins)."""
     __tablename__ = "sup_agents"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.

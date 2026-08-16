@@ -682,6 +682,67 @@ async def get_finance_workflow_events(
                                       entity_type=entity_type, entity_id=entity_id)
 
 
+async def _apply_invoice_ledger_effects(
+    db: AsyncSession, tenant: dict, invoice_id: str, result: dict,
+) -> None:
+    """Post the accrual on APPROVED / reverse it on VOID for one invoice,
+    annotating ``result`` in place. Shared by the single- and bulk-transition
+    paths so the GL stays in sync whichever endpoint drove the state change
+    (bulk approve/void used to skip this, inflating AP and the P&L). Never
+    raises: a COA gap is surfaced on the result, not fatal, exactly as the
+    single-invoice path always behaved."""
+    to_state = result.get("to_state")
+    tenant_id = tenant["tenant_id"]
+    if to_state == InvoiceStatus.APPROVED.value:
+        from app.core.tenant import approver_identity
+        from app.finance.services.gl import GLPostingError
+        from app.finance.services.payments import PaymentError, accrue_invoice
+        invoice = (await db.execute(select(Invoice).where(
+            Invoice.id == invoice_id, Invoice.tenant_id == tenant_id))).scalar_one_or_none()
+        if invoice is not None:
+            try:
+                entry = await accrue_invoice(db, tenant_id, invoice,
+                                             actor=approver_identity(tenant))
+                if entry is not None:
+                    result["accrual_entry"] = entry.entry_number
+            except (GLPostingError, PaymentError) as e:
+                # The approval is a valid state change and already committed;
+                # accrual will be retried (idempotently) at payment time. Surface
+                # the COA gap (a missing expense/AP account raises PaymentError)
+                # instead of failing the approval or hiding it.
+                logger.warning("[AP] accrual on approval of %s failed: %s", invoice_id, e)
+                result["accrual_warning"] = str(e)
+    elif to_state == InvoiceStatus.VOIDED.value:
+        # Voiding an accrued invoice must UNWIND its AP_ACCRUAL entry, else the
+        # P&L overstates expense and the balance sheet overstates AP for an invoice
+        # that no longer exists. Reverse the accrual (append-only mirror). Skip if
+        # the invoice already took a payment - that needs a manual reconciliation.
+        from decimal import Decimal
+        from app.core.tenant import approver_identity
+        from app.finance.models.core import JournalEntry, JournalEntryStatus
+        from app.finance.services.gl import GLPostingError, reverse_journal_entry
+        invoice = (await db.execute(select(Invoice).where(
+            Invoice.id == invoice_id, Invoice.tenant_id == tenant_id))).scalar_one_or_none()
+        accrual = (await db.execute(select(JournalEntry).where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalEntry.source_module == "AP_ACCRUAL",
+            JournalEntry.source_document_id == invoice_id,
+            JournalEntry.status == JournalEntryStatus.POSTED,
+        ))).scalar_one_or_none()
+        if accrual is not None and invoice is not None:
+            if Decimal(str(invoice.amount_paid or 0)) != 0:
+                result["reversal_warning"] = ("invoice has payments; accrual not "
+                    "auto-reversed - reconcile the void manually")
+            else:
+                try:
+                    mirror = await reverse_journal_entry(
+                        db, tenant_id, accrual.id, actor=approver_identity(tenant))
+                    result["accrual_reversed"] = mirror.entry_number
+                except GLPostingError as e:
+                    logger.warning("[AP] accrual reversal on void of %s failed: %s", invoice_id, e)
+                    result["reversal_warning"] = str(e)
+
+
 @router.post("/invoices/{invoice_id}/transition")
 async def transition_invoice(
     invoice_id: str, body: TransitionRequest,
@@ -694,53 +755,7 @@ async def transition_invoice(
     """
     result = await apply_transition(db, WORKFLOW_SPECS["invoice"], invoice_id,
                                     body.to_state, tenant, note=body.note)
-    if result.get("to_state") == InvoiceStatus.APPROVED.value:
-        from app.core.tenant import approver_identity
-        from app.finance.services.gl import GLPostingError
-        from app.finance.services.payments import accrue_invoice
-        invoice = (await db.execute(select(Invoice).where(
-            Invoice.id == invoice_id, Invoice.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
-        if invoice is not None:
-            try:
-                entry = await accrue_invoice(db, tenant["tenant_id"], invoice,
-                                             actor=approver_identity(tenant))
-                if entry is not None:
-                    result["accrual_entry"] = entry.entry_number
-            except GLPostingError as e:
-                # The approval is a valid state change and already committed;
-                # accrual will be retried (idempotently) at payment time. Surface
-                # the COA gap instead of failing the approval or hiding it.
-                logger.warning("[AP] accrual on approval of %s failed: %s", invoice_id, e)
-                result["accrual_warning"] = str(e)
-    elif result.get("to_state") == InvoiceStatus.VOIDED.value:
-        # Voiding an accrued invoice must UNWIND its AP_ACCRUAL entry, else the
-        # P&L overstates expense and the balance sheet overstates AP for an invoice
-        # that no longer exists. Reverse the accrual (append-only mirror). Skip if
-        # the invoice already took a payment - that needs a manual reconciliation.
-        from decimal import Decimal
-        from app.core.tenant import approver_identity
-        from app.finance.models.core import JournalEntry, JournalEntryStatus
-        from app.finance.services.gl import GLPostingError, reverse_journal_entry
-        invoice = (await db.execute(select(Invoice).where(
-            Invoice.id == invoice_id, Invoice.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
-        accrual = (await db.execute(select(JournalEntry).where(
-            JournalEntry.tenant_id == tenant["tenant_id"],
-            JournalEntry.source_module == "AP_ACCRUAL",
-            JournalEntry.source_document_id == invoice_id,
-            JournalEntry.status == JournalEntryStatus.POSTED,
-        ))).scalar_one_or_none()
-        if accrual is not None and invoice is not None:
-            if Decimal(str(invoice.amount_paid or 0)) != 0:
-                result["reversal_warning"] = ("invoice has payments; accrual not "
-                    "auto-reversed - reconcile the void manually")
-            else:
-                try:
-                    mirror = await reverse_journal_entry(
-                        db, tenant["tenant_id"], accrual.id, actor=approver_identity(tenant))
-                    result["accrual_reversed"] = mirror.entry_number
-                except GLPostingError as e:
-                    logger.warning("[AP] accrual reversal on void of %s failed: %s", invoice_id, e)
-                    result["reversal_warning"] = str(e)
+    await _apply_invoice_ledger_effects(db, tenant, invoice_id, result)
     return result
 
 
@@ -806,6 +821,13 @@ class InvoiceCreate(BaseModel):
     po_number: Optional[str] = Field(None, max_length=64)
 
 
+def _norm_vendor_name(s: Optional[str]) -> str:
+    """Casefold + strip non-alphanumerics so 'Acme, Inc.' == 'Acme Inc' and
+    'L.L.C.' == 'LLC'. Used only to reconcile a finance vendor to a PO's
+    denormalized vendor_name when the PO has no backfilled vendor_id."""
+    return "".join(c for c in (s or "").lower() if c.isalnum())
+
+
 @router.post("/invoices", status_code=201)
 async def create_invoice(
     body: InvoiceCreate,
@@ -813,9 +835,9 @@ async def create_invoice(
 ):
     """Register an AP invoice (starts DRAFT; approval/payment via /transition)."""
     tenant_id = tenant["tenant_id"]
-    vendor_q = await db.execute(select(Vendor).where(
-        Vendor.id == body.vendor_id, Vendor.tenant_id == tenant_id))
-    if not vendor_q.scalar_one_or_none():
+    vendor = (await db.execute(select(Vendor).where(
+        Vendor.id == body.vendor_id, Vendor.tenant_id == tenant_id))).scalar_one_or_none()
+    if not vendor:
         raise HTTPException(404, "Vendor not found")
     total = body.subtotal + body.tax_amount
     # Resolve the entered PO reference to the real ops PO so the 3-way match
@@ -823,9 +845,29 @@ async def create_invoice(
     purchase_order_id = None
     if body.po_number:
         from app.operations.models.procurement import PurchaseOrder
-        purchase_order_id = (await db.execute(select(PurchaseOrder.id).where(
+        po_row = (await db.execute(select(
+            PurchaseOrder.id, PurchaseOrder.vendor_id, PurchaseOrder.vendor_name
+        ).where(
             PurchaseOrder.po_number == body.po_number,
-            PurchaseOrder.tenant_id == tenant_id))).scalar_one_or_none()
+            PurchaseOrder.tenant_id == tenant_id))).first()
+        if po_row is not None:
+            po_pk, po_vendor_id, po_vendor_name = po_row
+            # Vendor-identity leg: without it, an invoice for vendor A can cite
+            # vendor B's PO and pass the qty/price 3-way match against the wrong
+            # order. The ops PO.vendor_id and Invoice.vendor_id share the
+            # fin_vendors id space, so a direct id check reconciles them; fall
+            # back to a normalized name match for a PO not yet backfilled to a
+            # vendor_id. A real mismatch is refused, not silently mis-linked.
+            if po_vendor_id is not None:
+                reconciled = po_vendor_id == body.vendor_id
+            else:
+                reconciled = _norm_vendor_name(po_vendor_name) == _norm_vendor_name(vendor.name)
+            if not reconciled:
+                raise HTTPException(422, detail=(
+                    f"Purchase order {body.po_number} belongs to a different "
+                    "vendor; an invoice can only reference its own vendor's "
+                    "purchase order."))
+            purchase_order_id = po_pk
     inv = Invoice(
         tenant_id=tenant_id, vendor_id=body.vendor_id,
         invoice_number=body.invoice_number or f"INV-{_uuid_mod.uuid4().hex[:8].upper()}",
@@ -856,4 +898,13 @@ async def bulk_transition_finance(
     spec = WORKFLOW_SPECS.get(entity_type)
     if not spec:
         raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+    outcome = await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+    # Bulk transitions ran through the shared engine, which does NOT post the
+    # invoice accrual / void-reversal that the single-invoice endpoint runs -
+    # so a bulk approve/void would silently desync the ledger. Re-run the same
+    # per-invoice side-effect for each succeeded id so both paths post identically.
+    if entity_type == "invoice":
+        for row in outcome["results"]:
+            if row.get("ok"):
+                await _apply_invoice_ledger_effects(db, tenant, row["id"], row)
+    return outcome

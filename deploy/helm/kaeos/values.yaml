@@ -35,6 +35,13 @@ backend:
     # for the Prometheus scrape. Set OTEL_EXPORTER_OTLP_ENDPOINT to enable traces.
     PROMETHEUS_MULTIPROC_DIR: "/tmp/kaeos-metrics"
     EXPOSE_METRICS: "true"
+  # Annotation-based Prometheus scrape discovery (works with the standard
+  # kubernetes_sd pod relabel config). Deliberately NOT a ServiceMonitor:
+  # that would make the chart depend on the prometheus-operator CRDs.
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8001"
+    prometheus.io/path: "/metrics"
   resources:
     requests: { cpu: "250m", memory: "512Mi" }
     limits:   { cpu: "1",    memory: "1Gi" }

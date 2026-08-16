@@ -24,6 +24,22 @@ export async function requestPublic<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Error thrown for non-OK API responses. Additive over the plain Error the
+ * client used to throw: `message` is unchanged (the backend `detail`, e.g. a
+ * 402's "feature X needs plan Y"), and `status` carries the HTTP code so
+ * callers that care (billing/entitlement surfaces) can branch on it. Every
+ * existing `catch (e) { e.message }` site keeps working untouched.
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('kaeos-token');
   const authHeaders: Record<string, string> = {
@@ -68,7 +84,7 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
     } else if (detail && typeof detail === 'object') {
       detail = detail.msg || JSON.stringify(detail);
     }
-    throw new Error(detail || `API Error ${res.status}`);
+    throw new ApiError(detail || `API Error ${res.status}`, res.status);
   }
   // 204 No Content (e.g. DELETE /notifications/channels/{id}) has no body to parse.
   if (res.status === 204) return undefined as T;

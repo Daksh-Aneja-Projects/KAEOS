@@ -193,12 +193,22 @@ async def underwrite_application(
     reasons = verdict["reasons"]
 
     # Build the compliance context and run the checkers that APPLY as hard gates.
-    frameworks = ["FAIR_LENDING"]
+    frameworks = ["FAIR_LENDING", "LENDING_SOD"]
     ctx: dict = {
         "decision": decision,
         "credit_purpose": app.credit_purpose,
         "approval_cohorts": approval_cohorts,
         "business_necessity": business_necessity,
+        # Segregation of duties: the identity that last set/relaxed the credit
+        # policy (maker) must differ from the underwriter (approver), so one admin
+        # cannot relax the policy then self-approve the underwrite it authorizes.
+        # policy.updated_by may not exist yet on the CreditPolicy row - getattr
+        # keeps this inert (LENDING_SOD -> NOT_APPLICABLE) until the column lands
+        # and the /credit-policies PUT populates it. See FLAG in the router.
+        "lending_sod": {
+            "policy_maker": getattr(policy, "updated_by", None),
+            "underwriter": decided_by,
+        },
     }
     disclosures = None
     if decision == "DENY":
@@ -278,13 +288,24 @@ async def generate_adverse_action(
 
     reasons = list(decision.reasons or [])
     today = date.today()
+    # 12 CFR 1002.9(a)(1): the notice must be sent within 30 days of receiving the
+    # COMPLETED APPLICATION - NOT the internal decision date. Anchor the ECOA
+    # clock to the application's receipt date (LoanApplication.created_at) so a
+    # notice that is timely vs the decision but late vs receipt still trips the
+    # >30-day BLOCK. (Anchoring to the decision date understated elapsed time and
+    # could attest a genuinely late notice as timely.)
+    received_on = app.created_at.date() if getattr(app, "created_at", None) else today
+    decided_on = decision.decided_at.date() if decision.decided_at else today
+    elapsed = (today - received_on).days
     body = _render_notice(app, reasons)
 
-    # Validate against the ECOA checker BEFORE persisting (fail-closed).
+    # Validate against the ECOA checker BEFORE persisting (fail-closed). The
+    # checker's clock is receipt-anchored: decision_date carries the receipt date
+    # and notice_days carries the receipt-based elapsed count.
     gate = run_checks(["ECOA"], {
         "decision": "DENY",
-        "decision_date": str(today),
-        "adverse_action": {"reasons": reasons, "notice_days": 0,
+        "decision_date": str(received_on),
+        "adverse_action": {"reasons": reasons, "notice_days": elapsed,
                            "prohibited_basis_used": False},
     })
     if not gate["verified"]:
@@ -294,8 +315,8 @@ async def generate_adverse_action(
 
     notice = AdverseActionNotice(
         tenant_id=tenant_id, application_id=app.id, decision_id=decision.id,
-        specific_reasons=reasons, body=body, decision_date=today,
-        sent_at=datetime.now(timezone.utc), within_30_days=True,
+        specific_reasons=reasons, body=body, decision_date=decided_on,
+        sent_at=datetime.now(timezone.utc), within_30_days=elapsed <= 30,
     )
     await append_ledger_event(
         db, tenant_id=tenant_id, event_type="ADVERSE_ACTION_NOTICE",
@@ -325,3 +346,18 @@ def _render_notice(app: LoanApplication, reasons: list[str]) -> str:
         "Opportunity Act (15 U.S.C. 1691) and Regulation B (12 CFR 1002.9).",
     ]
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    # Self-check: a notice sent >30 days after the decision MUST block the ECOA
+    # gate. This is the exact regression the elapsed-days fix restores - the old
+    # hardcoded notice_days=0 could never trip the checker's late-notice branch.
+    from datetime import timedelta as _td
+    _elapsed = (date.today() - (date.today() - _td(days=45))).days
+    _g = run_checks(["ECOA"], {
+        "decision": "DENY", "decision_date": "2020-01-01",
+        "adverse_action": {
+            "reasons": ["Debt-to-income ratio of 62% exceeds the 45% program limit"],
+            "notice_days": _elapsed, "prohibited_basis_used": False}})
+    assert _elapsed == 45 and not _g["verified"], "late notice must BLOCK the ECOA gate"
+    print("underwriting self-check ok: 45-day-late notice blocks the ECOA gate")

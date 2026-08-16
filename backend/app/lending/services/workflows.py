@@ -35,6 +35,10 @@ APPLICATION_WORKFLOW = WorkflowSpec(
 )
 
 
+# These hooks are synchronous and receive no DB session (see TransitionHook),
+# so they cannot resolve the loan's open CollectionCase(s) here - querying via
+# the ORM object's sync session inside the async request is the MissingGreenlet
+# trap. The collections-case closure lives in the router's transition endpoint.
 def _loan_paid_off(loan: ServicedLoan, ctx: TransitionContext) -> None:
     loan.outstanding_principal = 0
     loan.days_past_due = 0

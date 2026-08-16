@@ -21,7 +21,7 @@ capabilities:
     name: "Talent Acquisition"
     description: "Manage job requisitions, candidate screening, interviews, and offers."
     icon: "🎯"
-    agents: ["recruiting_agent", "sourcing_agent"]
+    agents: ["recruiting_agent"]
     processes: ["candidate_screening", "interview_scheduling", "offer_generation"]
     compliance: ["EEOC", "GDPR"]
 

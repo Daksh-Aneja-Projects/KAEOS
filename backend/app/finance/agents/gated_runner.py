@@ -43,8 +43,10 @@ async def run_gated_finance_skill(
     Returns the executor result dict. On ``SUCCESS_CLEAN`` it includes
     ``reasoning_chain`` so callers can extract the model decision.
 
-    SOX compliance: All finance actions default to SOX gate, which requires
-    has_human_approver=True to pass. Set to True when called from HITL approval path.
+    SOX compliance: All finance actions default to the SOX gate, which requires a
+    human approver whose identity DIFFERS from the maker (four-eyes). Pass the
+    approver's identity string via ``has_human_approver`` from the HITL approval
+    path; a bare ``True`` is unverifiable and fails closed.
     """
     compliance_tags = compliance_tags or list(DEFAULT_FINANCE_COMPLIANCE)
     execution_id = context.get("execution_id") or str(uuid.uuid4())
@@ -70,13 +72,21 @@ async def run_gated_finance_skill(
         steps=steps,
     )
 
+    from app.core.context import current_actor
+    _approved = context.get("has_human_approver", False)
     ctx = {
         **context,
         "tenant_id": tenant_id,
         "execution_id": execution_id,
         "_skill_obj": skill_obj,
-        # SOX gate: set to True when called from HITL approval, False initially
-        "has_human_approver": context.get("has_human_approver", False),
+        # SOX gate: the approver's identity STRING when a human approved, else
+        # False. A bare True is treated as unverifiable four-eyes and fails closed.
+        "has_human_approver": _approved,
+        # Four-eyes attribution for check_sox: the MAKER is the initiating actor,
+        # the APPROVER is the human who approved. check_sox requires them to be
+        # distinct, resolvable identities (fail-closed otherwise).
+        "maker": context.get("maker") or current_actor.get(),
+        "approver": context.get("approver") or (_approved if isinstance(_approved, str) else None),
     }
 
     # Gate 6 audit flags: NOT pre-seeded — execution must earn them.

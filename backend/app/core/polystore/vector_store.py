@@ -14,6 +14,7 @@ so no external migration is required.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -36,9 +37,30 @@ class VectorStore(ABC):
 
     backend_name: str = "abstract"
 
-    @abstractmethod
+    def __init__(self) -> None:
+        self._initialized = False
+        self._init_lock = asyncio.Lock()
+
     async def initialize(self) -> None:
-        """Create backing storage if it does not yet exist."""
+        """Create backing storage once per process.
+
+        The pgvector setup runs ENABLE ROW LEVEL SECURITY + DROP/CREATE POLICY,
+        each of which takes an ACCESS EXCLUSIVE lock, so re-running it on every
+        search/upsert serialized all vector traffic behind that table lock. Run
+        the real setup at most once, double-checked under a lock so two concurrent
+        first-callers do not both fire the DDL.
+        """
+        if self._initialized:
+            return
+        async with self._init_lock:
+            if self._initialized:
+                return
+            await self._initialize()
+            self._initialized = True
+
+    @abstractmethod
+    async def _initialize(self) -> None:
+        """Create backing storage if it does not yet exist (runs once)."""
 
     @abstractmethod
     async def upsert(
@@ -117,7 +139,7 @@ class SqliteVectorStore(VectorStore):
         )
     """
 
-    async def initialize(self) -> None:
+    async def _initialize(self) -> None:
         # DDL is a maintenance operation: under Postgres RLS the app role
         # (kaeos_app) deliberately cannot CREATE in schema public, so this must
         # run on the owner engine. On SQLite the two engines are the same.
@@ -238,6 +260,7 @@ class PgVectorStore(VectorStore):
     backend_name = "pgvector"
 
     def __init__(self, dim: Optional[int] = None):
+        super().__init__()
         # Derive from the configured embedding model so a non-1536 model does not
         # raise 'expected 1536 dimensions' on every insert.
         if dim is None:
@@ -248,7 +271,7 @@ class PgVectorStore(VectorStore):
                 dim = 1536
         self.dim = dim
 
-    async def initialize(self) -> None:
+    async def _initialize(self) -> None:
         # DDL runs on the OWNER engine: the app role (kaeos_app) cannot CREATE
         # in schema public under the RLS setup, by design. And because this
         # table is created at runtime — after the RLS migration has already
@@ -398,3 +421,21 @@ def get_vector_store() -> VectorStore:
         _vector_store = SqliteVectorStore() if settings.is_sqlite else PgVectorStore()
         logger.info(f"[Polystore] VectorStore backend = {_vector_store.backend_name}")
     return _vector_store
+
+
+if __name__ == "__main__":  # self-check: the real setup runs at most once under concurrency
+    class _Probe(SqliteVectorStore):
+        calls = 0
+
+        async def _initialize(self) -> None:  # type: ignore[override]
+            _Probe.calls += 1
+            await asyncio.sleep(0)  # yield so the 20 callers actually race the guard
+
+    async def _check() -> None:
+        p = _Probe()
+        await asyncio.gather(*(p.initialize() for _ in range(20)))
+        assert _Probe.calls == 1, _Probe.calls
+        assert p._initialized
+
+    asyncio.run(_check())
+    print("vector_store init-once self-check ok")

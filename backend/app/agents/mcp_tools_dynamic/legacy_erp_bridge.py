@@ -5,6 +5,8 @@ import httpx
 
 import logging
 
+from app.core.outbound import guarded_async_client, assert_safe_outbound_url
+
 
 class LegacyErpBridgeTool:
 
@@ -19,8 +21,13 @@ class LegacyErpBridgeTool:
 
         try:
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/api/legacy_erp_bridge", json=payload, timeout=30)
+            # base_url is caller/tenant-supplied — vet it up front and route
+            # through the SSRF-guarded client so it cannot reach cloud-metadata
+            # or private hosts (it re-vets the resolved IP at connect time).
+            url = f"{self.base_url}/api/legacy_erp_bridge"
+            assert_safe_outbound_url(url)
+            async with guarded_async_client(timeout=30) as client:
+                response = await client.post(url, json=payload)
 
             response.raise_for_status()
 

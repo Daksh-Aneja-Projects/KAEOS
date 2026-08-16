@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -19,7 +20,7 @@ class EmploymentStatus(str, enum.Enum):
     TERMINATED = "TERMINATED"
     CONTRACTOR = "CONTRACTOR"
 
-class HREmployee(Base):
+class HREmployee(Base, LegalHoldMixin):
     __tablename__ = "hr_employees"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.
     __table_args__ = (
@@ -68,7 +69,7 @@ class DocumentType(str, enum.Enum):
     DISCIPLINARY = "DISCIPLINARY"
     OTHER = "OTHER"
 
-class EmployeeDocument(Base):
+class EmployeeDocument(Base, LegalHoldMixin):
     __tablename__ = "hr_employee_documents"
 
     id = Column(String, primary_key=True, default=_uuid)

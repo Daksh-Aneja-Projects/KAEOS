@@ -26,6 +26,7 @@ const STATE_COLORS: Record<string, string> = {
 const PATH_TO_ENTITY: Record<string, string> = {
   tickets: 'ticket', opportunities: 'opportunity', contracts: 'contract',
   'purchase-requests': 'purchase_request', 'purchase-orders': 'purchase_order',
+  'work-orders': 'work_order',
   invoices: 'invoice', 'expense-reports': 'expense_report',
   incidents: 'incident', deployments: 'deployment',
   'time-off-requests': 'time_off_request', requisitions: 'job_requisition',

@@ -6,7 +6,7 @@ via the DocuSign eSignature REST API.
 import logging
 from typing import List, Dict, Any, Optional
 
-import httpx
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class DocuSignConnector:
             params["status"] = status
 
         envelopes: List[Dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with guarded_async_client(timeout=30.0) as client:
             try:
                 while True:
                     res = await client.get(url, headers=self.headers, params=params)
@@ -80,7 +80,7 @@ class DocuSignConnector:
     async def get_envelope_recipients(self, envelope_id: str) -> Dict[str, Any]:
         """Fetch the recipient/signing status for a single envelope."""
         url = f"{self.base_url}/envelopes/{envelope_id}/recipients"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with guarded_async_client(timeout=30.0) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 res.raise_for_status()
@@ -94,7 +94,7 @@ class DocuSignConnector:
     async def test_connection(self) -> bool:
         """Verify token and account access via the account info endpoint."""
         url = f"{self.base_url}"
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with guarded_async_client(timeout=15.0) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 res.raise_for_status()

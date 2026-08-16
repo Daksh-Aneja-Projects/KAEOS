@@ -18,13 +18,14 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 
 def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-class PatientEncounter(Base):
+class PatientEncounter(Base, LegalHoldMixin):
     """A clinical encounter. ``patient_ref`` is a pseudonymous handle, not a
     name or MRN - the encounter row itself never stores a direct identifier."""
     __tablename__ = "hlth_encounters"
@@ -49,7 +50,7 @@ class PatientEncounter(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class PHIDisclosure(Base):
+class PHIDisclosure(Base, LegalHoldMixin):
     """An outbound disclosure of protected health information. A row exists ONLY
     for a disclosure that passed the HIPAA gate in phi_disclosure.record_disclosure
     - ``authorized`` is always True on a persisted row. A blocked disclosure is
@@ -71,7 +72,7 @@ class PHIDisclosure(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class ConsentRecord(Base):
+class ConsentRecord(Base, LegalHoldMixin):
     """Patient consent for a disclosure scope. ``part2`` flags a 42 CFR Part 2
     substance-use-disorder consent, which is stricter than a general HIPAA
     authorization. A consent is active when ``revoked_at`` is NULL."""

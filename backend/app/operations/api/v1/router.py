@@ -2,7 +2,7 @@
 KAEOS Operations Domain — V1 API Router
 CRUD and agent triggers.
 """
-from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.operations.models.core import OpsTeamMember
 from app.operations.models.projects import Project, Task, ProjectStatus
 from app.operations.models.resources import Resource, ResourceAllocation
 from app.operations.models.vendors import VendorContract, VendorPerformance
-from app.operations.models.procurement import PurchaseRequest, ProcurementStatus
+from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, ProcurementStatus
 from app.operations.models.quality import Inspection, QualityStatus
 from app.operations.models.facilities import WorkOrder
 
@@ -150,7 +150,7 @@ async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("opera
         result = await agent.evaluate_project(db, task_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="project", resource_id=task_id,
         )
         return result
@@ -165,24 +165,33 @@ async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("opera
 async def list_resources(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(ResourceAllocation).where(ResourceAllocation.tenant_id == tenant_id).limit(200))
     allocs = q.scalars().all()
-    
+
+    # Batch the resource + project lookups instead of two queries per allocation
+    # (the old N+1), exactly as list_projects above.
+    resource_ids = {a.resource_id for a in allocs if a.resource_id}
+    project_ids = {a.project_id for a in allocs if a.project_id}
+    resources: dict[str, Resource] = {}
+    if resource_ids:
+        resources = {r.id: r for r in (await db.execute(
+            select(Resource).where(
+                Resource.tenant_id == tenant_id, Resource.id.in_(resource_ids))
+        )).scalars().all()}
+    project_names: dict[str, str] = {}
+    if project_ids:
+        project_names = {p.id: p.name for p in (await db.execute(
+            select(Project).where(
+                Project.tenant_id == tenant_id, Project.id.in_(project_ids))
+        )).scalars().all()}
+
     alloc_list = []
     for a in allocs:
-        res_q = await db.execute(select(Resource).where(
-            Resource.id == a.resource_id, Resource.tenant_id == tenant_id))
-        res = res_q.scalar()
-        project_name = None
-        if a.project_id:
-            proj_q = await db.execute(select(Project).where(
-                Project.id == a.project_id, Project.tenant_id == tenant_id))
-            proj = proj_q.scalar_one_or_none()
-            project_name = proj.name if proj else None
+        res = resources.get(a.resource_id)
         if res:
             alloc_list.append({
                 "id": a.id,
                 "name": res.name,
                 "type": res.resource_type,
-                "project": project_name,
+                "project": project_names.get(a.project_id) if a.project_id else None,
                 "utilization": float(a.utilization_percentage or 0),
                 "available_from": res.is_available.isoformat() if res.is_available else None,
                 "ai_rebalance_note": a.ai_rebalance_note,
@@ -197,7 +206,7 @@ async def check_overload(allocation_id: str, tenant: dict = Depends(require_role
         result = await agent.check_overload(db, allocation_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="resource_allocation", resource_id=allocation_id,
         )
         return result
@@ -252,7 +261,7 @@ async def evaluate_vendor(contract_id: str, tenant: dict = Depends(require_role(
         result = await agent.evaluate_vendor(db, contract_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="vendor_contract", resource_id=contract_id,
         )
         return result
@@ -268,21 +277,28 @@ async def list_procurements(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
     from app.operations.models.procurement import PurchaseOrder
     q = await db.execute(select(PurchaseRequest).where(PurchaseRequest.tenant_id == tenant_id).limit(200))
     requests = q.scalars().all()
+
+    # Batch the PO lookup instead of one query per request (the old N+1).
+    request_ids = [r.id for r in requests]
+    vendor_by_request: dict[str, str] = {}
+    if request_ids:
+        for po in (await db.execute(
+            select(PurchaseOrder).where(
+                PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.purchase_request_id.in_(request_ids))
+        )).scalars().all():
+            # First PO seen per request wins, matching the old .first().
+            vendor_by_request.setdefault(po.purchase_request_id, po.vendor_name)
+
     result = []
     for r in requests:
-        vendor = None
-        po_q = await db.execute(select(PurchaseOrder).where(
-            PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.purchase_request_id == r.id))
-        po = po_q.scalars().first()
-        if po:
-            vendor = po.vendor_name
         result.append({
             "id": r.id,
             "description": r.item_description,
             "requestor": r.requested_by,
             "status": r.status.value if hasattr(r.status, 'value') else str(r.status),
             "amount": float(r.total_estimated_cost or 0),
-            "vendor": vendor,
+            "vendor": vendor_by_request.get(r.id),
             "submitted_at": str(getattr(r, 'created_at', '') or ''),
             "ai_audit_note": r.ai_audit_note,
         })
@@ -296,7 +312,7 @@ async def audit_procurement(request_id: str, tenant: dict = Depends(require_role
         result = await agent.audit_request(db, request_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="purchase_request", resource_id=request_id,
         )
         return result
@@ -312,26 +328,41 @@ async def list_inspections(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     from app.operations.models.quality import NonConformance, QualityStandard
     q = await db.execute(select(Inspection).where(Inspection.tenant_id == tenant_id).limit(200))
     inspections = q.scalars().all()
+
+    # Batch the non-conformance + standard lookups instead of two queries per
+    # inspection (the old N+1), exactly as list_projects above.
+    inspection_ids = [i.id for i in inspections]
+    standard_ids = {i.standard_id for i in inspections if i.standard_id}
+    ncs_by_inspection: dict[str, list] = {}
+    if inspection_ids:
+        for nc in (await db.execute(
+            select(NonConformance).where(
+                NonConformance.tenant_id == tenant_id,
+                NonConformance.inspection_id.in_(inspection_ids))
+        )).scalars().all():
+            ncs_by_inspection.setdefault(nc.inspection_id, []).append(nc)
+    standard_names: dict[str, str] = {}
+    if standard_ids:
+        standard_names = {s.id: s.name for s in (await db.execute(
+            select(QualityStandard).where(
+                QualityStandard.tenant_id == tenant_id, QualityStandard.id.in_(standard_ids))
+        )).scalars().all()}
+
     # Real defect count/severity -> score, not a 3-rung status lookup.
     _IMPACT_DEDUCTION = {"HIGH": 20, "MEDIUM": 10, "LOW": 5}
     result = []
     for i in inspections:
-        nc_rows = (await db.execute(select(NonConformance).where(
-            NonConformance.tenant_id == tenant_id, NonConformance.inspection_id == i.id))).scalars().all()
+        nc_rows = ncs_by_inspection.get(i.id, [])
         defects = len(nc_rows)
         deduction = sum(
             _IMPACT_DEDUCTION.get(str(nc.impact_rating or "MEDIUM").upper(), 10) for nc in nc_rows
         )
         score = max(0, 100 - deduction)
-        standard = (await db.execute(
-            select(QualityStandard).where(
-                QualityStandard.id == i.standard_id, QualityStandard.tenant_id == tenant_id)
-        )).scalar_one_or_none()
         status_val = i.status.value if hasattr(i.status, 'value') else str(i.status)
         result.append({
             "id": i.id,
             "title": i.inspected_item,
-            "area": standard.name if standard else None,
+            "area": standard_names.get(i.standard_id) if i.standard_id else None,
             "status": status_val,
             "score": score,
             "defects": defects,
@@ -349,7 +380,7 @@ async def audit_inspection(inspection_id: str, tenant: dict = Depends(require_ro
         result = await agent.inspect_qa(db, inspection_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="inspection", resource_id=inspection_id,
         )
         return result
@@ -394,7 +425,7 @@ async def triage_work_order(work_order_id: str, tenant: dict = Depends(require_r
         result = await agent.triage_work_order(db, work_order_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="work_order", resource_id=work_order_id,
         )
         return result
@@ -438,12 +469,49 @@ async def get_operations_workflow_events(
                                       entity_type=entity_type, entity_id=entity_id)
 
 
+# ── Four-eyes segregation of duties on purchase approval ──────────────────────
+# The direct approval transition previously let a single identity both request
+# and approve a purchase (no SoD anywhere on the ops procure-to-pay path). Gate
+# the APPROVED transition through the existing deterministic
+# SEGREGATION_OF_DUTIES checker, fail-closed, so self-approval is refused.
+from app.compliance.registry import run_checks  # noqa: E402
+
+
+async def _four_eyes_purchase_approval(db, tenant: dict, requester) -> None:
+    """SOX 404 / COSO segregation of duties: the identity that requested a
+    purchase may not also approve it. The approver is the AUTHENTICATED
+    principal (approver_identity), never a client field. Fail-closed on a
+    self-approval; advisory (allowed) when the requester is unknown, so a thin
+    record is never a silent block.
+
+    SCHEMA-TODO(integrator): the ops purchase models store no approver identity
+    or delegated authority limit, so a full maker/checker + SPEND_AUTHORIZATION
+    gate needs ops_purchase_requests.approved_by / ops_purchase_orders.approved_by
+    (String) and an approver authority-limit column.
+    """
+    verdict = run_checks(["SEGREGATION_OF_DUTIES"], {
+        "roles": {"requester": requester, "approver": approver_identity(tenant)},
+    })
+    if not verdict["verified"]:
+        raise HTTPException(409, detail={
+            "error": "segregation_of_duties",
+            "blocking": verdict["blocking"],
+        })
+
+
 @router.post("/purchase-requests/{request_id}/transition")
 async def transition_purchase_request(
     request_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Move a purchase request through draft, approval, ordered, received."""
+    """Move a purchase request through draft, approval, ordered, received.
+    Approving it enforces four-eyes SoD: the requester may not self-approve."""
+    if body.to_state == "APPROVED":
+        pr = (await db.execute(select(PurchaseRequest).where(
+            PurchaseRequest.id == request_id,
+            PurchaseRequest.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        if pr is not None:  # None -> let apply_transition raise the 404
+            await _four_eyes_purchase_approval(db, tenant, getattr(pr, "requested_by", None))
     return await apply_transition(db, WORKFLOW_SPECS["purchase_request"], request_id,
                                   body.to_state, tenant, note=body.note)
 
@@ -453,8 +521,33 @@ async def transition_purchase_order(
     order_id: str, body: TransitionRequest,
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
-    """Move a PO through approval, ordered, received (or cancel)."""
+    """Move a PO through approval, ordered, received (or cancel).
+    Approving it enforces four-eyes SoD against the originating request's
+    requester."""
+    if body.to_state == "APPROVED":
+        po = (await db.execute(select(PurchaseOrder).where(
+            PurchaseOrder.id == order_id,
+            PurchaseOrder.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+        if po is not None:  # None -> let apply_transition raise the 404
+            requester = None
+            if po.purchase_request_id:
+                pr = (await db.execute(select(PurchaseRequest).where(
+                    PurchaseRequest.id == po.purchase_request_id,
+                    PurchaseRequest.tenant_id == tenant["tenant_id"]))).scalar_one_or_none()
+                requester = getattr(pr, "requested_by", None) if pr else None
+            await _four_eyes_purchase_approval(db, tenant, requester)
     return await apply_transition(db, WORKFLOW_SPECS["purchase_order"], order_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+@router.post("/work-orders/{work_order_id}/transition")
+async def transition_work_order(
+    work_order_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move a work order through open, in progress, resolved, closed.
+    Entering RESOLVED stamps resolved_at (see operations.services.workflows)."""
+    return await apply_transition(db, WORKFLOW_SPECS["work_order"], work_order_id,
                                   body.to_state, tenant, note=body.note)
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -492,7 +585,7 @@ async def create_purchase_request(
     await db.refresh(pr)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_request", resource_id=pr.id,
     )
     return {"id": pr.id, "item_description": pr.item_description,
@@ -530,7 +623,7 @@ async def create_work_order(
     await db.refresh(wo)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="work_order", resource_id=wo.id,
     )
     return {"id": wo.id, "issue_title": wo.issue_title, "category": wo.category, "status": wo.status}
@@ -546,3 +639,16 @@ async def bulk_transition_operations(
     if not spec:
         raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
     return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+
+
+if __name__ == "__main__":  # security-path self-check: four-eyes SoD has teeth
+    def _roles(req, appr):
+        return {"roles": {"requester": req, "approver": appr}}
+
+    # same identity requests and approves -> blocked
+    assert not run_checks(["SEGREGATION_OF_DUTIES"], _roles("dev_user", "dev_user"))["verified"]
+    # distinct identities -> allowed
+    assert run_checks(["SEGREGATION_OF_DUTIES"], _roles("alice@acme.com", "bob@acme.com"))["verified"]
+    # unknown requester -> advisory, allowed (never a silent fail-open block)
+    assert run_checks(["SEGREGATION_OF_DUTIES"], _roles(None, "bob@acme.com"))["verified"]
+    print("operations four-eyes SoD gate self-check passed.")

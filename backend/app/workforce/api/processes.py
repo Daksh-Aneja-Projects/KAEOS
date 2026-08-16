@@ -33,7 +33,7 @@ async def list_processes(
         q = q.where(BusinessProcess.capability_id == capability_id)
     if status:
         q = q.where(BusinessProcess.status == status)
-    q = q.order_by(BusinessProcess.name)
+    q = q.order_by(BusinessProcess.name).limit(200)
 
     result = await db.execute(q)
     processes = result.scalars().all()

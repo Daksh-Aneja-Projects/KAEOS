@@ -50,6 +50,13 @@ class CSATAgent:
                     "prompt": f"Analyze this customer satisfaction survey: {facts}"}],
             context={
                 "batch_id": survey_batch_id, "tenant_id": tenant_id, **facts,
+                # Customer-written survey text under a PII_REDACTION-scanned key
+                # (content); the raw comment/feedback_text keys are not scanned,
+                # so without this the PII control never inspected free-text a
+                # customer may have pasted a card/SSN into.
+                "content": facts.get("comment") or facts.get("feedback_text") or "",
+                # GDPR/CCPA lawful basis for the Gate 6 post-execution audit.
+                "legal_basis": "legitimate_interests:customer_support",
                 "instruction": "Output strict JSON: {sentiment, themes, follow_up_needed}.",
             },
             tenant_id=tenant_id,

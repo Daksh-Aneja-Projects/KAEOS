@@ -17,7 +17,7 @@ score=None instead of a guess or a hardcoded default.
 import logging
 from typing import Any, Dict, Optional
 
-import httpx
+from app.core.outbound import guarded_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class CreditBureauConnector:
         headers = {"Authorization": f"Bearer {self.credentials['api_key']}",
                    "Accept": "application/json"}
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with guarded_async_client(timeout=30.0) as client:
                 res = await client.get(f"{self._base_url()}/reports/{applicant_ref}",
                                        headers=headers)
                 res.raise_for_status()
@@ -82,7 +82,7 @@ class CreditBureauConnector:
         if not self.configured:
             return False
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with guarded_async_client(timeout=15.0) as client:
                 res = await client.get(
                     f"{self._base_url()}/status",
                     headers={"Authorization": f"Bearer {self.credentials['api_key']}"})

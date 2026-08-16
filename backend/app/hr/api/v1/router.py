@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import case, select, func as sqlfunc
 
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
@@ -166,7 +166,7 @@ async def create_requisition(
     await db.refresh(req)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="requisition", resource_id=req.id,
     )
     return {"id": req.id, "title": req.title, "status": req.status.value}
@@ -204,7 +204,7 @@ async def add_candidate(
     await db.refresh(candidate)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate.id,
     )
     return {"id": candidate.id, "stage": candidate.stage.value}
@@ -240,7 +240,7 @@ async def trigger_screening(
 
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate_id,
     )
 
@@ -290,7 +290,7 @@ async def run_requisition_fairness_sweep_route(
     result = await run_requisition_fairness_sweep(db, tenant_id, requisition_id)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="requisition", resource_id=requisition_id,
         details={"sweep_status": result.get("status")},
     )
@@ -352,7 +352,7 @@ async def advance_candidate_stage(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate_id,
     )
     return {"candidate_id": candidate_id, "stage": target.value}
@@ -449,47 +449,66 @@ async def list_performance_reviews(tenant_id: str = Depends(get_tenant_id), db: 
 
 @router.get("/dashboard")
 async def get_hr_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    emps = (await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))).scalars().all()
-    reqs = (await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id))).scalars().all()
-    open_reqs = [r for r in reqs if (r.status.value if hasattr(r.status, "value") else r.status) == "OPEN"]
-    candidates = (await db.execute(select(Candidate).where(Candidate.tenant_id == tenant_id))).scalars().all()
-
     # Derivable metrics from real rows; the rest stay None ("—" in the UI)
-    # until a genuine data source (surveys, LMS) exists.
+    # until a genuine data source (surveys, LMS) exists. All counts are SQL
+    # aggregates - no full-table loads.
     from datetime import datetime, timezone as _tz
 
-    now = datetime.now(_tz.utc)
-    applications_this_month = sum(
-        1 for c in candidates
-        if c.applied_at and c.applied_at.year == now.year and c.applied_at.month == now.month
+    # Headcount by status, carrying terminated as a conditional sum: the OR
+    # matters - an employee with a termination_date but a stale status must
+    # still count, and a plain GROUP BY on status alone would undercount.
+    emp_q = await db.execute(
+        select(HREmployee.status, sqlfunc.count(),
+               sqlfunc.coalesce(sqlfunc.sum(case(
+                   ((HREmployee.status == EmploymentStatus.TERMINATED)
+                    | (HREmployee.termination_date.isnot(None)), 1), else_=0)), 0))
+        .where(HREmployee.tenant_id == tenant_id)
+        .group_by(HREmployee.status)
     )
+    total_employees, terminated = 0, 0
+    for _s, count, term in emp_q.all():
+        total_employees += int(count)
+        terminated += int(term or 0)
+    turnover_rate = round(terminated / total_employees * 100, 1) if total_employees else None
 
-    def _stage(c):
-        return c.stage.value if hasattr(c.stage, "value") else str(c.stage)
-
-    hired = sum(1 for c in candidates if _stage(c) == "HIRED")
-    offers_out = sum(1 for c in candidates if _stage(c) == "OFFER_EXTENDED")
+    # Recruiting funnel: one GROUP BY on stage.
+    cand_q = await db.execute(
+        select(Candidate.stage, sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id)
+        .group_by(Candidate.stage)
+    )
+    stage_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in cand_q.all()}
+    total_candidates = sum(stage_counts.values())
+    hired = stage_counts.get("HIRED", 0)
+    offers_out = stage_counts.get("OFFER_EXTENDED", 0)
     offer_acceptance_rate = round(hired / (hired + offers_out) * 100, 1) if (hired + offers_out) else None
 
-    def _emp_status(e):
-        return e.status.value if hasattr(e.status, "value") else str(e.status)
+    open_reqs = int((await db.execute(
+        select(sqlfunc.count())
+        .where(JobRequisition.tenant_id == tenant_id,
+               JobRequisition.status == ReqStatus.OPEN)
+    )).scalar() or 0)
 
-    terminated = sum(1 for e in emps if _emp_status(e) == "TERMINATED" or e.termination_date)
-    turnover_rate = round(terminated / len(emps) * 100, 1) if emps else None
+    now = datetime.now(_tz.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    applications_this_month = int((await db.execute(
+        select(sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id, Candidate.applied_at >= month_start)
+    )).scalar() or 0)
 
+    # Compliance: AVG over a 0/1 case is passed/total without loading the
+    # (unbounded) fairness audit log.
     from app.models.fairness import FairnessAuditLog
-    fairness_logs = (await db.execute(
-        select(FairnessAuditLog).where(FairnessAuditLog.tenant_id == tenant_id)
-    )).scalars().all()
-    compliance_score = (
-        round(sum(1 for l in fairness_logs if l.passed) / len(fairness_logs) * 100, 1)
-        if fairness_logs else None
-    )
+    passed_ratio = (await db.execute(
+        select(sqlfunc.avg(case((FairnessAuditLog.passed == True, 1.0), else_=0.0)))  # noqa: E712
+        .where(FairnessAuditLog.tenant_id == tenant_id)
+    )).scalar()
+    compliance_score = round(float(passed_ratio) * 100, 1) if passed_ratio is not None else None
 
     return {
-        "total_employees": len(emps),
-        "open_positions": len(open_reqs),
-        "total_candidates": len(candidates),
+        "total_employees": total_employees,
+        "open_positions": open_reqs,
+        "total_candidates": total_candidates,
         "applications_this_month": applications_this_month,
         "avg_time_to_fill": None,
         "offer_acceptance_rate": offer_acceptance_rate,
@@ -590,7 +609,7 @@ async def create_time_off_request(
     await db.refresh(req)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="time_off_request", resource_id=req.id,
     )
     return {"id": req.id, "employee_id": req.employee_id,
@@ -683,7 +702,7 @@ async def create_benefit_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="benefit_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="benefit_plan", resource_id=plan.id)
     return {"id": plan.id, "name": plan.name}
 
 
@@ -735,7 +754,7 @@ async def create_benefit_enrollment(
     await db.commit()
     await db.refresh(enrollment)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="benefit_enrollment", resource_id=enrollment.id)
     return {"id": enrollment.id, "status": enrollment.status.value}
 
@@ -787,7 +806,7 @@ async def verify_benefit_enrollment(
         db.add(enrollment)
         await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="benefit_enrollment", resource_id=enrollment_id,
         details={"verified": verified, "status": status})
     return {"enrollment_id": enrollment_id, "verified": verified, "status": status, "execution_id": _exec_id(result)}
@@ -856,7 +875,7 @@ async def create_compensation(
     await db.commit()
     await db.refresh(comp)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="compensation", resource_id=comp.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="compensation", resource_id=comp.id)
     return {"id": comp.id, "base_amount": comp.base_amount}
 
 
@@ -878,12 +897,21 @@ async def compensation_market_analysis(
         raise HTTPException(404, "Linked employee not found")
 
     from app.hr.agents.compensation_agent import CompensationAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = CompensationAgent()
     # ponytail: Compensation stores a single point value, not a band, so a
     # +/-10% envelope around the real current pay stands in for "current
     # band" here — upgrade to real min/max columns if banded comp is modeled.
     current_band = {"min": round(comp.base_amount * 0.9, 2), "max": round(comp.base_amount * 1.1, 2)}
-    analysis = await agent.analyze_salary_band(emp.job_title, emp.location or "Remote", current_band)
+    # Through the 7-gate pipeline (not the ungated agent method): only trust the
+    # decision when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "analyze_salary_band",
+        "job_title": emp.job_title, "location": emp.location or "Remote",
+        "current_band": current_band,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
 
     reasoning = str(analysis.get("reasoning") or "")[:100]
     if reasoning:
@@ -891,10 +919,10 @@ async def compensation_market_analysis(
         db.add(comp)
         await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compensation", resource_id=compensation_id,
-        details={"is_competitive": analysis.get("is_competitive")})
-    return {"compensation_id": compensation_id, "analysis": analysis}
+        details={"is_competitive": analysis.get("is_competitive"), "status": status})
+    return {"compensation_id": compensation_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── Onboarding & Offboarding (BoardingPlan / BoardingTask) ────────────────────
@@ -906,7 +934,7 @@ _DEFAULT_ONBOARDING_TASKS = [
 ]
 _DEFAULT_OFFBOARDING_TASKS = [
     "Revoke system access", "Return company equipment",
-    "Final paycheck and COBRA notice", "Exit interview",
+    "Final paycheck and COBRA notice", "Exit Interview",
 ]
 
 
@@ -964,7 +992,7 @@ async def create_boarding_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="boarding_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="boarding_plan", resource_id=plan.id)
     return {"id": plan.id, "total_tasks": plan.total_tasks}
 
 
@@ -1013,7 +1041,7 @@ async def create_boarding_task(
     await db.commit()
     await db.refresh(task)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="boarding_task", resource_id=task.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="boarding_task", resource_id=task.id)
     return {"id": task.id, "status": task.status.value}
 
 
@@ -1065,7 +1093,7 @@ async def onboarding_checkin(
     agent = OnboardingAgent()
     result = await agent.check_in_with_new_hire(db, employee_id, body.week_num, body.response)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
         details={"week_num": body.week_num, "status": result.get("status")})
     return {"employee_id": employee_id, "week_num": body.week_num, **result}
 
@@ -1090,24 +1118,45 @@ async def offboarding_exit_interview(
         raise HTTPException(404, "Employee not found")
 
     from app.hr.agents.offboarding_agent import OffboardingAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = OffboardingAgent()
-    analysis = await agent.analyze_exit_interview(employee_id, body.survey_responses)
+    # Through the 7-gate pipeline (not the ungated agent method); only trust the
+    # analysis when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "analyze_exit_interview",
+        "survey_responses": body.survey_responses,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
 
     plan = (await db.execute(select(BoardingPlan).where(
         BoardingPlan.tenant_id == tenant_id, BoardingPlan.employee_id == employee_id,
         BoardingPlan.plan_type == BoardingType.OFFBOARDING,
     ).order_by(BoardingPlan.start_date.desc()))).scalars().first()
     if not plan:
+        # Seed the standard offboarding task list so total_tasks reflects the
+        # real work (access revocation, equipment return, final pay, exit
+        # interview). Completing only the AI exit-interview must not flip a
+        # brand-new plan to COMPLETED and hide that nothing else was done.
         plan = BoardingPlan(
             tenant_id=tenant_id, employee_id=employee_id, plan_type=BoardingType.OFFBOARDING,
-            start_date=datetime.now(timezone.utc), total_tasks=0, completed_tasks=0, status="ACTIVE",
+            start_date=datetime.now(timezone.utc),
+            total_tasks=len(_DEFAULT_OFFBOARDING_TASKS), completed_tasks=0, status="ACTIVE",
         )
         db.add(plan)
         await db.flush()
+        for title in _DEFAULT_OFFBOARDING_TASKS:
+            db.add(BoardingTask(
+                tenant_id=tenant_id, plan_id=plan.id, title=title,
+                due_date=datetime.now(timezone.utc), status=TaskStatus.PENDING,
+            ))
+        await db.flush()
 
+    # Case-insensitive match so the seeded "Exit interview" is reused instead of
+    # spawning a duplicate "Exit Interview" task.
     task = (await db.execute(select(BoardingTask).where(
-        BoardingTask.plan_id == plan.id, BoardingTask.title == "Exit Interview",
-    ))).scalar_one_or_none()
+        BoardingTask.plan_id == plan.id, sqlfunc.lower(BoardingTask.title) == "exit interview",
+    ))).scalars().first()
     if not task:
         task = BoardingTask(
             tenant_id=tenant_id, plan_id=plan.id, title="Exit Interview",
@@ -1115,12 +1164,22 @@ async def offboarding_exit_interview(
         )
         db.add(task)
         plan.total_tasks = (plan.total_tasks or 0) + 1
+        await db.flush()
 
-    task.automation_result = analysis
+    # The exit interview is a human survey: record that it was conducted
+    # regardless of the model's availability. The gated AI analysis only ENRICHES
+    # the task when the run cleared every gate - a down or gate-blocked model must
+    # neither fabricate an analysis nor prevent the interview from being logged.
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.now(timezone.utc)
     task.is_automated = True
     task.automation_action = "analyze_exit_interview"
+    task.automation_result = analysis or {
+        "survey_responses": body.survey_responses,
+        "ai_analysis": None,
+        "summary": "Exit interview recorded. Automated analysis was not applied "
+                   "on this run, so no AI insight is attached.",
+    }
     db.add(task)
 
     done = (await db.execute(select(sqlfunc.count()).select_from(BoardingTask).where(
@@ -1133,9 +1192,10 @@ async def offboarding_exit_interview(
     await db.commit()
 
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
-        details={"boarding_plan_id": plan.id})
-    return {"employee_id": employee_id, "boarding_plan_id": plan.id, "task_id": task.id, "analysis": analysis}
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="hr_employee", resource_id=employee_id,
+        details={"boarding_plan_id": plan.id, "status": status})
+    return {"employee_id": employee_id, "boarding_plan_id": plan.id, "task_id": task.id,
+            "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── Learning & Development ────────────────────────────────────────────────────
@@ -1171,7 +1231,7 @@ async def create_course(
     await db.commit()
     await db.refresh(course)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="course", resource_id=course.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="course", resource_id=course.id)
     return {"id": course.id, "title": course.title}
 
 
@@ -1218,7 +1278,7 @@ async def create_course_enrollment(
     await db.commit()
     await db.refresh(enrollment)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="course_enrollment", resource_id=enrollment.id)
     return {"id": enrollment.id, "status": enrollment.status.value}
 
@@ -1282,7 +1342,7 @@ async def create_er_case(
     await db.commit()
     await db.refresh(case)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case.id)
     return {"id": case.id, "status": case.status.value}
 
 
@@ -1318,7 +1378,7 @@ async def triage_er_case(
     agent = EmployeeRelationsAgent()
     result = await agent.triage_case(db, case_id)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="er_case", resource_id=case_id,
         details={"status": result.get("status")})
     return {"case_id": case_id, **result}
 
@@ -1361,7 +1421,7 @@ async def create_headcount_plan(
     await db.commit()
     await db.refresh(plan)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="headcount_plan", resource_id=plan.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="headcount_plan", resource_id=plan.id)
     return {"id": plan.id, "status": plan.status.value}
 
 
@@ -1410,7 +1470,7 @@ async def create_payroll_run(
     await db.commit()
     await db.refresh(run)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run.id)
     return {"id": run.id, "status": run.status.value}
 
 
@@ -1472,7 +1532,7 @@ async def generate_payslips(
         db.add(run)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run_id,
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="payroll_run", resource_id=run_id,
         details={"created": created, "skipped_no_compensation": skipped_no_comp, "skipped_existing": skipped_existing})
     return {"run_id": run_id, "created": created,
             "skipped_no_compensation": skipped_no_comp, "skipped_existing": skipped_existing}
@@ -1532,7 +1592,7 @@ async def create_compliance_report(
     await db.commit()
     await db.refresh(report)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_report", resource_id=report.id)
     return {"id": report.id, "framework": report.framework.value}
 
@@ -1569,7 +1629,7 @@ async def generate_eeoc_compliance_report(
     await db.commit()
     await db.refresh(report)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_report", resource_id=report.id, details={"passed": test_result["passed"]})
     return {"id": report.id, "passed": test_result["passed"], "flagged": test_result["flagged"],
             "decided_total": built["decided_total"]}
@@ -1610,7 +1670,7 @@ async def resolve_compliance_violation(
     db.add(v)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="compliance_violation", resource_id=violation_id)
     return {"id": violation_id, "resolved": True}
 
@@ -1648,18 +1708,31 @@ async def generate_hr_metric_snapshot(
     tenant_id = tenant["tenant_id"]
     today = datetime.now(timezone.utc).date()
 
-    emps = (await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))).scalars().all()
-    reqs = (await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id))).scalars().all()
-    candidates = (await db.execute(select(Candidate).where(Candidate.tenant_id == tenant_id))).scalars().all()
-
-    def _status(e): return e.status.value if hasattr(e.status, "value") else str(e.status)
-    def _stage(c): return c.stage.value if hasattr(c.stage, "value") else str(c.stage)
-    def _rstatus(r): return r.status.value if hasattr(r.status, "value") else str(r.status)
-
-    active_contractors = sum(1 for e in emps if _status(e) == "CONTRACTOR")
-    open_reqs = sum(1 for r in reqs if _rstatus(r) == "OPEN")
-    hired = [c for c in candidates if _stage(c) == "HIRED"]
-    offers_out = sum(1 for c in candidates if _stage(c) == "OFFER_EXTENDED")
+    # SQL counts; only the HIRED candidates are loaded as rows, because the
+    # time-to-fill date-diff stays in Python (a SQL date-diff would need
+    # julianday on SQLite vs extract/epoch on Postgres).
+    total_headcount, active_contractors = (
+        int(v or 0) for v in (await db.execute(
+            select(sqlfunc.count(),
+                   sqlfunc.coalesce(sqlfunc.sum(case(
+                       (HREmployee.status == EmploymentStatus.CONTRACTOR, 1), else_=0)), 0))
+            .where(HREmployee.tenant_id == tenant_id)
+        )).one()
+    )
+    open_reqs = int((await db.execute(
+        select(sqlfunc.count())
+        .where(JobRequisition.tenant_id == tenant_id,
+               JobRequisition.status == ReqStatus.OPEN)
+    )).scalar() or 0)
+    offers_out = int((await db.execute(
+        select(sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id,
+               Candidate.stage == CandidateStage.OFFER_EXTENDED)
+    )).scalar() or 0)
+    hired = (await db.execute(
+        select(Candidate).where(Candidate.tenant_id == tenant_id,
+                                Candidate.stage == CandidateStage.HIRED)
+    )).scalars().all()
     offer_acceptance_rate = round(len(hired) / (len(hired) + offers_out) * 100, 1) if (hired or offers_out) else None
     fill_days = [
         (c.updated_at - c.applied_at).days for c in hired
@@ -1676,7 +1749,7 @@ async def generate_hr_metric_snapshot(
         HRMetricSnapshot.tenant_id == tenant_id, HRMetricSnapshot.snapshot_date == today,
     ))).scalar_one_or_none()
     snap = existing or HRMetricSnapshot(tenant_id=tenant_id, snapshot_date=today)
-    snap.total_headcount = len(emps)
+    snap.total_headcount = total_headcount
     snap.active_contractors = active_contractors
     snap.open_requisitions = open_reqs
     snap.offer_acceptance_rate = offer_acceptance_rate
@@ -1737,7 +1810,7 @@ async def schedule_interview(
     await db.commit()
     await db.refresh(interview)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview.id)
     return {"id": interview.id, "scheduled_at": interview.scheduled_at.isoformat()}
 
 
@@ -1764,7 +1837,7 @@ async def submit_interview_feedback(
     db.add(interview)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview_id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="interview", resource_id=interview_id)
     return {"id": interview_id, "feedback_submitted": True, "recommendation": interview.recommendation}
 
 
@@ -1815,7 +1888,7 @@ async def create_employee_document(
     await db.commit()
     await db.refresh(doc)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="employee_document", resource_id=doc.id)
     return {"id": doc.id, "title": doc.title}
 
@@ -1834,7 +1907,7 @@ async def sign_employee_document(
     db.add(doc)
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="employee_document", resource_id=document_id)
     return {"id": document_id, "is_signed": True}
 
@@ -1887,7 +1960,7 @@ async def create_timesheet(
     await db.commit()
     await db.refresh(ts)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="timesheet", resource_id=ts.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="timesheet", resource_id=ts.id)
     return {"id": ts.id, "status": ts.status}
 
 
@@ -1929,7 +2002,7 @@ async def create_performance_cycle(
     await db.commit()
     await db.refresh(cycle)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"), resource_type="review_cycle", resource_id=cycle.id)
+        actor=approver_identity(tenant), actor_role=tenant.get("role"), resource_type="review_cycle", resource_id=cycle.id)
     return {"id": cycle.id, "name": cycle.name}
 
 
@@ -1964,7 +2037,7 @@ async def create_performance_review(
     await db.commit()
     await db.refresh(review)
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review.id)
     return {"id": review.id, "status": review.status}
 
@@ -2007,7 +2080,7 @@ async def submit_self_rating(
     db.add(_workflow_event(tenant_id, "performance_review", review_id, from_state, "PENDING_MANAGER", tenant))
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
     return {"id": review_id, "status": review.status}
 
@@ -2033,7 +2106,7 @@ async def submit_manager_rating(
     db.add(_workflow_event(tenant_id, "performance_review", review_id, from_state, "COMPLETED", tenant))
     await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
     return {"id": review_id, "status": review.status}
 
@@ -2056,12 +2129,25 @@ async def synthesize_review_feedback(
     if not review:
         raise HTTPException(404, "Performance review not found")
     from app.hr.agents.performance_agent import PerformanceAgent
+    from app.hr.agents.gated_runner import extract_decision
     agent = PerformanceAgent()
-    analysis = await agent.synthesize_feedback(db, review_id, body.raw_feedback)
+    # Through the 7-gate pipeline (not the ungated agent method); persist the
+    # synthesis onto the review only when the run cleared every gate.
+    result = await agent.execute_via_pipeline(db, tenant_id, {
+        "action": "synthesize_360_feedback",
+        "raw_feedback": body.raw_feedback,
+    })
+    status = result.get("status")
+    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
+    if analysis:
+        review.ai_feedback_summary = analysis.get("summary")
+        review.ai_growth_areas = analysis.get("growth_areas", [])
+        db.add(review)
+        await db.commit()
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="performance_review", resource_id=review_id)
-    return {"review_id": review_id, "analysis": analysis}
+    return {"review_id": review_id, "status": status, "analysis": analysis, "execution_id": _exec_id(result)}
 
 
 # ── BambooHR Connector ─────────────────────────────────────────────────────────
@@ -2086,7 +2172,7 @@ async def sync_bamboohr(
     if not result.get("ok"):
         raise HTTPException(502, detail=result.get("error") or "BambooHR sync failed")
     await record_security_event(tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="hr_connector", resource_id="bamboohr",
         details={"created": result.get("created"), "updated": result.get("updated")})
     return result

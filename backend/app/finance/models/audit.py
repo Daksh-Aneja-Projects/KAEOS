@@ -8,6 +8,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -108,7 +109,7 @@ class ControlTestResult(str, enum.Enum):
     NOT_TESTED = "NOT_TESTED"
 
 
-class ControlTest(Base):
+class ControlTest(Base, LegalHoldMixin):
     """SOX control testing records."""
     __tablename__ = "fin_control_tests"
 

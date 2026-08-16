@@ -9,7 +9,7 @@ usage is rated + optionally pushed to Stripe.
 Money is Decimal (Numeric) everywhere — never float.
 """
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Integer, Numeric, String, UniqueConstraint, Index,
+    Boolean, BigInteger, Column, Date, DateTime, Integer, Numeric, String, UniqueConstraint, Index,
 )
 from sqlalchemy.sql import func
 import uuid
@@ -33,6 +33,9 @@ class BillingAccount(Base):
     stripe_subscription_id = Column(String, nullable=True)
     # The metered subscription item usage records are pushed against.
     stripe_meter_item_id = Column(String, nullable=True)
+    # Unix ts of the newest plan-affecting subscription event applied to this
+    # account, so an out-of-order Stripe redelivery cannot overwrite newer state.
+    last_subscription_event_at = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

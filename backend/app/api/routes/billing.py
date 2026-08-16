@@ -11,11 +11,12 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant_id, get_tenant
+from app.core.tenant import get_tenant_id, get_tenant, require_role
 from app.models.domain import SkillExecution
 from app.models.infrastructure import CostEvent
 
@@ -233,12 +234,15 @@ async def get_entitlements(
     against the plan allowance."""
     from app.core.entitlements import (
         entitlements_for_plan, plan_for_tenant, FEATURES, _managed_cloud,
+        PLAN_FEATURES, PLAN_ALLOWANCE,
     )
+    from app.models.billing import BillingAccount
     from app.services.usage_rating import rate_tenant_period
     tenant_id = tenant["tenant_id"]
     plan = await plan_for_tenant(db, tenant_id)
     granted = entitlements_for_plan(plan)
     rating = await rate_tenant_period(db, tenant_id)
+    acct = await db.get(BillingAccount, tenant_id)
     return {
         "tenant_id": tenant_id,
         "plan": plan,
@@ -246,7 +250,133 @@ async def get_entitlements(
         # Self-host: every feature is available regardless of plan.
         "features": {f: (f in granted or not _managed_cloud()) for f in sorted(FEATURES)},
         "usage": rating,
+        # Additive: the full plan catalog (for upgrade UIs) + purchased seats.
+        "plans": {
+            tier: {"features": sorted(feats), "allowance": PLAN_ALLOWANCE[tier]}
+            for tier, feats in PLAN_FEATURES.items()
+        },
+        "seats": acct.seats if acct else None,
     }
+
+
+def _settings_page_url() -> str:
+    """Where checkout/portal sends the browser back: the SPA billing settings."""
+    from app.core.config import get_settings
+    base = (get_settings().FRONTEND_BASE_URL or "http://localhost:5174").rstrip("/")
+    return f"{base}/platform/settings?tab=billing"
+
+
+class CheckoutRequest(BaseModel):
+    plan: str
+
+
+@router.post("/checkout-session")
+async def create_checkout_session(
+    body: CheckoutRequest,
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hosted Stripe Checkout URL for subscribing this tenant to a paid plan.
+    Admin-only; 404 on installs with no billing provider (self-host)."""
+    from app.core.entitlements import PLAN_FEATURES
+    from app.services.stripe_bridge import get_billing_provider
+    provider = get_billing_provider()
+    if not provider.enabled:
+        raise HTTPException(status_code=404, detail="Billing provider not enabled")
+    plan = (body.plan or "").strip().lower()
+    if plan not in PLAN_FEATURES or plan in ("free", "oss"):
+        raise HTTPException(status_code=400, detail=f"'{body.plan}' is not a purchasable plan")
+    return_url = _settings_page_url()
+    try:
+        url = await provider.create_checkout_session(
+            db, tenant["tenant_id"], plan,
+            success_url=return_url, cancel_url=return_url,
+        )
+    except ValueError as e:
+        # e.g. no Stripe price carries this plan's lookup_key — operator config gap.
+        raise HTTPException(status_code=400, detail=str(e))
+    if not url:
+        raise HTTPException(status_code=404, detail="Billing provider not enabled")
+    return {"url": url}
+
+
+@router.post("/portal-session")
+async def create_portal_session(
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hosted Stripe billing-portal URL (manage payment method, invoices,
+    cancellation). Admin-only; 404 with no billing provider."""
+    from app.services.stripe_bridge import get_billing_provider
+    provider = get_billing_provider()
+    if not provider.enabled:
+        raise HTTPException(status_code=404, detail="Billing provider not enabled")
+    url = await provider.create_portal_session(
+        db, tenant["tenant_id"], return_url=_settings_page_url()
+    )
+    if not url:
+        raise HTTPException(status_code=404, detail="Billing provider not enabled")
+    return {"url": url}
+
+
+class BaselineUpsert(BaseModel):
+    skill_name: str
+    baseline_minutes: int
+    hourly_rate: Decimal | None = None
+
+
+def _baseline_payload(row) -> dict:
+    return {
+        "skill_name": row.skill_id_name,
+        "baseline_minutes": row.baseline_minutes,
+        "hourly_rate": float(row.loaded_hourly_rate_usd or 0),
+    }
+
+
+@router.get("/baselines")
+async def list_baselines(
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """The tenant's configured per-skill human baselines (feeds /billing/roi)."""
+    from app.models.billing import SkillValueBaseline
+    rows = (await db.execute(
+        select(SkillValueBaseline)
+        .where(SkillValueBaseline.tenant_id == tenant["tenant_id"])
+        .order_by(SkillValueBaseline.skill_id_name)
+    )).scalars().all()
+    return {"baselines": [_baseline_payload(r) for r in rows]}
+
+
+@router.put("/baselines")
+async def upsert_baseline(
+    body: BaselineUpsert,
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upsert one skill's human baseline (unique per tenant + skill).
+    baseline_minutes = how long a person takes; hourly_rate = their loaded cost."""
+    from app.models.billing import SkillValueBaseline
+    name = (body.skill_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="skill_name is required")
+    if body.baseline_minutes < 0 or (body.hourly_rate is not None and body.hourly_rate < 0):
+        raise HTTPException(
+            status_code=400, detail="baseline_minutes and hourly_rate must be non-negative")
+    row = (await db.execute(
+        select(SkillValueBaseline).where(
+            SkillValueBaseline.tenant_id == tenant["tenant_id"],
+            SkillValueBaseline.skill_id_name == name,
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        row = SkillValueBaseline(tenant_id=tenant["tenant_id"], skill_id_name=name)
+        db.add(row)
+    row.baseline_minutes = int(body.baseline_minutes)
+    if body.hourly_rate is not None:
+        row.loaded_hourly_rate_usd = body.hourly_rate
+    await db.commit()
+    return _baseline_payload(row)
 
 
 @router.post("/webhook")

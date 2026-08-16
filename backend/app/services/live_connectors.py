@@ -566,8 +566,18 @@ class LiveConnectorService:
         if keyed:
             keys = {(s.tenant_id, s.source_type, s.external_id) for s in keyed}
             tenants = {s.tenant_id for s in keyed}
+            # Bound the dedup read to THIS batch: match only the source_type /
+            # external_id values we are about to upsert, not every keyed Signal
+            # in the tenant's history (a full-table scan that grows forever).
+            # in_() over the two columns over-matches their cross product, so the
+            # exact-tuple `in keys` filter below still decides membership - but
+            # the DB now returns ~batch_size rows instead of the whole history.
+            source_types = {s.source_type for s in keyed}
+            ext_ids = {s.external_id for s in keyed}
             rows = (await db.execute(select(Signal).where(
-                Signal.tenant_id.in_(tenants), Signal.external_id.isnot(None)
+                Signal.tenant_id.in_(tenants),
+                Signal.source_type.in_(source_types),
+                Signal.external_id.in_(ext_ids),
             ))).scalars().all()
             existing = {(r.tenant_id, r.source_type, r.external_id): r
                         for r in rows if (r.tenant_id, r.source_type, r.external_id) in keys}

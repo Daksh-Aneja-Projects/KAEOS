@@ -18,7 +18,13 @@ from app.models.domain import Skill
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SUPPORT_COMPLIANCE = ["GDPR", "CCPA", "SLA"]
+# PII_REDACTION runs the real Luhn/SSN/API-key checker on outbound customer
+# content (fail-closed BLOCK). SLA_BREACH is the tag the checker actually
+# registers - the old "SLA" resolved to NO checker, so the SLA control never
+# ran. Every gated support agent handles customer content, so both belong in
+# the shared default. (resolution_agent/kb_agent bypass this runner entirely -
+# a separate ungoverned-drafting gap, not fixable here.)
+DEFAULT_SUPPORT_COMPLIANCE = ["GDPR", "CCPA", "SLA_BREACH", "PII_REDACTION"]
 
 
 async def run_gated_support_skill(
@@ -66,8 +72,12 @@ async def run_gated_support_skill(
         "_skill_obj": skill_obj,
     }
 
-    if "GDPR" in compliance_tags or "CCPA" in compliance_tags:
-        ctx["data_processing_basis_logged"] = True
+    # Gate 6 audit flag: derive from context, never hardcode True. A hardcoded
+    # flag asserted "lawful basis logged" even when no basis was ever supplied,
+    # so every GDPR/CCPA-tagged support run failed Gate 6 (FAILED_AUDIT) because
+    # the audit also requires a real legal_basis. Mirrors sales/agents/gated_runner.
+    if any(t in compliance_tags for t in ("GDPR", "HIPAA", "CCPA")):
+        ctx.setdefault("data_processing_basis_logged", bool(context.get("legal_basis")))
 
     executor = AgentExecutor(ComplianceEngine(), hitl_manager)
     return await executor.execute_skill(skill_dict, ctx)
@@ -86,3 +96,21 @@ def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
     except ValueError as e:
         logger.warning(f"extract_decision: could not parse JSON decision: {e}")
         return {}
+
+
+if __name__ == "__main__":
+    # Security-path self-check for the compliance wiring this runner owns:
+    # (1) the default tags name checkers that actually exist - the SLA->SLA_BREACH
+    #     fix (the old "SLA" resolved to NO checker, so the SLA control was dead);
+    # (2) PII_REDACTION on a ticket_text carrying a raw PAN blocks fail-closed -
+    #     the CRIT this file re-wires. The customer-content agents route inbound
+    #     text under recognized keys (ticket_text/content) so this actually fires.
+    from app.compliance.registry import get as _get, run_checks as _run
+    assert "SLA" not in DEFAULT_SUPPORT_COMPLIANCE, "unbacked 'SLA' tag regressed"
+    for _t in ("SLA_BREACH", "PII_REDACTION"):
+        assert _t in DEFAULT_SUPPORT_COMPLIANCE and _get(_t) is not None, _t
+    _pan = _run(["PII_REDACTION"], {"ticket_text": "please refund my card 4111 1111 1111 1111"})
+    assert not _pan["verified"] and _pan["blocking"], "PAN in ticket_text must block"
+    _clean = _run(["PII_REDACTION"], {"ticket_text": "my order never arrived"})
+    assert _clean["verified"], "clean ticket_text must pass"
+    print("support gated_runner compliance wiring self-check passed")

@@ -7,6 +7,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -26,7 +27,7 @@ class ClauseRiskLevel(str, enum.Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
-class Contract(Base):
+class Contract(Base, LegalHoldMixin):
     """Corporate contracts (NDAs, MSAs, SOWs, Employment Agreements)."""
     __tablename__ = "leg_contracts"
 

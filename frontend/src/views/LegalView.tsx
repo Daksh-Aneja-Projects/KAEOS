@@ -14,6 +14,7 @@ import { toPct } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import TableCard from '../components/shared/TableCard';
 import StatCard from '../components/shared/StatCard';
+import EmptyState from '../components/shared/EmptyState';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -149,14 +150,6 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
       style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
       {humanize(status) || 'N/A'}
     </span>
-  );
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-16 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-12 h-12 mx-auto mb-4" style={{ color: colors.inkTertiary }} />
-      <p className="text-[15px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
   );
 
   const SubSection = ({ icon: Icon, title, count }: { icon: React.ElementType; title: string; count: number }) => (

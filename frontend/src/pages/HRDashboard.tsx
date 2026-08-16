@@ -84,14 +84,16 @@ export default function HRDashboard({ domain }: { domain?: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
-    Promise.all([
-      api.getWorkforceDepartment('hr').catch(() => null),
-      api.getHRDashboard().catch(() => null),
-      api.getDomainAnalytics('hr').catch(() => null),
+    Promise.allSettled([
+      api.getWorkforceDepartment('hr'),
+      api.getHRDashboard(),
+      api.getDomainAnalytics('hr'),
     ]).then(([d, hr, an]) => {
-      setDept(d);
-      setHRStats(hr);
-      setHRAnalytics(an);
+      if (d.status === 'fulfilled') setDept(d.value);
+      if (hr.status === 'fulfilled') { setHRStats(hr.value); setError(null); }
+      // Both requests failing is an outage, not an undeployed department.
+      else if (d.status === 'rejected') setError(hr.reason?.message || 'Failed to load HR');
+      if (an.status === 'fulfilled') setHRAnalytics(an.value);
       setLoading(false);
     });
   };
@@ -99,6 +101,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
   useLiveRefresh(load, { intervalMs: 20000 });
 
   if (loading) return <BrainLoading message="Loading HR intelligence..." />;
+  if (error && !dept && !hrStats) return <BrainError message={error} onRetry={() => { setLoading(true); load(); }} />;
 
   const card = { background: colors.surface1, borderRadius: '12px', border: `1px solid ${colors.hairline}`, padding: '20px' };
   const healthColor = (h: number) => h > 0.8 ? '#22c55e' : h > 0.5 ? '#f59e0b' : '#ef4444';

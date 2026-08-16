@@ -536,8 +536,17 @@ class HITLManager:
             # The real approver identity, for the SOX has-human-approver check
             # and for actuation attribution. Server-derived from the resolved
             # execution row, never from client input.
-            context["has_human_approver"] = (
-                (execution.hitl_approver if execution else None) or "human-approver"
+            _approver = (execution.hitl_approver if execution else None) or "human-approver"
+            context["has_human_approver"] = _approver
+            # Four-eyes (SoD): attribute BOTH sides on resume. The approver is the
+            # human who cleared this pause; the maker is the initiator carried on
+            # the persisted context (its requester/creator), never the approver.
+            # check_sox fails closed if they cannot be told apart, so a person
+            # cannot approve their own financial write-back.
+            context["approver"] = _approver
+            context.setdefault(
+                "maker", context.get("maker") or context.get("requested_by")
+                or context.get("created_by")
             )
             if skill_obj is not None:
                 context["_skill_obj"] = skill_obj

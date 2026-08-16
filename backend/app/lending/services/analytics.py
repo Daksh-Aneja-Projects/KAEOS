@@ -63,7 +63,7 @@ async def lending_analytics(db: AsyncSession, tenant_id: str,
         })
 
         # Fair-lending: approval rate by protected class (four-fifths).
-        fair = await _fair_lending_ratios(db, tenant_id)
+        fair = await fair_lending_ratios(db, tenant_id)
         if fair is None:
             insights.append({"severity": "info",
                              "message": "Fair-lending disparate-impact analysis needs "
@@ -91,7 +91,7 @@ async def lending_analytics(db: AsyncSession, tenant_id: str,
     return {"domain": "lending", "kpis": kpis, "charts": charts_out, "insights": insights}
 
 
-async def _fair_lending_ratios(db: AsyncSession, tenant_id: str):
+async def fair_lending_ratios(db: AsyncSession, tenant_id: str):
     """Build four-fifths cohorts from real decided applications. Returns None
     when there is nothing to analyse (no protected-class data on decided apps)."""
     q = await db.execute(

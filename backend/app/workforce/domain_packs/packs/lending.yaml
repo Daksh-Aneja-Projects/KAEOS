@@ -1,6 +1,6 @@
 name: "Banking & Lending"
 slug: "lending"
-description: "Governed consumer-lending department: origination, underwriting, adverse-action, and continuous fair-lending monitoring."
+description: "Governed consumer-lending department: origination, underwriting, adverse-action, servicing and collections, and continuous fair-lending monitoring."
 long_description: "The KAEOS Lending Domain Pack provides an autonomous, compliance-first digital lending department for banks and non-bank lenders. Every credit decision runs through deterministic policy underwriting and hard, fail-closed statutory gates (ECOA/Reg B, fair-lending disparate impact, TILA/Reg Z, FDCPA). No decision ships that fails a gate."
 icon: "🏦"
 category: "banking"
@@ -52,6 +52,14 @@ capabilities:
     processes: ["fair_lending_scan"]
     compliance: ["FAIR_LENDING"]
 
+  - id: "servicing_collections"
+    name: "Loan Servicing & Collections"
+    description: "Track serviced-loan delinquency buckets and run every debt-collection contact through the fail-closed FDCPA gate."
+    icon: "📞"
+    agents: ["collections_agent"]
+    processes: ["collection_contact"]
+    compliance: ["FDCPA"]
+
 agent_definitions:
   - name: "IntakeAgent"
     type: "intake_agent"
@@ -70,6 +78,12 @@ agent_definitions:
     capability: "adverse_action"
     description: "Generates ECOA compliant adverse-action notices with specific reasons."
     persona: "You are the KAEOS Adverse Action Agent. You draft compliant denial notices with specific principal reasons."
+
+  - name: "CollectionsAgent"
+    type: "collections_agent"
+    capability: "servicing_collections"
+    description: "Drafts compliant collection contact notes; the deterministic fail-closed FDCPA gate decides whether any contact is permitted."
+    persona: "You are the KAEOS Collections Agent. You draft a short, professional debt-collection contact note for a human collector. You never threaten, harass, or misrepresent the debt, and you never authorize a contact yourself - the FDCPA gate does."
 
 process_definitions:
   - id: "application_intake"
@@ -102,11 +116,32 @@ process_definitions:
         agent: "adverse_action_agent"
         method: "issue"
 
+  - id: "fair_lending_scan"
+    name: "Fair-Lending Four-Fifths Scan"
+    capability: "fair_lending_monitoring"
+    sla_hours: 24
+    steps:
+      - id: "run_scan"
+        type: "AGENT_ACTION"
+        agent: "underwriter_agent"
+        method: "fair_lending_scan"
+
+  - id: "collection_contact"
+    name: "Delinquency & Collections Contact"
+    capability: "servicing_collections"
+    sla_hours: 24
+    steps:
+      - id: "contact_case"
+        type: "AGENT_ACTION"
+        agent: "collections_agent"
+        method: "contact"
+
 knowledge_templates:
   - "credit_policy_manual"
   - "fair_lending_program"
   - "adverse_action_reason_codes"
   - "tila_disclosure_templates"
+  - "fdcpa_collections_playbook"
 
 deployment_config:
   min_agents: 3

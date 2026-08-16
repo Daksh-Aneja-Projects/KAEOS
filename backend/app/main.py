@@ -321,6 +321,24 @@ if _HAS_OTEL and os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
 elif _HAS_OTEL:
     logger.info("[Observability] OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled")
 
+# Sentry error tracking (optional). Captures unhandled exceptions only;
+# traces_sample_rate stays 0 because distributed tracing is OTLP's job (above).
+# Guarded so a missing or broken sentry-sdk can never break startup.
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.ENVIRONMENT,
+            release=settings.APP_VERSION,
+            traces_sample_rate=0.0,
+        )
+        logger.info("[Observability] Sentry error tracking enabled")
+    except ImportError:
+        logger.warning("[Observability] SENTRY_DSN set but sentry-sdk not installed - errors not reported")
+    except Exception as _sentry_exc:  # never let error tracking break the app
+        logger.warning(f"[Observability] Sentry init failed, continuing without it: {_sentry_exc}")
+
 # ── Middleware (order matters — outermost is added LAST) ─────────────────────────
 
 from app.core.middleware import (
@@ -418,6 +436,7 @@ app.include_router(sso_routes.router,      prefix=PREFIX)
 from app.api.routes import scim as scim_routes
 app.include_router(scim_routes.router,     prefix=PREFIX)
 app.include_router(brain.router,           prefix=PREFIX)
+app.include_router(brain.knowledge_router, prefix=PREFIX)
 app.include_router(neural.router,          prefix=PREFIX)
 # Agent interface — MCP endpoint + Company Skills File export. A thin protocol
 # adapter over the governed routes: agents inherit the same 7 gates, RBAC, and

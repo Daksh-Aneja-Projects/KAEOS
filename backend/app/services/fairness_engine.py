@@ -131,16 +131,42 @@ class FairnessEngine:
                 "method": stat["method"],
             }
         else:
-            # LLM fairness assessment on THIS tenant's fine-tuned model (BYOK).
-            # Local var, not self.llm: FairnessEngine is a shared singleton, so
-            # mutating self would race across concurrent tenants.
-            llm = await get_tenant_router(tenant_id)
-            assessment = await self._assess_fairness(llm, action_desc, attributes)
-            assessment.setdefault("method", "llm_screening")
-            assessment["rationale"] = (
-                "[LLM screening - no cohort outcome data supplied; not a "
-                "statistical test] " + str(assessment.get("rationale", ""))
-            )
+            # action_desc carries UNTRUSTED intent + affected-entity metadata
+            # (connector / org-graph data). A prompt injection in it could steer
+            # the model to score 1.0 and silence a real disparate-impact finding.
+            # Fence it as data, and if the injection risk is HIGH/CRITICAL do NOT
+            # ask the model - fail closed (score 0.0) so the gate routes this to a
+            # human. Mirrors skill_executor / debate_engine.
+            from app.services import prompt_guard
+            guarded = prompt_guard.guard(action_desc)
+            if guarded["blocked"]:
+                logger.warning(
+                    "[Fairness] prompt-injection risk in action context (%s); "
+                    "refusing LLM screening and routing to human (fail-closed)",
+                    guarded["scan"].get("categories"),
+                )
+                assessment = {
+                    "overall_score": 0.0,
+                    "attribute_scores": {},
+                    "flagged_attributes": ["prompt_injection"],
+                    "rationale": (
+                        "Prompt-injection risk detected in the action context; "
+                        "fairness screening was refused and the decision routes to "
+                        "a human (fail-closed)."
+                    ),
+                    "method": "prompt_guard_block",
+                }
+            else:
+                # LLM fairness assessment on THIS tenant's fine-tuned model (BYOK).
+                # Local var, not self.llm: FairnessEngine is a shared singleton, so
+                # mutating self would race across concurrent tenants.
+                llm = await get_tenant_router(tenant_id)
+                assessment = await self._assess_fairness(llm, guarded["safe_text"], attributes)
+                assessment.setdefault("method", "llm_screening")
+                assessment["rationale"] = (
+                    "[LLM screening - no cohort outcome data supplied; not a "
+                    "statistical test] " + str(assessment.get("rationale", ""))
+                )
             score = assessment.get("overall_score", 0.5)
             passed = score >= threshold
             flagged = assessment.get("flagged_attributes", [])

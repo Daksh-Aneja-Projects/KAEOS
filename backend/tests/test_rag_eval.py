@@ -52,5 +52,47 @@ def test_lexical_and_rrf_are_bounded_and_honest():
     assert fused["a"] > 0 and fused["b"] > 0
 
 
+# ── llm_judge_faithful (stubbed router — the real-model check is e2e-only) ───
+
+class _StubRouter:
+    def __init__(self, reply):
+        self._reply = reply
+
+    async def complete(self, prompt, **kwargs):
+        return self._reply
+
+
+@pytest.mark.asyncio
+async def test_llm_judge_parses_json_verdict():
+    from app.services.rag_eval import llm_judge_faithful
+
+    out = await llm_judge_faithful(
+        "The match is 4 percent.",
+        ["The company matches 401k contributions up to 4 percent."],
+        router=_StubRouter('Sure! {"faithful": true, "reason": "supported"}'),
+    )
+    assert out == {"faithful": True, "reason": "supported"}
+
+
+@pytest.mark.asyncio
+async def test_llm_judge_garbage_reply_is_honest_none():
+    from app.services.rag_eval import llm_judge_faithful
+
+    out = await llm_judge_faithful(
+        "answer", "context", router=_StubRouter("I cannot answer in JSON, sorry."),
+    )
+    assert out["faithful"] is None, "unparseable verdict must be None, not a guess"
+
+
+@pytest.mark.asyncio
+async def test_llm_judge_non_boolean_verdict_is_none():
+    from app.services.rag_eval import llm_judge_faithful
+
+    out = await llm_judge_faithful(
+        "answer", "context", router=_StubRouter('{"faithful": "yes", "reason": "?"}'),
+    )
+    assert out["faithful"] is None, "a non-boolean verdict must not be coerced"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

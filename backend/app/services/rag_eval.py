@@ -142,6 +142,36 @@ GOLDEN_SET: list[GoldenCase] = [
 ]
 
 
+async def llm_judge_faithful(answer: str, sources: list[str] | str, router=None) -> dict:
+    """LLM judge for faithfulness - e2e lane only, needs a real model.
+
+    Renders the versioned ``rag_faithfulness_judge`` prompt (pinned v1), calls
+    the router, and parses the verdict tolerantly (prompt-enforced JSON plus
+    robust extraction - never format=json). Returns
+    ``{"faithful": bool | None, "reason": str}``; ``faithful`` is ``None`` when
+    the reply was unparseable - an honest "don't know", never a default verdict.
+    """
+    from app.services.json_utils import extract_json_object
+    from app.services.prompts import render_prompt
+
+    if router is None:
+        from app.services.llm_router import LLMRouter
+        router = LLMRouter()
+    context = sources if isinstance(sources, str) else "\n".join(sources)
+    prompt = render_prompt(
+        "rag_faithfulness_judge", version=1, answer=answer, context=context
+    )
+    try:
+        reply = await router.complete(prompt, model_tier="fast")
+        parsed = extract_json_object(reply)
+        faithful = parsed.get("faithful")
+        if not isinstance(faithful, bool):
+            return {"faithful": None, "reason": f"non-boolean verdict: {parsed}"}
+        return {"faithful": faithful, "reason": str(parsed.get("reason", ""))}
+    except Exception as exc:
+        return {"faithful": None, "reason": f"judge unavailable or unparseable: {exc}"}
+
+
 def _demo() -> None:
     import asyncio
     from app.services.retrieval import lexical_score

@@ -102,6 +102,11 @@ class SkillsCompiler:
             )
             await session.refresh(skill)
 
+            # Semantic index for retrieval (non-blocking: embed_skill never
+            # raises, so a failed embed never fails the compile).
+            from app.services.knowledge import embed_skill
+            await embed_skill(skill, tenant_id)
+
             logger.info(f"[Compiler] Compiled blueprint '{blueprint.name}' → skill '{skill_id}' ({len(steps)} steps)")
 
             return {

@@ -55,6 +55,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       # DEV_MODE=true with ENVIRONMENT=staging/production refuses to boot.
       - ENVIRONMENT=${KAEOS_ENVIRONMENT:-development}
+      # Publish /metrics so the bundled Prometheus below can scrape it. The app
+      # default is false on purpose (per-endpoint traffic detail); this stack's
+      # network is compose-internal, so exposing here is the intended pairing.
+      - EXPOSE_METRICS=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,11 +94,25 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      
+
+  # Alert routing. Ships with a null receiver so unconfigured alerts are held
+  # visibly in the Alertmanager UI (:9093) instead of crashing anything; see
+  # alertmanager.yml for the commented Slack/SMTP wiring.
+  alertmanager:
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+
   grafana:
     image: grafana/grafana:latest
     restart: unless-stopped
@@ -107,6 +125,9 @@ services:
       - prometheus
     volumes:
       - grafana-data:/var/lib/grafana
+      # Auto-provisioned Prometheus datasource + the KAEOS golden-signals
+      # dashboard (grafana/provisioning/) - no click-ops needed after `up`.
+      - ./grafana/provisioning:/etc/grafana/provisioning
 
 volumes:
   pgdata:

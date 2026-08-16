@@ -267,16 +267,19 @@ async def get_onboarding(
 @router.post("/infrastructure/onboarding")
 async def initiate_onboarding(
     data: dict,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant: dict = Depends(require_role("operator")),
     x_admin_secret: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """N4 — Start onboarding for a tenant.
 
-    Provisioning a tenant OTHER than your own is a platform action: it needs
-    X-Admin-Secret and runs on the owner session, because RLS correctly refuses
-    to let one tenant insert a row belonging to another.
+    Gated at operator for your OWN tenant (it drives provisioning/entitlement
+    state, so a viewer must not write it). Provisioning a tenant OTHER than your
+    own is a platform action: it additionally needs X-Admin-Secret and runs on
+    the owner session, because RLS correctly refuses to let one tenant insert a
+    row belonging to another.
     """
+    tenant_id = tenant["tenant_id"]
     target = data.get("tenant_id", tenant_id)
     name = data.get("tenant_name", "Default Tenant")
     vertical = data.get("industry_vertical")
@@ -296,11 +299,15 @@ async def initiate_onboarding(
 async def advance_onboarding(
     tenant_id: str,
     data: Optional[dict] = None,
-    caller_tenant: str = Depends(get_tenant_id),
+    caller: dict = Depends(require_role("operator")),
     x_admin_secret: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """N4 — Advance a tenant's onboarding stage (your own, or any with admin)."""
+    """N4 — Advance a tenant's onboarding stage (your own, or any with admin).
+
+    Operator-gated for your own tenant; cross-tenant still needs X-Admin-Secret.
+    """
+    caller_tenant = caller["tenant_id"]
     data = data or {}   # a mutable default is shared across every request
     if tenant_id != caller_tenant:
         verify_admin_secret(x_admin_secret)

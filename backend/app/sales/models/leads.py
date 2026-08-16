@@ -7,6 +7,7 @@ import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import LegalHoldMixin
 
 def _uuid():
     return str(uuid.uuid4())
@@ -18,7 +19,7 @@ class LeadSource(str, enum.Enum):
     CONFERENCE = "CONFERENCE"
     MARKETPLACE = "MARKETPLACE"
 
-class Lead(Base):
+class Lead(Base, LegalHoldMixin):
     """Marketing and sales leads before opportunity conversion."""
     __tablename__ = "sls_leads"
 

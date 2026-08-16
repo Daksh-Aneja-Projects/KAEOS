@@ -13,7 +13,12 @@ import {
   KeyRound, Send, Inbox, ArrowUpFromLine, Copy,
 } from 'lucide-react';
 import { humanize } from '../lib/format';
+import type { OutboundStatus } from '../api/endpoints/operations';
 
+/** Display order for outbound statuses: actionable first, terminal last. */
+const OUTBOUND_STATUSES: OutboundStatus[] = [
+  'PENDING', 'FAILED', 'DEAD', 'SENT', 'SKIPPED_NO_CONNECTOR', 'SKIPPED_NO_CREDENTIALS',
+];
 
 /**
  * Sync Operations — the real, live half of the Sync screen.
@@ -29,20 +34,26 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
   const [copied, setCopied] = useState(false);
   const [ledger, setLedger] = useState<any[] | null>(null);
   const [outbound, setOutbound] = useState<any[] | null>(null);
+  const [counts, setCounts] = useState<Partial<Record<OutboundStatus, number>>>({});
+  const [statusFilter, setStatusFilter] = useState<'' | OutboundStatus>('');
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
+  const [requeueingId, setRequeueingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
 
   const loadQueues = React.useCallback(async () => {
     setLoadErr(null);
-    const [l, o] = await Promise.allSettled([api.getSyncLedger(50), api.getOutboundQueue(50)]);
+    const [l, o] = await Promise.allSettled([
+      api.getSyncLedger(50), api.getOutboundQueue(50, statusFilter || undefined),
+    ]);
     if (l.status === 'rejected' && o.status === 'rejected') {
       setLoadErr((l.reason as any)?.message || 'The sync service is unreachable.');
       return;
     }
     setLedger(l.status === 'fulfilled' ? (l.value.ledger || []) : []);
     setOutbound(o.status === 'fulfilled' ? (o.value.outbound || []) : []);
-  }, []);
+    setCounts(o.status === 'fulfilled' ? (o.value.counts || {}) : {});
+  }, [statusFilter]);
 
   useEffect(() => { loadQueues(); }, [loadQueues]);
 
@@ -84,16 +95,36 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
     }
   };
 
+  const requeue = async (id: string) => {
+    setRequeueingId(id);
+    setBanner(null);
+    try {
+      await api.requeueOutbound(id);
+      await loadQueues();
+    } catch (e: any) {
+      setBanner({ ok: false, text: e?.message || 'Could not queue the retry.' });
+    } finally {
+      setRequeueingId(null);
+    }
+  };
+
   const statusTone = (s: string) => {
     if (s === 'SENT' || s === 'OK' || s === 'SUCCESS') return '#22c55e';
-    if (s === 'FAILED' || s === 'ERROR') return '#ef4444';
+    if (s === 'FAILED' || s === 'ERROR' || s === 'DEAD') return '#ef4444';
     if (s === 'PENDING') return '#f59e0b';
     return colors.inkSubtle;
   };
   // Never show a raw SKIPPED_NO_CREDENTIALS to a human.
   const statusLabel = (s: string) => humanize(s || 'unknown');
 
-  const pending = (outbound || []).filter(o => o.status === 'PENDING').length;
+  // counts is the full tenant-wide tally even when the row list is filtered.
+  const pending = counts.PENDING ?? 0;
+  const dead = counts.DEAD ?? 0;
+  const retryable = pending + (counts.FAILED ?? 0);
+  const countsSummary = OUTBOUND_STATUSES
+    .filter(s => s !== 'PENDING' && (counts[s] ?? 0) > 0)
+    .map(s => `${counts[s]} ${statusLabel(s).toLowerCase()}`)
+    .join(', ');
 
   return (
     <div className="space-y-4">
@@ -163,15 +194,28 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {/* Outbound queue */}
           <div style={card(colors.surface1)}>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <ArrowUpFromLine className="w-4 h-4" style={{ color: '#f59e0b' }} />
               <h3 className="text-[13px] font-semibold">Waiting to go out</h3>
+              {dead > 0 && (
+                <span className="px-1.5 py-0.5 rounded text-[11px] font-bold"
+                  style={{ background: '#ef444420', color: '#ef4444' }}>
+                  {dead} dead
+                </span>
+              )}
               <span className="ml-auto flex items-center gap-2">
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as '' | OutboundStatus)}
+                  aria-label="Show only one delivery status"
+                  className="px-2 py-1 rounded-lg text-[11px] outline-none"
+                  style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.ink }}>
+                  <option value="">All statuses</option>
+                  {OUTBOUND_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                </select>
                 <button onClick={loadQueues} aria-label="Refresh the sync queues" className="p-1 rounded" style={{ color: colors.inkSubtle }} title="Refresh">
                   <RefreshCw className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={dispatch} disabled={dispatching || pending === 0}
-                  title={pending === 0 ? 'Nothing is waiting to be sent' : undefined}
+                <button onClick={dispatch} disabled={dispatching || retryable === 0}
+                  title={retryable === 0 ? 'Nothing is waiting or failed, so there is nothing to send' : undefined}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white disabled:opacity-40"
                   style={{ background: colors.primary }}>
                   {dispatching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
@@ -181,6 +225,7 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
             </div>
             <p className="text-[11px] mb-3" style={{ color: colors.inkSubtle }}>
               {pending} change{pending === 1 ? '' : 's'} queued for your systems of record. They send on the next cycle, or right now.
+              {countsSummary && ` Also here: ${countsSummary}.`}
             </p>
             <div className="space-y-1 max-h-64 overflow-y-auto">
               {outbound === null ? (
@@ -188,7 +233,12 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
                   <Loader2 className="w-3 h-3 animate-spin" /> Loading queue…
                 </div>
               ) : outbound.length === 0 ? (
-                <BrainEmpty title="Nothing waiting to go out" action="Changes KAEOS makes to external systems queue up here first." icon={ArrowUpFromLine} />
+                statusFilter ? (
+                  <BrainEmpty title={`No ${statusLabel(statusFilter).toLowerCase()} changes`}
+                    action="Nothing in the queue has this status right now." icon={ArrowUpFromLine} />
+                ) : (
+                  <BrainEmpty title="Nothing waiting to go out" action="Changes KAEOS makes to external systems queue up here first." icon={ArrowUpFromLine} />
+                )
               ) : outbound.map(o => (
                 <div key={o.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded text-[11px]"
                   style={{ background: colors.surface2 }}>
@@ -206,6 +256,17 @@ export function SyncOperations({ connectors, selectedConnector, colors, card }: 
                   <span className="ml-auto shrink-0" style={{ color: colors.inkTertiary }}>
                     {o.created_at ? new Date(o.created_at.replace(' ', 'T')).toLocaleTimeString() : ''}
                   </span>
+                  {(o.status === 'DEAD' || o.status === 'FAILED') && (
+                    <button onClick={() => requeue(o.id)} disabled={requeueingId !== null}
+                      title="Put this change back in line with a fresh retry budget"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold shrink-0 disabled:opacity-40"
+                      style={{ background: colors.primary + '15', color: colors.primary }}>
+                      {requeueingId === o.id
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : <RefreshCw className="w-3 h-3" />}
+                      Retry
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

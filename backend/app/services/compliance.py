@@ -85,22 +85,44 @@ class ComplianceEngine:
             # Tenant-aware router so a tenant's fine-tuned compliance model is used.
             router = await get_tenant_router()
             framework_descriptions = "\\n".join([f"- {t}: {self.COMPLIANCE_FRAMEWORKS[t]}" for t in complex_tags])
+            # The action context is UNTRUSTED (connector / ingested data). A prompt
+            # injection in it could steer the model to return [] and silence a real
+            # blocker. Fence it as data, and if the injection risk is HIGH/CRITICAL,
+            # do NOT ask the model at all - emit a BLOCKER and route the decision to
+            # a human (fail-closed). Mirrors skill_executor / debate_engine.
+            from app.services import prompt_guard
+            guarded = prompt_guard.guard(str(context))
+            if guarded["blocked"]:
+                logger.warning(
+                    "[Compliance] prompt-injection risk in context (%s); refusing "
+                    "LLM screening for %s and blocking fail-closed",
+                    guarded["scan"].get("categories"), complex_tags,
+                )
+                violations.append({
+                    "framework": "SYSTEM",
+                    "severity": "BLOCKER",
+                    "reason": "Prompt-injection risk detected in the action context; "
+                              "compliance screening was refused and the action routes "
+                              "to a human (fail-closed).",
+                    "method": "prompt_guard",
+                })
+                return violations
             prompt = f"""
             You are the KAEOS Compliance Engine. Evaluate the following planned agent action for regulatory violations.
-            
+
             Applicable Frameworks:
             {framework_descriptions}
-            
+
             Action Context:
-            {context}
-            
+            {guarded["safe_text"]}
+
             Are there any compliance violations or severe risks? Respond ONLY with a JSON list of violation objects:
             [
               {{"framework": "...", "severity": "BLOCKER|WARNING", "reason": "..."}}
             ]
             If no violations, return an empty list: []
             """
-            
+
             try:
                 res = await router.complete(prompt=prompt, model_tier="reasoning", temperature=0.1)
                 content = res if isinstance(res, str) else res.get("content", "[]")

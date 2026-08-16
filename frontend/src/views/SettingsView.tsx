@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun, Bell, Palette } from 'lucide-react';
+import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun, Bell, Palette, CreditCard } from 'lucide-react';
 import SecuritySettings from './SecuritySettings';
+import BillingSettings from './BillingSettings';
 import DataGovernanceSettings from './DataGovernanceSettings';
 import NotificationSettings from './NotificationSettings';
 import PlatformAccessSettings from './PlatformAccessSettings';
@@ -19,6 +20,7 @@ const SETTINGS_TABS = [
   { id: 'security', label: 'Security', icon: Shield },
   { id: 'governance', label: 'Data & Privacy', icon: Lock },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'billing', label: 'Billing', icon: CreditCard },
   { id: 'platform', label: 'Platform', icon: Globe2 },
 ] as const;
 
@@ -26,7 +28,12 @@ type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
 const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
   const { colors, theme, toggle } = useTheme();
-  const [tab, setTab] = useState<SettingsTab>('llm');
+  // Stripe checkout/portal redirects back with ?tab=billing so the user lands
+  // on the tab they left from, not the default.
+  const [tab, setTab] = useState<SettingsTab>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return SETTINGS_TABS.some(x => x.id === t) ? (t as SettingsTab) : 'llm';
+  });
   const [llmConfig, setLlmConfig] = useState<any>(null);
   const [connectors, setConnectors] = useState<any[]>([]);
   const [calEvents, setCalEvents] = useState<any[]>([]);
@@ -281,6 +288,8 @@ const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
       {tab === 'governance' && <DataGovernanceSettings />}
 
       {tab === 'notifications' && <NotificationSettings />}
+
+      {tab === 'billing' && <BillingSettings />}
 
       {tab === 'platform' && (
         <div className="space-y-4">
