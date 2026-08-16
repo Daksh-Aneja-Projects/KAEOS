@@ -59,6 +59,7 @@ _ENTITY_CATEGORY = {
     "incident": "engineering",
     "issue": "engineering",
     "message": "collaboration",
+    "contact": "crm",
 }
 
 
@@ -445,6 +446,15 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
     if provider == "slack":
         return await _write_slack(config, secrets, write, idem)
 
+    if provider == "hubspot":
+        return await _write_hubspot(config, secrets, write, idem)
+
+    if provider == "github":
+        return await _write_github(config, secrets, write, idem)
+
+    if provider == "pagerduty":
+        return await _write_pagerduty(config, secrets, write, idem)
+
     if provider == "salesforce":
         instance = (config.get("instance_url") or "").rstrip("/")
         token = secrets.get("access_token")
@@ -707,6 +717,201 @@ async def _write_slack(config: Dict[str, Any], secrets: Dict[str, Any],
         data = resp.json()
         if not data.get("ok"):
             return f"Slack API error: {data.get('error', 'unknown')}"
+    return None
+
+
+# HubSpot entity_type -> CRM v3 object type.
+_HUBSPOT_OBJECT = {"account": "companies", "opportunity": "deals", "contact": "contacts"}
+
+
+async def _write_hubspot(config: Dict[str, Any], secrets: Dict[str, Any],
+                         write: OutboundWrite, idem: str) -> Optional[str]:
+    """HubSpot CRM v3 object write-back. Private-app Bearer access_token (the
+    same credential the inbound HubSpotAdapter uses).
+
+    Idempotent creates: the idem token is stamped on a ``kaeos_idem`` property
+    and searched via the CRM search API before the create, so a create whose
+    HTTP response was lost is not duplicated - the retry finds the existing
+    object and returns success. Updates PATCH by HubSpot object id (our
+    external_id); deletes archive the object (HubSpot's delete semantics).
+
+    ponytail: kaeos_idem must exist as a custom single-line-text property on
+    the object type in the portal - without it both the search probe and the
+    create return HTTP 400, surfacing as an honest FAILED. Upgrade path:
+    auto-create the property via /crm/v3/properties on the first 400.
+    """
+    base = (config.get("api_url") or "https://api.hubapi.com").rstrip("/")
+    token = secrets.get("access_token", "")
+    if not token:
+        return "hubspot connector missing access_token"
+    obj = config.get("object_type") or _HUBSPOT_OBJECT.get(write.entity_type, "deals")
+    fields = _outbound_fields(write)
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+               "Accept": "application/json"}
+    objects = f"{base}/crm/v3/objects/{obj}"
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.delete(f"{objects}/{write.external_id}", headers=headers)
+            if resp.status_code >= 400 and resp.status_code != 404:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        if write.external_id:
+            resp = await client.patch(f"{objects}/{write.external_id}",
+                                      json={"properties": fields}, headers=headers)
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on the kaeos_idem property.
+        probe = await client.post(f"{objects}/search", headers=headers, json={
+            "filterGroups": [{"filters": [{"propertyName": "kaeos_idem",
+                                           "operator": "EQ", "value": idem}]}],
+            "limit": 1})
+        if probe.status_code < 400 and (probe.json().get("results") or []):
+            return None
+        resp = await client.post(objects, headers=headers,
+                                 json={"properties": {**fields, "kaeos_idem": idem}})
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
+async def _write_github(config: Dict[str, Any], secrets: Dict[str, Any],
+                        write: OutboundWrite, idem: str) -> Optional[str]:
+    """GitHub REST v3 issue write-back. Bearer personal access token (the same
+    credential the inbound GitHubAdapter uses); owner/repo from connector config.
+
+    Idempotent creates: the idem token is stamped into the issue body as a
+    ``[kaeos:<idem>]`` marker and searched via the issue search API before the
+    create, so a lost response does not duplicate the issue. Updates PATCH the
+    issue by number (our external_id).
+
+    ponytail: DELETE closes the issue as not_planned and leaves an honest
+    comment saying so - GitHub has no REST issue delete for normal tokens
+    (delete needs the GraphQL deleteIssue mutation + admin rights); wire that
+    mutation if hard deletes ever matter.
+    """
+    base = (config.get("api_url") or "https://api.github.com").rstrip("/")
+    token = secrets.get("token", "")
+    if not token:
+        return "github connector missing token"
+    owner, repo = config.get("owner", ""), config.get("repo", "")
+    if not owner or not repo:
+        return "github connector missing owner/repo in config"
+    fields = _outbound_fields(write)
+    headers = {"Authorization": f"Bearer {token}",
+               "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+    issues = f"{base}/repos/{owner}/{repo}/issues"
+    # Marker charset excludes quotes/brackets so it is safe inside the search
+    # query literal and the [kaeos:...] body marker (same idiom as salesforce).
+    marker = "kaeos:" + re.sub(r"[^A-Za-z0-9.-]", "-", idem)[:60]
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.patch(f"{issues}/{write.external_id}", headers=headers,
+                                      json={"state": "closed", "state_reason": "not_planned"})
+            if resp.status_code == 404:
+                return None
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            # Honest trace on the issue itself; best-effort (the close already landed).
+            await client.post(f"{issues}/{write.external_id}/comments", headers=headers,
+                              json={"body": "KAEOS delete: GitHub does not allow deleting "
+                                            "issues via the REST API, so this issue was "
+                                            f"closed as not planned instead. [{marker}]"})
+            return None
+
+        if write.external_id:
+            resp = await client.patch(f"{issues}/{write.external_id}",
+                                      json=fields, headers=headers)
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on the [kaeos:<idem>] body marker via issue search.
+        probe = await client.get(f"{base}/search/issues", headers=headers,
+                                 params={"q": f'repo:{owner}/{repo} in:body "{marker}"',
+                                         "per_page": 1})
+        if probe.status_code < 400 and (probe.json().get("items") or []):
+            return None
+        if not fields.get("title"):
+            return "github issue create needs a title in the payload"
+        body_text = str(fields.get("body") or "").strip()
+        payload = {**fields,
+                   "body": f"{body_text}\n\n[{marker}]" if body_text else f"[{marker}]"}
+        resp = await client.post(issues, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    return None
+
+
+async def _write_pagerduty(config: Dict[str, Any], secrets: Dict[str, Any],
+                           write: OutboundWrite, idem: str) -> Optional[str]:
+    """PagerDuty REST v2 incident write-back. ``Token token=<api_key>`` auth
+    (the same credential the inbound PagerDutyAdapter uses) plus the ``From``
+    header (a PagerDuty user email) when configured - PagerDuty requires it on
+    incident writes.
+
+    Idempotent creates: the REST /incidents endpoint natively dedups on
+    ``incident_key`` per service, but a retried create with the same key gets
+    HTTP 400 (matching open incident), so we probe GET /incidents?incident_key=
+    first and report the retry as success instead of a failure.
+
+    ponytail: DELETE resolves the incident with a note saying so - PagerDuty
+    has no incident delete at all; no upgrade path exists, that is the API.
+    """
+    base = (config.get("api_url") or "https://api.pagerduty.com").rstrip("/")
+    api_key = secrets.get("api_key", "")
+    if not api_key:
+        return "pagerduty connector missing api_key"
+    fields = _outbound_fields(write)
+    headers = {"Authorization": f"Token token={api_key}",
+               "Accept": "application/vnd.pagerduty+json;version=2",
+               "Content-Type": "application/json"}
+    if config.get("from_email"):
+        headers["From"] = str(config["from_email"])
+
+    async with guarded_async_client(timeout=HTTP_TIMEOUT) as client:
+        if write.op == "DELETE" and write.external_id:
+            resp = await client.put(
+                f"{base}/incidents/{write.external_id}", headers=headers,
+                json={"incident": {"type": "incident_reference", "status": "resolved",
+                                   "resolution": "Resolved by KAEOS: PagerDuty incidents "
+                                                 "cannot be deleted, so this delete was "
+                                                 "applied as a resolve."}})
+            if resp.status_code >= 400 and resp.status_code != 404:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        if write.external_id:
+            resp = await client.put(f"{base}/incidents/{write.external_id}", headers=headers,
+                                    json={"incident": {"type": "incident_reference", **fields}})
+            if resp.status_code >= 400:
+                return f"HTTP {resp.status_code}: {resp.text[:300]}"
+            return None
+
+        # CREATE - idempotent on incident_key (probe first: PagerDuty rejects a
+        # duplicate key with HTTP 400, which must read as success on a retry).
+        probe = await client.get(f"{base}/incidents", headers=headers,
+                                 params={"incident_key": idem, "limit": 1})
+        if probe.status_code < 400 and (probe.json().get("incidents") or []):
+            return None
+        service_id = fields.get("service_id") or config.get("service_id")
+        if not service_id:
+            return "pagerduty incident create needs a service_id (config or payload)"
+        title = fields.get("title") or fields.get("summary")
+        if not title:
+            return "pagerduty incident create needs a title in the payload"
+        incident = {k: v for k, v in fields.items() if k != "service_id"}
+        incident.update({"type": "incident", "title": title, "incident_key": idem,
+                         "service": {"id": service_id, "type": "service_reference"}})
+        resp = await client.post(f"{base}/incidents", headers=headers,
+                                 json={"incident": incident})
+        if resp.status_code >= 400:
+            return f"HTTP {resp.status_code}: {resp.text[:300]}"
     return None
 
 

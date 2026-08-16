@@ -563,6 +563,10 @@ class WorkforceGenerator:
                     skill.always_hitl = is_high_consequence(skill)
                     db.add(skill)
                     await db.commit()
+                    # Semantic index (non-blocking: embed_skill never raises;
+                    # adopted skills are covered by the admin backfill).
+                    from app.services.knowledge import embed_skill
+                    await embed_skill(skill, tenant_id)
 
                 # 3. Create DeployedAgent
                 da_id = str(uuid.uuid4())

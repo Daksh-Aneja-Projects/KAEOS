@@ -7,8 +7,8 @@ the connector's webhook_secret. Everything else is operator/admin-gated.
 import secrets as pysecrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -119,18 +119,31 @@ async def sync_ledger(
     ]}
 
 
+# The full outbound status set (see models/sync.py OutboundWrite.status).
+_OUTBOUND_STATUSES = ("PENDING", "SENT", "FAILED", "DEAD",
+                      "SKIPPED_NO_CONNECTOR", "SKIPPED_NO_CREDENTIALS")
+
+
 @router.get("/sync/outbound")
 async def outbound_queue(
     limit: int = 50,
+    status: Optional[str] = Query(None, pattern=f"^({'|'.join(_OUTBOUND_STATUSES)})$"),
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.sync import OutboundWrite
     limit = max(1, min(200, limit))
+    q = select(OutboundWrite).where(OutboundWrite.tenant_id == tenant_id)
+    if status:
+        q = q.where(OutboundWrite.status == status)
     rows = (await db.execute(
-        select(OutboundWrite).where(OutboundWrite.tenant_id == tenant_id)
-        .order_by(OutboundWrite.created_at.desc()).limit(limit)
+        q.order_by(OutboundWrite.created_at.desc()).limit(limit)
     )).scalars().all()
+    counts = {s: n for s, n in (await db.execute(
+        select(OutboundWrite.status, func.count()).where(
+            OutboundWrite.tenant_id == tenant_id
+        ).group_by(OutboundWrite.status)
+    )).all()}
     return {"outbound": [
         {"id": r.id, "provider": r.provider, "category": r.category,
          "entity_type": r.entity_type, "internal_id": r.internal_id,
@@ -138,7 +151,7 @@ async def outbound_queue(
          "attempts": r.attempts, "last_error": r.last_error,
          "created_at": str(r.created_at) if r.created_at else None}
         for r in rows
-    ]}
+    ], "counts": counts}
 
 
 @router.post("/sync/outbound/dispatch")
@@ -148,3 +161,31 @@ async def dispatch_now(
     """Manually kick the outbound dispatcher (it also runs on the scheduler)."""
     from app.services.sync_engine import dispatch_outbound
     return await dispatch_outbound(tenant_id=tenant["tenant_id"])
+
+
+@router.post("/sync/outbound/{write_id}/requeue")
+async def requeue_outbound(
+    write_id: str,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Operator replay of a dead-lettered/failed write: back to PENDING with a
+    fresh retry budget. The idempotency_key is deliberately KEPT so the system
+    of record dedups the replay instead of creating a duplicate record."""
+    from app.models.sync import OutboundWrite
+    w = (await db.execute(select(OutboundWrite).where(
+        OutboundWrite.id == write_id,
+        OutboundWrite.tenant_id == tenant["tenant_id"],
+    ))).scalar_one_or_none()
+    if w is None:
+        raise HTTPException(status_code=404, detail="outbound write not found")
+    if w.status not in ("DEAD", "FAILED"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"only DEAD or FAILED writes can be requeued (status is {w.status})")
+    w.status = "PENDING"
+    w.attempts = 0
+    w.last_error = None
+    await db.commit()
+    return {"id": w.id, "status": w.status, "attempts": w.attempts,
+            "idempotency_key": w.idempotency_key}

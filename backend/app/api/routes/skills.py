@@ -518,8 +518,9 @@ async def compile_skill(body: CompileRequest, tenant: dict = Depends(require_rol
         existing_skill.mcp_tool_bindings = contract["mcp_tool_bindings"]
         existing_skill.compliance_tags = contract["compliance_tags"]
         existing_skill.confidence_tier = existing_skill.confidence_tier or "INFERRED"
+        skill_row = existing_skill
     else:
-        db.add(Skill(
+        skill_row = Skill(
             id=str(uuid.uuid4()), skill_id=contract["skill_id"],
             tenant_id=tenant_id, department=body.domain, domain=body.domain,
             version=contract["version"], confidence=contract["confidence"],
@@ -527,8 +528,14 @@ async def compile_skill(body: CompileRequest, tenant: dict = Depends(require_rol
             triggers=[], steps=contract["steps"],
             mcp_tool_bindings=contract["mcp_tool_bindings"],
             compliance_tags=contract["compliance_tags"],
-        ))
+        )
+        db.add(skill_row)
     await db.commit()
+
+    # Refresh the semantic index (non-blocking: embed_skill never raises, so a
+    # failed embed never fails the compile).
+    from app.services.knowledge import embed_skill
+    await embed_skill(skill_row, tenant_id)
 
     yaml_output = compiler.export_to_yaml(contract)
     return {"status": "COMPILED", "skill_id": contract["skill_id"], "yaml": yaml_output}

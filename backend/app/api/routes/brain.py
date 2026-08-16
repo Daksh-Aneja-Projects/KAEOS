@@ -1,7 +1,7 @@
 """KAEOS — Brain Overview API (Enterprise Intelligence Summary)"""
 import logging
 
-from app.core.tenant import get_tenant_id
+from app.core.tenant import get_tenant_id, require_role
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -16,6 +16,26 @@ from app.models.agent_factory import DeployedAgent, AgentStatus
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/brain", tags=["Brain — Enterprise Overview"])
+
+# Separate prefix, same file: the knowledge/semantic-index surface has no
+# dedicated routes module and this file owns the brain/knowledge domain.
+knowledge_router = APIRouter(prefix="/knowledge", tags=["Knowledge - Semantic Index"])
+
+
+@knowledge_router.post("/skill-embeddings/backfill")
+async def backfill_skill_embeddings_route(
+    tenant: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Embed this tenant's ACTIVE skills that have no embedding row yet.
+
+    Idempotent admin maintenance action. Uses the tenant's own model router;
+    when only simulated embeddings are available nothing is persisted and the
+    response reports embeddings_simulated=true.
+    """
+    from app.services.knowledge import backfill_skill_embeddings
+
+    return await backfill_skill_embeddings(db, tenant["tenant_id"])
 
 
 @router.get("/overview")

@@ -41,6 +41,20 @@ class BillingProvider:
     async def ensure_customer(self, db: AsyncSession, tenant_id: str) -> str | None:
         raise NotImplementedError
 
+    async def create_checkout_session(
+        self, db: AsyncSession, tenant_id: str, plan: str,
+        success_url: str, cancel_url: str,
+    ) -> str | None:
+        """Hosted checkout URL for a subscription to `plan`, or None if the
+        provider cannot sell (self-host no-op)."""
+        raise NotImplementedError
+
+    async def create_portal_session(
+        self, db: AsyncSession, tenant_id: str, return_url: str
+    ) -> str | None:
+        """Hosted billing-portal URL for the tenant's customer, or None."""
+        raise NotImplementedError
+
     def verify_webhook(self, payload: bytes, sig_header: str) -> dict:
         """Return the parsed, signature-verified Stripe event. Raises on a bad
         or missing signature — a webhook that cannot be verified is rejected."""
@@ -54,6 +68,12 @@ class NoopBillingProvider(BillingProvider):
         return {"status": "noop", "usage_record_id": None}
 
     async def ensure_customer(self, db, tenant_id) -> str | None:
+        return None
+
+    async def create_checkout_session(self, db, tenant_id, plan, success_url, cancel_url) -> str | None:
+        return None
+
+    async def create_portal_session(self, db, tenant_id, return_url) -> str | None:
         return None
 
     def verify_webhook(self, payload: bytes, sig_header: str) -> dict:
@@ -105,6 +125,46 @@ class StripeBillingProvider(BillingProvider):
             )
         )
         return {"status": "reported", "usage_record_id": rec.get("id")}
+
+    async def create_checkout_session(
+        self, db: AsyncSession, tenant_id: str, plan: str,
+        success_url: str, cancel_url: str,
+    ) -> str | None:
+        customer_id = await self.ensure_customer(db, tenant_id)
+        # The price is resolved by lookup_key == plan slug, the same convention
+        # _plan_from_items reads back off inbound subscription webhooks, so the
+        # price->plan mapping lives on the Stripe object only.
+        prices = await asyncio.to_thread(
+            lambda: self._stripe.Price.list(lookup_keys=[plan], active=True, limit=1)
+        )
+        data = (prices.get("data") if isinstance(prices, dict) else prices.data) or []
+        if not data:
+            raise ValueError(
+                f"No active Stripe price with lookup_key '{plan}'. "
+                f"Create one in the Stripe dashboard with that lookup key."
+            )
+        price_id = data[0]["id"]
+        session = await asyncio.to_thread(
+            lambda: self._stripe.checkout.Session.create(
+                mode="subscription",
+                customer=customer_id,
+                line_items=[{"price": price_id, "quantity": 1}],
+                success_url=success_url,
+                cancel_url=cancel_url,
+            )
+        )
+        return session.get("url")
+
+    async def create_portal_session(
+        self, db: AsyncSession, tenant_id: str, return_url: str
+    ) -> str | None:
+        customer_id = await self.ensure_customer(db, tenant_id)
+        session = await asyncio.to_thread(
+            lambda: self._stripe.billing_portal.Session.create(
+                customer=customer_id, return_url=return_url
+            )
+        )
+        return session.get("url")
 
     def verify_webhook(self, payload: bytes, sig_header: str) -> dict:
         if not sig_header:

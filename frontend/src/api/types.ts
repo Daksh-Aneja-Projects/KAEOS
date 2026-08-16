@@ -555,3 +555,33 @@ export interface NotificationDelivery {
 }
 
 // ─── API Functions ───
+
+// --- Billing / entitlements (billing.py) types ---
+export interface BillingUsageRating {
+  tenant_id: string;
+  period_start: string;
+  plan: string;
+  metered_executions: number;
+  included_allowance: number;
+  overage_units: number;
+}
+export interface BillingPlanCatalogEntry {
+  features: string[];
+  allowance: number;
+}
+export interface BillingEntitlements {
+  tenant_id: string;
+  plan: string;
+  /** false on self-hosted installs: every feature is granted and nothing is purchasable. */
+  managed_cloud: boolean;
+  features: Record<string, boolean>;
+  usage: BillingUsageRating;
+  /** Full plan catalog for upgrade UIs, keyed by tier. */
+  plans: Record<string, BillingPlanCatalogEntry>;
+  seats: number | null;
+}
+export interface SkillValueBaseline {
+  skill_name: string;
+  baseline_minutes: number;
+  hourly_rate: number;
+}

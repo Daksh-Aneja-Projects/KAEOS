@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # and should be scraped over an internal network, not the public internet.
     EXPOSE_METRICS: bool = False
 
+    # Sentry error tracking. Empty = disabled. When set, main.py initializes
+    # sentry-sdk for unhandled-exception capture only; tracing stays with OTLP.
+    SENTRY_DSN: str = ""
+
     # Commercial surface (open-core + managed cloud). Self-host default = False:
     # require_entitlement is a no-op and every feature is reachable (Apache-2.0
     # open core). Managed cloud sets True so Tenant.plan gates managed/enterprise

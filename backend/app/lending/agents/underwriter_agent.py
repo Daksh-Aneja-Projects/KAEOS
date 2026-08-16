@@ -30,6 +30,19 @@ class UnderwriterAgent:
             "override the policy engine and never introduce a prohibited basis."
         )
 
+    async def fair_lending_scan(self, db: AsyncSession, tenant_id: str) -> Dict[str, Any]:
+        """Run the deterministic four-fifths disparate-impact scan over real
+        decided applications - the same computation /lending/analytics reports.
+        No LLM involved; returns an honest NO_DATA status when no decided
+        applications carry protected-class data."""
+        from app.lending.services.analytics import fair_lending_ratios
+        fair = await fair_lending_ratios(db, tenant_id)
+        if fair is None:
+            return {"status": "NO_DATA",
+                    "message": ("Fair-lending scan needs decided applications "
+                                "with protected-class data; none available yet.")}
+        return {"status": "success", "four_fifths": fair}
+
     async def underwrite(
         self, db: AsyncSession, application_id: str, tenant_id: str, *,
         decided_by: str,

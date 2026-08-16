@@ -43,6 +43,10 @@ class _FakeResult:
     def all(self):
         return self._skills
 
+    def fetchall(self):
+        # The vector-similarity lane (raw SQL) finds nothing in the fake DB.
+        return []
+
 
 class _FakeSession:
     def __init__(self, skills):
@@ -109,6 +113,111 @@ async def test_search_skills_lexical_when_embeddings_simulated(monkeypatch):
     out = await eng.search_skills("reset password", tenant_id="t1")
     assert out and out[0]["retrieval_mode"] == "lexical"
     assert out[0]["similarity"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_skills_relabels_lexical_when_vector_lane_is_empty(monkeypatch):
+    """A real query vector but zero vector hits is NOT a hybrid ranking:
+    single-list RRF is just the lexical ranking and must say so."""
+    skills = [
+        _FakeSkill("vendor_payment_approval", "s1", "finance",
+                   [{"pattern": "approve vendor payment"}]),
+        _FakeSkill("vendor_onboarding", "s2", "finance",
+                   [{"pattern": "vendor onboarding"}]),
+    ]
+    _patch_skills(monkeypatch, skills)
+
+    eng = PolystoreEngine()
+    # Real (non-simulated) query embedding -> the hybrid path is attempted.
+    async def _real_embed(_self, _text, _tenant=None):
+        _self._last_query_simulated = False
+        return [0.1] * 8
+    monkeypatch.setattr(PolystoreEngine, "_generate_embedding_for_text", _real_embed)
+
+    out = await eng.search_skills("approve vendor payment", tenant_id="t1")
+    assert out, "lexical matches must survive an empty vector lane"
+    for rec in out:
+        assert rec["retrieval_mode"] == "lexical", (
+            "single-list RRF must not be labeled hybrid"
+        )
+        assert rec["similarity"] is None
+        assert "fused_score" not in rec
+    scores = [r["lexical_score"] for r in out]
+    assert scores == sorted(scores, reverse=True), "must rank by lexical_score"
+
+
+# ── skill-embedding writer guard ─────────────────────────────────────────────
+
+class _StubEmbedRouter:
+    def __init__(self, simulated):
+        self.embeddings_simulated = simulated
+
+    async def embed(self, texts):
+        return [[0.1] * 8 for _ in texts]
+
+
+class _CaptureSession:
+    """Session factory that records merge() calls so a test can assert what
+    was (or was not) persisted."""
+    merged: list = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def merge(self, obj):
+        type(self).merged.append(obj)
+        return obj
+
+    async def commit(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_embed_skill_never_persists_a_pseudo_vector(monkeypatch):
+    from app.services.knowledge import embed_skill
+
+    _CaptureSession.merged = []
+    monkeypatch.setattr("app.services.knowledge.AsyncSessionLocal", _CaptureSession)
+    skill = _FakeSkill("reset_password", "s1", "it", [{"pattern": "reset password"}])
+
+    ok = await embed_skill(skill, "t1", router=_StubEmbedRouter(simulated=True))
+    assert ok is False
+    assert _CaptureSession.merged == [], "a simulated embedding must never be persisted"
+
+
+@pytest.mark.asyncio
+async def test_embed_skill_persists_real_vectors(monkeypatch):
+    from app.services.knowledge import embed_skill
+
+    _CaptureSession.merged = []
+    monkeypatch.setattr("app.services.knowledge.AsyncSessionLocal", _CaptureSession)
+    skill = _FakeSkill("reset_password", "s1", "it", [{"pattern": "reset password"}])
+
+    ok = await embed_skill(skill, "t1", router=_StubEmbedRouter(simulated=False))
+    assert ok is True
+    assert len(_CaptureSession.merged) == 1
+    row = _CaptureSession.merged[0]
+    assert row.skill_db_id == "s1"
+    assert row.tenant_id == "t1"
+
+
+@pytest.mark.asyncio
+async def test_embed_skill_failure_is_swallowed(monkeypatch):
+    """The non-blocking contract: a failed embed never fails the skill write."""
+    from app.services.knowledge import embed_skill
+
+    class _BoomRouter:
+        embeddings_simulated = False
+
+        async def embed(self, texts):
+            raise RuntimeError("provider exploded")
+
+    skill = _FakeSkill("reset_password", "s1", "it", [{"pattern": "reset password"}])
+    ok = await embed_skill(skill, "t1", router=_BoomRouter())
+    assert ok is False, "an embed failure must degrade, never raise"
 
 
 # ── semantic_search honesty ──────────────────────────────────────────────────

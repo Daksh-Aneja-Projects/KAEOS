@@ -1,5 +1,5 @@
 import { request } from '../http';
-import type { BenchmarkData, CandidateRule, ComplianceDashboard, ConflictItem, ConnectorCredentialStatus, ConnectorCredentialsBody, ConnectorsResponse, ElicitationDashboard, ExecutionItem, FederatedConfigItem, GraphData, KBHealth, LLMConfigInput, LLMConfigItem, MCPToolInput, MCPToolItem, MarketplaceItem, ModelCapabilityProfile, NotificationChannel, NotificationDelivery, NotificationKind, OntologyConfigItem, PendingHITLItem, ProvenanceEntry, RedTeamScan, RuleItem, RuleListResponse, SecurityLog, Signal, SkillItem, SkillRegistryResponse } from '../types';
+import type { BenchmarkData, BillingEntitlements, CandidateRule, ComplianceDashboard, ConflictItem, ConnectorCredentialStatus, ConnectorCredentialsBody, ConnectorsResponse, ElicitationDashboard, ExecutionItem, FederatedConfigItem, GraphData, KBHealth, LLMConfigInput, LLMConfigItem, MCPToolInput, MCPToolItem, MarketplaceItem, ModelCapabilityProfile, NotificationChannel, NotificationDelivery, NotificationKind, OntologyConfigItem, PendingHITLItem, ProvenanceEntry, RedTeamScan, RuleItem, RuleListResponse, SecurityLog, Signal, SkillItem, SkillRegistryResponse, SkillValueBaseline } from '../types';
 
 export const governanceApi = {
   // Auth
@@ -39,6 +39,17 @@ export const governanceApi = {
   // Billing / usage (billing.py)
   getBillingUsage: () => request<any>('/billing/usage'),
   getBillingRoi: () => request<any>('/billing/roi'),
+  /** Plan, feature grants, current-period usage vs allowance, plan catalog, purchased seats. */
+  getBillingEntitlements: () => request<BillingEntitlements>('/billing/entitlements'),
+  /** Hosted checkout URL for a paid plan. Admin-only; 404 when no billing provider (self-host). */
+  createCheckoutSession: (plan: string) =>
+    request<{ url: string }>('/billing/checkout-session', { method: 'POST', body: JSON.stringify({ plan }) }),
+  /** Hosted billing-portal URL (payment method, invoices, cancellation). Admin-only; 404 on self-host. */
+  createPortalSession: () => request<{ url: string }>('/billing/portal-session', { method: 'POST' }),
+  /** Per-skill human baselines that power the honest "Value delivered" ROI figure. */
+  getBaselines: () => request<{ baselines: SkillValueBaseline[] }>('/billing/baselines'),
+  putBaseline: (body: { skill_name: string; baseline_minutes: number; hourly_rate?: number }) =>
+    request<SkillValueBaseline>('/billing/baselines', { method: 'PUT', body: JSON.stringify(body) }),
 
   // Webhooks (enterprise.py — router mounts at /api/v1, so no /enterprise segment)
   getWebhooks: () => request<{ subscriptions: any[] }>('/webhooks'),

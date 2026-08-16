@@ -1,6 +1,11 @@
 import { request, uploadForm, downloadFile, API_BASE } from '../http';
 import type { AppNotification, AutomationRule, BulkTransitionResult, DomainAnalytics, EntityComment, FoundryBuildResult, FoundryExample, FoundryFeedbackInput, FoundryStats, MyWorkItem, OrgPulse, RuleItem, SLABreach, SavedSegment, TransitionResult, WorkflowEvent, WorkflowSpec } from '../types';
 
+/** The full outbound write-back status set (models/sync.py OutboundWrite.status). */
+export type OutboundStatus =
+  | 'PENDING' | 'SENT' | 'FAILED' | 'DEAD'
+  | 'SKIPPED_NO_CONNECTOR' | 'SKIPPED_NO_CREDENTIALS';
+
 /** A facility work order — bound to app/operations/api/v1/router.py's
  * /operations/work-orders shape (WorkOrder model). */
 export interface WorkOrderRow {
@@ -201,10 +206,18 @@ export const operationsApi = {
     request<{ connector_id: string; webhook_secret: string; ingest_url: string; note: string }>(
       `/integrations/${connectorId}/webhook-secret`, { method: 'POST' }),
   getSyncLedger: (limit = 50) => request<{ ledger: any[] }>(`/integrations/sync/ledger?limit=${limit}`),
-  getOutboundQueue: (limit = 50) => request<{ outbound: any[] }>(`/integrations/sync/outbound?limit=${limit}`),
+  /** counts is ALWAYS the full per-status tally for the tenant (statuses with
+   *  zero rows are absent), even when the row list is filtered by ?status=. */
+  getOutboundQueue: (limit = 50, status?: OutboundStatus) =>
+    request<{ outbound: any[]; counts: Partial<Record<OutboundStatus, number>> }>(
+      `/integrations/sync/outbound?limit=${limit}${status ? `&status=${status}` : ''}`),
   dispatchOutbound: () =>
     request<{ sent: number; failed: number; skipped: number }>(
       '/integrations/sync/outbound/dispatch', { method: 'POST' }),
+  /** Operator replay of a DEAD/FAILED write: back to PENDING, fresh retry budget. */
+  requeueOutbound: (id: string) =>
+    request<{ id: string; status: string; attempts: number; idempotency_key: string | null }>(
+      `/integrations/sync/outbound/${id}/requeue`, { method: 'POST' }),
 
   // ─── Elicitation question generation (operator) ───
   generateElicitationQuestion: (body: { employee_id: string; domain?: string | null }) =>

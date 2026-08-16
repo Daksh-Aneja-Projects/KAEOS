@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import case, select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -19,7 +19,9 @@ from app.engineering.agents.deploy_risk_agent import DeployRiskAgent
 from app.engineering.agents.incident_agent import IncidentAgent
 from app.engineering.models.core import Engineer, Service
 from app.engineering.models.delivery import Deployment, PullRequest
-from app.engineering.models.incidents import Incident, Postmortem
+from app.engineering.models.incidents import (
+    Incident, IncidentSeverity, IncidentStatus, Postmortem,
+)
 from app.engineering.models.ops import OnCallRotation, PipelineRun
 
 import logging
@@ -41,46 +43,76 @@ async def engineering_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """DORA-flavoured posture, computed from live rows (no hardcoded metrics)."""
-    services = (await db.execute(
-        select(Service).where(Service.tenant_id == tenant_id)
-    )).scalars().all()
-    prs = (await db.execute(
-        select(PullRequest).where(PullRequest.tenant_id == tenant_id)
-    )).scalars().all()
-    deploys = (await db.execute(
-        select(Deployment).where(Deployment.tenant_id == tenant_id)
-    )).scalars().all()
-    incidents = (await db.execute(
-        select(Incident).where(Incident.tenant_id == tenant_id)
-    )).scalars().all()
+    # Services: one GROUP BY on health instead of loading every row.
+    svc_q = await db.execute(
+        select(Service.health, sqlfunc.count())
+        .where(Service.tenant_id == tenant_id)
+        .group_by(Service.health)
+    )
+    svc_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in svc_q.all()}
+    total_services = sum(svc_counts.values())
 
-    open_prs = [p for p in prs if _enum(p.status) in ("OPEN", "IN_REVIEW", "CHANGES_REQUESTED")]
-    succeeded = [d for d in deploys if _enum(d.status) == "SUCCEEDED"]
-    failed = [d for d in deploys if _enum(d.status) in ("FAILED", "ROLLED_BACK")]
-    open_incidents = [i for i in incidents if _enum(i.status) not in ("RESOLVED", "CLOSED")]
-    resolved = [i for i in incidents if i.time_to_resolve_mins is not None]
+    # PRs: GROUP BY status, carrying the awaiting-review count as a conditional
+    # sum per status (same shape as app/engineering/services/analytics.py).
+    pr_q = await db.execute(
+        select(PullRequest.status, sqlfunc.count(),
+               sqlfunc.coalesce(sqlfunc.sum(case(
+                   (sqlfunc.coalesce(PullRequest.approvals, 0) == 0, 1), else_=0)), 0))
+        .where(PullRequest.tenant_id == tenant_id)
+        .group_by(PullRequest.status)
+    )
+    pr_counts, unreviewed_counts = {}, {}
+    for s, c, unreviewed in pr_q.all():
+        key = s.value if hasattr(s, "value") else str(s)
+        pr_counts[key] = int(c)
+        unreviewed_counts[key] = int(unreviewed or 0)
+    _open_pr_states = ("OPEN", "IN_REVIEW", "CHANGES_REQUESTED")
+    open_prs = sum(pr_counts.get(s, 0) for s in _open_pr_states)
+    prs_awaiting_review = sum(unreviewed_counts.get(s, 0) for s in _open_pr_states)
 
+    # Deployments: GROUP BY status; the failure rate derives from the counts.
+    dep_q = await db.execute(
+        select(Deployment.status, sqlfunc.count())
+        .where(Deployment.tenant_id == tenant_id)
+        .group_by(Deployment.status)
+    )
+    dep_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in dep_q.all()}
+    deployments_total = sum(dep_counts.values())
+    failed = dep_counts.get("FAILED", 0) + dep_counts.get("ROLLED_BACK", 0)
     change_fail_rate = (
-        round(len(failed) / len(deploys) * 100, 1) if deploys else None
+        round(failed / deployments_total * 100, 1) if deployments_total else None
     )
-    mttr = (
-        round(sum(i.time_to_resolve_mins for i in resolved) / len(resolved), 1)
-        if resolved else None
+
+    # Incidents: one pass of conditional sums plus the resolve-time average
+    # (SQL AVG skips NULLs, matching the old resolved-rows-only mean).
+    _closed = [IncidentStatus.RESOLVED, IncidentStatus.CLOSED]
+    inc_q = await db.execute(
+        select(
+            sqlfunc.coalesce(sqlfunc.sum(case(
+                (Incident.status.notin_(_closed), 1), else_=0)), 0),
+            sqlfunc.coalesce(sqlfunc.sum(case(
+                (Incident.status.notin_(_closed)
+                 & (Incident.severity == IncidentSeverity.SEV1), 1), else_=0)), 0),
+            sqlfunc.coalesce(sqlfunc.sum(case(
+                (Incident.status == IncidentStatus.POSTMORTEM_DUE, 1), else_=0)), 0),
+            sqlfunc.avg(Incident.time_to_resolve_mins),
+        ).where(Incident.tenant_id == tenant_id)
     )
-    unhealthy = [s for s in services if _enum(s.health) != "HEALTHY"]
+    open_incidents, sev1_open, postmortems_due, mttr_raw = inc_q.one()
+    mttr = round(float(mttr_raw), 1) if mttr_raw is not None else None
 
     return {
-        "total_services": len(services),
-        "unhealthy_services": len(unhealthy),
-        "open_pull_requests": len(open_prs),
-        "prs_awaiting_review": len([p for p in open_prs if (p.approvals or 0) == 0]),
-        "deployments_total": len(deploys),
-        "deployments_succeeded": len(succeeded),
+        "total_services": total_services,
+        "unhealthy_services": total_services - svc_counts.get("HEALTHY", 0),
+        "open_pull_requests": open_prs,
+        "prs_awaiting_review": prs_awaiting_review,
+        "deployments_total": deployments_total,
+        "deployments_succeeded": dep_counts.get("SUCCEEDED", 0),
         "change_failure_rate_pct": change_fail_rate,
-        "open_incidents": len(open_incidents),
-        "sev1_open": len([i for i in open_incidents if _enum(i.severity) == "SEV1"]),
+        "open_incidents": int(open_incidents or 0),
+        "sev1_open": int(sev1_open or 0),
         "mttr_minutes": mttr,
-        "postmortems_due": len([i for i in incidents if _enum(i.status) == "POSTMORTEM_DUE"]),
+        "postmortems_due": int(postmortems_due or 0),
         "engineers_on_call": (await db.execute(
             select(sqlfunc.count()).select_from(Engineer).where(
                 Engineer.tenant_id == tenant_id, Engineer.on_call == True  # noqa: E712

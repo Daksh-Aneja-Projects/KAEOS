@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import case, select, func as sqlfunc
 
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
@@ -449,47 +449,66 @@ async def list_performance_reviews(tenant_id: str = Depends(get_tenant_id), db: 
 
 @router.get("/dashboard")
 async def get_hr_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    emps = (await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))).scalars().all()
-    reqs = (await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id))).scalars().all()
-    open_reqs = [r for r in reqs if (r.status.value if hasattr(r.status, "value") else r.status) == "OPEN"]
-    candidates = (await db.execute(select(Candidate).where(Candidate.tenant_id == tenant_id))).scalars().all()
-
     # Derivable metrics from real rows; the rest stay None ("—" in the UI)
-    # until a genuine data source (surveys, LMS) exists.
+    # until a genuine data source (surveys, LMS) exists. All counts are SQL
+    # aggregates - no full-table loads.
     from datetime import datetime, timezone as _tz
 
-    now = datetime.now(_tz.utc)
-    applications_this_month = sum(
-        1 for c in candidates
-        if c.applied_at and c.applied_at.year == now.year and c.applied_at.month == now.month
+    # Headcount by status, carrying terminated as a conditional sum: the OR
+    # matters - an employee with a termination_date but a stale status must
+    # still count, and a plain GROUP BY on status alone would undercount.
+    emp_q = await db.execute(
+        select(HREmployee.status, sqlfunc.count(),
+               sqlfunc.coalesce(sqlfunc.sum(case(
+                   ((HREmployee.status == EmploymentStatus.TERMINATED)
+                    | (HREmployee.termination_date.isnot(None)), 1), else_=0)), 0))
+        .where(HREmployee.tenant_id == tenant_id)
+        .group_by(HREmployee.status)
     )
+    total_employees, terminated = 0, 0
+    for _s, count, term in emp_q.all():
+        total_employees += int(count)
+        terminated += int(term or 0)
+    turnover_rate = round(terminated / total_employees * 100, 1) if total_employees else None
 
-    def _stage(c):
-        return c.stage.value if hasattr(c.stage, "value") else str(c.stage)
-
-    hired = sum(1 for c in candidates if _stage(c) == "HIRED")
-    offers_out = sum(1 for c in candidates if _stage(c) == "OFFER_EXTENDED")
+    # Recruiting funnel: one GROUP BY on stage.
+    cand_q = await db.execute(
+        select(Candidate.stage, sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id)
+        .group_by(Candidate.stage)
+    )
+    stage_counts = {(s.value if hasattr(s, "value") else str(s)): int(c) for s, c in cand_q.all()}
+    total_candidates = sum(stage_counts.values())
+    hired = stage_counts.get("HIRED", 0)
+    offers_out = stage_counts.get("OFFER_EXTENDED", 0)
     offer_acceptance_rate = round(hired / (hired + offers_out) * 100, 1) if (hired + offers_out) else None
 
-    def _emp_status(e):
-        return e.status.value if hasattr(e.status, "value") else str(e.status)
+    open_reqs = int((await db.execute(
+        select(sqlfunc.count())
+        .where(JobRequisition.tenant_id == tenant_id,
+               JobRequisition.status == ReqStatus.OPEN)
+    )).scalar() or 0)
 
-    terminated = sum(1 for e in emps if _emp_status(e) == "TERMINATED" or e.termination_date)
-    turnover_rate = round(terminated / len(emps) * 100, 1) if emps else None
+    now = datetime.now(_tz.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    applications_this_month = int((await db.execute(
+        select(sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id, Candidate.applied_at >= month_start)
+    )).scalar() or 0)
 
+    # Compliance: AVG over a 0/1 case is passed/total without loading the
+    # (unbounded) fairness audit log.
     from app.models.fairness import FairnessAuditLog
-    fairness_logs = (await db.execute(
-        select(FairnessAuditLog).where(FairnessAuditLog.tenant_id == tenant_id)
-    )).scalars().all()
-    compliance_score = (
-        round(sum(1 for l in fairness_logs if l.passed) / len(fairness_logs) * 100, 1)
-        if fairness_logs else None
-    )
+    passed_ratio = (await db.execute(
+        select(sqlfunc.avg(case((FairnessAuditLog.passed == True, 1.0), else_=0.0)))  # noqa: E712
+        .where(FairnessAuditLog.tenant_id == tenant_id)
+    )).scalar()
+    compliance_score = round(float(passed_ratio) * 100, 1) if passed_ratio is not None else None
 
     return {
-        "total_employees": len(emps),
-        "open_positions": len(open_reqs),
-        "total_candidates": len(candidates),
+        "total_employees": total_employees,
+        "open_positions": open_reqs,
+        "total_candidates": total_candidates,
         "applications_this_month": applications_this_month,
         "avg_time_to_fill": None,
         "offer_acceptance_rate": offer_acceptance_rate,
@@ -1648,18 +1667,31 @@ async def generate_hr_metric_snapshot(
     tenant_id = tenant["tenant_id"]
     today = datetime.now(timezone.utc).date()
 
-    emps = (await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))).scalars().all()
-    reqs = (await db.execute(select(JobRequisition).where(JobRequisition.tenant_id == tenant_id))).scalars().all()
-    candidates = (await db.execute(select(Candidate).where(Candidate.tenant_id == tenant_id))).scalars().all()
-
-    def _status(e): return e.status.value if hasattr(e.status, "value") else str(e.status)
-    def _stage(c): return c.stage.value if hasattr(c.stage, "value") else str(c.stage)
-    def _rstatus(r): return r.status.value if hasattr(r.status, "value") else str(r.status)
-
-    active_contractors = sum(1 for e in emps if _status(e) == "CONTRACTOR")
-    open_reqs = sum(1 for r in reqs if _rstatus(r) == "OPEN")
-    hired = [c for c in candidates if _stage(c) == "HIRED"]
-    offers_out = sum(1 for c in candidates if _stage(c) == "OFFER_EXTENDED")
+    # SQL counts; only the HIRED candidates are loaded as rows, because the
+    # time-to-fill date-diff stays in Python (a SQL date-diff would need
+    # julianday on SQLite vs extract/epoch on Postgres).
+    total_headcount, active_contractors = (
+        int(v or 0) for v in (await db.execute(
+            select(sqlfunc.count(),
+                   sqlfunc.coalesce(sqlfunc.sum(case(
+                       (HREmployee.status == EmploymentStatus.CONTRACTOR, 1), else_=0)), 0))
+            .where(HREmployee.tenant_id == tenant_id)
+        )).one()
+    )
+    open_reqs = int((await db.execute(
+        select(sqlfunc.count())
+        .where(JobRequisition.tenant_id == tenant_id,
+               JobRequisition.status == ReqStatus.OPEN)
+    )).scalar() or 0)
+    offers_out = int((await db.execute(
+        select(sqlfunc.count())
+        .where(Candidate.tenant_id == tenant_id,
+               Candidate.stage == CandidateStage.OFFER_EXTENDED)
+    )).scalar() or 0)
+    hired = (await db.execute(
+        select(Candidate).where(Candidate.tenant_id == tenant_id,
+                                Candidate.stage == CandidateStage.HIRED)
+    )).scalars().all()
     offer_acceptance_rate = round(len(hired) / (len(hired) + offers_out) * 100, 1) if (hired or offers_out) else None
     fill_days = [
         (c.updated_at - c.applied_at).days for c in hired
@@ -1676,7 +1708,7 @@ async def generate_hr_metric_snapshot(
         HRMetricSnapshot.tenant_id == tenant_id, HRMetricSnapshot.snapshot_date == today,
     ))).scalar_one_or_none()
     snap = existing or HRMetricSnapshot(tenant_id=tenant_id, snapshot_date=today)
-    snap.total_headcount = len(emps)
+    snap.total_headcount = total_headcount
     snap.active_contractors = active_contractors
     snap.open_requisitions = open_reqs
     snap.offer_acceptance_rate = offer_acceptance_rate

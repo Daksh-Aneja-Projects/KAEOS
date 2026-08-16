@@ -437,14 +437,7 @@ class PolystoreEngine:
                 skills = result.scalars().all()
             matched = []
             for skill in skills:
-                # Searchable text = skill id + all trigger patterns.
-                parts = [str(skill.skill_id or "")]
-                for t in (skill.triggers or []):
-                    if isinstance(t, dict) and "pattern" in t:
-                        parts.append(str(t["pattern"]))
-                    elif isinstance(t, str):
-                        parts.append(t)
-                score = lexical_score(query_text, " ".join(parts))
+                score = lexical_score(query_text, _skill_search_text(skill))
                 if score > 0:
                     matched.append({
                         "skill_id": skill.skill_id,
@@ -488,6 +481,14 @@ class PolystoreEngine:
                 ]
         except Exception as e:
             logger.warning(f"Vector search failed (likely sqlite), falling back to lexical: {e}")
+            for m in lexical:
+                m["similarity"] = None
+                m["retrieval_mode"] = "lexical"
+            return lexical[:top_k]
+
+        # Vector store had nothing to say: RRF over a single (lexical) list is
+        # just the lexical ranking - label it honestly instead of "hybrid".
+        if not vector_hits:
             for m in lexical:
                 m["similarity"] = None
                 m["retrieval_mode"] = "lexical"
@@ -537,3 +538,99 @@ class PolystoreEngine:
         except Exception as exc:
             logger.warning(f"[Polystore] Query embedding failed: {exc}")
             return None
+
+
+# ── Skill semantic index (module-level: shared by every skill write path) ────
+
+
+def _skill_search_text(skill) -> str:
+    """The searchable text of a skill: its id/name + all trigger patterns.
+
+    One definition shared by the lexical matcher and the embedding writer so
+    both retrieval lanes always index the same surface.
+    """
+    parts = [str(skill.skill_id or "")]
+    for t in (skill.triggers or []):
+        if isinstance(t, dict) and "pattern" in t:
+            parts.append(str(t["pattern"]))
+        elif isinstance(t, str):
+            parts.append(t)
+    return " ".join(parts)
+
+
+async def embed_skill(skill, tenant_id: str, router=None) -> bool:
+    """Upsert the semantic embedding for one skill into ``skill_embeddings``.
+
+    Non-blocking by contract: a failed embed must NEVER fail the skill write,
+    so every failure is logged and swallowed. Returns True only when a REAL
+    vector was persisted. Simulated embeddings are never persisted - the same
+    guard as rules: a stored pseudo-vector would later match a real query and
+    fabricate a 'semantic' similarity that was never a true cosine.
+    """
+    try:
+        if router is None:
+            from app.services.llm_router import get_tenant_router
+            router = await get_tenant_router(tenant_id)
+        vectors = await router.embed([_skill_search_text(skill)])
+        if getattr(router, "embeddings_simulated", False):
+            logger.info("[Polystore] embeddings simulated - not persisting a "
+                        "pseudo-vector for skill %s", skill.id)
+            return False
+        if not vectors:
+            return False
+        from app.models.domain import SkillEmbedding
+        async with AsyncSessionLocal() as session:
+            await session.merge(SkillEmbedding(
+                skill_db_id=skill.id,
+                tenant_id=tenant_id,
+                embedding=vectors[0],
+                updated_at=datetime.now(timezone.utc),
+            ))
+            await session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("[Polystore] Skill embedding failed (non-fatal) for %s: %s",
+                       getattr(skill, "id", None), exc)
+        return False
+
+
+async def backfill_skill_embeddings(db: AsyncSession, tenant_id: str) -> dict:
+    """Embed ACTIVE skills that have no embedding row yet. Idempotent.
+
+    Runs under THIS tenant's router (BYOK / data-residency respected). When
+    that router can only produce simulated embeddings nothing is persisted and
+    the result says so - honesty over a fabricated 'backfilled' count.
+    """
+    from app.models.domain import Skill, SkillEmbedding
+    from app.services.llm_router import get_tenant_router
+
+    have = select(SkillEmbedding.skill_db_id).where(
+        SkillEmbedding.tenant_id == tenant_id
+    )
+    rows = await db.execute(
+        select(Skill).where(
+            Skill.tenant_id == tenant_id,
+            Skill.status == "ACTIVE",
+            Skill.id.notin_(have),
+        )
+    )
+    missing = rows.scalars().all()
+
+    router = await get_tenant_router(tenant_id)
+    embedded = 0
+    simulated = False
+    # ponytail: sequential embeds (one call per skill); batch router.embed(texts)
+    # in one call if backfill latency ever matters at catalog scale.
+    for skill in missing:
+        if await embed_skill(skill, tenant_id, router=router):
+            embedded += 1
+        elif getattr(router, "embeddings_simulated", False):
+            # Every remaining call would also produce a pseudo-vector - stop.
+            simulated = True
+            break
+    return {
+        "tenant_id": tenant_id,
+        "missing": len(missing),
+        "embedded": embedded,
+        "embeddings_simulated": simulated,
+    }

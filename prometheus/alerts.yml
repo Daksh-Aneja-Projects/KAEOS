@@ -1,0 +1,73 @@
+# KAEOS alert rules.
+#
+# DECISION (2026-08-16): no separate uptime service (uptime-kuma etc). The
+# TargetDown alert below (up == 0 for 2m) IS the canonical uptime story:
+# Prometheus already probes every scrape target each 15s, so a dedicated
+# uptime pinger would be a second, worse copy of the same signal.
+#
+# Every threshold here is a STARTING POINT - tune against real traffic before
+# treating a page as actionable. Metric names come from app/core/metrics.py
+# (kaeos_*) and prometheus-fastapi-instrumentator defaults (http_*).
+
+groups:
+  - name: kaeos
+    rules:
+      # Starting threshold: >2% of requests 5xx over 5 minutes.
+      # Instrumentator groups status codes, so status="5xx" is one series.
+      - alert: HighErrorRate
+        expr: >
+          sum(rate(http_requests_total{status="5xx"}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx error rate above 2%"
+          description: "More than 2% of HTTP requests returned 5xx over the last 5 minutes."
+
+      # Starting threshold: p95 latency >2s over 10 minutes. Uses the high-
+      # resolution instrumentator histogram (the low-res one tops out at 1s
+      # buckets, which would clamp any quantile above 1s).
+      - alert: HighP95Latency
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_highr_seconds_bucket[10m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 HTTP latency above 2s"
+          description: "95th percentile request latency exceeded 2s over the last 10 minutes."
+
+      # kaeos_background_leader is a livesum gauge: a healthy cluster reads
+      # exactly 1. 0 = no leader (background jobs stalled), 2+ = split-brain
+      # (jobs running N times: N x LLM spend + races). metrics.py documents
+      # this as THE alert condition.
+      - alert: BackgroundLeaderNotSingular
+        expr: sum(kaeos_background_leader) != 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Background-job leadership is not exactly 1"
+          description: "0 leaders = background jobs stalled; 2+ = split-brain duplicate execution."
+
+      # Starting threshold: any burst of durable-queue job failures.
+      - alert: JobFailures
+        expr: sum(increase(kaeos_jobs_total{outcome="failed"}[10m])) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Durable-queue jobs failing"
+          description: "More than 3 background jobs failed in the last 10 minutes."
+
+      # Canonical uptime alert (see DECISION header). Fires per target.
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scrape target down"
+          description: "{{ $labels.job }} ({{ $labels.instance }}) has been unreachable for 2 minutes."

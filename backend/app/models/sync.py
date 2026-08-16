@@ -6,12 +6,13 @@ Two truths this layer maintains:
   the boundary (inbound webhook/poll, outbound write-back) leaves a row here,
   applied or not. A governance product cannot move data silently.
 
-* OutboundWrite - the durable write-back queue. When a governed action mutates
-  KAEOS state (actuation, mission step, workflow transition), the change is
-  queued here and a dispatcher pushes it to the connected external system
-  through the provider adapter. Durable-by-design: a crash between the
-  internal commit and the external call leaves a PENDING row the dispatcher
-  retries, never a silently-lost update.
+* OutboundWrite - the durable write-back queue. When the actuation path
+  executes a governed action (the ONLY producer today - mission steps and
+  workflow transitions do not queue write-backs), the change is queued here
+  and a dispatcher pushes it to the connected external system through the
+  provider adapter. Durable-by-design: a crash between the internal commit
+  and the external call leaves a PENDING row the dispatcher retries, never a
+  silently-lost update.
 """
 from sqlalchemy import Column, String, DateTime, JSON, Text, Integer
 from sqlalchemy.sql import func

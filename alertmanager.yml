@@ -1,0 +1,46 @@
+# KAEOS Alertmanager config.
+# Default: everything routes to the "null" receiver, so an unconfigured stack
+# never crashes or spams - alerts are still visible in the Alertmanager UI
+# (http://localhost:9093) and in Prometheus. To actually get paged, uncomment
+# ONE of the receivers below, fill in your values, and point route.receiver
+# at it. Alertmanager does not expand environment variables in this file, so
+# the credentials go here (keep a production copy of this file out of git).
+
+route:
+  receiver: "null"
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  # Example: page on critical, mail on warning.
+  # routes:
+  #   - receiver: slack
+  #     matchers: ['severity="critical"']
+  #   - receiver: email
+  #     matchers: ['severity="warning"']
+
+receivers:
+  - name: "null"
+
+  # ── Slack ──────────────────────────────────────────────────────────────────
+  # - name: slack
+  #   slack_configs:
+  #     - api_url: "https://hooks.slack.com/services/T000/B000/XXXXXXXX"
+  #       channel: "#kaeos-alerts"
+  #       send_resolved: true
+
+  # ── SMTP / email ───────────────────────────────────────────────────────────
+  # - name: email
+  #   email_configs:
+  #     - to: "oncall@yourcompany.com"
+  #       from: "kaeos-alerts@yourcompany.com"
+  #       smarthost: "smtp.yourcompany.com:587"
+  #       auth_username: "kaeos-alerts@yourcompany.com"
+  #       auth_password: "CHANGE_ME"
+  #       send_resolved: true
+
+  # ── Generic webhook (PagerDuty/Opsgenie bridges, custom) ──────────────────
+  # - name: webhook
+  #   webhook_configs:
+  #     - url: "https://your-bridge.example.com/alerts"
+  #       send_resolved: true
