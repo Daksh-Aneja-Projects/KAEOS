@@ -11,6 +11,33 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - CI-invariant ratchet (2026-08-17)
+
+Every gap the review found by hand is now a CI-enforced invariant, so it cannot
+silently regress (the highest-corroboration theme across the 20 lenses):
+
+- **Migrations proven on Postgres:** a CI step runs the full alembic chain from
+  an empty Postgres database (the drift check is now dialect-agnostic and honours
+  the lane's Postgres URL instead of always using SQLite) — the validation whose
+  absence let native-enum / RLS / pgvector / boolean DDL ship unverified. A new
+  enum-label check asserts every model enum member exists in its native Postgres
+  type (adding a member without an `ALTER TYPE … ADD VALUE` would otherwise reject
+  INSERTs on an upgraded prod DB). Validated locally on pgvector/pg16: 257/257
+  tables, 86/86 enum types.
+- **Egress firewall:** a test fails the build on any bare `httpx.AsyncClient(` /
+  `Client(` outside `core/outbound.py` (SSRF-guarded wrapper), with an explicit
+  allowlist for the in-process ASGI transport and constant provider endpoints.
+- **Department-capability contract:** a test asserts every compliance tag a
+  department declares resolves to a registered checker — the dead-`SLA`-tag class
+  of bug (a declared control that silently never runs) now fails CI by construction.
+- **Compliance invariants (neuter-the-field):** a parametrized pack proves each
+  statutory control still fails closed when its enforcing field is removed/blanked
+  (SOX four-eyes, ECOA 30-day, LENDING_SOD, FDCPA Reg F, PII redaction) — a
+  control cannot be silently disabled by dropping a field.
+- **Query budget:** a per-endpoint statement-count harness pins the hot dashboard
+  reads (`/dashboard/health`, `/org/pulse`, workforce departments) so an N+1 or an
+  unbounded full-row scan regression fails CI.
+
 ### Fixed - 20-lens review remediation, Wave 1 safety fixes (2026-08-17)
 
 A 12-agent verification pass mapped every 20-lens finding to its true state

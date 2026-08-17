@@ -95,6 +95,32 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
+    - name: Prove migrations on Postgres (clean DB - forward chain + enum labels)
+      # Runs the FULL alembic chain from an EMPTY Postgres database (a dedicated
+      # kaeos_migrate DB, independent of the seed/e2e flow below which uses
+      # create_all). This is the validation whose absence let native-enum / RLS /
+      # pgvector / boolean DDL ship unvalidated (the class that broke prod before).
+      # check_enum_labels then asserts every model enum member exists in its
+      # native PG type (adding a member without ALTER TYPE would reject INSERTs).
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+        DATABASE_URL: "postgresql+asyncpg://kaeos:kaeos_ci@localhost:5432/kaeos_migrate"
+        DATABASE_URL_SYNC: "postgresql+psycopg2://kaeos:kaeos_ci@localhost:5432/kaeos_migrate"
+      run: |
+        cd backend
+        python - <<'PY'
+        import psycopg2
+        c = psycopg2.connect(host="localhost", port=5432, user="kaeos",
+                             password="kaeos_ci", dbname="kaeos")
+        c.autocommit = True
+        cur = c.cursor()
+        cur.execute("DROP DATABASE IF EXISTS kaeos_migrate")
+        cur.execute("CREATE DATABASE kaeos_migrate")
+        c.close()
+        print("created clean kaeos_migrate")
+        PY
+        python -m scripts.check_migration_drift
+        python -m scripts.check_enum_labels
     - name: Boot backend + seed + run non-Ollama e2e (on Postgres+pgvector)
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
@@ -117,7 +143,6 @@ jobs:
           sleep 2
         done
         python scripts/seed_master.py
-        python -m scripts.check_migration_drift
         pytest tests/e2e -m "not ollama" -q --tb=short
 
   frontend-build:
