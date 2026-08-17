@@ -102,3 +102,64 @@ async def test_price_within_tolerance_matches(db):
     inv = await _chain(db, tenant, inv_price="3598.00")
     res = await evaluate_three_way_match(db, tenant, inv)
     assert res["status"] == "MATCHED"
+
+
+async def _po_line_receipt(db, tenant, *, po_qty=10, recv_qty=10, price="100.00"):
+    """A PO + one line + a full receipt; returns (po, line)."""
+    po = PurchaseOrder(id=str(uuid.uuid4()), tenant_id=tenant,
+                       po_number=f"PO-{uuid.uuid4().hex[:6]}", vendor_name="AWS",
+                       total_amount=float(price) * po_qty, status=ProcurementStatus.RECEIVED)
+    db.add(po)
+    await db.flush()
+    line = POLineItem(id=str(uuid.uuid4()), tenant_id=tenant, purchase_order_id=po.id,
+                      line_number=1, description="compute", quantity=po_qty,
+                      unit_price=price, amount=float(price) * po_qty)
+    db.add(line)
+    await db.flush()
+    db.add(GoodsReceipt(id=str(uuid.uuid4()), tenant_id=tenant, purchase_order_id=po.id,
+                        po_line_item_id=line.id, receiver_name="rcv", received_quantity=recv_qty))
+    await db.flush()
+    return po, line
+
+
+def _inv(tenant, po, line, *, qty, status, price="100.00"):
+    return Invoice(
+        id=str(uuid.uuid4()), tenant_id=tenant, vendor_id=str(uuid.uuid4()),
+        invoice_number=f"INV-{uuid.uuid4().hex[:6]}", status=status,
+        subtotal=float(price) * qty, total_amount=float(price) * qty, balance_due=float(price) * qty,
+        invoice_date=date.today(), due_date=date.today() + timedelta(days=30),
+        purchase_order_id=po.id,
+        line_items=[{"qty": qty, "unit_price": float(price), "po_line_item_id": line.id}],
+    )
+
+
+async def test_cumulative_over_bill_across_prior_invoices_is_exception(db):
+    """A prior APPROVED invoice already billed 6 of 10; this invoice bills another
+    6 -> cumulative 12 > 10 received, so it must be an over-bill EXCEPTION."""
+    tenant = _t()
+    po, line = await _po_line_receipt(db, tenant, po_qty=10, recv_qty=10)
+    db.add(_inv(tenant, po, line, qty=6, status=InvoiceStatus.APPROVED))
+    await db.commit()
+    cur = _inv(tenant, po, line, qty=6, status=InvoiceStatus.PENDING_APPROVAL)
+    db.add(cur)
+    await db.commit()
+
+    res = await evaluate_three_way_match(db, tenant, cur)
+    assert res["status"] == "EXCEPTION"
+    assert any("received" in r.lower() or "billed" in r.lower() or "exceed" in r.lower()
+               for r in res["reasons"]), res["reasons"]
+
+
+async def test_prior_draft_invoice_does_not_count_toward_billed(db):
+    """An abandoned DRAFT prior invoice must NOT count toward billed-to-date, so a
+    legitimate invoice within the received qty still MATCHES (the inert-guard fix)."""
+    tenant = _t()
+    po, line = await _po_line_receipt(db, tenant, po_qty=10, recv_qty=10)
+    db.add(_inv(tenant, po, line, qty=6, status=InvoiceStatus.DRAFT))     # abandoned
+    await db.commit()
+    cur = _inv(tenant, po, line, qty=6, status=InvoiceStatus.PENDING_APPROVAL)
+    db.add(cur)
+    await db.commit()
+
+    res = await evaluate_three_way_match(db, tenant, cur)
+    assert res["status"] == "MATCHED", res["reasons"]
