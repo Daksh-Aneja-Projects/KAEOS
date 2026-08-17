@@ -69,5 +69,11 @@ async def test_pulse_insight_feed_includes_the_new_domains(async_client: AsyncCl
     assert healthcare_insights[0]["severity"] == "warning"
 
 
+# NOTE: live-data reflection (a just-created SLA breach shows up on the very next
+# poll — the invariant a server-side pulse cache would break) is asserted by
+# tests/test_bulk_and_sla.py::test_pulse_health_dented_by_sla_breaches. The pulse
+# is intentionally computed live; the frontend's 15s SWR handles burst collapse.
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

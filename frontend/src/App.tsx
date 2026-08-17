@@ -20,6 +20,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { BrandingProvider, useBranding } from './context/BrandingContext';
 import ThemeAdapter from './components/ThemeAdapter';
 import ErrorBoundary from './components/ErrorBoundary';
+import NeedsPlanToast from './components/NeedsPlanToast';
 
 // Pages
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -863,6 +864,8 @@ export default function App() {
           } />
           <Route path="*" element={<AuthGuard />} />
         </Routes>
+        {/* Consumer for the backend 402 needs-plan contract (api/http.ts). */}
+        <NeedsPlanToast />
       </AuthProvider>
     </ThemeProvider>
   );

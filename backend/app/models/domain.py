@@ -109,18 +109,6 @@ class Rule(Base):
     workflow = relationship("Workflow", back_populates="rules")
 
 
-class RuleEmbedding(Base):
-    """Vector storage for rules, used in L3 Polystore"""
-    __tablename__ = 'rule_embeddings'
-
-    rule_id = Column(String, primary_key=True)
-    tenant_id = Column(String, nullable=False, index=True)
-    # text-embedding-3-small dimension is 1536
-    # only define the column if pgvector is installed
-    if Vector:
-        embedding = Column(Vector(_EMBED_DIM))
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
 class SkillEmbedding(Base):
     """Vector storage for skills, used in L9 SkillRouter fuzzy matching"""
     __tablename__ = 'skill_embeddings'

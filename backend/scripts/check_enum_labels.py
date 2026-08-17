@@ -23,18 +23,19 @@ os.environ.setdefault("SECRET_KEY", "ci-enum-check-secret-key-0000000")
 def diff_enum_labels(model_map: dict, pg_map: dict) -> list:
     """Pure comparison. ``model_map``/``pg_map`` are {enum_type_name: set(labels)}.
 
-    Returns a list of (type_name, missing_labels) where the model declares labels
-    the PG type does not have — the INSERT-rejection drift. A type absent from PG
-    entirely is reported with ALL its labels missing (its migration never ran).
-    A PG type carrying EXTRA labels the model dropped is fine (old members linger
-    harmlessly), so it is not reported.
+    Returns a list of (type_name, missing_labels) where a NATIVE PG enum type that
+    EXISTS carries fewer labels than the model uses — the INSERT-rejection drift.
+    A model enum whose type is ABSENT from PG is NOT drift: this codebase stores
+    enum columns as VARCHAR at the migration layer (0 native enum types on a
+    migration-built DB), so there is no native type to reject a new member — the
+    §14 hazard simply does not apply to a VARCHAR-backed column. A PG type carrying
+    EXTRA labels the model dropped is fine (old members linger harmlessly).
     """
     drifts = []
     for name, model_labels in sorted(model_map.items()):
         pg_labels = pg_map.get(name)
         if pg_labels is None:
-            drifts.append((name, sorted(model_labels)))
-            continue
+            continue  # stored as VARCHAR, not a native enum — no rejection risk
         missing = model_labels - pg_labels
         if missing:
             drifts.append((name, sorted(missing)))
@@ -84,8 +85,10 @@ def main() -> int:
     pg_map = _pg_enum_map(sync_url)
     drifts = diff_enum_labels(model_map, pg_map)
 
-    print(f"[enum] {len(model_map)} native enum types in the models; "
-          f"{len(pg_map)} in Postgres.")
+    checked = sum(1 for n in model_map if n in pg_map)
+    print(f"[enum] {len(model_map)} model enum types; {len(pg_map)} native in Postgres; "
+          f"{checked} overlap checked for missing labels "
+          f"(absent types are VARCHAR-backed — no native-enum rejection risk).")
     if drifts:
         print("[enum] FAIL — model enum member(s) missing from the Postgres type "
               "(INSERT of these would be rejected on an upgraded DB):")
@@ -100,6 +103,6 @@ if __name__ == "__main__":
     # Self-check of the pure diff before touching any DB.
     assert diff_enum_labels({"e": {"A", "B"}}, {"e": {"A", "B"}}) == []
     assert diff_enum_labels({"e": {"A", "B", "C"}}, {"e": {"A", "B"}}) == [("e", ["C"])]
-    assert diff_enum_labels({"e": {"A"}}, {}) == [("e", ["A"])]
+    assert diff_enum_labels({"e": {"A"}}, {}) == []            # absent PG type = VARCHAR-backed, no risk
     assert diff_enum_labels({"e": {"A"}}, {"e": {"A", "B"}}) == []  # extra PG label is fine
     sys.exit(main())

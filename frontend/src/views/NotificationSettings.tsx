@@ -4,6 +4,7 @@ import type { NotificationChannel, NotificationDelivery, NotificationKind } from
 import { useTheme } from '../context/ThemeContext';
 import { toPct, humanize } from '../lib/format';
 import { Bell, Mail, MessageSquare, Webhook, Plus, Trash2, Loader2, Send, History, Newspaper, Eye, CheckCircle2, XCircle } from 'lucide-react';
+import Field from '../components/shared/Field';
 
 /**
  * Notification settings: SMTP / Slack / webhook channels with per-event
@@ -213,21 +214,37 @@ const NotificationSettings: React.FC = () => {
         {showForm && (
           <div className="p-4 rounded-lg mb-4 space-y-3" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <input style={input} placeholder="Channel name (e.g. Ops alerts)" value={formName} onChange={e => setFormName(e.target.value)} />
-              <select style={input} value={formKind} onChange={e => switchKind(e.target.value as NotificationKind)}>
-                {kinds.map(k => <option key={k} value={k}>{KIND_META[k]?.label || k}</option>)}
-              </select>
+              <Field label="Channel name" labelStyle={{ color: colors.inkSubtle }}>
+                <input style={input} placeholder="Channel name (e.g. Ops alerts)" value={formName} onChange={e => setFormName(e.target.value)} />
+              </Field>
+              <Field label="Type" labelStyle={{ color: colors.inkSubtle }}>
+                <select style={input} value={formKind} onChange={e => switchKind(e.target.value as NotificationKind)}>
+                  {kinds.map(k => <option key={k} value={k}>{KIND_META[k]?.label || k}</option>)}
+                </select>
+              </Field>
             </div>
 
             {/* Kind-specific config */}
             {formKind === 'smtp' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <input style={input} placeholder="SMTP host (e.g. smtp.acme.com)" value={formConfig.host} onChange={e => setFormConfig({ ...formConfig, host: e.target.value })} />
-                <input style={input} type="number" placeholder="Port" value={formConfig.port} onChange={e => setFormConfig({ ...formConfig, port: e.target.value })} />
-                <input style={input} placeholder="Username" value={formConfig.username} onChange={e => setFormConfig({ ...formConfig, username: e.target.value })} />
-                <input style={input} type="password" placeholder="Password" value={formConfig.password} onChange={e => setFormConfig({ ...formConfig, password: e.target.value })} />
-                <input style={input} placeholder="From address" value={formConfig.from_addr} onChange={e => setFormConfig({ ...formConfig, from_addr: e.target.value })} />
-                <input style={input} placeholder="To addresses (comma-separated)" value={formConfig.to_addrs} onChange={e => setFormConfig({ ...formConfig, to_addrs: e.target.value })} />
+                <Field label="SMTP host" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} placeholder="SMTP host (e.g. smtp.acme.com)" value={formConfig.host} onChange={e => setFormConfig({ ...formConfig, host: e.target.value })} />
+                </Field>
+                <Field label="Port" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} type="number" placeholder="Port" value={formConfig.port} onChange={e => setFormConfig({ ...formConfig, port: e.target.value })} />
+                </Field>
+                <Field label="Username" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} placeholder="Username" value={formConfig.username} onChange={e => setFormConfig({ ...formConfig, username: e.target.value })} />
+                </Field>
+                <Field label="Password" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} type="password" placeholder="Password" value={formConfig.password} onChange={e => setFormConfig({ ...formConfig, password: e.target.value })} />
+                </Field>
+                <Field label="From address" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} placeholder="From address" value={formConfig.from_addr} onChange={e => setFormConfig({ ...formConfig, from_addr: e.target.value })} />
+                </Field>
+                <Field label="To addresses" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} placeholder="To addresses (comma-separated)" value={formConfig.to_addrs} onChange={e => setFormConfig({ ...formConfig, to_addrs: e.target.value })} />
+                </Field>
                 <label className="flex items-center gap-2 text-[13px]" style={{ color: colors.ink }}>
                   <input type="checkbox" checked={!!formConfig.use_tls} onChange={e => setFormConfig({ ...formConfig, use_tls: e.target.checked })} style={{ accentColor: colors.primary }} />
                   Use TLS
@@ -235,12 +252,18 @@ const NotificationSettings: React.FC = () => {
               </div>
             )}
             {formKind === 'slack' && (
-              <input style={input} placeholder="Slack webhook URL (https://hooks.slack.com/...)" value={formConfig.webhook_url} onChange={e => setFormConfig({ ...formConfig, webhook_url: e.target.value })} />
+              <Field label="Slack webhook URL" labelStyle={{ color: colors.inkSubtle }}>
+                <input style={input} placeholder="Slack webhook URL (https://hooks.slack.com/...)" value={formConfig.webhook_url} onChange={e => setFormConfig({ ...formConfig, webhook_url: e.target.value })} />
+              </Field>
             )}
             {formKind === 'webhook' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <input style={input} placeholder="Webhook URL (https://...)" value={formConfig.url} onChange={e => setFormConfig({ ...formConfig, url: e.target.value })} />
-                <input style={input} type="password" placeholder="Signing secret (optional)" value={formConfig.secret} onChange={e => setFormConfig({ ...formConfig, secret: e.target.value })} />
+                <Field label="Webhook URL" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} placeholder="Webhook URL (https://...)" value={formConfig.url} onChange={e => setFormConfig({ ...formConfig, url: e.target.value })} />
+                </Field>
+                <Field label="Signing secret" labelStyle={{ color: colors.inkSubtle }}>
+                  <input style={input} type="password" placeholder="Signing secret (optional)" value={formConfig.secret} onChange={e => setFormConfig({ ...formConfig, secret: e.target.value })} />
+                </Field>
               </div>
             )}
 

@@ -589,6 +589,56 @@ async def run_mission_reaper():
         logger.error(f"[Scheduler] mission reaper failed: {e}")
 
 
+async def run_accrual_reaper():
+    """Book approved-but-unaccrued AP invoices that lazy retry left off the ledger.
+
+    ``accrue_invoice`` is called inline when an invoice is approved/paid, but a
+    transient failure (or approval before the accrual hook existed) can leave an
+    APPROVED invoice with no AP_ACCRUAL journal entry - a real liability missing
+    from the P&L and balance sheet. This leader-guarded sweep finds every APPROVED
+    invoice lacking a POSTED AP_ACCRUAL entry and accrues it. accrue_invoice is
+    idempotent (guarded by the same existing-entry SELECT), so a double-run never
+    double-posts. Owner session, cross-tenant; accrue_invoice/_find_account are
+    parameterized by tenant_id, so no RLS context is required.
+    """
+    if not _is_leader():
+        return
+    from app.finance.models.accounts_payable import Invoice, InvoiceStatus
+    from app.finance.models.core import JournalEntry, JournalEntryStatus
+    from app.finance.services.payments import accrue_invoice
+
+    try:
+        async with MaintenanceSessionLocal() as db:
+            accrued_exists = select(JournalEntry.id).where(
+                JournalEntry.source_module == "AP_ACCRUAL",
+                JournalEntry.source_document_id == Invoice.id,
+                JournalEntry.tenant_id == Invoice.tenant_id,
+                JournalEntry.status == JournalEntryStatus.POSTED,
+            )
+            invoices = (await db.execute(
+                select(Invoice)
+                .where(Invoice.status == InvoiceStatus.APPROVED, ~accrued_exists.exists())
+                .limit(_BATCH_LIMIT)
+            )).scalars().all()
+            booked = 0
+            for inv in invoices:
+                try:
+                    entry = await accrue_invoice(db, inv.tenant_id, inv, actor="accrual_reaper")
+                    if entry is not None:
+                        await db.commit()
+                        booked += 1
+                    else:
+                        await db.rollback()  # zero-amount invoice: nothing to post
+                except Exception as e:
+                    await db.rollback()
+                    logger.error("[Scheduler] accrual reaper failed for invoice %s: %s",
+                                 inv.id, e)
+            if booked:
+                logger.info("[Scheduler] accrual reaper booked %d unaccrued invoice(s)", booked)
+    except Exception as e:
+        logger.error(f"[Scheduler] accrual reaper failed: {e}")
+
+
 def init_scheduler() -> AsyncIOScheduler:
     # Register durable-job handlers before the processor can tick.
     try:
@@ -707,6 +757,13 @@ def init_scheduler() -> AsyncIOScheduler:
         minutes=int(getattr(get_settings(), "METRICS_ROLLUP_INTERVAL_MINUTES", 60)),
         args=['metrics_rollup', run_metrics_rollup],
         id='metrics_rollup_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Accrual reaper: book APPROVED invoices that inline accrual retry never
+    # reached, so no liability sits off-books. Idempotent (accrue_invoice guards
+    # on the existing AP_ACCRUAL entry), so hourly re-runs never double-post.
+    scheduler.add_job(
+        _tracked, 'interval', hours=1, args=['accrual_reaper', run_accrual_reaper],
+        id='accrual_reaper_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     return scheduler
 

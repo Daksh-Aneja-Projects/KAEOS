@@ -84,6 +84,14 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
     } else if (detail && typeof detail === 'object') {
       detail = detail.msg || JSON.stringify(detail);
     }
+    // 402 Payment Required is the backend's entitlement/needs-plan contract.
+    // Broadcast the message so the app root (NeedsPlanToast) can surface an
+    // upgrade CTA; every caller's existing `catch` still gets the ApiError.
+    if (res.status === 402) {
+      window.dispatchEvent(new CustomEvent('kaeos:needs-plan', {
+        detail: { message: typeof detail === 'string' ? detail : undefined },
+      }));
+    }
     throw new ApiError(detail || `API Error ${res.status}`, res.status);
   }
   // 204 No Content (e.g. DELETE /notifications/channels/{id}) has no body to parse.

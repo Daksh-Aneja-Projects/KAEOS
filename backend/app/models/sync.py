@@ -14,7 +14,7 @@ Two truths this layer maintains:
   and the external call leaves a PENDING row the dispatcher retries, never a
   silently-lost update.
 """
-from sqlalchemy import Column, String, DateTime, JSON, Text, Integer
+from sqlalchemy import Column, String, DateTime, JSON, Text, Integer, UniqueConstraint
 from sqlalchemy.sql import func
 import uuid
 
@@ -46,6 +46,11 @@ class SyncLedger(Base):
 
 class OutboundWrite(Base):
     __tablename__ = "outbound_writes"
+    # A given (tenant, idempotency_key) must queue AT MOST ONE write: a duplicate
+    # queue (retry of the same governed action) must not double-send/double-meter.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_outbound_idempotency"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
