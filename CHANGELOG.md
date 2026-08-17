@@ -11,6 +11,30 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - Governance Proving Ground + Assurance Score (2026-08-17)
+
+Makes the core claim provable. The north-star safe-autonomy-rate measures how much
+ran clean but never proves the gates would STOP a bad action - a tenant could sit
+at 99% on gates that block nothing. The Proving Ground fires a versioned battery
+of KNOWN-BAD actions through the LIVE gate pipeline and scores how many were
+caught; that severity-weighted gate catch-rate is the **Assurance Score**.
+
+- Backend `proving_ground` service: an 11-attack battery spanning finance (SOX
+  four-eyes, self-approval), lending (ECOA late notice + prohibited basis, FDCPA
+  7-in-7, lending SoD), support (PII redaction), procurement (segregation of
+  duties), and the governance kernel (prompt-injection guard, irreversible-DELETE
+  and money-moving-UPDATE consequence). Each attack is the inverse of an
+  already-tested checker, so a green battery is grounded, not theatre.
+- `GET /proving-ground/run` returns the Assurance Score + per-attack catch grid;
+  `GET /proving-ground/scenarios` lists the battery.
+- CI regression gate (`test_proving_ground`): the battery must be perfect (score
+  1.0) - a gate that regresses lets its attack escape and fails the build; a teeth
+  test proves the harness detects a neutered gate rather than always reading green.
+- A live operator page (`/platform/proving-ground`): an animated firing range
+  where known-bad actions are launched at the gate wall and deflected in real
+  time, an animated Assurance Score ring, and the per-attack catch grid.
+  Reduced-motion respected; verified live at 1280px and 375px (100%, 11/11).
+
 ### Added - CI-invariant ratchet (2026-08-17)
 
 Every gap the review found by hand is now a CI-enforced invariant, so it cannot
