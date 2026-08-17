@@ -11,6 +11,15 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - three-way-match billed-to-date (2026-08-17)
+
+The cumulative billed-to-date query counted every non-VOIDED prior invoice,
+including abandoned DRAFT / DISPUTED ones (the `_NOT_BILLED_TO_DATE` guard was
+defined but not applied), so a stale draft could permanently force a legitimate
+invoice to EXCEPTION. The query now excludes DRAFT/DISPUTED/VOIDED priors. Locked
+with tests: a cumulative over-bill across two live invoices raises EXCEPTION, and
+an abandoned DRAFT prior no longer blocks a within-limit invoice.
+
 ### Added - Governance Proving Ground + Assurance Score (2026-08-17)
 
 Makes the core claim provable. The north-star safe-autonomy-rate measures how much

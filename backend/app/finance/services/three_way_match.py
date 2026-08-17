@@ -100,7 +100,10 @@ async def _billed_to_date(
         Invoice.purchase_order_id == po_id,
         Invoice.tenant_id == tenant_id,
         Invoice.id != invoice.id,
-        Invoice.status != InvoiceStatus.VOIDED,
+        # Only invoices that represent a live claim on the PO count toward
+        # billed-to-date; an abandoned DRAFT / DISPUTED / VOIDED must not force a
+        # real invoice to EXCEPTION.
+        Invoice.status.notin_(_NOT_BILLED_TO_DATE),
     ))).scalars().all()
     by_line: dict[str, Decimal] = {}
     header = Decimal(0)
