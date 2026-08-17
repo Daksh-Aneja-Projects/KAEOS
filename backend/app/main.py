@@ -462,6 +462,8 @@ from app.api.routes import foundry
 app.include_router(foundry.router, prefix=PREFIX)
 from app.api.routes import safe_autonomy
 app.include_router(safe_autonomy.router, prefix=PREFIX)
+from app.api.routes import proving_ground
+app.include_router(proving_ground.router, prefix=PREFIX)
 from app.api.routes import outcomes
 app.include_router(outcomes.router, prefix=PREFIX)
 from app.api.routes import actuation

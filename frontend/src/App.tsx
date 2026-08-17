@@ -86,6 +86,7 @@ const PioneerLab = lazy(() => import('./pages/PioneerLab'));
 
 // ─── v2 AI FOUNDRY + CLIENT ONBOARDING ─────────────────────────────
 const AIFoundry = lazy(() => import('./pages/AIFoundry'));
+const ProvingGround = lazy(() => import('./pages/ProvingGround'));
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'));
 const GettingStarted = lazy(() => import('./pages/GettingStarted'));
 
@@ -122,6 +123,7 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/knowledge', label: 'Knowledge', icon: Database },
   { path: '/platform/agents', label: 'Agents', icon: Bot },
   { path: '/platform/decisions', label: 'Decisions', icon: Activity },
+  { path: '/platform/proving-ground', label: 'Proving Ground', icon: ShieldCheck },
   { path: '/platform/compliance-checker', label: 'Compliance Checker', icon: Scale },
   // Tooling next.
   { path: '/platform/foundry', label: 'AI Foundry', icon: Factory },
@@ -286,6 +288,7 @@ function Shell() {
     { path: '/platform/knowledge', label: 'Knowledge', keywords: 'rules skills topology extraction connectors' },
     { path: '/platform/agents', label: 'Agents', keywords: 'deploy blueprint ooda llm mcp marketplace' },
     { path: '/platform/decisions', label: 'Decisions', keywords: 'cockpit compliance provenance redteam hitl fairness debates governance trust' },
+    { path: '/platform/proving-ground', label: 'Proving Ground', keywords: 'assurance score gate catch-rate known-bad attack battery governance proof red team' },
     { path: '/platform/settings', label: 'Settings', keywords: 'config ontology federated' },
     { path: '/platform/users', label: 'User Management', keywords: 'admin roles users rbac' },
     { path: '/platform/foundry', label: 'AI Foundry', keywords: 'foundry training dataset fine-tune model evolution learning v2' },
@@ -772,6 +775,7 @@ function Shell() {
                 <Route path="/platform/knowledge" element={<ThemeAdapter><KnowledgeView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />
+                <Route path="/platform/proving-ground" element={<ThemeAdapter><ProvingGround /></ThemeAdapter>} />
                 <Route path="/platform/compliance-checker" element={<ThemeAdapter><ComplianceChecker /></ThemeAdapter>} />
                 {/* Company Brain merged into Knowledge; Trust merged into Decisions (Governance tab). */}
                 <Route path="/platform/brain" element={<Navigate to="/platform/knowledge" replace />} />
