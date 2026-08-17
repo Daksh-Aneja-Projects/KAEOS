@@ -5,8 +5,6 @@ Proves the retrieval layer never launders a non-semantic match as a cosine score
   * search_skills' lexical fallback no longer fabricates ``similarity: 0.85`` for
     a substring hit; lexical results carry ``similarity: None`` +
     ``retrieval_mode="lexical"`` and a real bounded ``lexical_score``.
-  * semantic_search returns nothing when embeddings are simulated (pseudo-vector
-    noise is not laundered as rule recall).
   * enterprise_memory.recall and hr.retrieve_context refuse to return
     pseudo-vector matches, falling back honestly (empty / keyword).
   * route_task never auto-binds a skill on a lexical (non-cosine) hit.
@@ -146,6 +144,39 @@ async def test_search_skills_relabels_lexical_when_vector_lane_is_empty(monkeypa
     assert scores == sorted(scores, reverse=True), "must rank by lexical_score"
 
 
+@pytest.mark.asyncio
+async def test_search_skills_hybrid_via_skill_embeddings(monkeypatch):
+    """The live skill_embeddings vector lane still fuses into a real hybrid
+    ranking (regression guard for the rule_embeddings removal)."""
+    skills = [_FakeSkill("vendor_payment_approval", "s1", "finance",
+                          [{"pattern": "approve vendor payment"}])]
+
+    class _Row:
+        skill_id, skill_db_id, domain, similarity = "vendor_payment_approval", "s1", "finance", 0.91
+
+    class _HybridResult(_FakeResult):
+        def fetchall(self):  # vector lane returns a genuine cosine hit
+            return [_Row()]
+
+    class _HybridSession(_FakeSession):
+        async def execute(self, *_a, **_k):
+            return _HybridResult(self._skills)
+
+    monkeypatch.setattr("app.services.knowledge.AsyncSessionLocal",
+                        lambda: _HybridSession(skills))
+
+    eng = PolystoreEngine()
+    async def _real_embed(_self, _text, _tenant=None):
+        _self._last_query_simulated = False
+        return [0.1] * 8
+    monkeypatch.setattr(PolystoreEngine, "_generate_embedding_for_text", _real_embed)
+
+    out = await eng.search_skills("approve vendor payment", tenant_id="t1")
+    assert out and out[0]["retrieval_mode"] == "hybrid"
+    assert out[0]["similarity"] == 0.91
+    assert "fused_score" in out[0]
+
+
 # ── skill-embedding writer guard ─────────────────────────────────────────────
 
 class _StubEmbedRouter:
@@ -218,22 +249,6 @@ async def test_embed_skill_failure_is_swallowed(monkeypatch):
     skill = _FakeSkill("reset_password", "s1", "it", [{"pattern": "reset password"}])
     ok = await embed_skill(skill, "t1", router=_BoomRouter())
     assert ok is False, "an embed failure must degrade, never raise"
-
-
-# ── semantic_search honesty ──────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_semantic_search_empty_when_simulated(monkeypatch):
-    eng = PolystoreEngine()
-
-    async def _sim_embed(_self, _text, _tenant=None):
-        _self._last_query_simulated = True
-        return [0.1] * 8
-    monkeypatch.setattr(PolystoreEngine, "_generate_embedding_for_text", _sim_embed)
-
-    # Must return [] without ever touching the DB (pseudo-vectors are noise).
-    out = await eng.semantic_search("anything", tenant_id="t1")
-    assert out == []
 
 
 # ── enterprise memory honesty ────────────────────────────────────────────────

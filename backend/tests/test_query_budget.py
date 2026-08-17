@@ -29,7 +29,7 @@ from httpx import AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.domain import ConfidenceTier, Rule, Skill, SkillExecution
+from app.models.domain import ConfidenceTier, Rule, Skill
 from app.workforce.models.core import Department
 
 from tests.conftest import test_engine

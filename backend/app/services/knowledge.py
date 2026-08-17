@@ -1,9 +1,7 @@
 """
 KAEOS L3 Polystore retrieval.
 
-Semantic and lexical retrieval over governed rules and skills:
-  * semantic_search: cosine ranking over rule embeddings; returns nothing when
-    embeddings are simulated (no pseudo-vector noise dressed as recall).
+Semantic and lexical retrieval over governed skills:
   * search_skills: RRF hybrid of a real cosine and a lexical rank, with an
     honest per-record retrieval_mode; degrades to lexical-only.
   * embed_skill / backfill_skill_embeddings: maintain the skill semantic index,
@@ -25,9 +23,9 @@ logger = logging.getLogger(__name__)
 class PolystoreEngine:
     """L3 knowledge retrieval over governed rules and skills.
 
-    semantic_search ranks rule embeddings by cosine; search_skills fuses a real
-    cosine with a lexical rank (honest per-record retrieval_mode) and degrades to
-    lexical-only when no semantic vector is available.
+    search_skills fuses a real cosine with a lexical rank (honest per-record
+    retrieval_mode) and degrades to lexical-only when no semantic vector is
+    available.
     """
 
     def __init__(self, llm: Optional[LLMRouter] = None):
@@ -35,60 +33,6 @@ class PolystoreEngine:
         # Set by _generate_embedding_for_text: True when the last query embedding
         # was a non-semantic seeded pseudo-vector (no provider reachable).
         self._last_query_simulated: bool = False
-
-    async def semantic_search(
-        self,
-        query_text: str,
-        tenant_id: str,
-        top_k: int = 5,
-        domain_filter: Optional[str] = None,
-    ) -> list[dict]:
-        """
-        Vector similarity search over the rule embeddings.
-        Returns top-k rules ranked by cosine similarity to the query.
-        Requires pgvector and a real (non-simulated) embedding model.
-
-        When embeddings are simulated (no provider reachable), the query vector is
-        a seeded hash with no semantic meaning, so any "match" it produces is noise
-        dressed as a cosine score. The rule store has no lexical index to fall back
-        to, so we return NOTHING rather than launder pseudo-vector noise as
-        semantic recall.
-        """
-        query_embedding = await self._generate_embedding_for_text(query_text, tenant_id)
-        if not query_embedding or self._last_query_simulated:
-            return []
-
-        domain_clause = "AND r.domain = :domain" if domain_filter else ""
-        params = {
-            "tenant_id": tenant_id,
-            "embedding": query_embedding,
-            "top_k": top_k,
-        }
-        if domain_filter:
-            params["domain"] = domain_filter
-
-        _rule_sim_sql = (
-            "SELECT r.id, r.statement, r.domain, r.confidence_scalar, "  # nosec B608
-            "1 - (re.embedding <=> :embedding) AS similarity "
-            "FROM rule_embeddings re "
-            "JOIN rules r ON r.id = re.rule_id "
-            f"WHERE re.tenant_id = :tenant_id {domain_clause} "  # domain_clause is a fixed literal; value arrives via :domain bind
-            "ORDER BY re.embedding <=> :embedding "
-            "LIMIT :top_k"
-        )
-        async with AsyncSessionLocal() as session:
-            rows = await session.execute(text(_rule_sim_sql), params)
-            return [
-                {
-                    "rule_id": row.id,
-                    "statement": row.statement,
-                    "domain": row.domain,
-                    "confidence": row.confidence_scalar,
-                    "similarity": float(row.similarity),
-                    "retrieval_mode": "semantic",
-                }
-                for row in rows.fetchall()
-            ]
 
     async def search_skills(
         self,
@@ -207,7 +151,7 @@ class PolystoreEngine:
     # (The inner try/except already returns None on any error rather than raising.)
     async def _generate_embedding_for_text(self, text_: str,
                                             tenant_id: Optional[str] = None) -> Optional[list]:
-        """Embed a plain text string (used for semantic_search queries).
+        """Embed a plain text string (used for skill search queries).
 
         Sets ``self._last_query_simulated`` from the router provenance so callers
         can tell a real cosine-capable vector from a seeded pseudo-vector.

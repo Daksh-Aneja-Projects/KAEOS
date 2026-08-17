@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.outbound import guarded_async_client
@@ -393,24 +394,54 @@ async def queue_outbound(tenant_id: str, entity_type: str, internal_id: str,
     Falls back to its own session only for callers with no session in hand
     (background sweeps).
     """
+    key = idempotency_key[:64] if idempotency_key else None
     row = OutboundWrite(
         tenant_id=tenant_id, provider=provider,
         category=_ENTITY_CATEGORY.get(entity_type),
         entity_type=entity_type, internal_id=internal_id,
         external_id=external_id, op=op.upper(), payload=payload,
     )
-    if idempotency_key:
-        row.idempotency_key = idempotency_key[:64]
+    if key:
+        row.idempotency_key = key
+
+    async def _dedup(sess: AsyncSession) -> Optional[str]:
+        """Return the existing row id for (tenant, key), else None. Only a caller-
+        supplied key can collide; the default is a fresh uuid, unique by design."""
+        if not key:
+            return None
+        existing = (await sess.execute(
+            select(OutboundWrite.id).where(
+                OutboundWrite.tenant_id == tenant_id,
+                OutboundWrite.idempotency_key == key,
+            ).limit(1)
+        )).scalar_one_or_none()
+        return existing
+
     try:
         if db is not None:
+            hit = await _dedup(db)
+            if hit:
+                return hit
             db.add(row)
-            # Flush, don't commit: the caller owns the transaction boundary.
-            await db.flush()
+            try:
+                # Flush, don't commit: the caller owns the transaction boundary.
+                await db.flush()
+            except IntegrityError:
+                # Concurrent insert won the uq_outbound_idempotency race.
+                await db.rollback()
+                return await _dedup(db)
             return row.id
         from app.core.database import AsyncSessionLocal
         async with AsyncSessionLocal() as own:
+            hit = await _dedup(own)
+            if hit:
+                return hit
             own.add(row)
-            await own.commit()
+            try:
+                await own.commit()
+            except IntegrityError:
+                await own.rollback()
+                return await _dedup(own)
             return row.id
     except Exception as e:
         logger.error("[Sync] queue_outbound failed: %s", e)

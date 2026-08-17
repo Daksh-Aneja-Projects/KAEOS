@@ -63,6 +63,9 @@ class CandidateCreate(BaseModel):
 
 class StageAdvance(BaseModel):
     target_stage: str
+    # Required (non-empty) when target_stage is REJECTED: a rejection is a
+    # terminal adverse action and must carry a documented reason.
+    reason: Optional[str] = None
 
 
 class HITLDecision(BaseModel):
@@ -348,12 +351,40 @@ async def advance_candidate_stage(
                 )
 
     candidate.stage = target
+
+    # A move to REJECTED is a terminal adverse action. The agent screening path
+    # runs the EEOC fairness gate; a manual reject must too, or it becomes an
+    # ungoverned adverse action with no fairness check. Require a documented
+    # reason and run the four-fifths adverse-impact checker over the requisition
+    # cohort (this pending rejection is folded in via autoflush of the stage set
+    # above). Fail-closed: block if the reason is missing or the gate blocks.
+    reason = (body.reason or "").strip()
+    if target == CandidateStage.REJECTED:
+        if not reason:
+            raise HTTPException(
+                status_code=422,
+                detail="A documented reason is required to reject a candidate (adverse action).",
+            )
+        from app.hr.services.fairness_sweep import build_cohort_outcomes
+        from app.compliance.registry import run_checks
+        built = await build_cohort_outcomes(db, tenant_id, candidate.requisition_id)
+        gate = run_checks(["EEOC"], {"cohort_outcomes": built["cohorts"]})
+        if not gate["verified"]:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "EEOC adverse-impact gate blocked this rejection; route to fairness review.",
+                    "blocking": gate["blocking"],
+                },
+            )
+
     db.add(candidate)
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
         actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="candidate", resource_id=candidate_id,
+        details={"target_stage": target.value, "reason": reason} if target == CandidateStage.REJECTED else None,
     )
     return {"candidate_id": candidate_id, "stage": target.value}
 

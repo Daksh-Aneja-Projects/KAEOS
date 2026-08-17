@@ -65,7 +65,19 @@ def _health_score(insights: list[dict]) -> int:
 
 @router.get("/pulse")
 async def org_pulse(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Company-wide pulse: per-domain health + KPIs + unified insight feed."""
+    """Company-wide pulse: per-domain health + KPIs + unified insight feed.
+
+    Computed live (fans out to ~38 aggregate queries). A server-side TTL cache
+    was tried here but a pulse must reflect a just-created ticket/breach the
+    moment it lands (a stale pulse is a lying dashboard); the frontend's existing
+    15s SWR client cache already collapses burst polls. Perf for this endpoint
+    belongs in the query layer (composite indexes / fewer aggregates), not a
+    staleness window. ponytail: keep it live — index it if the fan-out bites.
+    """
+    return await _compute_pulse(db, tenant_id)
+
+
+async def _compute_pulse(db: AsyncSession, tenant_id: str) -> dict:
     domains = []
     all_insights = []
     for name, fn in _DOMAIN_ANALYTICS:

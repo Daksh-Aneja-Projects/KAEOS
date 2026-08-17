@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import LiveBadge from '../components/LiveBadge';
 import { BrainError } from '../components/BrainStates';
 import TableCard from '../components/shared/TableCard';
+import Field from '../components/shared/Field';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
@@ -129,39 +130,50 @@ const MyAutomation: React.FC<{ domain?: string }> = () => {
       <div className="rounded-xl p-5 space-y-3" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
         <h2 className="text-[13px] font-bold flex items-center gap-1.5"><Plus className="w-4 h-4" /> New rule</h2>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Rule name"
-            className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
-          <select value={entityType} onChange={e => { setEntityType(e.target.value); setTriggerState(''); setToState(''); }}
-            className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
-            <option value="">Entity type…</option>
-            {Object.keys(specs).map(k => <option key={k} value={k}>{humanize(k)}</option>)}
-          </select>
-          <select value={triggerState} onChange={e => setTriggerState(e.target.value)} disabled={!spec}
-            className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
-            <option value="">When in state…</option>
-            {states.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
-          </select>
-          <label className="flex items-center gap-2 text-[12px]" style={{ color: colors.inkSubtle }}>
-            for &gt;
-            <input type="number" value={dwellHours} min={0} onChange={e => setDwellHours(Number(e.target.value))}
-              className="w-20 px-2 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} /> hours
-          </label>
-          <select value={actionType} onChange={e => setActionType(e.target.value as any)}
-            className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
-            <option value="escalate">→ escalate (alert)</option>
-            <option value="transition">→ transition to…</option>
-            <option value="assign">→ assign to…</option>
-          </select>
-          {actionType === 'transition' && (
-            <select value={toState} onChange={e => setToState(e.target.value)}
-              className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
-              <option value="">Target state…</option>
-              {targets.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
+          <Field label="Rule name" labelStyle={{ color: colors.inkSubtle }}>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Rule name"
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
+          </Field>
+          <Field label="Entity type" labelStyle={{ color: colors.inkSubtle }}>
+            <select value={entityType} onChange={e => { setEntityType(e.target.value); setTriggerState(''); setToState(''); }}
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
+              <option value="">Entity type…</option>
+              {Object.keys(specs).map(k => <option key={k} value={k}>{humanize(k)}</option>)}
             </select>
+          </Field>
+          <Field label="When in state" labelStyle={{ color: colors.inkSubtle }}>
+            <select value={triggerState} onChange={e => setTriggerState(e.target.value)} disabled={!spec}
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
+              <option value="">When in state…</option>
+              {states.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
+            </select>
+          </Field>
+          <Field label="For longer than (hours)" labelStyle={{ color: colors.inkSubtle }}>
+            <input type="number" value={dwellHours} min={0} onChange={e => setDwellHours(Number(e.target.value))}
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
+          </Field>
+          <Field label="Then" labelStyle={{ color: colors.inkSubtle }}>
+            <select value={actionType} onChange={e => setActionType(e.target.value as any)}
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
+              <option value="escalate">→ escalate (alert)</option>
+              <option value="transition">→ transition to…</option>
+              <option value="assign">→ assign to…</option>
+            </select>
+          </Field>
+          {actionType === 'transition' && (
+            <Field label="Target state" labelStyle={{ color: colors.inkSubtle }}>
+              <select value={toState} onChange={e => setToState(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle}>
+                <option value="">Target state…</option>
+                {targets.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
+              </select>
+            </Field>
           )}
           {actionType === 'assign' && (
-            <input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="assignee"
-              className="px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
+            <Field label="Assignee" labelStyle={{ color: colors.inkSubtle }}>
+              <input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="assignee"
+                className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none" style={inputStyle} />
+            </Field>
           )}
         </div>
         <button onClick={create} disabled={saving}

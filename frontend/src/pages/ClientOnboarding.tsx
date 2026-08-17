@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { PAGE_PAD } from '../lib/layout';
 import { humanize } from '../lib/format';
+import Field from '../components/shared/Field';
 
 // The backend onboarding state machine (app/services/onboarding_engine.py).
 // Order + human labels + the icon shown in the ladder.
@@ -360,25 +361,22 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
       {/* Step 1: Company */}
       {step === 1 && (
         <div className="space-y-4 max-w-lg">
-          <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Company name</label>
+          <Field label="Company name" labelStyle={{ color: colors.inkMuted }}>
             <input className={input} style={inputStyle} value={companyName}
               onChange={e => setCompanyName(e.target.value)} placeholder="Acme Corporation" autoFocus />
-          </div>
-          <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Tenant ID</label>
+          </Field>
+          <Field label="Tenant ID" labelStyle={{ color: colors.inkMuted }}
+            hintStyle={{ color: colors.inkTertiary }}
+            hint="A permanent, unique identifier. Auto-derived from the company name; edit if needed.">
             <input className={input} style={inputStyle} value={effectiveTenantId}
               onChange={e => { setTenantIdEdited(true); setTenantId(e.target.value.replace(/[^a-z0-9_]/g, '')); }}
               placeholder="tenant_acme" />
-            <p className="text-[11px] mt-1" style={{ color: colors.inkTertiary }}>
-              A permanent, unique identifier. Auto-derived from the company name; edit if needed.
-            </p>
-          </div>
-          <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Industry vertical <span style={{ color: colors.inkTertiary }}>(optional)</span></label>
+          </Field>
+          <Field labelStyle={{ color: colors.inkMuted }}
+            label={<>Industry vertical <span style={{ color: colors.inkTertiary }}>(optional)</span></>}>
             <input className={input} style={inputStyle} value={industry}
               onChange={e => setIndustry(e.target.value)} placeholder="SaaS · Manufacturing · Financial Services" />
-          </div>
+          </Field>
         </div>
       )}
 
@@ -388,21 +386,22 @@ function ProvisionWizard({ colors, adminSecret, onCancel, onDone }: any) {
           <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
             This creates the client’s first administrator login. They’ll use it to sign in and complete setup.
           </p>
-          <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Admin email</label>
+          <Field label="Admin email" labelStyle={{ color: colors.inkMuted }}>
             <input className={input} style={inputStyle} value={adminEmail} type="email"
               onChange={e => setAdminEmail(e.target.value)} placeholder="admin@acme.com" autoFocus />
-          </div>
-          <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Admin name <span style={{ color: colors.inkTertiary }}>(optional)</span></label>
+          </Field>
+          <Field labelStyle={{ color: colors.inkMuted }}
+            label={<>Admin name <span style={{ color: colors.inkTertiary }}>(optional)</span></>}>
             <input className={input} style={inputStyle} value={adminName}
               onChange={e => setAdminName(e.target.value)} placeholder="Jordan Rivera" />
-          </div>
+          </Field>
           <div>
-            <label className={labelCls} style={{ color: colors.inkMuted }}>Temporary password</label>
+            {/* Composite control (input + buttons), so wire the label by id
+                directly rather than through Field, which owns a single child. */}
+            <label htmlFor="onb-temp-pw" className={labelCls} style={{ color: colors.inkMuted }}>Temporary password</label>
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <input className={input} style={inputStyle} value={password} type={showPw ? 'text' : 'password'}
+                <input id="onb-temp-pw" className={input} style={inputStyle} value={password} type={showPw ? 'text' : 'password'}
                   onChange={e => setPassword(e.target.value)} />
                 <button onClick={() => setShowPw(s => !s)} aria-label={showPw ? 'Hide the temporary password' : 'Show the temporary password'}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }}>

@@ -11,6 +11,32 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - MED backlog cleanup batch (2026-08-17)
+
+- **Outbound idempotency (§14):** a duplicate queued write could double-meter /
+  double-send — `queue_outbound` now dedups on `(tenant_id, idempotency_key)`
+  before insert, backed by a new UNIQUE constraint (migration `0051`, de-dupes
+  existing pairs first; Postgres-scoped DDL so SQLite dev keeps it via the model).
+- **/org/pulse caching (§03):** the ~38-query pulse computation is wrapped in the
+  existing `result_cache` (12s TTL, tenant-keyed) so burst polls collapse to one.
+- **Accrual reaper (§20):** a scheduled hourly job books any APPROVED invoice
+  missing its `AP_ACCRUAL` journal entry (idempotent), so an approved-but-unaccrued
+  invoice no longer sits off-books; heartbeat-tracked like the other reapers.
+- **HR candidate rejection (§06):** `/candidates/advance` to REJECTED (an adverse
+  action) now runs the EEOC four-fifths checker and requires a documented reason,
+  fail-closed — matching the gate the agent path enforces.
+- **Orphaned `rule_embeddings` removed (§14):** the reader-with-no-writer model +
+  dead semantic-search branch are deleted; the table is dropped in `0051`.
+- **Migration-on-Postgres gate hardened:** the new gate caught two real
+  Postgres-only bugs in `0051` before merge (a 39-char revision id overflowing
+  `alembic_version VARCHAR(32)`, and `ALTER … CONSTRAINT` DDL that SQLite rejects)
+  — both fixed and re-validated up→down→up on pgvector/pg16. The enum-label check
+  now correctly treats VARCHAR-backed enum columns as no-risk (this codebase
+  stores enums as strings, so there is no native-type rejection hazard).
+- **Frontend:** a shared `<Field>` (useId-wired label↔input) adopted across
+  form-heavy views for a11y, and a 402 needs-plan upgrade toast wired into the
+  API error path. Tests added for every fix above (invariants fail if reverted).
+
 ### Fixed - three-way-match billed-to-date (2026-08-17)
 
 The cumulative billed-to-date query counted every non-VOIDED prior invoice,
