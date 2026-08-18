@@ -51,6 +51,23 @@ async def _customer_names(db: AsyncSession, tenant_id: str) -> dict:
     return {code: name for code, name in q.all()}
 
 
+async def _agent_names(db: AsyncSession, tenant_id: str, agent_ids: set) -> dict:
+    """Resolve support agent id -> display name in one query.
+
+    Mirrors ``_customer_names``: any endpoint that shows an assignee to a human
+    reuses this rather than issuing one SELECT per row.
+    """
+    ids = {a for a in agent_ids if a}
+    if not ids:
+        return {}
+    q = await db.execute(
+        select(SupportAgent.id, SupportAgent.name).where(
+            SupportAgent.tenant_id == tenant_id, SupportAgent.id.in_(ids)
+        )
+    )
+    return {agent_id: name for agent_id, name in q.all()}
+
+
 # --- Dashboard ---
 @router.get("/dashboard")
 async def support_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
@@ -96,16 +113,13 @@ async def list_tickets(
     # raw "CST001" in the Customer column - an id no human recognises, when
     # the record ("Stark Industries") was one join away.
     customer_names = await _customer_names(db, tenant_id)
+    # Resolve assignees the same way, for the same reason: one SELECT per ticket
+    # meant up to 500 round trips to render one page of a list.
+    agent_names = await _agent_names(db, tenant_id, {t.assigned_agent_id for t in tickets})
 
     result = []
     for t in tickets:
-        agent_name = None
-        if t.assigned_agent_id:
-            agent_q = await db.execute(select(SupportAgent).where(
-                SupportAgent.id == t.assigned_agent_id, SupportAgent.tenant_id == tenant_id
-            ))
-            agent = agent_q.scalar_one_or_none()
-            agent_name = agent.name if agent else None
+        agent_name = agent_names.get(t.assigned_agent_id) if t.assigned_agent_id else None
         result.append({
             "id": t.id,
             "subject": t.subject,

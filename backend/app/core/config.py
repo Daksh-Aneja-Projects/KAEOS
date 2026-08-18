@@ -163,6 +163,18 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 5
 
+    # The owner/maintenance engine (KAEOS_OWNER_DB_URL) used to be built with the
+    # app engine's kwargs, so it silently claimed another DB_POOL_SIZE +
+    # DB_MAX_OVERFLOW per worker — 4 x (15 + 15) = 120, putting the total straight
+    # back over max_connections=100, which is the exact overrun the sizing above
+    # was written to prevent. It gets its own smaller budget instead: this pool
+    # serves migrations, RLS sweeps and the per-request `kt_` API-key lookup
+    # (core/auth.py), so it needs to be non-trivial but nowhere near the app pool.
+    # Total at the defaults: 4 x (10 + 5 + 5 + 3) = 92, under 100 with headroom
+    # for admin/psql sessions. Raise these two only alongside max_connections.
+    DB_OWNER_POOL_SIZE: int = 5
+    DB_OWNER_MAX_OVERFLOW: int = 3
+
     # Service-to-service auth: the agent-mesh / cost / model-routing endpoints are
     # machine-called and were previously reachable by any authed viewer. In
     # production they now require this shared token (X-Service-Token) or an

@@ -167,8 +167,26 @@ def _bind_tenant_to_transaction(session, transaction, connection):
 import os as _os  # noqa: E402
 
 _OWNER_URL = _os.environ.get("KAEOS_OWNER_DB_URL")
+
+
+def _owner_engine_kwargs() -> dict:
+    """Engine kwargs for the owner pool: the app's, with its own pool budget.
+
+    Sharing ``engine_kwargs`` verbatim gave this second engine the *app* pool's
+    size, doubling every worker's connection footprint and re-creating the
+    max_connections overrun that DB_POOL_SIZE was reduced to prevent (see the
+    note on Settings.DB_OWNER_POOL_SIZE). SQLite has no pools, so it is left
+    exactly as-is there.
+    """
+    kwargs = dict(engine_kwargs)
+    if "pool_size" in kwargs:
+        kwargs["pool_size"] = settings.DB_OWNER_POOL_SIZE
+        kwargs["max_overflow"] = settings.DB_OWNER_MAX_OVERFLOW
+    return kwargs
+
+
 maintenance_engine = (
-    create_async_engine(_OWNER_URL, **engine_kwargs) if _OWNER_URL else engine
+    create_async_engine(_OWNER_URL, **_owner_engine_kwargs()) if _OWNER_URL else engine
 )
 MaintenanceSessionLocal = sessionmaker(
     maintenance_engine, class_=AsyncSession, expire_on_commit=False
