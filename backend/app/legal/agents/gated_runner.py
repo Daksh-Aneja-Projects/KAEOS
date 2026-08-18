@@ -1,24 +1,19 @@
 """
-KAEOS Legal Vertical — Gated Skill Runner
+KAEOS Legal Vertical — Gated Skill Runner.
 
-Shared helper that routes a Legal agent action through the full 7-gate
-``AgentExecutor`` pipeline with GDPR/CCPA/Privacy compliance enforcement.
+Thin department binding over :mod:`app.agents.department_gate`. Legal's policy
+lives in ``department_gate.LEGAL`` — including the ``REVIEW:`` note on its
+Gate-6 lawful-basis flag, which is still asserted rather than derived.
 """
 from __future__ import annotations
 
-import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
-from app.agents.runtime import AgentExecutor
-from app.services.compliance import ComplianceEngine
-from app.services.hitl_manager import hitl_manager
-from app.models.domain import Skill
+from app.agents.department_gate import LEGAL, extract_decision
 
-logger = logging.getLogger(__name__)
+__all__ = ["DEFAULT_LEGAL_COMPLIANCE", "run_gated_legal_skill", "extract_decision"]
 
-# Legal compliance: GDPR, CCPA, Privacy, Contract enforcement
-DEFAULT_LEGAL_COMPLIANCE = ["GDPR", "CCPA", "PRIVACY"]
+DEFAULT_LEGAL_COMPLIANCE = list(LEGAL.default_compliance)
 
 
 async def run_gated_legal_skill(
@@ -31,54 +26,8 @@ async def run_gated_legal_skill(
     confidence: float = 0.85,
     domain: str = "legal",
 ) -> Dict[str, Any]:
-    """Run a Legal skill through the gated ``AgentExecutor`` and return its result."""
-    compliance_tags = compliance_tags or list(DEFAULT_LEGAL_COMPLIANCE)
-    execution_id = context.get("execution_id") or str(uuid.uuid4())
-
-    skill_dict = {
-        "skill_id": skill_id,
-        "department": domain,
-        "steps": steps,
-        "compliance_tags": compliance_tags,
-        "confidence": confidence,
-    }
-
-    skill_obj = Skill(
-        skill_id=skill_id,
-        department=domain,
-        domain=domain,
-        compliance_tags=compliance_tags,
-        confidence=confidence,
-        confidence_tier="INFERRED",
-        execution_count=0,
-        success_rate=0.0,
-        steps=steps,
+    """Run a Legal skill through the gated ``AgentExecutor``."""
+    return await LEGAL.run(
+        skill_id, steps, context, tenant_id,
+        compliance_tags=compliance_tags, confidence=confidence, domain=domain,
     )
-
-    ctx = {
-        **context,
-        "tenant_id": tenant_id,
-        "execution_id": execution_id,
-        "_skill_obj": skill_obj,
-    }
-
-    if "GDPR" in compliance_tags or "CCPA" in compliance_tags:
-        ctx["data_processing_basis_logged"] = True
-
-    executor = AgentExecutor(ComplianceEngine(), hitl_manager)
-    return await executor.execute_skill(skill_dict, ctx)
-
-
-def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Best-effort parse of the primary step's JSON decision from a gated result."""
-    from app.services.json_utils import extract_json_object
-
-    chain = result.get("reasoning_chain") or []
-    if not chain:
-        return {}
-    decision_text = chain[-1].get("decision", "") or ""
-    try:
-        return extract_json_object(decision_text)
-    except ValueError as e:
-        logger.warning(f"extract_decision: could not parse JSON decision: {e}")
-        return {}

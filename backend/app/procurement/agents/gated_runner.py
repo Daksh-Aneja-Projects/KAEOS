@@ -4,7 +4,8 @@ Routes procurement agent actions through the full 7-gate ``AgentExecutor``
 pipeline (Compliance -> Fairness -> Confidence/HITL -> Debate -> Execute ->
 Audit) with the four procurement control tags attached, so the compliance gate
 evaluates every action against THREE_WAY_MATCH / SEGREGATION_OF_DUTIES /
-SPEND_AUTHORIZATION / OFAC_SANCTIONS.
+SPEND_AUTHORIZATION / OFAC_SANCTIONS. The policy lives in
+``department_gate.PROCUREMENT``; the mechanism is shared by all ten departments.
 
 The two agents follow the KAEOS convention: deterministic control work FIRST
 (reusing the pure checkers + the source-to-pay service), then a gated LLM
@@ -14,25 +15,23 @@ plain-English "why". They do NOT mutate PO state.
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.runtime import AgentExecutor
-from app.models.domain import Skill
+from app.agents.department_gate import PROCUREMENT, extract_decision
 from app.operations.models.procurement import PurchaseOrder, PurchaseRequest
-from app.services.compliance import ComplianceEngine
-from app.services.hitl_manager import hitl_manager
 from app.services.json_utils import plain_facts
 
 logger = logging.getLogger(__name__)
 
-PROCUREMENT_COMPLIANCE = [
-    "THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES",
-    "SPEND_AUTHORIZATION", "OFAC_SANCTIONS",
+__all__ = [
+    "PROCUREMENT_COMPLIANCE", "run_gated_procurement_skill",
+    "extract_decision", "sourcing_agent", "spend_guard_agent",
 ]
+
+PROCUREMENT_COMPLIANCE = list(PROCUREMENT.default_compliance)
 
 
 async def run_gated_procurement_skill(
@@ -47,45 +46,10 @@ async def run_gated_procurement_skill(
 ) -> Dict[str, Any]:
     """Run a procurement skill through the gated ``AgentExecutor`` and return its
     result dict (status is one of PENDING_HITL / BLOCKED_* / SUCCESS_CLEAN)."""
-    compliance_tags = compliance_tags or list(PROCUREMENT_COMPLIANCE)
-    execution_id = context.get("execution_id") or str(uuid.uuid4())
-
-    skill_dict = {
-        "skill_id": skill_id,
-        "department": domain,
-        "steps": steps,
-        "compliance_tags": compliance_tags,
-        "confidence": confidence,
-    }
-    skill_obj = Skill(
-        skill_id=skill_id, department=domain, domain=domain,
-        compliance_tags=compliance_tags, confidence=confidence,
-        confidence_tier="INFERRED", execution_count=0, success_rate=0.0,
-        steps=steps,
+    return await PROCUREMENT.run(
+        skill_id, steps, context, tenant_id,
+        compliance_tags=compliance_tags, confidence=confidence, domain=domain,
     )
-    ctx = {
-        **context,
-        "tenant_id": tenant_id,
-        "execution_id": execution_id,
-        "_skill_obj": skill_obj,
-    }
-    executor = AgentExecutor(ComplianceEngine(), hitl_manager)
-    return await executor.execute_skill(skill_dict, ctx)
-
-
-def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Best-effort parse of the primary step's JSON decision from a gated result."""
-    from app.services.json_utils import extract_json_object
-
-    chain = result.get("reasoning_chain") or []
-    if not chain:
-        return {}
-    decision_text = chain[-1].get("decision", "") or ""
-    try:
-        return extract_json_object(decision_text)
-    except ValueError as e:
-        logger.warning("extract_decision: could not parse JSON decision: %s", e)
-        return {}
 
 
 async def sourcing_agent(db: AsyncSession, request_id: str, tenant_id: str) -> Dict[str, Any]:

@@ -1,35 +1,32 @@
 """
-KAEOS Engineering Vertical — Gated Skill Runner
+KAEOS Engineering Vertical — Gated Skill Runner.
 
-Routes an Engineering agent action through the full 7-gate pipeline, exactly as
-the other five domains do. Production deploys are treated like customer-facing
-support responses: they always require human approval, because an autonomous
-agent shipping to production is precisely the failure mode enterprises fear.
+Thin department binding over :mod:`app.agents.department_gate`. Engineering's
+policy lives in ``department_gate.ENGINEERING``: SOC2 + change-management by
+default, and the full change-management control set plus forced human approval
+for production deploys.
 """
 from __future__ import annotations
 
-import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
-from app.agents.runtime import AgentExecutor
-from app.services.compliance import ComplianceEngine
-from app.services.hitl_manager import hitl_manager
-from app.models.domain import Skill
+from app.agents.department_gate import (
+    DEPLOY_COMPLIANCE as _DEPLOY_COMPLIANCE,
+    ENGINEERING,
+    _ENGINEERING_DEPLOY_SKILL,
+    extract_decision,
+)
 
-logger = logging.getLogger(__name__)
+__all__ = [
+    "DEFAULT_ENGINEERING_COMPLIANCE", "DEPLOY_COMPLIANCE", "ALWAYS_HITL_SKILLS",
+    "run_gated_engineering_skill", "extract_decision",
+]
 
-DEFAULT_ENGINEERING_COMPLIANCE = ["SOC2", "CHANGE_MANAGEMENT"]
-
-# Production deploys carry the full change-management control set: SOC2 CC8.1
-# (peer review + change record + CI), ISO 27001 change control (rollback +
-# approval), and change-freeze enforcement. These have deterministic checkers in
-# app/compliance/checkers/engineering.py.
-DEPLOY_COMPLIANCE = ["SOC2", "ISO27001", "CHANGE_FREEZE"]
-
+DEFAULT_ENGINEERING_COMPLIANCE = list(ENGINEERING.default_compliance)
+DEPLOY_COMPLIANCE = list(_DEPLOY_COMPLIANCE)
 # Skills that mutate production always route to a human, regardless of the
-# model's confidence. Below the 0.82 HITL threshold on purpose.
-ALWAYS_HITL_SKILLS = {"engineering_deploy_approval"}
+# model's confidence.
+ALWAYS_HITL_SKILLS = {_ENGINEERING_DEPLOY_SKILL}
 
 
 async def run_gated_engineering_skill(
@@ -43,58 +40,7 @@ async def run_gated_engineering_skill(
     domain: str = "engineering",
 ) -> Dict[str, Any]:
     """Run an Engineering skill through the gated ``AgentExecutor``."""
-    if compliance_tags is None:
-        # Deploy skills default to the full change-management control set; all
-        # other engineering skills keep the lighter default.
-        compliance_tags = list(
-            DEPLOY_COMPLIANCE if skill_id in ALWAYS_HITL_SKILLS
-            else DEFAULT_ENGINEERING_COMPLIANCE
-        )
-    execution_id = context.get("execution_id") or str(uuid.uuid4())
-
-    if skill_id in ALWAYS_HITL_SKILLS:
-        confidence = 0.79  # force human approval for production changes
-
-    skill_dict = {
-        "skill_id": skill_id,
-        "department": domain,
-        "steps": steps,
-        "compliance_tags": compliance_tags,
-        "confidence": confidence,
-    }
-
-    skill_obj = Skill(
-        skill_id=skill_id,
-        department=domain,
-        domain=domain,
-        compliance_tags=compliance_tags,
-        confidence=confidence,
-        confidence_tier="INFERRED",
-        execution_count=0,
-        success_rate=0.0,
-        steps=steps,
+    return await ENGINEERING.run(
+        skill_id, steps, context, tenant_id,
+        compliance_tags=compliance_tags, confidence=confidence, domain=domain,
     )
-
-    ctx = {
-        **context,
-        "tenant_id": tenant_id,
-        "execution_id": execution_id,
-        "_skill_obj": skill_obj,
-    }
-
-    executor = AgentExecutor(ComplianceEngine(), hitl_manager)
-    return await executor.execute_skill(skill_dict, ctx)
-
-
-def extract_decision(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Best-effort parse of the primary step's JSON decision from a gated result."""
-    from app.services.json_utils import extract_json_object
-
-    chain = result.get("reasoning_chain") or []
-    if not chain:
-        return {}
-    try:
-        return extract_json_object(chain[-1].get("decision", "") or "")
-    except ValueError as e:
-        logger.warning(f"extract_decision: could not parse JSON decision: {e}")
-        return {}
