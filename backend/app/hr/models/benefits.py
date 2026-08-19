@@ -56,7 +56,7 @@ class BenefitEnrollment(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
+    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
     plan_id = Column(String, ForeignKey("hr_benefit_plans.id"), nullable=False)
     
     # Distinct Postgres type name: hr.models.learning also has an EnrollmentStatus,

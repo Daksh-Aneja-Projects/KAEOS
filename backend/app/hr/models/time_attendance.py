@@ -58,7 +58,7 @@ class Timesheet(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
+    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
     
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)

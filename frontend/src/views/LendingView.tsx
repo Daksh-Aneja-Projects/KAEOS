@@ -16,14 +16,18 @@ import { CountUp } from '../components/CountUp';
 import Ring from '../components/shared/Ring';
 import { MiniDonut } from '../components/shared/MiniDonut';
 import TableCard from '../components/shared/TableCard';
+import EmptyState from '../components/shared/EmptyState';
+import TabBar from '../components/shared/TabBar';
+import { useTabParam } from '../hooks/useTabParam';
 import LiveBadge from '../components/LiveBadge';
 import GateTrace, { type GateTraceResult } from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import { humanize, formatCurrency, formatDate } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { DEPARTMENT_COLORS } from '../lib/departments';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
-const ACCENT = '#d97706';
+const ACCENT = DEPARTMENT_COLORS.lending;
 
 type Tab = 'overview' | 'applications' | 'underwriting' | 'adverse' | 'servicing' | 'policy' | 'analytics';
 const VALID: Tab[] = ['overview', 'applications', 'underwriting', 'adverse', 'servicing', 'policy'];
@@ -54,11 +58,29 @@ type PolicyDraft = {
 
 const CHANNEL_LABEL: Record<string, string> = { phone: 'Phone call', mail: 'Mailed letter', email: 'Email' };
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (n === 'APPROVED') return colors.success;
+  if (['RECEIVED', 'IN_REVIEW', 'PENDING_HITL'].includes(n)) return colors.warning;
+  if (['DENIED', 'WITHDRAWN'].includes(n)) return colors.error;
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body this was a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
 const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<Tab>(
-    defaultTab && VALID.includes(defaultTab as Tab) ? (defaultTab as Tab) : 'overview',
-  );
+  const [tab, setTab] = useTabParam<Tab>(VALID, 'overview', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -202,27 +224,6 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
     return sched.slice(start, start + 6);
   }
 
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (n === 'APPROVED') return colors.success;
-    if (['RECEIVED', 'IN_REVIEW', 'PENDING_HITL'].includes(n)) return colors.warning;
-    if (['DENIED', 'WITHDRAWN'].includes(n)) return colors.error;
-    return colors.inkSubtle;
-  };
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-14 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-11 h-11 mx-auto mb-3" style={{ color: colors.inkTertiary }} />
-      <p className="text-[14px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
-
   const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: 'overview', label: 'Overview', icon: Landmark },
     { key: 'applications', label: 'Applications', icon: FileText },
@@ -233,13 +234,6 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
     { key: 'analytics', label: 'Analytics', icon: BarChart3 },
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
-  const moveTab = (e: React.KeyboardEvent, i: number) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
-    setTab(next.key);
-    document.getElementById(`lnd-tab-${next.key}`)?.focus();
-  };
 
   // KPI + chart helpers from the analytics-shaped dashboard.
   const kpi = (k: string) => dash?.kpis.find(x => x.key === k);
@@ -292,21 +286,8 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" role="tablist" aria-label="Lending sections" style={{ background: colors.surface1 }}>
-          {TABS.map((t, i) => (
-            <button key={t.key} id={`lnd-tab-${t.key}`} role="tab" aria-selected={tab === t.key}
-              tabIndex={tab === t.key ? 0 : -1} onClick={() => setTab(t.key)} onKeyDown={e => moveTab(e, i)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all whitespace-nowrap"
-              style={{
-                background: tab === t.key ? colors.canvas : 'transparent',
-                color: tab === t.key ? ACCENT : colors.inkSubtle,
-                boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              }}>
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} value={tab} onChange={setTab}
+          idPrefix="lnd" ariaLabel="Lending sections" accent={ACCENT} />
 
         {/* Action feedback */}
         {actionMsg && (
@@ -442,7 +423,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                 || a.application_number.toLowerCase().includes(searchQ.toLowerCase())
                 || a.applicant_name.toLowerCase().includes(searchQ.toLowerCase()));
               return rows.length === 0
-                ? <EmptyState icon={FileText} title="No applications" sub="Loan applications appear here once received." />
+                ? <EmptyState compact icon={FileText} title="No applications" sub="Loan applications appear here once received." />
                 : (
                   <TableCard minWidth={1060}>
                     <table className="w-full text-[12px]">
@@ -510,7 +491,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                     </p>
                   </div>
                   {decided.length === 0
-                    ? <EmptyState icon={Gavel} title="No decisions yet" sub="Underwrite an application to see its decision here." />
+                    ? <EmptyState compact icon={Gavel} title="No decisions yet" sub="Underwrite an application to see its decision here." />
                     : (
                       <TableCard minWidth={780}>
                         <table className="w-full text-[12px]">
@@ -579,7 +560,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                     </div>
                   )}
                   {rows.length === 0
-                    ? <EmptyState icon={MailWarning} title="No adverse-action notices" sub="Reg B notices for denied applications appear here." />
+                    ? <EmptyState compact icon={MailWarning} title="No adverse-action notices" sub="Reg B notices for denied applications appear here." />
                     : rows.map(n => {
                       const app = apps.find(a => a.id === n.application_id);
                       return (
@@ -651,7 +632,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
 
                   {/* Serviced loans + payment schedule */}
                   {loanRows.length === 0 ? (
-                    <EmptyState icon={Wallet} title="No serviced loans" sub="A funded, approved loan appears here once servicing begins." />
+                    <EmptyState compact icon={Wallet} title="No serviced loans" sub="A funded, approved loan appears here once servicing begins." />
                   ) : (
                     <TableCard minWidth={920}>
                       <table className="w-full text-[12px]">
@@ -726,7 +707,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                       <PhoneCall className="w-4 h-4" style={{ color: ACCENT }} /> Collections, governed by FDCPA
                     </p>
                     {(delinq?.cases || []).length === 0 ? (
-                      <EmptyState icon={PhoneCall} title="No open collections cases" sub="A loan more than 30 days past due opens a case here." />
+                      <EmptyState compact icon={PhoneCall} title="No open collections cases" sub="A loan more than 30 days past due opens a case here." />
                     ) : (
                       <div className="space-y-3">
                         {(delinq?.cases || []).map(c => {
@@ -835,7 +816,7 @@ const LendingView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                   </p>
                 </div>
                 {policies.length === 0 ? (
-                  <EmptyState icon={SlidersHorizontal} title="No credit policies" sub="A credit policy appears here once configured for a product." />
+                  <EmptyState compact icon={SlidersHorizontal} title="No credit policies" sub="A credit policy appears here once configured for a product." />
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                     {policies.map(p => {

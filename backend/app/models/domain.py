@@ -48,6 +48,12 @@ class ConfidenceTier(str, enum.Enum):
 
 class Rule(Base):
     __tablename__ = 'rules'
+    __table_args__ = (
+        # Every live-rule read is "tenant_id = ? AND is_archived = false" (~37
+        # call sites); the tenant_id-only index still had to re-check archived
+        # on every row it returned.
+        Index("ix_rules_tenant_archived", "tenant_id", "is_archived"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
@@ -184,6 +190,10 @@ class ProvenanceLedger(Base):
               unique=True,
               postgresql_where=text("parent_id IS NULL"),
               sqlite_where=text("parent_id IS NULL")),
+        # Hottest append-only table: 10 call sites read it as
+        # "tenant_id = ? ORDER BY timestamp" (or "timestamp >= ?"). The
+        # tenant_id-only index left the sort/range to a filesort.
+        Index("ix_prov_tenant_ts", "tenant_id", "timestamp"),
     )
 
     rule = relationship(
@@ -220,6 +230,10 @@ class Signal(Base):
     __table_args__ = (
         Index("uq_signals_natural", "tenant_id", "source_type", "external_id",
               unique=True),
+        # Signal feeds are all "tenant_id = ? ORDER BY created_at DESC LIMIT n"
+        # or "created_at >= since"; the natural key leads with source_type so it
+        # cannot serve either.
+        Index("ix_signals_tenant_created", "tenant_id", "created_at"),
     )
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -376,7 +390,11 @@ class Employee(Base):
     questions_this_week = Column(Integer, default=0)
     last_question_at = Column(DateTime(timezone=True), nullable=True)
 
-    questions = relationship("ElicitationQuestion", back_populates="employee", lazy="selectin")
+    # Not eager-loaded: no code reads employee.questions as an ORM attribute
+    # (the elicitation API queries ElicitationQuestion directly), and
+    # lazy="selectin" made every select(Employee) fire a second query across
+    # all 7 call sites. Same reasoning as the Rule relationships above.
+    questions = relationship("ElicitationQuestion", back_populates="employee")
 
 
 class ElicitationQuestion(Base):
@@ -514,6 +532,11 @@ class MarketplaceTemplate(Base):
 class SecurityAuditLog(Base):
     """L17 — Security, Access Control & Zero-Trust Fabric"""
     __tablename__ = 'security_audit_logs'
+    __table_args__ = (
+        # Read as "tenant_id = ? ORDER BY timestamp DESC LIMIT n" (audit feed)
+        # and "timestamp BETWEEN ?" (checkpoint windows in app/core/audit.py).
+        Index("ix_seclog_tenant_ts", "tenant_id", "timestamp"),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)

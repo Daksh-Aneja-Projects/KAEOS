@@ -57,39 +57,32 @@ async def system_stats(
     Took no tenant dependency: every count was install-wide, so each customer's
     "system stats" were really everyone's totals combined.
     """
-    counts = {}
-    for model, name in [(Rule, "rules"), (Skill, "skills"), (Signal, "signals"),
-                         (Workflow, "workflows"), (Employee, "employees"),
-                         (ElicitationQuestion, "questions"), (Connector, "connectors"),
-                         (SkillExecution, "executions"),
-                         (DecayEvent, "decay_events"), (SecurityAuditLog, "audit_logs"),
-                         (RedTeamScanResult, "redteam_scans"), (ConflictCase, "conflicts")]:
-        r = await db.execute(
-            select(sqlfunc.count(model.id)).where(model.tenant_id == tenant_id)
-        )
-        counts[name] = r.scalar() or 0
+    tables = [(Rule, "rules"), (Skill, "skills"), (Signal, "signals"),
+              (Workflow, "workflows"), (Employee, "employees"),
+              (ElicitationQuestion, "questions"), (Connector, "connectors"),
+              (SkillExecution, "executions"),
+              (DecayEvent, "decay_events"), (SecurityAuditLog, "audit_logs"),
+              (RedTeamScanResult, "redteam_scans"), (ConflictCase, "conflicts"),
+              # provenance_ledger now carries tenant_id (migration e1a4b8c2f9d3).
+              # Legacy rows written before that column stay NULL and count for
+              # no tenant.
+              (ProvenanceLedger, "provenance_entries")]
 
-    # provenance_ledger now carries tenant_id (migration e1a4b8c2f9d3). Legacy
-    # rows written before that column stay NULL and count for no tenant.
-    r = await db.execute(
-        select(sqlfunc.count(ProvenanceLedger.id)).where(
-            ProvenanceLedger.tenant_id == tenant_id
-        )
-    )
-    counts["provenance_entries"] = r.scalar() or 0
-
-    # Avg confidence
-    r = await db.execute(
+    # 13 COUNTs and 2 AVGs over 13 tables: one SELECT of scalar subqueries
+    # instead of 15 round trips. Same predicates, same numbers.
+    row = (await db.execute(select(
+        *[select(sqlfunc.count(m.id)).where(m.tenant_id == tenant_id).scalar_subquery()
+          for m, _ in tables],
         select(sqlfunc.avg(Rule.confidence_scalar))
-        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
-    )
-    avg_conf = round(r.scalar() or 0, 4)
+        .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)  # noqa: E712
+        .scalar_subquery(),
+        select(sqlfunc.avg(Skill.success_rate))
+        .where(Skill.tenant_id == tenant_id).scalar_subquery(),
+    ))).one()
 
-    # Success rate
-    r = await db.execute(
-        select(sqlfunc.avg(Skill.success_rate)).where(Skill.tenant_id == tenant_id)
-    )
-    avg_success = round(r.scalar() or 0, 4)
+    counts = {name: row[i] or 0 for i, (_, name) in enumerate(tables)}
+    avg_conf = round(row[-2] or 0, 4)
+    avg_success = round(row[-1] or 0, 4)
 
     return {"entity_counts": counts, "avg_confidence": avg_conf, "avg_success_rate": avg_success,
             "timestamp": datetime.now(timezone.utc).isoformat()}

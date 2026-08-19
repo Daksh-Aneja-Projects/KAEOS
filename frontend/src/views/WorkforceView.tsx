@@ -27,8 +27,10 @@ import { useBulkSelect } from '../hooks/useBulkSelect';
 import GateTrace from '../components/GateTrace';
 import TableCard from '../components/shared/TableCard';
 import StatCard from '../components/shared/StatCard';
+import EmptyState from '../components/shared/EmptyState';
 import { MiniDonut } from '../components/shared/MiniDonut';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useTabParam } from '../hooks/useTabParam';
 import { announce } from '../components/a11y/LiveRegion';
 
 // Types defined locally to avoid Vite ESM dev-mode import type resolution issues
@@ -219,13 +221,108 @@ type ModalKind =
 
 interface ModalCtx { kind: ModalKind; id?: string; label?: string; }
 
+// ── Status color helper ──
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const normalized = (s || '').toUpperCase();
+  if (['ACTIVE', 'APPROVED', 'COMPLETED', 'HIRED', 'FILLED', 'RESOLVED', 'PROCESSED', 'CLOSED'].includes(normalized)) return colors.success;
+  if (['PENDING', 'REQUESTED', 'DRAFT', 'ONBOARDING', 'IN_PROGRESS', 'PENDING_APPROVAL', 'PENDING_EMPLOYEE', 'PENDING_MANAGER', 'PREP', 'PROCESSING', 'SUBMITTED', 'UNDER_INVESTIGATION', 'GENERATED', 'PENDING_ACTION'].includes(normalized)) return colors.warning;
+  if (['REJECTED', 'DENIED', 'TERMINATED', 'CANCELLED', 'FAILED', 'CRITICAL', 'BLOCKER', 'HIGH'].includes(normalized)) return colors.error;
+  if (['OPEN', 'APPLIED', 'AI_SCREENING', 'RECRUITER_SCREEN', 'WAIVED', 'REVIEWED', 'SUBMITTED_REPORT'].includes(normalized)) return colors.info;
+  return colors.inkSubtle;
+};
+
+// The block below sits at module scope on purpose. Declared inside the render
+// body each of these was a fresh component type on every render, so React
+// remounted every card, badge and table row on each state change.
+const MetricCard = ({ label, value, icon: Icon, accent }: { label: string; value: string | number; icon: React.ElementType; accent?: string }) => {
+  const { colors } = useTheme();
+  return (
+    <div className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
+      style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="text-[24px] font-bold tracking-tight" style={{ color: colors.ink, letterSpacing: '-0.6px' }}>{value}</span>
+          <p className="text-[11px] mt-1 font-medium" style={{ color: colors.inkSubtle }}>{label}</p>
+        </div>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: (accent || colors.primary) + '15' }}>
+          <Icon className="w-4.5 h-4.5" style={{ color: accent || colors.primary }} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'Unknown'}
+    </span>
+  );
+};
+
+// Generic column-table used by every new sub-tab below (with EmptyState).
+interface Col<T> { key: string; label: string; render: (row: T) => React.ReactNode; }
+function DataTable<T extends { id: string }>({ rows, columns, minWidth, emptyIcon, emptyTitle, emptySub }: {
+  rows: T[]; columns: Col<T>[]; minWidth?: number; emptyIcon: React.ElementType; emptyTitle: string; emptySub: string;
+}) {
+  const { colors } = useTheme();
+  if (rows.length === 0) return <EmptyState icon={emptyIcon} title={emptyTitle} sub={emptySub} />;
+  return (
+    <TableCard minWidth={minWidth || 640}>
+      <table className="w-full">
+        <thead>
+          <tr style={{ background: colors.surface2 }}>
+            {columns.map(c => (
+              <th key={c.key} className="text-left text-[11px] font-semibold uppercase tracking-wider px-5 py-2.5" style={{ color: colors.inkSubtle }}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.id} style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}>
+              {columns.map(c => (
+                <td key={c.key} className="px-5 py-3 text-[12px] align-middle" style={{ color: colors.inkMuted }}>{c.render(r)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableCard>
+  );
+}
+
+const ActionButton = ({ onClick, busy, icon: Icon, label, accent, disabled }: {
+  onClick: () => void; busy: boolean; icon: React.ElementType; label: string; accent?: string; disabled?: boolean;
+}) => {
+  const { colors } = useTheme();
+  return (
+    <button onClick={onClick} disabled={busy || disabled}
+      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+      style={{ background: (accent || colors.primary) + '15', color: accent || colors.primary }}>
+      {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icon className="w-3 h-3" />}
+      {label}
+    </button>
+  );
+};
+
+const HeaderAction = ({ onClick, icon: Icon, label }: { onClick: () => void; icon: React.ElementType; label: string }) => {
+  const { colors } = useTheme();
+  return (
+    <button onClick={onClick}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
+      style={{ background: colors.primary }}>
+      <Icon className="w-3.5 h-3.5" /> {label}
+    </button>
+  );
+};
+
 const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<HRTab>(() => {
-    if (defaultTab && (ALL_TABS as string[]).includes(defaultTab)) return defaultTab as HRTab;
-    if (defaultTab === 'employees') return 'directory';
-    return 'directory';
-  });
+  // `defaultTab="employees"` (the /departments/hr/employees route) is not a tab
+  // id; it falls back to 'directory', which is where employees live.
+  const [tab, setTab] = useTabParam<HRTab>(ALL_TABS, 'directory', defaultTab);
   const [loading, setLoading] = useState(true);
 
   // Core data state
@@ -589,95 +686,6 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
     await loadData();
   };
 
-  // ── Status color helper ──
-  const statusColor = (s: string) => {
-    const normalized = (s || '').toUpperCase();
-    if (['ACTIVE', 'APPROVED', 'COMPLETED', 'HIRED', 'FILLED', 'RESOLVED', 'PROCESSED', 'CLOSED'].includes(normalized)) return colors.success;
-    if (['PENDING', 'REQUESTED', 'DRAFT', 'ONBOARDING', 'IN_PROGRESS', 'PENDING_APPROVAL', 'PENDING_EMPLOYEE', 'PENDING_MANAGER', 'PREP', 'PROCESSING', 'SUBMITTED', 'UNDER_INVESTIGATION', 'GENERATED', 'PENDING_ACTION'].includes(normalized)) return colors.warning;
-    if (['REJECTED', 'DENIED', 'TERMINATED', 'CANCELLED', 'FAILED', 'CRITICAL', 'BLOCKER', 'HIGH'].includes(normalized)) return colors.error;
-    if (['OPEN', 'APPLIED', 'AI_SCREENING', 'RECRUITER_SCREEN', 'WAIVED', 'REVIEWED', 'SUBMITTED_REPORT'].includes(normalized)) return colors.info;
-    return colors.inkSubtle;
-  };
-
-  const MetricCard = ({ label, value, icon: Icon, accent }: { label: string; value: string | number; icon: React.ElementType; accent?: string }) => (
-    <div className="rounded-xl p-4 transition-all hover:translate-y-[-1px]"
-      style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <div className="flex items-start justify-between">
-        <div>
-          <span className="text-[24px] font-bold tracking-tight" style={{ color: colors.ink, letterSpacing: '-0.6px' }}>{value}</span>
-          <p className="text-[11px] mt-1 font-medium" style={{ color: colors.inkSubtle }}>{label}</p>
-        </div>
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: (accent || colors.primary) + '15' }}>
-          <Icon className="w-4.5 h-4.5" style={{ color: accent || colors.primary }} />
-        </div>
-      </div>
-    </div>
-  );
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'Unknown'}
-    </span>
-  );
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-16 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-12 h-12 mx-auto mb-4" style={{ color: colors.inkTertiary }} />
-      <p className="text-[15px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
-
-  // Generic column-table used by every new sub-tab below (with EmptyState).
-  interface Col<T> { key: string; label: string; render: (row: T) => React.ReactNode; }
-  function DataTable<T extends { id: string }>({ rows, columns, minWidth, emptyIcon, emptyTitle, emptySub }: {
-    rows: T[]; columns: Col<T>[]; minWidth?: number; emptyIcon: React.ElementType; emptyTitle: string; emptySub: string;
-  }) {
-    if (rows.length === 0) return <EmptyState icon={emptyIcon} title={emptyTitle} sub={emptySub} />;
-    return (
-      <TableCard minWidth={minWidth || 640}>
-        <table className="w-full">
-          <thead>
-            <tr style={{ background: colors.surface2 }}>
-              {columns.map(c => (
-                <th key={c.key} className="text-left text-[11px] font-semibold uppercase tracking-wider px-5 py-2.5" style={{ color: colors.inkSubtle }}>{c.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id} style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}>
-                {columns.map(c => (
-                  <td key={c.key} className="px-5 py-3 text-[12px] align-middle" style={{ color: colors.inkMuted }}>{c.render(r)}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableCard>
-    );
-  }
-
-  const ActionButton = ({ onClick, busy, icon: Icon, label, accent, disabled }: {
-    onClick: () => void; busy: boolean; icon: React.ElementType; label: string; accent?: string; disabled?: boolean;
-  }) => (
-    <button onClick={onClick} disabled={busy || disabled}
-      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
-      style={{ background: (accent || colors.primary) + '15', color: accent || colors.primary }}>
-      {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icon className="w-3 h-3" />}
-      {label}
-    </button>
-  );
-
-  const HeaderAction = ({ onClick, icon: Icon, label }: { onClick: () => void; icon: React.ElementType; label: string }) => (
-    <button onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
-      style={{ background: colors.primary }}>
-      <Icon className="w-3.5 h-3.5" /> {label}
-    </button>
-  );
-
   const employeeOptions = employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}` }));
 
   // ── DIRECTORY TAB ──
@@ -915,7 +923,7 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
                   <div key={stage} className="flex-shrink-0 w-[240px]">
                     <div className="flex items-center justify-between px-2 py-1.5 mb-2 rounded-md"
                       style={{ background: colors.surface2 }}>
-                      <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: statusColor(stage) }}>
+                      <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: statusColor(stage, colors) }}>
                         {stageLabels[stage] || humanize(stage)}
                       </span>
                       <span className="text-[11px] font-mono" style={{ color: colors.inkSubtle }}>{inStage.length}</span>

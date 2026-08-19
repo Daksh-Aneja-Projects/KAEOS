@@ -5,6 +5,7 @@ import {
   ShieldCheck, FileText, GraduationCap, Wallet, Clock, BarChart3, Bot,
   ClipboardCheck, Wrench, Globe, Database, MessageSquare, Banknote, type LucideIcon,
 } from 'lucide-react';
+import { DEPARTMENT_COLORS } from '../lib/departments';
 
 /**
  * Premium SVG icon for departments, capabilities, and domain packs.
@@ -13,26 +14,26 @@ import {
  */
 
 const ICONS: Record<string, { icon: LucideIcon; color: string }> = {
-  // departments (by slug and legacy emoji)
-  hr: { icon: Users, color: '#22c55e' },
-  finance: { icon: Landmark, color: '#ec4899' },
-  legal: { icon: Scale, color: '#6366f1' },
-  operations: { icon: Settings, color: '#ef4444' },
-  sales: { icon: TrendingUp, color: '#f59e0b' },
-  support: { icon: Headphones, color: '#3b82f6' },
-  it: { icon: Database, color: '#06b6d4' },
-  engineering: { icon: Database, color: '#06b6d4' },
-  procurement: { icon: ShoppingCart, color: '#8b5cf6' },
+  // departments (by slug and legacy emoji) - hues come from DEPARTMENT_COLORS,
+  // never a literal, so the icon tile and the sidebar can never disagree.
+  hr: { icon: Users, color: DEPARTMENT_COLORS.hr },
+  finance: { icon: Landmark, color: DEPARTMENT_COLORS.finance },
+  legal: { icon: Scale, color: DEPARTMENT_COLORS.legal },
+  operations: { icon: Settings, color: DEPARTMENT_COLORS.operations },
+  sales: { icon: TrendingUp, color: DEPARTMENT_COLORS.sales },
+  support: { icon: Headphones, color: DEPARTMENT_COLORS.support },
+  it: { icon: Database, color: DEPARTMENT_COLORS.engineering },
+  engineering: { icon: Database, color: DEPARTMENT_COLORS.engineering },
+  procurement: { icon: ShoppingCart, color: DEPARTMENT_COLORS.procurement },
   marketing: { icon: Globe, color: '#f97316' },
-  // matches DEPARTMENT_COLORS in lib/departments.ts
-  healthcare: { icon: HeartPulse, color: '#14b8a6' },
-  lending: { icon: Banknote, color: '#d97706' },
-  '👥': { icon: Users, color: '#22c55e' },
-  '💰': { icon: Landmark, color: '#ec4899' },
-  '⚖️': { icon: Scale, color: '#6366f1' },
-  '⚙️': { icon: Settings, color: '#ef4444' },
-  '📈': { icon: TrendingUp, color: '#f59e0b' },
-  '🎧': { icon: Headphones, color: '#3b82f6' },
+  healthcare: { icon: HeartPulse, color: DEPARTMENT_COLORS.healthcare },
+  lending: { icon: Banknote, color: DEPARTMENT_COLORS.lending },
+  '👥': { icon: Users, color: DEPARTMENT_COLORS.hr },
+  '💰': { icon: Landmark, color: DEPARTMENT_COLORS.finance },
+  '⚖️': { icon: Scale, color: DEPARTMENT_COLORS.legal },
+  '⚙️': { icon: Settings, color: DEPARTMENT_COLORS.operations },
+  '📈': { icon: TrendingUp, color: DEPARTMENT_COLORS.sales },
+  '🎧': { icon: Headphones, color: DEPARTMENT_COLORS.support },
   '🏢': { icon: Building2, color: '#5e6ad2' },
   '📦': { icon: Package, color: '#8b5cf6' },
   // capabilities (by keyword and legacy emoji)

@@ -9,6 +9,7 @@ import { engineeringApi } from '../api/endpoints/engineering';
 import { useTheme } from '../context/ThemeContext';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import CreateEntityModal from '../components/CreateEntityModal';
@@ -32,12 +33,28 @@ const TAB_LABEL: Record<EngTab, string> = {
   analytics: 'Analytics',
 };
 
+// Module scope on purpose: declared inside the render body these were a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge: React.FC<{ text?: string | null; color: string }> = ({ text, color }) => (
+  <span className="px-2 py-0.5 rounded text-[11px] font-bold"
+    style={{ background: color + '18', color }}>
+    {text || '-'}
+  </span>
+);
+
+const AgentButton: React.FC<{ busy: boolean; label: string; onRun: () => void }> = ({ busy, label, onRun }) => (
+  <button onClick={onRun} disabled={busy}
+    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
+    style={{ background: '#6366f115', color: '#6366f1' }}>
+    {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+    {label}
+  </button>
+);
+
 const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const valid: EngTab[] = ['services', 'pull-requests', 'deployments', 'incidents', 'postmortems', 'oncall', 'analytics'];
-  const [tab, setTab] = useState<EngTab>(
-    defaultTab && valid.includes(defaultTab) ? defaultTab : 'services'
-  );
+  const [tab, setTab] = useTabParam<EngTab>(valid, 'services', defaultTab);
 
   const [dashboard, setDashboard] = useState<any>(null);
   const [services, setServices] = useState<any[]>([]);
@@ -119,22 +136,6 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
   const healthColor = (h?: string) =>
     h === 'HEALTHY' ? '#22c55e' : h === 'DEGRADED' ? '#f59e0b'
       : h === 'OUTAGE' ? '#ef4444' : '#6b7280';
-
-  const Badge: React.FC<{ text?: string | null; color: string }> = ({ text, color }) => (
-    <span className="px-2 py-0.5 rounded text-[11px] font-bold"
-      style={{ background: color + '18', color }}>
-      {text || '-'}
-    </span>
-  );
-
-  const AgentButton: React.FC<{ id: string; label: string; onRun: () => void }> = ({ id, label, onRun }) => (
-    <button onClick={onRun} disabled={runningAgent === id}
-      className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
-      style={{ background: '#6366f115', color: '#6366f1' }}>
-      {runningAgent === id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
-      {label}
-    </button>
-  );
 
   const stats: { label: string; value: number | null; suffix?: string; icon: React.ElementType; color: string }[] = dashboard ? [
     { label: 'Services', value: dashboard.total_services, icon: Server, color: '#6366f1' },
@@ -328,7 +329,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                   </td>
                   <td className="px-4 py-3"><Badge text={humanize(p.ai_risk_level)} color={riskColor(p.ai_risk_level)} /></td>
                   <td className="px-4 py-3">
-                    <AgentButton id={p.id} label="Review" onRun={() => runAgent('Code review', p.id, api.runCodeReviewAgent)} />
+                    <AgentButton busy={runningAgent === p.id} label="Review" onRun={() => runAgent('Code review', p.id, api.runCodeReviewAgent)} />
                   </td>
                 </tr>
               ))}
@@ -369,7 +370,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                     {d.ai_rationale || '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <AgentButton id={d.id} label="Assess" onRun={() => runAgent('Deploy risk', d.id, api.runDeployRiskAgent)} />
+                    <AgentButton busy={runningAgent === d.id} label="Assess" onRun={() => runAgent('Deploy risk', d.id, api.runDeployRiskAgent)} />
                     <div className="mt-1">
                       <WorkflowActions domain="engineering" entityPath="deployments" entityId={d.id}
                         currentState={d.status} transitions={workflows['deployment']?.transitions}
@@ -428,7 +429,7 @@ const EngineeringView: React.FC<{ domain?: string; defaultTab?: EngTab }> = ({ d
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <AgentButton id={i.id} label="Triage" onRun={() => runAgent('Incident triage', i.id, api.runIncidentTriageAgent)} />
+                    <AgentButton busy={runningAgent === i.id} label="Triage" onRun={() => runAgent('Incident triage', i.id, api.runIncidentTriageAgent)} />
                     <div className="mt-1">
                       <WorkflowActions domain="engineering" entityPath="incidents" entityId={i.id}
                         currentState={i.status} transitions={workflows['incident']?.transitions}

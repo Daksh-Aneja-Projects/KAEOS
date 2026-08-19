@@ -9,6 +9,7 @@ import TimeMachinePanel from '../components/TimeMachinePanel';
 import WargamePanel from '../components/WargamePanel';
 import { humanize } from '../lib/format';
 import { PAGE_PAD_X } from '../lib/layout';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 
 import { request } from '../api/client';
 import {
@@ -92,9 +93,8 @@ export default function RealityExperience() {
     fetchTwin();
     fetchLearning();
     fetchFeed();
-    const interval = setInterval(fetchFeed, 4000);
-    return () => clearInterval(interval);
   }, [fetchTwin, fetchLearning, fetchFeed]);
+  useVisiblePoll(fetchFeed, 4000);
 
   // Each mode owns the Decision Center + Why Panel - reset them on a mode switch.
   useEffect(() => { setDecision(null); setActivity(null); }, [mode]);
