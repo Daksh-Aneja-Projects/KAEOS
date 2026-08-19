@@ -14,6 +14,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { humanize, measured, NOT_MEASURED } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import EmptyState from '../components/shared/EmptyState';
 import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
@@ -24,6 +25,7 @@ import { useBulkSelect } from '../hooks/useBulkSelect';
 import { Plus as PlusIcon } from 'lucide-react';
 import { fullTime, timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 
 type SupportTab = 'tickets' | 'kb' | 'sla' | 'feedback' | 'team' | 'analytics';
 
@@ -36,13 +38,31 @@ interface SLAMetricRow {
 }
 interface CSATSurvey { id: string; customer: string; rating: number; sentiment: string; ticket_id: string | null; comment: string; created_at: string | null; }
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['RESOLVED', 'CLOSED', 'PUBLISHED', 'MET', 'POSITIVE', 'ACTIVE'].includes(n)) return '#22c55e';
+  if (['OPEN', 'IN_PROGRESS', 'PENDING', 'DRAFT', 'AT_RISK'].includes(n)) return '#f59e0b';
+  if (['P0', 'P1', 'CRITICAL', 'URGENT', 'BREACHED', 'NEGATIVE', 'ESCALATED', 'NO_DATA'].includes(n)) return '#ef4444';
+  if (['P2', 'P3', 'MEDIUM', 'LOW', 'NEUTRAL'].includes(n)) return '#3b82f6';
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body this was a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
 const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<SupportTab>(() => {
-    const valid: SupportTab[] = ['tickets', 'kb', 'sla', 'feedback', 'team', 'analytics'];
-    if (defaultTab && valid.includes(defaultTab as SupportTab)) return defaultTab as SupportTab;
-    return 'tickets';
-  });
+  const [tab, setTab] = useTabParam<SupportTab>(
+    ['tickets', 'kb', 'sla', 'feedback', 'team', 'analytics'], 'tickets', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -210,31 +230,6 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
       setKbBusy(null);
     }
   };
-
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['RESOLVED', 'CLOSED', 'PUBLISHED', 'MET', 'POSITIVE', 'ACTIVE'].includes(n)) return '#22c55e';
-    if (['OPEN', 'IN_PROGRESS', 'PENDING', 'DRAFT', 'AT_RISK'].includes(n)) return '#f59e0b';
-    if (['P0', 'P1', 'CRITICAL', 'URGENT', 'BREACHED', 'NEGATIVE', 'ESCALATED', 'NO_DATA'].includes(n)) return '#ef4444';
-    if (['P2', 'P3', 'MEDIUM', 'LOW', 'NEUTRAL'].includes(n)) return '#3b82f6';
-    return colors.inkSubtle;
-  };
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-16 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-12 h-12 mx-auto mb-4" style={{ color: colors.inkTertiary }} />
-      <p className="text-[15px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
 
   const npsIcon = (score: number) => score >= 9 ? Smile : score >= 7 ? Meh : Frown;
   const npsColor = (score: number) => score >= 9 ? '#22c55e' : score >= 7 ? '#f59e0b' : '#ef4444';
@@ -769,7 +764,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
                             </div>
                             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: colors.canvas }}>
                               <div className="h-full rounded-full transition-all duration-500"
-                                style={{ width: `${th.volume_pct || 0}%`, background: statusColor(th.severity) }} />
+                                style={{ width: `${th.volume_pct || 0}%`, background: statusColor(th.severity, colors) }} />
                             </div>
                           </div>
                         ))}

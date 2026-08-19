@@ -3,6 +3,7 @@ import { ShieldCheck, Crosshair, AlertTriangle, Activity, RefreshCw } from 'luci
 import { useTheme } from '../context/ThemeContext';
 import { request } from '../api/client';
 import { CountUp, prefersReducedMotion } from '../components/CountUp';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 
 /**
  * Governance Proving Ground — the Assurance Score (gate catch-rate).
@@ -44,11 +45,8 @@ export default function ProvingGround() {
     }
   };
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 20000); // live-refresh convention
-    return () => clearInterval(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useVisiblePoll(load, 20000); // live-refresh convention
 
   const scorePct = run?.assurance_score != null ? Math.round(run.assurance_score * 100) : null;
   const sevColor = (s: string) => (s === 'CRIT' ? DANGER : s === 'HIGH' ? colors.warning : colors.inkTertiary);

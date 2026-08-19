@@ -68,7 +68,7 @@ class Candidate(Base, LegalHoldMixin):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    requisition_id = Column(String, ForeignKey("hr_job_requisitions.id"), nullable=False)
+    requisition_id = Column(String, ForeignKey("hr_job_requisitions.id"), nullable=False, index=True)
     
     first_name = Column(String(64), nullable=False)
     last_name = Column(String(64), nullable=False)
@@ -96,7 +96,7 @@ class Interview(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    candidate_id = Column(String, ForeignKey("hr_candidates.id"), nullable=False)
+    candidate_id = Column(String, ForeignKey("hr_candidates.id"), nullable=False, index=True)
     interviewer_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
     
     scheduled_at = Column(DateTime(timezone=True), nullable=False)

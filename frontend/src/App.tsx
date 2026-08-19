@@ -12,9 +12,10 @@ import {
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { api, type PendingHITLItem, type AppNotification } from './api/client';
-import { canSeeDepartment, DEPARTMENT_LABELS } from './lib/departments';
+import { canSeeDepartment, DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from './lib/departments';
 import { humanize } from './lib/format';
 import { PAGE_PAD_X } from './lib/layout';
+import { useVisiblePoll } from './hooks/useLiveRefresh';
 import KaeosLogo from './components/KaeosLogo';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { BrandingProvider, useBranding } from './context/BrandingContext';
@@ -240,21 +241,25 @@ function Shell() {
 
   // Notifications: real pending human-in-the-loop approvals (the actionable
   // queue), polled every 30s. The bell badge lights only when there are items.
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      api.getPendingHITL()
-        .then(d => { if (!cancelled) setNotifs(Array.isArray(d) ? d : []); })
-        .catch(() => { if (!cancelled) setNotifs([]); });
-      // Org notifications (SLA escalations, @mentions, automation alerts).
-      api.getNotifications(true, 10)
-        .then(d => { if (!cancelled) setOrgNotifs(d.items || []); })
-        .catch(() => { if (!cancelled) setOrgNotifs([]); });
-    };
-    load();
-    const t = setInterval(load, 30000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, []);
+  // The poll pauses while the tab is hidden and re-fires on return: the badge
+  // and its panel are in-app DOM only (no title, favicon or OS notification),
+  // so a hidden tab has nothing to show, and the user always sees a fresh count.
+  const notifsAlive = useRef(true);
+  // Set on mount as well as cleared on unmount: StrictMode (and Fast Refresh)
+  // run setup/cleanup/setup on the same instance, so a cleanup-only effect
+  // would latch the ref false forever and every setter below would be skipped.
+  useEffect(() => { notifsAlive.current = true; return () => { notifsAlive.current = false; }; }, []);
+  const loadNotifs = () => {
+    api.getPendingHITL()
+      .then(d => { if (notifsAlive.current) setNotifs(Array.isArray(d) ? d : []); })
+      .catch(() => { if (notifsAlive.current) setNotifs([]); });
+    // Org notifications (SLA escalations, @mentions, automation alerts).
+    api.getNotifications(true, 10)
+      .then(d => { if (notifsAlive.current) setOrgNotifs(d.items || []); })
+      .catch(() => { if (notifsAlive.current) setOrgNotifs([]); });
+  };
+  useEffect(() => { loadNotifs(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useVisiblePoll(loadNotifs, 30000);
 
   // Cmd/Ctrl+K to focus search
   useEffect(() => {
@@ -336,18 +341,9 @@ function Shell() {
 
   // Which department (if any) the current route is under — used only for a small
   // sidebar context indicator, not to render duplicate sub-navigation.
-  const DEPARTMENT_CONTEXT: { slug: string; label: string; color: string }[] = [
-    { slug: 'hr', label: 'Human Resources', color: '#22c55e' },
-    { slug: 'finance', label: 'Finance', color: '#ec4899' },
-    { slug: 'legal', label: 'Legal & Compliance', color: '#6366f1' },
-    { slug: 'support', label: 'Customer Support', color: '#3b82f6' },
-    { slug: 'sales', label: 'Sales & CRM', color: '#f59e0b' },
-    { slug: 'operations', label: 'Operations', color: '#ef4444' },
-    { slug: 'engineering', label: 'Engineering & IT Ops', color: '#6366f1' },
-    { slug: 'healthcare', label: 'Healthcare', color: '#14b8a6' },
-    { slug: 'lending', label: 'Lending & Credit', color: '#d97706' },
-    { slug: 'procurement', label: 'Procurement', color: '#8b5cf6' },
-  ];
+  const DEPARTMENT_CONTEXT = DEPARTMENTS.map(slug => ({
+    slug, label: DEPARTMENT_LABELS[slug], color: DEPARTMENT_COLORS[slug],
+  }));
   const activeDepartment = DEPARTMENT_CONTEXT.find(
     d => location.pathname.startsWith(`/departments/${d.slug}`),
   );

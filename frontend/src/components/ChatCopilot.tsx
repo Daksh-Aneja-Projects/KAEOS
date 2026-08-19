@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import KaeosLogo from './KaeosLogo';
+import { readEventStream } from '../lib/sse';
 import {
   MessageSquare, Send, X, Minimize2,
   CheckCircle, XCircle, Loader2, Bot, Zap
@@ -124,40 +125,18 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
         throw new Error(`HTTP ${resp.status}`);
       }
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let currentText = '';
-
-      // SSE frames are separated by a blank line ("\n\n"). Buffer partial
-      // frames across chunk boundaries and only parse complete ones.
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let sep;
-        while ((sep = buffer.indexOf('\n\n')) !== -1) {
-          const frame = buffer.slice(0, sep);
-          buffer = buffer.slice(sep + 2);
-          for (const line of frame.split('\n')) {
-            if (!line.startsWith('data:')) continue;
-            const dataStr = line.slice(5).trim();
-            if (!dataStr) continue;
-            let event: any;
-            try { event = JSON.parse(dataStr); } catch { continue; }
-            if (event.type === 'metadata') {
-              patchAgent({ agent_name: event.agent_name, confidence: event.confidence, sources: event.sources });
-            } else if (event.type === 'token') {
-              currentText += event.text || '';
-              patchAgent({ content: currentText });
-            } else if (event.type === 'error') {
-              currentText += `\n[error: ${event.message}]`;
-              patchAgent({ content: currentText });
-            }
-          }
+      await readEventStream(resp, (event) => {
+        if (event.type === 'metadata') {
+          patchAgent({ agent_name: event.agent_name, confidence: event.confidence, sources: event.sources });
+        } else if (event.type === 'token') {
+          currentText += event.text || '';
+          patchAgent({ content: currentText });
+        } else if (event.type === 'error') {
+          currentText += `\n[error: ${event.message}]`;
+          patchAgent({ content: currentText });
         }
-      }
+      });
       if (!currentText) {
         patchAgent({ content: 'No response was returned. Please try rephrasing your question.' });
       }

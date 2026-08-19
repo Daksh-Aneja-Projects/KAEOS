@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { KBHealth } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { PAGE_PAD } from '../lib/layout';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 
 interface FeedEvent {
   id: string; event_type: string; title: string; description?: string;
@@ -52,7 +53,8 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
     refresh(next);
   };
 
-  useEffect(() => { refresh(); const i = setInterval(() => refresh(), 30000); return () => clearInterval(i); }, []);
+  useEffect(() => { refresh(); }, []);
+  useVisiblePoll(() => refresh(), 30000);
 
   const severityColor = (s: string) => {
     if (s === 'CRITICAL') return colors.error;

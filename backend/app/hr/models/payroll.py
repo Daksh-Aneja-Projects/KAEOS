@@ -52,8 +52,8 @@ class Payslip(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    run_id = Column(String, ForeignKey("hr_payroll_runs.id"), nullable=False)
-    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False)
+    run_id = Column(String, ForeignKey("hr_payroll_runs.id"), nullable=False, index=True)
+    employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
     
     gross_pay = Column(Float, default=0.0)
     net_pay = Column(Float, default=0.0)

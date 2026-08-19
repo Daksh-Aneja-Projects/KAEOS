@@ -11,8 +11,10 @@ import { useTheme } from '../context/ThemeContext';
 import { timeAgo } from '../lib/time';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import EmptyState from '../components/shared/EmptyState';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 import DomainAnalytics from '../components/DomainAnalytics';
 import CreateEntityModal from '../components/CreateEntityModal';
 import WorkflowActions from '../components/WorkflowActions';
@@ -27,14 +29,32 @@ interface OpsVendor { id: string; name: string; category: string; risk_level: st
 interface OpsProcurement { id: string; description: string; requestor: string; status: string; amount: number; vendor: string | null; submitted_at: string; ai_audit_note?: string | null; }
 interface OpsInspection { id: string; title: string; area: string | null; status: string; score: number; defects: number; inspector: string; date: string | null; ai_summary?: string | null; }
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['ACTIVE', 'ON_TRACK', 'APPROVED', 'PASSED', 'COMPLETED', 'VERIFIED', 'LOW', 'RESOLVED', 'CLOSED'].includes(n)) return '#22c55e';
+  if (['IN_PROGRESS', 'PENDING', 'AT_RISK', 'DRAFT', 'MEDIUM', 'UNDER_REVIEW', 'NEEDS_TRIAGE'].includes(n)) return '#f59e0b';
+  if (['DELAYED', 'BLOCKED', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'OVERDUE', 'URGENT'].includes(n)) return '#ef4444';
+  if (['PLANNING', 'NEW', 'SUBMITTED', 'OPEN'].includes(n)) return '#3b82f6';
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body this was a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
 const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<OpsTab>(() => {
-    const valid: OpsTab[] = ['projects', 'resources', 'vendors', 'procurement', 'quality', 'facilities', 'analytics'];
-    if (defaultTab && valid.includes(defaultTab as OpsTab)) return defaultTab as OpsTab;
-    return 'projects';
-  });
+  const [tab, setTab] = useTabParam<OpsTab>(
+    ['projects', 'resources', 'vendors', 'procurement', 'quality', 'facilities', 'analytics'], 'projects', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -100,30 +120,6 @@ const OperationsView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     }
     finally { setRunningAgent(null); }
   };
-
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['ACTIVE', 'ON_TRACK', 'APPROVED', 'PASSED', 'COMPLETED', 'VERIFIED', 'LOW', 'RESOLVED', 'CLOSED'].includes(n)) return '#22c55e';
-    if (['IN_PROGRESS', 'PENDING', 'AT_RISK', 'DRAFT', 'MEDIUM', 'UNDER_REVIEW', 'NEEDS_TRIAGE'].includes(n)) return '#f59e0b';
-    if (['DELAYED', 'BLOCKED', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'OVERDUE', 'URGENT'].includes(n)) return '#ef4444';
-    if (['PLANNING', 'NEW', 'SUBMITTED', 'OPEN'].includes(n)) return '#3b82f6';
-    return colors.inkSubtle;
-  };
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-16 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-12 h-12 mx-auto mb-4" style={{ color: colors.inkTertiary }} />
-      <p className="text-[15px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
 
   const TABS: { key: OpsTab; label: string; icon: React.ElementType; color: string }[] = [
     { key: 'projects', label: 'Projects', icon: FolderKanban, color: '#6366f1' },

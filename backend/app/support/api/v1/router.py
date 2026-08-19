@@ -378,19 +378,26 @@ async def list_kb_articles(
 ):
     q = await db.execute(select(KBArticle).where(KBArticle.tenant_id == tenant_id).limit(limit).offset(offset))
     articles = q.scalars().all()
+
+    # One batched category lookup instead of one SELECT per article (the old
+    # N+1 on an endpoint that serves up to 500 rows). Same as _agent_names:
+    # SELECT ... WHERE id IN (...) collapsed into a dict, then dict lookups.
+    # A missing (or absent) category still resolves to None, exactly as before.
+    category_ids = {a.category_id for a in articles if a.category_id}
+    category_names: dict = {}
+    if category_ids:
+        category_names = {cid: name for cid, name in (await db.execute(
+            select(KBCategory.id, KBCategory.name).where(
+                KBCategory.tenant_id == tenant_id, KBCategory.id.in_(category_ids)
+            )
+        )).all()}
+
     result = []
     for a in articles:
-        cat_name = None
-        if a.category_id:
-            cat_q = await db.execute(select(KBCategory).where(
-                KBCategory.id == a.category_id, KBCategory.tenant_id == tenant_id
-            ))
-            cat = cat_q.scalar_one_or_none()
-            cat_name = cat.name if cat else None
         result.append({
             "id": a.id,
             "title": a.title,
-            "category": cat_name,
+            "category": category_names.get(a.category_id),
             "status": "PUBLISHED" if a.is_published else "DRAFT",
             "views": a.views or 0,
             "helpful_pct": round(float(a.helpfulness_score or 0) * 20),  # 0-5 → 0-100%

@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, update, desc, func
 
 from app.core.database import AsyncSessionLocal
 from app.models.agent_factory import (
@@ -147,22 +147,20 @@ class ActivityFeedService:
     async def get_unread_count(self, tenant_id: str) -> dict:
         """Get count of unread and action-required events."""
         async with AsyncSessionLocal() as session:
-            # Unread count
-            unread_query = select(ActivityFeedEvent).where(
-                ActivityFeedEvent.tenant_id == tenant_id,
-                ActivityFeedEvent.is_read == False,  # noqa: E712
-            )
-            unread_result = await session.execute(unread_query)
-            unread = len(unread_result.scalars().all())
-
-            # Action required count
-            action_query = select(ActivityFeedEvent).where(
-                ActivityFeedEvent.tenant_id == tenant_id,
-                ActivityFeedEvent.requires_action == True,  # noqa: E712
-                ActivityFeedEvent.action_taken == False,  # noqa: E712
-            )
-            action_result = await session.execute(action_query)
-            action_count = len(action_result.scalars().all())
+            # Both counts in one SELECT of scalar subqueries: same predicates,
+            # same numbers, but COUNT in the DB instead of hauling every
+            # matching row into Python just to call len() on it.
+            unread, action_count = (await session.execute(select(
+                select(func.count(ActivityFeedEvent.id)).where(
+                    ActivityFeedEvent.tenant_id == tenant_id,
+                    ActivityFeedEvent.is_read == False,  # noqa: E712
+                ).scalar_subquery(),
+                select(func.count(ActivityFeedEvent.id)).where(
+                    ActivityFeedEvent.tenant_id == tenant_id,
+                    ActivityFeedEvent.requires_action == True,  # noqa: E712
+                    ActivityFeedEvent.action_taken == False,  # noqa: E712
+                ).scalar_subquery(),
+            ))).one()
 
             return {
                 "unread": unread,

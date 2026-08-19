@@ -40,29 +40,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The header pair every authenticated call sends: the bearer token, plus the
+ * DEV-ONLY tenant override. When `kaeos-dev-tenant` is set in localStorage the
+ * client asks the backend to serve that tenant; the backend honors X-Tenant-ID
+ * ONLY in DEV_MODE (see TenantMiddleware), and in production the header is
+ * ignored and the tenant is derived from the JWT — so this is a no-op there.
+ *
+ * Deliberately does NOT set Content-Type: `uploadForm` sends FormData, which
+ * must be left to the browser so it can add the multipart boundary.
+ */
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem('kaeos-token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const devTenant = localStorage.getItem('kaeos-dev-tenant');
+  if (devTenant) headers['X-Tenant-ID'] = devTenant;
+  return headers;
+}
+
 async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('kaeos-token');
-  const authHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    authHeaders['Authorization'] = `Bearer ${token}`;
-  }
-  // DEV-ONLY tenant override: when `kaeos-dev-tenant` is set in localStorage the
-  // client asks the backend to serve that tenant. The backend honors X-Tenant-ID
-  // ONLY in DEV_MODE (see TenantMiddleware); in production the header is ignored
-  // and the tenant is derived from the JWT — so this is a no-op there.
-  const devTenant = localStorage.getItem('kaeos-dev-tenant');
-  if (devTenant) {
-    authHeaders['X-Tenant-ID'] = devTenant;
-  }
   // Spread options FIRST, then set the merged headers - otherwise `...options`
   // (when a caller passes its own `headers`, e.g. X-Admin-Secret) would clobber
   // the merged object and drop Content-Type/Authorization, which FastAPI then
   // rejects with a 422 on any JSON body.
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: { ...authHeaders, ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
   });
   if (!res.ok) {
     // Session expired or token revoked - drop the stale token so the
@@ -106,12 +111,7 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
  * blob through a throwaway anchor.
  */
 export async function downloadFile(path: string, filename: string): Promise<void> {
-  const token = localStorage.getItem('kaeos-token');
-  const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const devTenant = localStorage.getItem('kaeos-dev-tenant');
-  if (devTenant) headers['X-Tenant-ID'] = devTenant;
-  const res = await fetch(`${API_BASE}${path}`, { headers });
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
     throw new Error(err?.detail || `Download failed (${res.status})`);
@@ -131,12 +131,7 @@ export async function downloadFile(path: string, filename: string): Promise<void
  * (the browser sets the boundary), so this bypasses _exec's JSON header.
  */
 export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
-  const token = localStorage.getItem('kaeos-token');
-  const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const devTenant = localStorage.getItem('kaeos-dev-tenant');
-  if (devTenant) headers['X-Tenant-ID'] = devTenant;
-  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form });
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: authHeaders(), body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     let detail = err?.detail;

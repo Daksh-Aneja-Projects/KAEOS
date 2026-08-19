@@ -14,18 +14,22 @@ import { useTheme } from '../context/ThemeContext';
 import { CountUp } from '../components/CountUp';
 import Ring from '../components/shared/Ring';
 import StatCard from '../components/shared/StatCard';
+import TabBar from '../components/shared/TabBar';
+import { useTabParam } from '../hooks/useTabParam';
 import { MiniDonut } from '../components/shared/MiniDonut';
 import TableCard from '../components/shared/TableCard';
+import EmptyState from '../components/shared/EmptyState';
 import LiveBadge from '../components/LiveBadge';
 import DomainAnalytics from '../components/DomainAnalytics';
 import { humanize } from '../lib/format';
 import { formatDate } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { DEPARTMENT_COLORS } from '../lib/departments';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { announce } from '../components/a11y/LiveRegion';
 
-const ACCENT = '#14b8a6';
+const ACCENT = DEPARTMENT_COLORS.healthcare;
 
 type Tab = 'overview' | 'encounters' | 'disclosures' | 'consent' | 'tasks' | 'analytics';
 const VALID: Tab[] = ['overview', 'encounters', 'disclosures', 'consent', 'tasks', 'analytics'];
@@ -185,11 +189,30 @@ const CREATE_LABEL: Partial<Record<Tab, { kind: CreateKind; label: string }>> = 
   tasks: { kind: 'task', label: 'New Task' },
 };
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['CLOSED', 'CODED', 'DONE', 'ACTIVE'].includes(n)) return colors.success;
+  if (['OPEN', 'TRIAGED', 'IN_PROGRESS', 'PENDING_HITL'].includes(n)) return colors.warning;
+  if (['BLOCKED', 'CANCELLED'].includes(n)) return colors.error;
+  if (['URGENT', 'EMERGENT'].includes(n)) return colors.error;
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body this was a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
 const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<Tab>(
-    defaultTab && VALID.includes(defaultTab as Tab) ? (defaultTab as Tab) : 'overview',
-  );
+  const [tab, setTab] = useTabParam<Tab>(VALID, 'overview', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -322,29 +345,6 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     await loadData();
   }
 
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['CLOSED', 'CODED', 'DONE', 'ACTIVE'].includes(n)) return colors.success;
-    if (['OPEN', 'TRIAGED', 'IN_PROGRESS', 'PENDING_HITL'].includes(n)) return colors.warning;
-    if (['BLOCKED', 'CANCELLED'].includes(n)) return colors.error;
-    if (['URGENT', 'EMERGENT'].includes(n)) return colors.error;
-    return colors.inkSubtle;
-  };
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-14 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-11 h-11 mx-auto mb-3" style={{ color: colors.inkTertiary }} />
-      <p className="text-[14px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
-
   const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: 'overview', label: 'Overview', icon: Activity },
     { key: 'encounters', label: 'Encounters', icon: Stethoscope },
@@ -355,14 +355,6 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   ];
   const activeTab = TABS.find(t => t.key === tab)!;
   const createSpec = CREATE_LABEL[tab];
-
-  const moveTab = (e: React.KeyboardEvent, i: number) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
-    setTab(next.key);
-    document.getElementById(`hc-tab-${next.key}`)?.focus();
-  };
 
   // Encounters-by-status donut from the real analytics aggregate.
   const encChart = (analytics?.charts || []).find((c: any) => c.key === 'enc_status');
@@ -403,22 +395,8 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" role="tablist" aria-label="Healthcare sections"
-          style={{ background: colors.surface1 }}>
-          {TABS.map((t, i) => (
-            <button key={t.key} id={`hc-tab-${t.key}`} role="tab" aria-selected={tab === t.key}
-              tabIndex={tab === t.key ? 0 : -1} onClick={() => setTab(t.key)} onKeyDown={e => moveTab(e, i)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all whitespace-nowrap"
-              style={{
-                background: tab === t.key ? colors.canvas : 'transparent',
-                color: tab === t.key ? ACCENT : colors.inkSubtle,
-                boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              }}>
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} value={tab} onChange={setTab}
+          idPrefix="hc" ariaLabel="Healthcare sections" accent={ACCENT} />
 
         {/* Action feedback */}
         {actionMsg && (
@@ -554,7 +532,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                 || e.patient_ref.toLowerCase().includes(searchQ.toLowerCase())
                 || (e.reason || '').toLowerCase().includes(searchQ.toLowerCase()));
               return rows.length === 0
-                ? <EmptyState icon={Stethoscope} title="No encounters" sub="Clinical encounters appear here once recorded." />
+                ? <EmptyState compact icon={Stethoscope} title="No encounters" sub="Clinical encounters appear here once recorded." />
                 : (
                   <TableCard minWidth={980}>
                     <table className="w-full text-[12px]">
@@ -625,7 +603,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                     touches substance-use records without consent is refused and never appears here.
                   </p>
                   {rows.length === 0
-                    ? <EmptyState icon={FileLock2} title="No PHI disclosures" sub="Authorized releases appear here with their gate outcome." />
+                    ? <EmptyState compact icon={FileLock2} title="No PHI disclosures" sub="Authorized releases appear here with their gate outcome." />
                     : rows.map(d => (
                       <div key={d.id} className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -663,7 +641,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                 || c.patient_ref.toLowerCase().includes(searchQ.toLowerCase())
                 || c.scope.toLowerCase().includes(searchQ.toLowerCase()));
               return rows.length === 0
-                ? <EmptyState icon={UserCheck} title="No consent records" sub="Patient consents appear here as they are captured." />
+                ? <EmptyState compact icon={UserCheck} title="No consent records" sub="Patient consents appear here as they are captured." />
                 : (
                   <TableCard minWidth={760}>
                     <table className="w-full text-[12px]">
@@ -711,7 +689,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                 || humanize(t.type).toLowerCase().includes(searchQ.toLowerCase())
                 || (t.assignee || '').toLowerCase().includes(searchQ.toLowerCase()));
               return rows.length === 0
-                ? <EmptyState icon={ClipboardList} title="No clinical tasks" sub="Coding and prior-authorization work items appear here." />
+                ? <EmptyState compact icon={ClipboardList} title="No clinical tasks" sub="Coding and prior-authorization work items appear here." />
                 : (
                   <TableCard minWidth={640}>
                     <table className="w-full text-[12px]">

@@ -50,7 +50,7 @@ class BoardingTask(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
-    plan_id = Column(String, ForeignKey("hr_boarding_plans.id"), nullable=False)
+    plan_id = Column(String, ForeignKey("hr_boarding_plans.id"), nullable=False, index=True)
     
     title = Column(String(256), nullable=False)
     description = Column(Text, nullable=True)

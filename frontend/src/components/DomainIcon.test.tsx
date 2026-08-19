@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { Users, Landmark, Target, Building2, Wallet, ShieldCheck, HeartPulse, Banknote } from 'lucide-react';
-import DomainIcon from './DomainIcon';
+import DomainIcon, { domainColor } from './DomainIcon';
+import { DEPARTMENTS, DEPARTMENT_COLORS } from '../lib/departments';
 
 /**
  * Resolution is asserted by comparing the rendered SVG markup of the tile's
@@ -85,5 +86,11 @@ describe('DomainIcon', () => {
     const { container } = render(<DomainIcon hint="hr" />);
     const tile = container.firstElementChild as HTMLElement;
     expect(tile.style.width).toBe('40px');
+  });
+
+  // Guards the drift this table used to have: four hand-synced copies of the
+  // accent palette, with finance and support swapped between two of them.
+  it('takes every department hue from the shared palette', () => {
+    for (const d of DEPARTMENTS) expect(domainColor(d)).toBe(DEPARTMENT_COLORS[d]);
   });
 });

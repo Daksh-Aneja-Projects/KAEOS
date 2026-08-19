@@ -20,6 +20,9 @@ import { CountUp } from '../components/CountUp';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize, measured, NOT_MEASURED } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { DEPARTMENT_COLORS } from '../lib/departments';
+
+const ACCENT = DEPARTMENT_COLORS.hr;
 
 // Small chart renderers fed only by the /hr/analytics computed payload.
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'];
@@ -112,8 +115,8 @@ export default function HRDashboard({ domain }: { domain?: string }) {
       <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
         <div className={`${PAGE_PAD}`}>
           <div className="flex flex-col items-center justify-center py-20 gap-6" style={card}>
-            <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: '#22c55e15' }}>
-              <Briefcase className="w-10 h-10" style={{ color: '#22c55e' }} />
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: ACCENT + '15' }}>
+              <Briefcase className="w-10 h-10" style={{ color: ACCENT }} />
             </div>
             <div className="text-center max-w-md">
               <h2 className="text-[18px] font-bold mb-2">HR Department Not Deployed</h2>
@@ -124,7 +127,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
             </div>
             <button onClick={() => navigate('/deploy')}
               className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold text-white"
-              style={{ background: '#22c55e' }}>
+              style={{ background: ACCENT }}>
               Deploy HR Department <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -154,7 +157,7 @@ export default function HRDashboard({ domain }: { domain?: string }) {
               </p>
               <div className="flex items-center gap-2 mt-1.5">
                 {dept?.status && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#22c55e20', color: '#22c55e' }}>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: ACCENT + '20', color: ACCENT }}>
                     {humanize(dept.status)}
                   </span>
                 )}

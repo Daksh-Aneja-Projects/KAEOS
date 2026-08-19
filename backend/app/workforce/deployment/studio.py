@@ -97,7 +97,7 @@ class DeploymentStudio:
         the associated department to DEGRADED (handled by fail_deployment).
         """
         from app.core.database import AsyncSessionLocal
-        from sqlalchemy import select
+        from sqlalchemy import select, func
         from app.workforce.orchestration.workforce_generator import WorkforceGenerator
         from app.workforce.deployment.integration_mapper import (
             ConnectorHealthChecker, IntegrationMapper,
@@ -167,9 +167,10 @@ class DeploymentStudio:
                 # -- RUNTIME_STARTING (real: verify the department has runnable agents)
                 from app.workforce.models.core import DepartmentAgent
                 agents_res = await db.execute(
-                    select(DepartmentAgent).where(DepartmentAgent.department_id == dept.id)
+                    select(func.count(DepartmentAgent.id))
+                    .where(DepartmentAgent.department_id == dept.id)
                 )
-                agent_count = len(agents_res.scalars().all())
+                agent_count = agents_res.scalar() or 0
                 if agent_count == 0:
                     raise RuntimeError("Runtime start aborted: no agents were deployed")
                 await DeploymentStateMachine.transition(

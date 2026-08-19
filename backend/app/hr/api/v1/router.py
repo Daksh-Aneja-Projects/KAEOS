@@ -1536,6 +1536,19 @@ async def generate_payslips(
         HREmployee.tenant_id == tenant_id, HREmployee.status != EmploymentStatus.TERMINATED,
     ))).scalars().all()
 
+    # One batched current-compensation lookup instead of one SELECT per
+    # employee (the old N+1). No match still means "no comp on file".
+    # The old per-employee query was `.first()` on an unordered SELECT, so it
+    # was already nondeterministic when an employee has two is_current rows
+    # (reachable via a race on the demote loop above). Ordering newest-effective
+    # first and keeping the first row seen makes the batch deterministic instead
+    # of widening that window: single-row employees are unaffected.
+    comp_by_employee: dict = {}
+    for c in (await db.execute(select(Compensation).where(
+        Compensation.tenant_id == tenant_id, Compensation.is_current == True,
+    ).order_by(Compensation.effective_date.desc(), Compensation.id))).scalars().all():
+        comp_by_employee.setdefault(c.employee_id, c)
+
     period_days = max(1, (run.period_end - run.period_start).days + 1)
     created = skipped_no_comp = skipped_existing = 0
     total_gross = 0.0
@@ -1543,10 +1556,7 @@ async def generate_payslips(
         if emp.id in existing_emp_ids:
             skipped_existing += 1
             continue
-        comp = (await db.execute(select(Compensation).where(
-            Compensation.tenant_id == tenant_id, Compensation.employee_id == emp.id,
-            Compensation.is_current == True,
-        ))).scalars().first()
+        comp = comp_by_employee.get(emp.id)
         if not comp:
             skipped_no_comp += 1
             continue

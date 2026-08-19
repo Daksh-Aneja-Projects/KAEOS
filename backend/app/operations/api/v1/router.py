@@ -221,19 +221,34 @@ async def check_overload(allocation_id: str, tenant: dict = Depends(require_role
 async def list_vendors(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(VendorContract).where(VendorContract.tenant_id == tenant_id).limit(200))
     contracts = q.scalars().all()
+
+    # Batch the latest-performance lookup instead of one query per contract
+    # (the old N+1). Same ORDER BY as before, so the first row seen per
+    # contract is the same newest row the per-contract LIMIT 1 returned.
+    # Only the score is consumed, so select the two columns rather than whole
+    # entities: ops_vendor_performance holds a monthly rating sheet per
+    # contract, so entity hydration here would grow linearly with age
+    # (200 contracts x 60 months = 12k discarded ORM instances).
+    contract_ids = [c.id for c in contracts]
+    perf_by_contract: dict = {}
+    if contract_ids:
+        for contract_id, perf_score in (await db.execute(
+            select(VendorPerformance.vendor_contract_id,
+                   VendorPerformance.overall_performance_score)
+            .where(VendorPerformance.tenant_id == tenant_id,
+                   VendorPerformance.vendor_contract_id.in_(contract_ids))
+            .order_by(desc(VendorPerformance.created_at))
+        )).all():
+            perf_by_contract.setdefault(contract_id, perf_score)
+
     result = []
     for c in contracts:
-        perf = (await db.execute(
-            select(VendorPerformance)
-            .where(VendorPerformance.vendor_contract_id == c.id, VendorPerformance.tenant_id == tenant_id)
-            .order_by(desc(VendorPerformance.created_at))
-            .limit(1)
-        )).scalar_one_or_none()
+        perf = perf_by_contract.get(c.id)
         # Risk is DERIVED from the vendor's own measured performance score, never
         # a fabricated constant. No performance record on file -> honestly
         # unscored (None), not a guessed "MEDIUM".
-        if perf is not None and perf.overall_performance_score is not None:
-            score = float(perf.overall_performance_score)
+        if perf is not None:
+            score = float(perf)
             risk_level = "LOW" if score >= 90 else "MEDIUM" if score >= 75 else "HIGH"
         else:
             score = None

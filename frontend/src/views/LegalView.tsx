@@ -18,6 +18,7 @@ import EmptyState from '../components/shared/EmptyState';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import BulkActionBar from '../components/BulkActionBar';
@@ -27,13 +28,42 @@ import { Plus as PlusIcon } from 'lucide-react';
 
 type LegalTab = 'matters' | 'contracts' | 'compliance' | 'litigation' | 'privacy' | 'ip' | 'analytics';
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['ACTIVE', 'COMPLIANT', 'PASSED', 'COMPLETED', 'GRANTED', 'SETTLED', 'RESOLVED', 'SIGNED_OFF'].includes(n)) return '#22c55e';
+  if (['PENDING', 'DRAFT', 'UNDER_REVIEW', 'RECEIVED', 'IN_PROGRESS', 'FILED', 'NEW', 'PROCESSING', 'IDENTITY_VERIFIED'].includes(n)) return '#f59e0b';
+  if (['EXPIRED', 'NON_COMPLIANT', 'OVERDUE', 'REJECTED', 'HIGH', 'CRITICAL', 'ABANDONED', 'FAILED'].includes(n)) return '#ef4444';
+  if (['NEGOTIATION', 'DISCOVERY', 'PLEADING', 'MOTION', 'TRIAL', 'ON_HOLD'].includes(n)) return '#3b82f6';
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body these were a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
+const SubSection = ({ icon: Icon, title, count }: { icon: React.ElementType; title: string; count: number }) => {
+  const { colors } = useTheme();
+  return (
+    <div className="flex items-center gap-1.5 pt-1">
+      <Icon className="w-3.5 h-3.5" style={{ color: colors.inkSubtle }} />
+      <h3 className="text-[12px] font-bold" style={{ color: colors.ink }}>{title}</h3>
+      <span className="text-[11px]" style={{ color: colors.inkTertiary }}>({count})</span>
+    </div>
+  );
+};
+
 const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<LegalTab>(() => {
-    const valid: LegalTab[] = ['matters', 'contracts', 'compliance', 'litigation', 'privacy', 'ip', 'analytics'];
-    if (defaultTab && valid.includes(defaultTab as LegalTab)) return defaultTab as LegalTab;
-    return 'contracts';
-  });
+  const [tab, setTab] = useTabParam<LegalTab>(
+    ['matters', 'contracts', 'compliance', 'litigation', 'privacy', 'ip', 'analytics'], 'contracts', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -135,30 +165,6 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
       }
     }
   };
-
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['ACTIVE', 'COMPLIANT', 'PASSED', 'COMPLETED', 'GRANTED', 'SETTLED', 'RESOLVED', 'SIGNED_OFF'].includes(n)) return '#22c55e';
-    if (['PENDING', 'DRAFT', 'UNDER_REVIEW', 'RECEIVED', 'IN_PROGRESS', 'FILED', 'NEW', 'PROCESSING', 'IDENTITY_VERIFIED'].includes(n)) return '#f59e0b';
-    if (['EXPIRED', 'NON_COMPLIANT', 'OVERDUE', 'REJECTED', 'HIGH', 'CRITICAL', 'ABANDONED', 'FAILED'].includes(n)) return '#ef4444';
-    if (['NEGOTIATION', 'DISCOVERY', 'PLEADING', 'MOTION', 'TRIAL', 'ON_HOLD'].includes(n)) return '#3b82f6';
-    return colors.inkSubtle;
-  };
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-  const SubSection = ({ icon: Icon, title, count }: { icon: React.ElementType; title: string; count: number }) => (
-    <div className="flex items-center gap-1.5 pt-1">
-      <Icon className="w-3.5 h-3.5" style={{ color: colors.inkSubtle }} />
-      <h3 className="text-[12px] font-bold" style={{ color: colors.ink }}>{title}</h3>
-      <span className="text-[11px]" style={{ color: colors.inkTertiary }}>({count})</span>
-    </div>
-  );
 
   const TABS: { key: LegalTab; label: string; icon: React.ElementType; color: string }[] = [
     { key: 'matters', label: 'Matters', icon: Briefcase, color: '#14b8a6' },

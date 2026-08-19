@@ -9,9 +9,11 @@ import type { WorkflowSpec } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import EmptyState from '../components/shared/EmptyState';
 import { timeAgo } from '../lib/time';
 import GateTrace from '../components/GateTrace';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
 import BulkActionBar from '../components/BulkActionBar';
@@ -32,13 +34,31 @@ interface Lead { id: string; name: string; company: string; email: string; sourc
 interface Forecast { id: string; period: string; rep: string | null; committed: number; best_case: number; pipeline: number; quota: number; }
 interface SalesAccount { id: string; name: string; industry: string; arr: number; health: string; owner: string | null; last_activity: string | null; }
 
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['WON', 'ACTIVE', 'QUALIFIED', 'HOT', 'CLOSED_WON', 'HEALTHY'].includes(n)) return '#22c55e';
+  if (['PROPOSAL', 'NEGOTIATION', 'IN_PROGRESS', 'WARM', 'DEMO', 'DISCOVERY'].includes(n)) return '#f59e0b';
+  if (['LOST', 'CHURNED', 'COLD', 'CLOSED_LOST', 'AT_RISK'].includes(n)) return '#ef4444';
+  if (['PROSPECTING', 'NEW', 'PENDING'].includes(n)) return '#3b82f6';
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body this was a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
 const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
-  const [tab, setTab] = useState<SalesTab>(() => {
-    const valid: SalesTab[] = ['opportunities', 'leads', 'forecasts', 'accounts', 'commission', 'analytics'];
-    if (defaultTab && valid.includes(defaultTab as SalesTab)) return defaultTab as SalesTab;
-    return 'opportunities';
-  });
+  const [tab, setTab] = useTabParam<SalesTab>(
+    ['opportunities', 'leads', 'forecasts', 'accounts', 'commission', 'analytics'], 'opportunities', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -136,30 +156,6 @@ const SalesView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
     }
     finally { setRunningAgent(null); }
   };
-
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['WON', 'ACTIVE', 'QUALIFIED', 'HOT', 'CLOSED_WON', 'HEALTHY'].includes(n)) return '#22c55e';
-    if (['PROPOSAL', 'NEGOTIATION', 'IN_PROGRESS', 'WARM', 'DEMO', 'DISCOVERY'].includes(n)) return '#f59e0b';
-    if (['LOST', 'CHURNED', 'COLD', 'CLOSED_LOST', 'AT_RISK'].includes(n)) return '#ef4444';
-    if (['PROSPECTING', 'NEW', 'PENDING'].includes(n)) return '#3b82f6';
-    return colors.inkSubtle;
-  };
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-  const EmptyState = ({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub: string }) => (
-    <div className="rounded-xl p-16 text-center" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Icon className="w-12 h-12 mx-auto mb-4" style={{ color: colors.inkTertiary }} />
-      <p className="text-[15px] font-medium" style={{ color: colors.inkSubtle }}>{title}</p>
-      <p className="text-[12px] mt-1" style={{ color: colors.inkTertiary }}>{sub}</p>
-    </div>
-  );
 
   const TABS: { key: SalesTab; label: string; icon: React.ElementType; color: string }[] = [
     { key: 'opportunities', label: 'Pipeline', icon: TrendingUp, color: '#6366f1' },

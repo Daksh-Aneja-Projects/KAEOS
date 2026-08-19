@@ -21,6 +21,7 @@ import { PAGE_PAD } from '../lib/layout';
 import { MiniDonut, DONUT_PALETTE, type DonutItem } from '../components/shared/MiniDonut';
 import { timeAgo } from '../lib/time';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useTabParam } from '../hooks/useTabParam';
 import GateTrace from '../components/GateTrace';
 import DomainAnalytics from '../components/DomainAnalytics';
 import WorkflowActions from '../components/WorkflowActions';
@@ -34,14 +35,56 @@ type FinanceTab = 'ap' | 'ar' | 'budgets' | 'expenses' | 'tax' | 'treasury' | 'a
 /** Accounting types in the order a ledger is normally read. */
 const ACCOUNT_TYPE_ORDER = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
 
+const fmt = (v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
+
+const statusColor = (s: string, colors: ReturnType<typeof useTheme>['colors']) => {
+  const n = (s || '').toUpperCase();
+  if (['PAID', 'APPROVED', 'ACTIVE', 'PASSED', 'EFFECTIVE', 'FILED', 'REMEDIATED'].includes(n)) return '#22c55e';
+  if (['PENDING', 'PENDING_APPROVAL', 'DRAFT', 'IN_PROGRESS', 'OPEN', 'SCHEDULED'].includes(n)) return '#f59e0b';
+  if (['OVERDUE', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'CANCELLED'].includes(n)) return '#ef4444';
+  if (['SENT', 'PARTIALLY_PAID', 'PROCESSING'].includes(n)) return '#3b82f6';
+  return colors.inkSubtle;
+};
+
+// Module scope on purpose: declared inside the render body these were a fresh
+// component type every render, so React remounted every badge on each keystroke.
+const Badge = ({ status }: { status: string }) => {
+  const { colors } = useTheme();
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
+      style={{ background: statusColor(status, colors) + '18', color: statusColor(status, colors) }}>
+      {humanize(status) || 'N/A'}
+    </span>
+  );
+};
+
+/** Live horizontal bars (animated width) for cash movement by category. */
+const TreasuryBars = ({ items }: { items: DonutItem[] }) => {
+  const { colors } = useTheme();
+  const max = Math.max(...items.map(i => i.value), 1);
+  return (
+    <div className="space-y-2">
+      {items.map((it, idx) => (
+        <div key={it.label} className="flex items-center gap-2">
+          <span className="text-[11px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
+          <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
+            <div className="h-3.5 rounded transition-all duration-500" style={{
+              width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
+              background: DONUT_PALETTE[idx % DONUT_PALETTE.length],
+            }} />
+          </div>
+          <span className="text-[11px] font-mono w-16 shrink-0 text-right" style={{ color: colors.ink }}>{fmt(it.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domain, defaultTab }) => {
   const { colors } = useTheme();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<FinanceTab>(() => {
-    const valid: FinanceTab[] = ['ap', 'ar', 'budgets', 'expenses', 'tax', 'treasury', 'audit', 'accounts', 'analytics'];
-    if (defaultTab && valid.includes(defaultTab as FinanceTab)) return defaultTab as FinanceTab;
-    return 'ap';
-  });
+  const [tab, setTab] = useTabParam<FinanceTab>(
+    ['ap', 'ar', 'budgets', 'expenses', 'tax', 'treasury', 'audit', 'accounts', 'analytics'], 'ap', defaultTab);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -181,43 +224,6 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
     finally { setRunningAgent(null); }
   };
 
-  const statusColor = (s: string) => {
-    const n = (s || '').toUpperCase();
-    if (['PAID', 'APPROVED', 'ACTIVE', 'PASSED', 'EFFECTIVE', 'FILED', 'REMEDIATED'].includes(n)) return '#22c55e';
-    if (['PENDING', 'PENDING_APPROVAL', 'DRAFT', 'IN_PROGRESS', 'OPEN', 'SCHEDULED'].includes(n)) return '#f59e0b';
-    if (['OVERDUE', 'REJECTED', 'FAILED', 'CRITICAL', 'HIGH', 'CANCELLED'].includes(n)) return '#ef4444';
-    if (['SENT', 'PARTIALLY_PAID', 'PROCESSING'].includes(n)) return '#3b82f6';
-    return colors.inkSubtle;
-  };
-
-  const Badge = ({ status }: { status: string }) => (
-    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide"
-      style={{ background: statusColor(status) + '18', color: statusColor(status) }}>
-      {humanize(status) || 'N/A'}
-    </span>
-  );
-
-  /** Live horizontal bars (animated width) for cash movement by category. */
-  const TreasuryBars = ({ items }: { items: DonutItem[] }) => {
-    const max = Math.max(...items.map(i => i.value), 1);
-    return (
-      <div className="space-y-2">
-        {items.map((it, idx) => (
-          <div key={it.label} className="flex items-center gap-2">
-            <span className="text-[11px] w-28 truncate text-right shrink-0" style={{ color: colors.inkSubtle }} title={it.label}>{it.label}</span>
-            <div className="flex-1 h-3.5 rounded" style={{ background: colors.canvas }}>
-              <div className="h-3.5 rounded transition-all duration-500" style={{
-                width: `${Math.max((it.value / max) * 100, it.value > 0 ? 2 : 0)}%`,
-                background: DONUT_PALETTE[idx % DONUT_PALETTE.length],
-              }} />
-            </div>
-            <span className="text-[11px] font-mono w-16 shrink-0 text-right" style={{ color: colors.ink }}>{fmt(it.value)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   const TABS: { key: FinanceTab; label: string; icon: React.ElementType; color: string }[] = [
     { key: 'ap', label: 'Accounts Payable', icon: Receipt, color: '#ec4899' },
     { key: 'ar', label: 'Accounts Receivable', icon: Landmark, color: '#3b82f6' },
@@ -231,7 +237,6 @@ const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domai
   ];
 
   const activeTab = TABS.find(t => t.key === tab)!;
-  const fmt = (v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
 
   // Left/right arrows move between tabs, as a tablist is expected to.
   const moveTab = (e: React.KeyboardEvent, i: number) => {

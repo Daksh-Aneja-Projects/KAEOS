@@ -16,6 +16,9 @@ import { CountUp } from '../components/CountUp';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
+import { DEPARTMENT_COLORS } from '../lib/departments';
+
+const ACCENT = DEPARTMENT_COLORS.sales;
 
 // Small chart renderers fed only by the /sales/analytics computed payload,
 // mirroring FinanceDashboard's ledger-composition section.
@@ -90,8 +93,8 @@ export default function SalesDashboard() {
       <div className="h-full overflow-y-auto" style={{ background: colors.canvas, color: colors.ink }}>
         <div className={`${PAGE_PAD}`}>
           <div className="flex flex-col items-center justify-center py-20 gap-6" style={card}>
-            <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: '#f59e0b15' }}>
-              <Target className="w-10 h-10" style={{ color: '#f59e0b' }} />
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: ACCENT + '15' }}>
+              <Target className="w-10 h-10" style={{ color: ACCENT }} />
             </div>
             <div className="text-center max-w-md">
               <h2 className="text-[18px] font-bold mb-2">Sales Department Not Deployed</h2>
@@ -102,7 +105,7 @@ export default function SalesDashboard() {
             </div>
             <button onClick={() => navigate('/deploy')}
               className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold text-white"
-              style={{ background: '#f59e0b' }}>
+              style={{ background: ACCENT }}>
               Deploy Sales Department <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -131,12 +134,12 @@ export default function SalesDashboard() {
               </p>
               <div className="flex items-center gap-2 mt-1.5">
                 {dept?.status && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#f59e0b20', color: '#f59e0b' }}>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: ACCENT + '20', color: ACCENT }}>
                     {humanize(dept.status)}
                   </span>
                 )}
                 {(dept?.compliance_frameworks || []).map((f: string) => (
-                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#f59e0b15', color: '#f59e0b' }}>
+                  <span key={f} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: ACCENT + '15', color: ACCENT }}>
                     {f}
                   </span>
                 ))}

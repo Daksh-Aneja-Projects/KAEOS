@@ -2,6 +2,35 @@ import { useEffect, useRef } from 'react';
 import { useWebSocket } from './useWebSocket';
 
 /**
+ * Poll `loader` on a timer, paused while the tab is hidden and re-fired on
+ * return - so a backgrounded tab burns no queries and is never stale when the
+ * user looks back at it. Omit `intervalMs` to do nothing.
+ *
+ * Reach for THIS when a page only needs a timer. `useLiveRefresh` wraps it and
+ * also refreshes on tenant WebSocket events, but every `useWebSocket()` call
+ * opens its own socket, so adopting the bigger hook purely to get the
+ * visibility guard would cost a connection per call site.
+ */
+export function useVisiblePoll(loader: () => void | Promise<void>, intervalMs?: number) {
+  const loaderRef = useRef(loader);
+  loaderRef.current = loader;
+
+  useEffect(() => {
+    if (!intervalMs) return;
+    let id: ReturnType<typeof setInterval> | null = null;
+    const stop = () => { if (id) { clearInterval(id); id = null; } };
+    const start = () => { stop(); id = setInterval(() => void loaderRef.current(), intervalMs); };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else { void loaderRef.current(); start(); }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [intervalMs]);
+}
+
+/**
  * Re-run a page's loader whenever the backend says something happened.
  *
  * Before this, ~40 of the app's data pages fetched once on mount and then
@@ -47,19 +76,7 @@ export function useLiveRefresh(
   }, [lastMessage, events]);
 
   // Interval refresh, paused while the tab is hidden.
-  useEffect(() => {
-    if (!intervalMs) return;
-    let id: ReturnType<typeof setInterval> | null = null;
-    const stop = () => { if (id) { clearInterval(id); id = null; } };
-    const start = () => { stop(); id = setInterval(() => void loaderRef.current(), intervalMs); };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else { void loaderRef.current(); start(); }
-    };
-    if (!document.hidden) start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [intervalMs]);
+  useVisiblePoll(loader, intervalMs);
 
   return { live: status === 'connected' };
 }
