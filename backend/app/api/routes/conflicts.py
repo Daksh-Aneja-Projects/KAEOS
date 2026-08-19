@@ -10,6 +10,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.models.domain import ConflictCase, Rule
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/conflicts", tags=["Conflicts — L16 Arena"])
 
@@ -100,7 +101,7 @@ async def resolve_conflict(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="conflict_case", resource_id=conflict_id,
     )
     return {"status": "RESOLVED", "conflict_id": conflict_id}

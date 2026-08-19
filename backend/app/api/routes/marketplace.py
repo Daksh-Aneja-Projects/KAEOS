@@ -44,6 +44,7 @@ async def list_templates(
 
 from pydantic import BaseModel
 from typing import List
+from app.core.tenant import approver_identity
 
 class MarketplaceTemplateCreate(BaseModel):
     name: str
@@ -79,7 +80,7 @@ async def create_template(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="marketplace_template", resource_id=template.id,
     )
     return {"status": "success", "id": template.id}

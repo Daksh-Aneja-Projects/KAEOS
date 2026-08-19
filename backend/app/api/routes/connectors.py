@@ -14,6 +14,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.entitlements import require_entitlement
 from app.core.audit import record_security_event
 import logging
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ async def store_credentials(
     await db.commit()
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="connector_credentials", resource_id=conn.id,
     )
     return {
@@ -215,7 +216,7 @@ async def delete_credentials(
     await db.commit()
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="DELETE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="connector_credentials", resource_id=conn.id,
     )
     return {"status": "CREDENTIALS_DELETED", "connector": conn.name}
@@ -293,7 +294,7 @@ async def connect_connector(
     await db.commit()
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="connector", resource_id=conn.id,
     )
     return {"status": "CONNECTED", "connector": conn.name}
@@ -311,7 +312,7 @@ async def disconnect_connector(connector_id: str, db: AsyncSession = Depends(get
     await db.commit()
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="connector", resource_id=conn.id,
     )
     return {"status": "PAUSED", "connector": conn.name}

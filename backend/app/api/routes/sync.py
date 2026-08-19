@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import record_security_event
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/integrations", tags=["Integrations Sync"])
 
@@ -94,7 +95,7 @@ async def mint_webhook_secret(
     # audit it the same way connectors.py audits every credential mutation.
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="connector_credentials", resource_id=connector_id,
     )
     return {
@@ -176,7 +177,7 @@ async def dispatch_now(
     result = await dispatch_outbound(tenant_id=tenant["tenant_id"])
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="outbound_write",
     )
     return result
@@ -214,7 +215,7 @@ async def requeue_outbound(
     await db.commit()
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="outbound_write", resource_id=w.id,
     )
     return {"id": w.id, "status": w.status, "attempts": w.attempts,

@@ -143,9 +143,6 @@ async def list_projects(tenant_id: str = Depends(get_tenant_id), db: AsyncSessio
         })
     return project_list
 
-# REVIEW: operations (like engineering) passes actor=approver_identity(tenant)
-# where legal, sales and support pass actor=tenant.get("name"). Drift
-# preserved - see app/core/department_endpoints.py.
 @router.post("/projects/tasks/{task_id}/evaluate")
 async def evaluate_task(task_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     # Callers (UI + e2e) pass a PROJECT id here; ProjectAgent evaluates projects.

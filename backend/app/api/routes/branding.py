@@ -133,7 +133,7 @@ async def put_branding(
     await db.refresh(row)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="branding", resource_id=tenant_id,
     )
     return _to_out(row)

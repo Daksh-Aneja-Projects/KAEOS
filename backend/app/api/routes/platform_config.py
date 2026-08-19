@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.models.settings import TenantLLMConfig, MCPToolConfig, OntologyConfig, FederatedConfig
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/config", tags=["Platform Config"])
 
@@ -109,7 +110,7 @@ async def update_llm_routing(
     await db.refresh(db_item)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="llm_routing", resource_id=item.layer,
     )
     return _to_out(db_item)
@@ -136,7 +137,7 @@ async def delete_llm_routing(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="DELETE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="llm_routing", resource_id=layer,
     )
     return {"status": "deleted", "layer": layer}
@@ -194,7 +195,7 @@ async def probe_llm_model(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="llm_routing_probe", resource_id=layer,
     )
     return {"layer": layer, "model_name": cfg.model_name, "profile": profile}
@@ -276,7 +277,7 @@ async def update_mcp_tool(
     await db.refresh(db_item)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="mcp_tool", resource_id=item.tool_id,
     )
     return _mcp_to_out(db_item)
@@ -322,7 +323,7 @@ async def update_ontology(item: OntologyItem, tenant: dict = Depends(require_rol
     await db.refresh(db_item)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="ontology", resource_id=item.department,
     )
     return db_item
@@ -369,7 +370,7 @@ async def update_federated(item: FederatedItem, tenant: dict = Depends(require_r
     await db.refresh(db_item)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="federated_consent", resource_id=item.department,
     )
     return db_item
@@ -487,7 +488,7 @@ async def set_autonomy(
         logger.warning(f"[autonomy-dial] cache invalidation failed for {d}: {e}")
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="autonomy_policy", resource_id=d, details={"min_confidence": val},
     )
     # A human just set this, so it is no longer governor-managed (see above).

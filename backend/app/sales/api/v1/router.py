@@ -35,6 +35,7 @@ from app.sales.agents.churn_agent import ChurnAgent
 from app.sales.agents.cpq_agent import CPQAgent
 
 import logging
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -120,16 +121,11 @@ async def list_leads(
         })
     return lead_list
 
-# REVIEW: sales, legal and support pass actor=tenant.get("name"), which is
-# None for any principal without a name, so the gated execution lands in the
-# audit ledger unattributed. engineering and operations use
-# approver_identity(tenant) instead. Drift preserved - see
-# app/core/department_endpoints.py.
 @router.post("/leads/{lead_id}/score")
 async def score_lead(lead_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         LeadScoringAgent().score_lead(db, lead_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="lead", resource_id=lead_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="lead", resource_id=lead_id, logger=logger,
     )
 
 # --- Accounts ---
@@ -169,7 +165,7 @@ async def list_accounts(
 async def evaluate_account_health(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         AccountHealthAgent().assess_health(db, account_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="account", resource_id=account_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="account", resource_id=account_id, logger=logger,
     )
 
 
@@ -177,7 +173,7 @@ async def evaluate_account_health(account_id: str, tenant: dict = Depends(requir
 async def assess_churn_risk(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         ChurnAgent().identify_churn_risk(db, account_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="account", resource_id=account_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="account", resource_id=account_id, logger=logger,
     )
 
 # --- Opportunities ---
@@ -215,7 +211,7 @@ async def list_opportunities(
 async def coach_opportunity(opportunity_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         PipelineCoachAgent().coach_opportunity(db, opportunity_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
     )
 
 
@@ -224,14 +220,14 @@ async def generate_proposal(opportunity_id: str, tenant: dict = Depends(require_
     """Always routes to HITL - a customer-facing document never ships unreviewed."""
     return await run_agent_endpoint(
         ProposalGenAgent().generate_proposal(db, opportunity_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
     )
 
 @router.post("/opportunities/{opportunity_id}/cpq")
 async def cpq_review(opportunity_id: str, discount: float = Query(...), tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         CPQAgent().evaluate_quote(db, opportunity_id, discount, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
     )
 
 # --- Forecasts ---
@@ -290,7 +286,7 @@ async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
 async def predict_forecast(forecast_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         ForecastAgent().predict_forecast(db, forecast_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="forecast", resource_id=forecast_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="forecast", resource_id=forecast_id, logger=logger,
     )
 
 # --- Commission ---
@@ -329,7 +325,7 @@ async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), 
 async def calculate_commission(calculation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         CommissionAgent().calculate_payout(db, calculation_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="commission_calculation", resource_id=calculation_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="commission_calculation", resource_id=calculation_id, logger=logger,
     )
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -400,7 +396,7 @@ async def create_opportunity(
     await db.refresh(o)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="opportunity", resource_id=o.id,
     )
     return {"id": o.id, "name": o.name, "stage": o.stage.value if hasattr(o.stage, "value") else str(o.stage),

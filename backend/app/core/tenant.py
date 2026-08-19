@@ -175,6 +175,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.tenant = {
                 "tenant_id": payload.get("tenant_id", "default"),
                 "role": jwt_role_map.get(payload.get("role", ""), "viewer"),
+                # `email` is the human-readable principal; `approver_identity`
+                # prefers it, so audit rows attribute to the person, not an opaque
+                # id. Kept distinct from `name` (which historically also carried
+                # the email) so the identity is one value everywhere.
+                "email": payload.get("email"),
                 "name": payload.get("email", "user"),
                 "user_id": payload.get("user_id"),
                 "department": payload.get("department"),

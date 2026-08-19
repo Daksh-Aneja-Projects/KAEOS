@@ -35,6 +35,7 @@ from app.support.agents.csat_agent import CSATAgent
 from app.support.services.analytics import _hours_between
 
 import logging
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -135,22 +136,18 @@ async def list_tickets(
         })
     return result
 
-# REVIEW: support passes actor=tenant.get("name") (unattributed when the
-# principal has no name) where engineering and operations use
-# approver_identity(tenant). Drift preserved - see
-# app/core/department_endpoints.py.
 @router.post("/tickets/{ticket_id}/triage")
 async def triage_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         TriageAgent().triage_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
 
 @router.post("/tickets/{ticket_id}/solve")
 async def solve_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         ResolutionAgent().solve_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
 
 @router.post("/tickets/{ticket_id}/auto-resolve")
@@ -158,21 +155,21 @@ async def auto_resolve_ticket(ticket_id: str, tenant: dict = Depends(require_rol
     """Draft a customer response - always pauses for human review (0.79 gate)."""
     return await run_agent_endpoint(
         AutoResolveAgent().generate_response(db, ticket_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
 
 @router.post("/tickets/{ticket_id}/document")
 async def document_resolution(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         KBAgent().document_resolution(db, ticket_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
 
 @router.post("/tickets/{ticket_id}/escalate")
 async def escalate_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         EscalationAgent().escalate_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
 
 
@@ -364,7 +361,7 @@ async def _set_kb_published(article_id: str, tenant: dict, db: AsyncSession, pub
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="kb_article", resource_id=article_id,
     )
     return {"id": article.id, "status": "PUBLISHED" if article.is_published else "DRAFT"}
@@ -441,7 +438,7 @@ async def list_csat_surveys(
 async def analyze_csat(survey_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         CSATAgent().analyze_surveys(db, survey_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="csat_survey", resource_id=survey_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="csat_survey", resource_id=survey_id, logger=logger,
     )
 
 
@@ -645,7 +642,7 @@ async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncS
         result = await agent.check_sla(db, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="sla", resource_id=tenant_id,
         )
         return result
@@ -723,7 +720,7 @@ async def create_ticket(
     await db.refresh(t)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="ticket", resource_id=t.id,
     )
     return {"id": t.id, "number": t.ticket_number, "subject": t.subject,

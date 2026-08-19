@@ -115,7 +115,7 @@ async def create_encounter(body: EncounterCreate, tenant: dict = Depends(require
     await db.refresh(enc)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="encounter", resource_id=enc.id,
     )
     return _enc_dict(enc)
@@ -151,7 +151,7 @@ async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(requi
         raise HTTPException(404, str(e))
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="encounter", resource_id=encounter_id,
     )
     return result
@@ -168,7 +168,7 @@ async def suggest_codes_route(encounter_id: str, tenant: dict = Depends(require_
         raise HTTPException(404, str(e))
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="clinical_task", resource_id=result.get("task_id"),
     )
     return result
@@ -186,7 +186,7 @@ async def prior_auth_route(encounter_id: str, body: PriorAuthRequest,
         raise HTTPException(404, str(e))
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="clinical_task", resource_id=result.get("task_id"),
     )
     return result
@@ -286,7 +286,7 @@ async def create_disclosure(body: DisclosureCreate, tenant: dict = Depends(requi
         PHIDisclosure.id == result["disclosure_id"]))).scalar_one()
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="phi_disclosure", resource_id=disclosure.id,
     )
     return {"id": disclosure.id, "purpose": disclosure.purpose, "recipient": disclosure.recipient,

@@ -17,6 +17,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.actuation import ActionRecord
 from app.services.actuation import Actuator, ActuationError
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/actuation", tags=["Actuation"])
 
@@ -110,7 +111,7 @@ async def execute_action(
         )
         await record_security_event(
             tenant_id=tenant_id, event_type="ACTUATION", action="HITL_PENDING",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type=f"{body.system}:{body.object_type}", resource_id=body.external_id,
             details={"execution_id": exec_id, "operation": body.operation},
         )
@@ -126,7 +127,7 @@ async def execute_action(
             db, tenant_id=tenant_id, system=body.system,
             object_type=body.object_type, external_id=body.external_id,
             operation=body.operation, payload=body.payload,
-            execution_id=body.execution_id, actor=tenant.get("name"),
+            execution_id=body.execution_id, actor=approver_identity(tenant),
             idempotency_key=body.idempotency_key,
         )
     except ActuationError as e:
@@ -134,7 +135,7 @@ async def execute_action(
 
     await record_security_event(
         tenant_id=tenant_id, event_type="ACTUATION", action=record.operation,
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type=f"{body.system}:{body.object_type}", resource_id=body.external_id,
         details={"action_id": record.id, "status": record.status},
     )
@@ -151,13 +152,13 @@ async def reverse_action(
     tenant_id = tenant["tenant_id"]
     try:
         record = await Actuator.reverse_action(
-            db, tenant_id=tenant_id, action_id=action_id, actor=tenant.get("name"))
+            db, tenant_id=tenant_id, action_id=action_id, actor=approver_identity(tenant))
     except ActuationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     await record_security_event(
         tenant_id=tenant_id, event_type="ACTUATION", action="REVERSE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type=f"{record.system}:{record.object_type}", resource_id=record.external_id,
         details={"action_id": record.id, "status": record.status},
     )
@@ -228,10 +229,10 @@ async def actuation_reconcile(
     each re-assertion is a governed, reversible action recorded in the ledger.
     """
     tenant_id = tenant["tenant_id"]
-    receipt = await Actuator.reconcile_all(db, tenant_id=tenant_id, actor=tenant.get("name") or "reconciler")
+    receipt = await Actuator.reconcile_all(db, tenant_id=tenant_id, actor=approver_identity(tenant))
     await record_security_event(
         tenant_id=tenant_id, event_type="ACTUATION", action="RECONCILE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="sor", resource_id="*",
         details={"reconciled": receipt["reconciled"], "drift_count": receipt["drift_count"]},
     )

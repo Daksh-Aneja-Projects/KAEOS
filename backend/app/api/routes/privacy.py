@@ -23,6 +23,7 @@ from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.services import retention
 from app.services.privacy_erasure import erase_subject, replay_deletions
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ async def erase_data_subject(
 
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="DELETE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="privacy_erasure",
         resource_id=body.employee_id or "by-email",
         details={"rows_anonymised": receipt.get("total_rows_anonymised", 0)},
@@ -86,7 +87,7 @@ async def replay_erasures(
     result = await replay_deletions(db, tenant_id=tenant_id)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="DELETE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="privacy_erasure_replay", resource_id="replay",
         details=result,
     )
@@ -134,7 +135,7 @@ async def set_retention(
 
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="retention_policy", resource_id=body.data_class,
         details=result,
     )
@@ -157,7 +158,7 @@ async def apply_retention(
     if not dry_run:
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="DELETE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="retention_sweep", resource_id="apply",
             details={"total_rows_deleted": receipt.get("total", 0)},
         )

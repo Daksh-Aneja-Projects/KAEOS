@@ -46,7 +46,7 @@ async def create_blueprint(
     result = await blueprint_gen.generate_blueprint(req.prompt, tenant_id, approver_identity(tenant))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="agent_blueprint", resource_id=(result or {}).get("id") if isinstance(result, dict) else None,
     )
     return {"status": "blueprint_ready", "blueprint": result}
@@ -131,7 +131,7 @@ async def refine_blueprint(
         )
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="agent_blueprint", resource_id=blueprint_id,
         )
         return {"status": "updated", "blueprint": result}
@@ -152,7 +152,7 @@ async def approve_blueprint(
         result = await blueprint_gen.approve_blueprint(blueprint_id, tenant_id, approver_identity(tenant))
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="agent_blueprint_approval", resource_id=blueprint_id,
         )
         return {"status": "approved", "blueprint": result}
@@ -187,7 +187,7 @@ async def deploy_agent(
         result = await compiler.deploy_agent(blueprint_id, tenant_id, req.trigger_config)
         await record_security_event(
             tenant_id=tenant_id, event_type="AGENT_EXEC", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="deployed_agent", resource_id=blueprint_id,
         )
         return {"status": "deployed", **result}
@@ -275,7 +275,7 @@ async def stop_agent(
         result = await compiler.stop_agent(agent_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="AGENT_EXEC", action="WRITE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="deployed_agent_stop", resource_id=agent_id,
         )
         return result
@@ -436,7 +436,7 @@ async def override_fairness(
         )
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="fairness_override", resource_id=log_id,
         )
         return result
@@ -477,7 +477,7 @@ async def delete_calendar_event(
         raise HTTPException(status_code=404, detail="Calendar event not found")
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="DELETE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="calendar_event", resource_id=event_id,
     )
     return {"status": "deleted"}

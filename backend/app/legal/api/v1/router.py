@@ -32,6 +32,7 @@ from app.legal.agents.ip_agent import IPAgent
 from app.legal.services.compliance_gates import ConflictOfInterestBlocked, screen_new_matter
 
 import logging
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ async def review_contract(contract_id: str, tenant: dict = Depends(require_role(
     """Full 7-gate review (compliance -> fairness -> HITL -> debate -> execute -> audit)."""
     return await run_agent_endpoint(
         ContractReviewAgent().review_contract(db, contract_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="contract", resource_id=contract_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="contract", resource_id=contract_id, logger=logger,
     )
 
 # --- Compliance ---
@@ -161,7 +162,7 @@ async def list_compliance_assessments(tenant_id: str = Depends(get_tenant_id), d
 async def audit_obligation(obligation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         ComplianceAuditAgent().audit_obligation(db, obligation_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="obligation", resource_id=obligation_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="obligation", resource_id=obligation_id, logger=logger,
     )
 
 # --- Litigation ---
@@ -218,7 +219,7 @@ async def evaluate_case(case_id: str, tenant: dict = Depends(require_role("opera
         result = await agent.evaluate_case(db, case_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="case", resource_id=case_id,
         )
         return result
@@ -256,7 +257,7 @@ async def list_ropa(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
 async def validate_dsar(dsar_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
         PrivacyDSARAgent().process_dsar(db, dsar_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="dsar", resource_id=dsar_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="dsar", resource_id=dsar_id, logger=logger,
     )
 
 # --- IP ---
@@ -286,7 +287,7 @@ async def evaluate_patent(patent_id: str, tenant: dict = Depends(require_role("o
         # 404 (not 403) so another tenant's id is not confirmed to exist.
     return await run_agent_endpoint(
         IPAgent().evaluate_patentability(db, patent_id, tenant["tenant_id"]), tenant,
-        actor=tenant.get("name"), resource_type="patent", resource_id=patent_id, logger=logger,
+        actor=approver_identity(tenant), resource_type="patent", resource_id=patent_id, logger=logger,
     )
 
 # --- Team ---
@@ -387,7 +388,7 @@ async def create_contract(
     await db.refresh(c)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="contract", resource_id=c.id,
     )
     return {"id": c.id, "title": c.title,
@@ -463,7 +464,7 @@ async def create_matter(
     await db.refresh(m)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="matter", resource_id=m.id,
     )
     return {"id": m.id, "title": m.title, "type": m.matter_type,

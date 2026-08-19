@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.missions import Mission, MissionStep, MissionEvent
+from app.core.tenant import approver_identity
 from app.services.missions import (
     plan_mission, abort_mission, resolve_hitl_step, start_mission_run,
 )
@@ -54,7 +55,7 @@ async def create_mission(
         budget_usd=budget, created_by=tenant.get("name"))
     await record_security_event(
         tenant_id=tenant_id, event_type="MISSION", action="PLAN",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="mission", resource_id=mission.id,
         details={"goal": goal, "status": mission.status})
     return await _detail(db, tenant_id, mission.id)
@@ -163,7 +164,7 @@ async def resolve_hitl(
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MISSION",
         action="HITL_APPROVE" if body.approved else "HITL_REJECT",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="mission_step", resource_id=f"{mission_id}:{seq}")
     # On approval the mission is RUNNING again — resume it in the background.
     if body.approved and res.get("status") == "RUNNING":
@@ -179,12 +180,12 @@ async def abort(
 ):
     await _guard_mission_scope(db, tenant, mission_id)
     res = await abort_mission(db, tenant_id=tenant["tenant_id"], mission_id=mission_id,
-                              actor=tenant.get("name"))
+                              actor=approver_identity(tenant))
     if res.get("error"):
         raise HTTPException(status_code=404, detail=res["error"])
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MISSION", action="ABORT",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="mission", resource_id=mission_id)
     return await _detail(db, tenant["tenant_id"], mission_id)
 

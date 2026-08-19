@@ -141,19 +141,15 @@ async def run_agent_endpoint(
     exist. Everything else is logged with a stack trace and returned as a
     detail-free 500, so an internal failure never leaks into the response body.
 
-    REVIEW: ``actor`` is a parameter, not derived here, because the departments
-    disagree and normalising them would change what lands in the audit ledger:
-
-      engineering, operations  actor=approver_identity(tenant)
-      legal, sales, support    actor=tenant.get("name")
-
-    ``approver_identity()`` falls back through email -> user_id -> name ->
-    "tenant:role" and therefore always attributes; ``tenant.get("name")``
-    records None for any principal without a name, so 18 of the 27 endpoints
-    routed through here (19 counting legal's hand-written evaluate_case) can
-    land in the ledger with no attributable actor. The fix is to
-    use ``approver_identity(tenant)`` everywhere, which is a behaviour change to
-    recorded audit rows - quarantined for a later milestone, not done here.
+    ``actor`` is passed by every caller as ``approver_identity(tenant)`` — the
+    one canonical, always-attributable principal identity (email -> user_id ->
+    name -> "tenant:role"). It used to differ by department: engineering and
+    operations already used ``approver_identity`` while legal/sales/support used
+    ``tenant.get("name")``, which recorded None for a principal without a name, so
+    18 of the 27 endpoints routed through here could land in the ledger with no
+    attributable actor. Normalised to ``approver_identity`` everywhere (S4.10),
+    and the JWT principal now carries a real ``email`` so the first branch
+    attributes to the person, not an opaque id.
 
     REVIEW: five more departments never converged on this contract and are
     deliberately left hand-written; adding the missing handlers would change

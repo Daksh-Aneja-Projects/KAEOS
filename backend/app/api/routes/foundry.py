@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant import get_tenant_id, require_role
 from app.core.database import get_db
 from app.services.foundry import dataset_builder
+from app.core.tenant import approver_identity
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +218,7 @@ async def promote_evolution_run(
         raise HTTPException(400, str(e))
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="model_promotion", resource_id=run.candidate_model,
         details={"tier": run.tier, "delta": run.score_delta},
     )

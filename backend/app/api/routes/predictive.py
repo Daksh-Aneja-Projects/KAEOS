@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.domain import Signal, SkillExecution
 from app.services.predictive_ops import PredictiveOpsEngine
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/predictive", tags=["Predictive Ops"])
 
@@ -37,7 +38,7 @@ async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_rol
         execution = await PredictiveOpsEngine.trigger_zero_prompt_execution(db, intent)
         await record_security_event(
             tenant_id=tenant_id, event_type="AGENT_EXEC", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="zero_prompt_execution", resource_id=execution.id,
         )
         return {

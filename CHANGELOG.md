@@ -13,6 +13,18 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ### Changed - S4 governance, behaviour-changing (2026-08-19)
 
+- **One canonical, always-attributable audit actor (4.10 + M8.8).** Audit-write
+  sites derived the actor three ways: `approver_identity(tenant)` (always
+  attributes), `tenant.get("email") or tenant.get("name")`, and plain
+  `tenant.get("name")` (None for a principal with no name). The same human could
+  land in the ledger under two identities, and legal/sales/support agent endpoints
+  could record no attributable actor at all. Root cause of the drift: the JWT
+  principal never carried an `email` key, so `approver_identity`'s documented
+  first branch (`tenant.get("email")`) was dead and it fell through to `user_id`
+  while the `name` sites recorded the email. Fixed by adding a real `email` to the
+  JWT principal and normalising all 94 remaining sites to `approver_identity`, so
+  every audit row attributes to one human-readable identity and never to None.
+
 - **Legal can no longer pass its own lawful-basis audit for free (4.1).** The
   `legal` department — whose entire remit is GDPR/CCPA — hardcoded Gate 6's
   `data_processing_basis_logged` to `True` (`source=None, force=True`), so it was

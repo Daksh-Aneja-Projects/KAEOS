@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.core.entitlements import require_entitlement
 from app.core.audit import record_security_event
+from app.core.tenant import approver_identity
 from app.models.domain import (
     Rule, Skill, SkillExecution, Signal, Workflow, Employee,
     ElicitationQuestion, Connector, ProvenanceLedger, DecayEvent,
@@ -115,7 +116,7 @@ async def create_webhook(body: WebhookCreate, tenant: dict = Depends(require_rol
     sub = await event_bus.subscribe(db, body.endpoint, events, tenant_id=tenant_id, name=body.name)
     await record_security_event(
         tenant_id=tenant_id, event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="webhook", resource_id=sub.id,
     )
     return {"id": sub.id, "name": sub.name, "endpoint": sub.endpoint, "events": body.events}
@@ -186,7 +187,7 @@ async def create_platform_key(body: ApiKeyCreate, tenant: dict = Depends(require
     result = await generate_api_key(tenant["tenant_id"], body.name.strip() or "unnamed", role)
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="api_key", resource_id=result["key_id"],
     )
     return result
@@ -202,7 +203,7 @@ async def revoke_platform_key(key_id: str, tenant: dict = Depends(require_role("
         raise HTTPException(404, "Key not found")
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="CONFIG_CHANGE", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="api_key", resource_id=key_id,
     )
     return {"status": "revoked", "key_id": key_id}

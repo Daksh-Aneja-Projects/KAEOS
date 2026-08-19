@@ -243,9 +243,6 @@ async def list_pull_requests(
     } for p in prs]
 
 
-# REVIEW: engineering and operations pass actor=approver_identity(tenant);
-# legal, sales and support pass actor=tenant.get("name"). Drift preserved -
-# see the REVIEW block in app/core/department_endpoints.py.
 @router.post("/pull-requests/{pr_id}/review")
 async def review_pull_request(
     pr_id: str,

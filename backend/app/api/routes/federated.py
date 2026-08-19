@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.federated_engine import FederatedEngine
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/federated", tags=["Federated Engine"])
 
@@ -21,7 +22,7 @@ async def export_skill_to_swarm(skill_id: str, tenant: dict = Depends(require_ro
         ledger_receipt = await FederatedEngine.export_skill_to_swarm(db, skill_id, tenant_id=tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="EXPORT", action="EXPORT",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="skill", resource_id=skill_id,
         )
         return {

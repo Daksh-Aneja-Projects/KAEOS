@@ -138,7 +138,7 @@ async def assess_requisition(
         raise HTTPException(404, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_request", resource_id=request_id,
         details={"status": result.get("status")},
     )
@@ -207,7 +207,7 @@ async def create_purchase_order(
     await db.refresh(po)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_order", resource_id=po.id,
         details={"po_number": po.po_number, "total": float(po.total_amount or 0)},
     )
@@ -238,7 +238,7 @@ async def approve_po(
         raise HTTPException(409, detail={"message": str(e), "gates": e.gates})
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="APPROVE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_order", resource_id=po_id,
         details={"status": result["status"]},
     )
@@ -264,7 +264,7 @@ async def guard_purchase_order(
         raise HTTPException(404, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="purchase_order", resource_id=po_id,
         details={"safe_to_approve": result.get("safe_to_approve")},
     )

@@ -120,6 +120,7 @@ async def list_chart_of_accounts(tenant_id: str = Depends(get_tenant_id), accoun
 # ═══════════════════════════════════════════════════════════════════════
 
 from pydantic import BaseModel
+from app.core.tenant import approver_identity
 
 
 class JournalLineIn(BaseModel):
@@ -212,7 +213,7 @@ async def post_gl_entry(body: JournalEntryIn, tenant: dict = Depends(require_rol
         raise HTTPException(400, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="journal_entry", resource_id=entry.id,
         details={"entry_number": entry.entry_number,
                  "total": float(entry.total_debit or 0),
@@ -333,7 +334,7 @@ async def close_fiscal_period(
         raise HTTPException(400, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="fiscal_period", resource_id=f"{body.fiscal_year}-{body.fiscal_period:02d}",
         details={"status": "CLOSED"},
     )
@@ -357,7 +358,7 @@ async def reopen_fiscal_period(
         raise HTTPException(400, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="fiscal_period", resource_id=f"{body.fiscal_year}-{body.fiscal_period:02d}",
         details={"status": "OPEN"},
     )
@@ -443,7 +444,7 @@ async def record_payment(body: PaymentIn, tenant: dict = Depends(require_role("o
         raise HTTPException(400, str(e))
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("email") or tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="payment", resource_id=payment.id,
         details={"payment_number": payment.payment_number,
                  "amount": float(payment.amount or 0)},
@@ -660,7 +661,7 @@ async def run_ap_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
         result = await agent.process_invoice(db, invoice_id, tenant_id)
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="invoice", resource_id=invoice_id,
         )
         return result
@@ -681,7 +682,7 @@ async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
         result["letter"] = f"Subject: {result.get('subject')}\n\n{result.get('body')}"
         await record_security_event(
             tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
+            actor=approver_identity(tenant), actor_role=tenant.get("role"),
             resource_type="receivable", resource_id=invoice_id,
         )
         return result
@@ -838,7 +839,7 @@ async def create_expense_report(
     await db.refresh(rep)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="expense_report", resource_id=rep.id,
     )
     return {"id": rep.id, "number": rep.report_number, "title": rep.title,
@@ -913,7 +914,7 @@ async def create_invoice(
     await db.refresh(inv)
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="invoice", resource_id=inv.id,
     )
     return {"id": inv.id, "number": inv.invoice_number,

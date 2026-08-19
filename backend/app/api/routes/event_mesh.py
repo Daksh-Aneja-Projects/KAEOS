@@ -17,6 +17,7 @@ from app.core.audit import record_security_event
 from app.models.event_mesh import ExternalSignal, SIGNAL_KINDS
 from app.services import prompt_guard
 from app.services.event_mesh import correlate, respond
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/signals", tags=["Event Mesh"])
 
@@ -91,7 +92,7 @@ async def ingest_signal(
     await db.refresh(signal)
     await record_security_event(
         tenant_id=tenant_id, event_type="SIGNAL", action="INGEST",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="external_signal", resource_id=signal.id,
         details={"kind": kind, "response": signal.response_kind,
                  "injection": scanned.to_dict()})

@@ -17,6 +17,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.domain import SkillExecution, Skill
 from app.models.intelligence_metrics import OutcomeRecord
+from app.core.tenant import approver_identity
 
 router = APIRouter(prefix="/outcomes", tags=["Outcomes"])
 
@@ -80,7 +81,7 @@ async def record_outcome(
     await db.commit()
     await record_security_event(
         tenant_id=tenant_id, event_type="OUTCOME", action="WRITE",
-        actor=tenant.get("name"), actor_role=tenant.get("role"),
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
         resource_type="skill_execution", resource_id=execution_id,
         details={"outcome": outcome, "new_confidence": new_conf},
     )
