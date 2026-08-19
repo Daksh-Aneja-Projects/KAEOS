@@ -143,7 +143,78 @@ jobs:
           sleep 2
         done
         python scripts/seed_master.py
+        # Tenant-isolation gates, run on the freshly seeded database (before the
+        # e2e suite mutates it). Both reuse this step's env — no extra setup.
+        #
+        # verify_rls must run as the APP role (the DATABASE_URL above): an owner
+        # bypasses RLS, and the script self-skips with exit 0 when it detects it
+        # owns the tables, so the non-owner role is what makes this check real
+        # rather than decorative.
+        #
+        # check_tenant_integrity is the exact opposite and must run as the OWNER.
+        # As the app role it is itself subject to RLS, and a script carries no
+        # request tenant context, so all 245 tenant-scoped tables read back EMPTY
+        # and it reports "no orphaned tenant_ids" without having seen a single
+        # row — green, and proving nothing. Verified by planting one orphan row:
+        # the owner run exits 1, the app-role run still exits 0. seed_master.py
+        # uses MaintenanceSessionLocal for this same reason.
+        python scripts/verify_rls.py
+        DATABASE_URL="$KAEOS_OWNER_DB_URL" python -m scripts.check_tenant_integrity --strict
         pytest tests/e2e -m "not ollama" -q --tb=short
+
+  equivalence:
+    # Differential equivalence harnesses. They load the PRE-refactor modules
+    # (extracted from the pinned refs below) as standalone modules, run them and
+    # today's consolidated replacements over the same input matrix with the
+    # boundary calls stubbed, and compare the captured payloads exactly — the
+    # harnesses that proved the consolidations safe in the first place. Pinning
+    # them here is what keeps those consolidations proven instead of merely
+    # once-proven: ~5400 input combinations plus a row-for-row seed comparison,
+    # about 90s total, no database or service container needed.
+    #
+    # If a behaviour change is INTENTIONAL, move the pinned ref forward in the
+    # same commit that makes it. That is the point: the ref bump is a reviewable
+    # admission that department behaviour changed, rather than a silent drift.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        # `git show <pre-refactor ref>` needs real history; the default depth-1
+        # checkout cannot reach it.
+        fetch-depth: 0
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: Gate / router / seed equivalence vs pre-refactor originals
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+      run: |
+        cd backend
+        # Pinned pre-refactor refs (the ^ parent is the last commit that still
+        # had the clones):
+        #   e40bffd — ten cloned agents/gated_runner.py -> app/agents/department_gate.py
+        #   97f7889 — cloned api/v1/router.py + seed.py -> app/core/{department_endpoints,domain_seed}.py
+        for r in e40bffd 97f7889; do
+          git cat-file -e "$r^{commit}" 2>/dev/null || {
+            echo "::error::pinned pre-refactor ref $r is unreachable (rebased or squash-merged away). Re-pin it in .github/workflows/ci.yml."
+            exit 1
+          }
+        done
+        mkdir -p /tmp/old_gated /tmp/old_routers /tmp/old_seeds
+        for d in engineering finance healthcare hr legal lending operations procurement sales support; do
+          git show e40bffd^:backend/app/$d/agents/gated_runner.py > /tmp/old_gated/$d.py
+          git show 97f7889^:backend/app/$d/api/v1/router.py       > /tmp/old_routers/$d.py
+          git show 97f7889^:backend/app/$d/seed.py                > /tmp/old_seeds/$d.py
+        done
+        python scripts/diff_refactor_equivalence.py /tmp/old_gated
+        python scripts/diff_router_equivalence.py /tmp/old_routers
+        python scripts/diff_seed_equivalence.py /tmp/old_seeds
 
   frontend-build:
     runs-on: ubuntu-latest

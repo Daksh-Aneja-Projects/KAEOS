@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 """CI guard: native PG enum types must carry every label the models use.
 
-The §14 hazard: a column typed ``Enum(SomeEnum)`` becomes a NATIVE Postgres enum
-type. Adding a new member to ``SomeEnum`` in Python does NOT alter the existing PG
-type — so on an already-upgraded prod DB every INSERT of the new member is
-rejected until an ``ALTER TYPE … ADD VALUE`` migration lands. This script compares
-each native enum type's labels in ``pg_enum`` against the Python enum members in
-``Base.metadata`` and fails (exit 1) on any model-has-a-label-that-Postgres-lacks
-drift.
+This codebase uses NATIVE Postgres enums, deliberately: every ``Enum(SomeEnum)``
+column compiles to ``CREATE TYPE … AS ENUM``. As of 0052 that is 86 distinct
+native types and ZERO ``native_enum=False`` columns — verify with
+``python -m scripts.check_enum_labels`` itself, which prints both counts.
+
+The §14 hazard: adding a new member to ``SomeEnum`` in Python does NOT alter the
+existing PG type — so on an already-upgraded prod DB every INSERT of the new
+member is rejected until an ``ALTER TYPE … ADD VALUE`` migration lands. This
+script compares each native enum type's labels in ``pg_enum`` (on a database
+built by ``alembic upgrade head``) against the Python enum members in
+``Base.metadata`` and fails (exit 1) on drift.
 
 No-op (exit 0) unless the target database is PostgreSQL — native enum labels are a
 Postgres concern; on SQLite the values are plain strings.
@@ -23,20 +27,21 @@ os.environ.setdefault("SECRET_KEY", "ci-enum-check-secret-key-0000000")
 def diff_enum_labels(model_map: dict, pg_map: dict) -> list:
     """Pure comparison. ``model_map``/``pg_map`` are {enum_type_name: set(labels)}.
 
-    Returns a list of (type_name, missing_labels) where a NATIVE PG enum type that
-    EXISTS carries fewer labels than the model uses — the INSERT-rejection drift.
-    A model enum whose type is ABSENT from PG is NOT drift: this codebase stores
-    enum columns as VARCHAR at the migration layer (0 native enum types on a
-    migration-built DB), so there is no native type to reject a new member — the
-    §14 hazard simply does not apply to a VARCHAR-backed column. A PG type carrying
-    EXTRA labels the model dropped is fine (old members linger harmlessly).
+    Returns a list of (type_name, missing_labels) — every label the models use that
+    the migration-built database cannot store. Two ways that happens:
+
+    * the type EXISTS but LACKS labels — a member was added to the Python enum with
+      no ``ALTER TYPE … ADD VALUE`` migration (missing = just those labels);
+    * the type is ABSENT ENTIRELY — the migration chain never ran ``CREATE TYPE``
+      for it, so *every* label is unstorable (missing = all of them). Callers tell
+      the two apart with ``name in pg_map``.
+
+    A PG type carrying EXTRA labels the model dropped is fine — old members linger
+    harmlessly — so extras are ignored.
     """
     drifts = []
     for name, model_labels in sorted(model_map.items()):
-        pg_labels = pg_map.get(name)
-        if pg_labels is None:
-            continue  # stored as VARCHAR, not a native enum — no rejection risk
-        missing = model_labels - pg_labels
+        missing = model_labels - pg_map.get(name, set())
         if missing:
             drifts.append((name, sorted(missing)))
     return drifts
@@ -85,15 +90,18 @@ def main() -> int:
     pg_map = _pg_enum_map(sync_url)
     drifts = diff_enum_labels(model_map, pg_map)
 
-    checked = sum(1 for n in model_map if n in pg_map)
-    print(f"[enum] {len(model_map)} model enum types; {len(pg_map)} native in Postgres; "
-          f"{checked} overlap checked for missing labels "
-          f"(absent types are VARCHAR-backed — no native-enum rejection risk).")
+    absent = sum(1 for n in model_map if n not in pg_map)
+    print(f"[enum] {len(model_map)} model enum types; {len(pg_map)} native in the "
+          f"migration-built Postgres DB; {absent} model type(s) absent entirely.")
     if drifts:
-        print("[enum] FAIL — model enum member(s) missing from the Postgres type "
+        print("[enum] FAIL — model enum label(s) the migration-built DB cannot store "
               "(INSERT of these would be rejected on an upgraded DB):")
         for name, missing in drifts:
-            print(f"          - {name}: add {missing} via `ALTER TYPE {name} ADD VALUE …`")
+            if name in pg_map:
+                print(f"          - {name}: add {missing} via `ALTER TYPE {name} ADD VALUE …`")
+            else:
+                print(f"          - {name}: TYPE MISSING — no migration ever ran "
+                      f"`CREATE TYPE {name} AS ENUM {tuple(missing)}`")
         return 1
     print("[enum] OK — every model enum label exists in its Postgres type.")
     return 0
@@ -103,6 +111,6 @@ if __name__ == "__main__":
     # Self-check of the pure diff before touching any DB.
     assert diff_enum_labels({"e": {"A", "B"}}, {"e": {"A", "B"}}) == []
     assert diff_enum_labels({"e": {"A", "B", "C"}}, {"e": {"A", "B"}}) == [("e", ["C"])]
-    assert diff_enum_labels({"e": {"A"}}, {}) == []            # absent PG type = VARCHAR-backed, no risk
+    assert diff_enum_labels({"e": {"A", "B"}}, {}) == [("e", ["A", "B"])]  # type never created
     assert diff_enum_labels({"e": {"A"}}, {"e": {"A", "B"}}) == []  # extra PG label is fine
     sys.exit(main())

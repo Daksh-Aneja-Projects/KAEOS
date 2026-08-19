@@ -25,6 +25,14 @@ if config.config_file_name is not None:
 # Point Alembic at our models' metadata
 target_metadata = Base.metadata
 
+# Autogenerate is type- and default-blind unless told otherwise: without these,
+# a column whose type or server_default changed in the models produces an EMPTY
+# revision, and `scripts/check_migration_drift.py` (which runs the same
+# comparison) cannot see that class of drift either. Applied to every
+# context.configure() call below so offline, sync-online and async-online all
+# compare identically.
+COMPARE_OPTS = {"compare_type": True, "compare_server_default": True}
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
@@ -34,6 +42,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        **COMPARE_OPTS,
     )
 
     with context.begin_transaction():
@@ -41,7 +50,8 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata,
+                      **COMPARE_OPTS)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -72,7 +82,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, **COMPARE_OPTS
         )
         with context.begin_transaction():
             context.run_migrations()
