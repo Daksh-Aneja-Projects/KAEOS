@@ -134,12 +134,12 @@ class PriorAuthRequest(BaseModel):
     payer: Optional[str] = Field(None, max_length=128)
 
 
-# REVIEW: healthcare's gated agent endpoints map ValueError -> 404 but have no
-# 500 handler, record the audit event OUTSIDE the try, and raise
-# HTTPException(404, str(e)) positionally instead of detail=str(e). Kept
-# hand-written; adding the 500 handler is a behaviour change. Healthcare also
-# has no /workflow-events and no bulk-transition endpoint (see the single
-# make_department_workflow_router() mount below).
+# Healthcare's gated agent endpoints now match the shared contract: ValueError ->
+# 404 with detail=, and a logged, detail-free 500 for anything else (S4.5). Kept
+# hand-written rather than routed through run_agent_endpoint() because one of them
+# derives resource_id from the result. Healthcare still has no /workflow-events
+# and no bulk-transition endpoint (see the single make_department_workflow_router()
+# mount below).
 @router.post("/encounters/{encounter_id}/triage")
 async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(require_role("operator")),
                                  db: AsyncSession = Depends(get_db)):
@@ -148,7 +148,12 @@ async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(requi
     try:
         result = await IntakeAgent().triage_encounter(db, encounter_id, tenant)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=str(e)) from e
+    except HTTPException:
+        raise  # a deliberate status (e.g. 409 invalid transition) is not a 500
+    except Exception as e:
+        logger.exception("%s failed", __name__)
+        raise HTTPException(500, detail="Internal error - see server logs") from e
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
         actor=approver_identity(tenant), actor_role=tenant.get("role"),
@@ -165,7 +170,12 @@ async def suggest_codes_route(encounter_id: str, tenant: dict = Depends(require_
     try:
         result = await CodingAgent().suggest_codes(db, encounter_id, tenant)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=str(e)) from e
+    except HTTPException:
+        raise  # a deliberate status (e.g. 409 invalid transition) is not a 500
+    except Exception as e:
+        logger.exception("%s failed", __name__)
+        raise HTTPException(500, detail="Internal error - see server logs") from e
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
         actor=approver_identity(tenant), actor_role=tenant.get("role"),
@@ -183,7 +193,12 @@ async def prior_auth_route(encounter_id: str, body: PriorAuthRequest,
         result = await PriorAuthAgent().prepare_prior_auth(
             db, tenant, encounter_id=encounter_id, procedure=body.procedure, payer=body.payer)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=str(e)) from e
+    except HTTPException:
+        raise  # a deliberate status (e.g. 409 invalid transition) is not a 500
+    except Exception as e:
+        logger.exception("%s failed", __name__)
+        raise HTTPException(500, detail="Internal error - see server logs") from e
     await record_security_event(
         tenant_id=tenant["tenant_id"], event_type="MODIFICATION", action="EXECUTE",
         actor=approver_identity(tenant), actor_role=tenant.get("role"),

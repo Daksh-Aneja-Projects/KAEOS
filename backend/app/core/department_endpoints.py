@@ -151,22 +151,19 @@ async def run_agent_endpoint(
     and the JWT principal now carries a real ``email`` so the first branch
     attributes to the person, not an opaque id.
 
-    REVIEW: five more departments never converged on this contract and are
-    deliberately left hand-written; adding the missing handlers would change
-    status codes, so it is quarantined too:
+    The five hand-written departments now converge on this same error contract
+    (S4.5 / S4.11):
 
-      finance,     /invoices/{id}/match, /receivables/{id}/dunning and
-      support      /sla/check have the 500 handler but NO ``except ValueError``
-                   - a not-found id returns 500 where the nine siblings return
-                   404. (/sla/check takes no id, so only the two finance
-                   endpoints are reachable with a bad id today.)
-      healthcare,  the gated agent endpoints have the ValueError -> 404 mapping
-      procurement  but NO 500 handler, so an internal failure escapes as an
-                   unhandled exception; they also raise ``HTTPException(404,
-                   str(e))`` positionally rather than ``detail=str(e)``.
-      hr           the gated agent endpoints have neither handler; their bodies
-                   are bespoke (pre-fetch, mutate, custom response shape) and
-                   are not instances of this family at all.
+      finance      /invoices/{id}/match and /receivables/{id}/dunning now map
+                   ValueError -> 404 like the nine siblings (support /sla/check
+                   takes no id, so it stays a 500-only tenant-wide sweep).
+      healthcare,  the gated agent endpoints now add the logged, detail-free 500
+      procurement  handler alongside their ValueError -> 404 mapping.
+      hr           the gated agent endpoints stay bespoke (pre-fetch, mutate,
+                   custom response shape) and are not members of this family, but
+                   already satisfy the contract by other means: get_or_404 gives
+                   the 404, and the global error envelope (install_error_handlers)
+                   gives a non-leaky 500 for any uncaught agent failure.
     """
     tenant_id = tenant["tenant_id"]
     try:
@@ -179,6 +176,8 @@ async def run_agent_endpoint(
         return result
     except ValueError as e:
         raise HTTPException(404, detail=str(e))
+    except HTTPException:
+        raise  # a deliberate status (e.g. 409 invalid transition) is not a 500
     except Exception as e:
         # logger.name == the caller module's __name__, so this reproduces the
         # copies' `logger.exception("%s failed", __name__)` message exactly.

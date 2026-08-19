@@ -13,6 +13,21 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ### Changed - S4 governance, behaviour-changing (2026-08-19)
 
+- **Consistent gated-agent-endpoint error contract (4.5 + 4.11).** finance's
+  `/invoices/{id}/match` and `/receivables/{id}/dunning` had the 500 handler but
+  no `ValueError -> 404`, so a not-found id returned 500 where nine siblings
+  returned 404 - now mapped. healthcare (3) and procurement (4) agent endpoints
+  gained the logged, detail-free 500 handler alongside their existing 404 mapping.
+  hr's bespoke endpoints already satisfy the contract (get_or_404 + the global
+  error envelope), and support `/sla/check` takes no id so it stays a 500-only
+  sweep - both documented rather than force-fitted.
+- **Intended HTTP status codes are no longer masked as 500.** The shared
+  `run_agent_endpoint` wrapper (and the finance/healthcare/procurement handlers)
+  caught `Exception` broadly, so an agent that raised e.g. `HTTPException(409)`
+  for an invalid state transition surfaced as a 500. Added `except HTTPException:
+  raise` ahead of the catch-all everywhere, so a deliberate status propagates
+  unchanged (caught by the healthcare triage route test).
+
 - **`financial_amount_logged` is GAAP-inclusive everywhere (4.2).** finance seeded
   this Gate-6 flag for SOX or GAAP; hr and sales seeded it for SOX alone, so a
   GAAP-only financial amount escaped the "was the amount logged?" check in two

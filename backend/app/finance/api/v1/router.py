@@ -647,10 +647,6 @@ async def list_compliance_rules(tenant_id: str = Depends(get_tenant_id), db: Asy
 # Agent Execution Triggers
 # ═══════════════════════════════════════════════════════════════════════
 
-# REVIEW: these two are the only gated agent endpoints with the 500 handler
-# but NO "except ValueError" - an unknown/other-tenant id surfaces as 500
-# where the nine sibling departments return 404. Kept hand-written because
-# routing them through run_agent_endpoint() would change that status code.
 @router.post("/invoices/{invoice_id}/match")
 async def run_ap_agent(invoice_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Triggers the Accounts Payable agent to perform 3-way matching."""
@@ -665,6 +661,10 @@ async def run_ap_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
             resource_type="invoice", resource_id=invoice_id,
         )
         return result
+    except ValueError as e:
+        # Unknown / other-tenant id, like the nine sibling departments -> 404
+        # (never 403, so another tenant's id is not confirmed to exist).
+        raise HTTPException(404, detail=str(e)) from e
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e
@@ -686,6 +686,10 @@ async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
             resource_type="receivable", resource_id=invoice_id,
         )
         return result
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e)) from e
+    except HTTPException:
+        raise  # a deliberate status is not a 500
     except Exception as e:
         logger.exception("%s failed", __name__)
         raise HTTPException(500, detail="Internal error - see server logs") from e

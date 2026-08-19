@@ -630,10 +630,10 @@ async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
     """Per-policy SLA compliance, computed live from ticket timestamps."""
     return await compute_sla_policy_metrics(db, tenant_id)
 
-# REVIEW: like finance's two agent endpoints, this has the 500 handler but no
-# "except ValueError" -> 404 mapping. Kept hand-written; it also takes no
-# entity id, so it is a tenant-wide sweep rather than a member of the
-# run_agent_endpoint() family.
+# A tenant-wide sweep with no entity id: there is no id to map a not-found
+# ValueError onto, so this is deliberately NOT a member of the 404 family (unlike
+# finance's two id-based agent endpoints, which now map ValueError -> 404 like the
+# rest). Its 500-only handler is correct.
 @router.post("/sla/check")
 async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     tenant_id = tenant["tenant_id"]

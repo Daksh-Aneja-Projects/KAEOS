@@ -7,6 +7,7 @@ the approver is always the authenticated principal, never a client field.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Optional
 
@@ -40,6 +41,8 @@ from app.procurement.services.source_to_pay import (
     run_three_way_match,
     screen_vendor,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/procurement", tags=["Procurement"])
 
@@ -119,10 +122,9 @@ async def create_requisition(
             "status": req.status.value if hasattr(req.status, "value") else str(req.status)}
 
 
-# REVIEW: like healthcare, this endpoint maps ValueError -> 404 but has no 500
-# handler and raises HTTPException(404, str(e)) positionally. Kept
-# hand-written; adding the 500 handler is a behaviour change. Procurement also
-# has no bulk-transition endpoint.
+# Procurement's gated agent endpoints now match the shared contract: ValueError
+# -> 404 with detail=, and a logged, detail-free 500 for anything else (S4.5).
+# Procurement still has no bulk-transition endpoint.
 @router.post("/requisitions/{request_id}/assess")
 async def assess_requisition(
     request_id: str,
@@ -135,7 +137,12 @@ async def assess_requisition(
     try:
         result = await sourcing_agent(db, request_id, tenant_id)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=str(e)) from e
+    except HTTPException:
+        raise  # a deliberate status (e.g. 409 invalid transition) is not a 500
+    except Exception as e:
+        logger.exception("%s failed", __name__)
+        raise HTTPException(500, detail="Internal error - see server logs") from e
     await record_security_event(
         tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
         actor=approver_identity(tenant), actor_role=tenant.get("role"),
