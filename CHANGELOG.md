@@ -26,6 +26,17 @@ All notable changes to KAEOS are documented here. This project adheres to
   unique index are now declared on their models (the latter on both dialects, so
   the SQLite test schema keeps the partial semantics). Drift gate: 256 tables, 0
   unaccepted differences on pg16.
+- **Three deferred CI gates wired (each fixed first, then proven red-then-green):**
+  (1) the scoped **mypy** lane (finance/provenance/compliance) had 5 real errors -
+  a `Sequence`-vs-`list` arg, two Optional-key/PK-None money-path types, a
+  double-checked-locking false positive, and a demo stand-in - all fixed, lane now
+  green and wired into `backend-test`. (2) `validate_domain_agents.py` always
+  exited 0; it now exits non-zero on any agent read error / missing tenant / a run
+  that validated nothing, and gained an `--offline` mode (no Ollama) wired into the
+  seeded Postgres lane. (3) `openapi_surface_snapshot.py` now walks the OpenAPI
+  document instead of the internal route table (the old `app.routes` walk saw only
+  4 of 673 routes under the pinned FastAPI 0.140), gained a `--check` mode against a
+  committed 671-operation baseline, wired into the equivalence job.
 
 ### Fixed - MED backlog cleanup batch (2026-08-17)
 

@@ -17,7 +17,7 @@ ordered or received, or an overcharge past tolerance, is an EXCEPTION.
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+from typing import Any, Optional, Sequence, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,7 +90,7 @@ def _line_qty(il: dict, default: Decimal) -> Decimal:
 
 
 async def _billed_to_date(
-    db: AsyncSession, tenant_id: str, invoice, po_id, po_lines: list,
+    db: AsyncSession, tenant_id: str, invoice, po_id, po_lines: Sequence,
 ) -> tuple[dict[str, Decimal], Decimal]:
     """Qty already billed per PO line (and total amount, for the header-only
     degenerate case) by OTHER non-VOIDED invoices on the same PO. Folded into
@@ -244,7 +244,7 @@ async def evaluate_three_way_match(
         line_tol = max(PRICE_ABS_TOL, po_price * PRICE_PCT_TOL)
         # Fold in qty already billed on this line by prior invoices so the Nth
         # invoice fails closed once cumulative billing exceeds received/ordered.
-        prior_qty = billed_by_line.get(pol.id, Decimal(0))
+        prior_qty = billed_by_line.get(pol.id or "", Decimal(0))
         cumulative_qty = inv_qty + prior_qty
         tag = f"line {pol.line_number}"
         if prior_qty:
@@ -297,14 +297,14 @@ def match_summary(result: dict) -> str:
 
 if __name__ == "__main__":  # pragma: no cover - framework-free self-check
     from types import SimpleNamespace
-    pol = SimpleNamespace(id="L1", line_number=1, quantity=100)
+    pol = cast(POLineItem, SimpleNamespace(id="L1", line_number=1, quantity=100))
     # Prior invoices billed 60 (paired by po_line_item_id) + 30 (by line_number).
-    priors = [[{"po_line_item_id": "L1", "qty": 60}], [{"line_number": 1, "qty": 30}]]
+    priors: list[list[dict]] = [[{"po_line_item_id": "L1", "qty": 60}], [{"line_number": 1, "qty": 30}]]
     billed = Decimal(0)
     for plines in priors:
         line = _find_invoice_line(plines, pol, 0)
         assert line is not None, "pairing must find the prior line"
-        billed += _line_qty(line, Decimal(pol.quantity))
+        billed += _line_qty(line, Decimal(pol.quantity or 0))
     assert billed == Decimal(90), billed
     # This invoice billing 20 alone fits within received 100, but folded with the
     # 90 already billed the checker must BLOCK (cumulative 110 > 100 received).

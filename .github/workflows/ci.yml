@@ -35,6 +35,15 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
+    - name: Type-check (mypy scoped lane — finance / provenance / compliance)
+      # A type error in these modules is a money or security bug. Scope is fixed
+      # in mypy.ini; keep the lane green rather than widening it. Static only —
+      # no DB / services needed.
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+      run: |
+        cd backend
+        mypy --config-file mypy.ini
     - name: Run unit tests
       env:
         SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
@@ -160,6 +169,12 @@ jobs:
         # uses MaintenanceSessionLocal for this same reason.
         python scripts/verify_rls.py
         DATABASE_URL="$KAEOS_OWNER_DB_URL" python -m scripts.check_tenant_integrity --strict
+        # Prove every domain agent still resolves to a real, readable, tenant-scoped
+        # entity (import wiring + enum-valid rows + tenant present). --offline skips
+        # the gated LLM pipeline (no Ollama in CI); it exits non-zero on any read
+        # error / missing tenant, and on an empty DB where nothing could be
+        # validated. Owner URL so it reads the seeded rows across tenants (RLS).
+        DATABASE_URL="$KAEOS_OWNER_DB_URL" python -m scripts.validate_domain_agents --offline
         pytest tests/e2e -m "not ollama" -q --tb=short
 
   equivalence:
@@ -215,6 +230,16 @@ jobs:
         python scripts/diff_refactor_equivalence.py /tmp/old_gated
         python scripts/diff_router_equivalence.py /tmp/old_routers
         python scripts/diff_seed_equivalence.py /tmp/old_seeds
+    - name: OpenAPI surface unchanged vs committed baseline
+      # The public HTTP contract (paths, operationIds, params, request/response
+      # schemas, components) must not move under a refactor. If an API change is
+      # intentional, refresh the baseline in the same commit:
+      #   python -m scripts.openapi_surface_snapshot scripts/openapi_surface.baseline.json
+      env:
+        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+      run: |
+        cd backend
+        python -m scripts.openapi_surface_snapshot --check
 
   frontend-build:
     runs-on: ubuntu-latest

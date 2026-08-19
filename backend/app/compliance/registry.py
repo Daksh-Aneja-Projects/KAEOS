@@ -53,8 +53,12 @@ def _discover() -> None:
     if _DISCOVERED:
         return
     with _LOCK:
+        # Double-checked locking: another thread can set _DISCOVERED while we
+        # waited on _LOCK. mypy's single-threaded flow narrows _DISCOVERED to
+        # False after the guard above and calls this return unreachable; it is
+        # reachable under concurrency.
         if _DISCOVERED:
-            return
+            return  # type: ignore[unreachable]
         from app.compliance import checkers as pkg
         for mod in pkgutil.iter_modules(pkg.__path__):
             if mod.name.startswith("_"):

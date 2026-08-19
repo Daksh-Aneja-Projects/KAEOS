@@ -19,3 +19,7 @@ pytest-cov==7.0.0
 
 # Lint (see backend/ruff.toml; enforced by CI backend-lint job)
 ruff==0.15.8
+# Static type-check for the scoped high-value lane (see backend/mypy.ini:
+# finance services / provenance / compliance). The SQLAlchemy mypy plugin ships
+# inside sqlalchemy, so no extra stubs package is needed.
+mypy==1.20.0

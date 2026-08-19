@@ -133,6 +133,11 @@ async def main():
     only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
     if only:
         specs = [s for s in specs if s[0].startswith(only)]
+    # --offline validates the agent->entity->tenant wiring WITHOUT running the
+    # gated pipeline (no Ollama): every agent/model import resolves, the entity
+    # reads without raising, and the row carries a tenant. That is the part CI
+    # can gate on with no LLM; the full grounded run stays a manual/nightly job.
+    offline = "--offline" in sys.argv
 
     for name, agent, method, model, probe_fields in specs:
         try:
@@ -154,6 +159,12 @@ async def main():
             # footgun that let the agents ship without tenant filters at all.
             results.append({"agent": name, "status": "NO_TENANT", "tenant": None})
             print(f"[FAIL] {name}: entity {model.__name__} row has no tenant_id")
+            continue
+
+        if offline:
+            results.append({"agent": name, "status": "ENTITY_OK",
+                            "tenant": tenant, "entity_id": row.id})
+            print(f"[ok]   {name}: entity {model.__name__} wired + reads (tenant={tenant})")
             continue
 
         probes = [getattr(getattr(row, f, None), "value", getattr(row, f, None)) for f in probe_fields]
@@ -197,22 +208,31 @@ async def main():
             print(f"[FAIL] {name}: {e}")
             traceback.print_exc()
 
-    # SLA agent has no entity id (tenant-wide)
-    from app.support.agents.sla_agent import SLAAgent
-    t0 = time.time()
-    try:
-        async with async_session() as db:
-            out = await SLAAgent().check_sla(db, ACME)
-        results.append({"agent": "support.sla_monitor", "tenant": ACME,
-                        "status": out.get("status", "?"),
-                        "seconds": round(time.time() - t0, 1)})
-        print(f"[ok]   support.sla_monitor: status={out.get('status','?')}")
-    except Exception as e:
-        results.append({"agent": "support.sla_monitor", "tenant": ACME,
-                        "status": f"ERROR: {e}", "seconds": round(time.time() - t0, 1)})
-        print(f"[FAIL] support.sla_monitor: {e}")
+    # SLA agent has no entity id (tenant-wide). Skipped offline: it runs the
+    # gated pipeline like the others.
+    if not offline:
+        from app.support.agents.sla_agent import SLAAgent
+        t0 = time.time()
+        try:
+            async with async_session() as db:
+                out = await SLAAgent().check_sla(db, ACME)
+            results.append({"agent": "support.sla_monitor", "tenant": ACME,
+                            "status": out.get("status", "?"),
+                            "seconds": round(time.time() - t0, 1)})
+            print(f"[ok]   support.sla_monitor: status={out.get('status','?')}")
+        except Exception as e:
+            results.append({"agent": "support.sla_monitor", "tenant": ACME,
+                            "status": f"ERROR: {e}", "seconds": round(time.time() - t0, 1)})
+            print(f"[FAIL] support.sla_monitor: {e}")
 
-    ok = sum(1 for r in results if not str(r["status"]).startswith("ERROR") and r["status"] != "NO_DATA")
+    # A real failure is any agent that raised, whose entity read raised, or whose
+    # row had no tenant. NO_DATA (no seeded rows) is environmental, not a code
+    # defect. But a run that validated NOTHING (every agent NO_DATA) is not a
+    # pass either - the gate proved nothing - so fail closed on that too.
+    hard_fail = [r for r in results
+                 if str(r["status"]).startswith(("ERROR", "ENTITY_READ_ERROR"))
+                 or r["status"] == "NO_TENANT"]
+    ok = sum(1 for r in results if r not in hard_fail and r["status"] != "NO_DATA")
     grounded = sum(1 for r in results if r.get("grounded"))
     summary = {
         "total_agents": len(results),
@@ -220,9 +240,19 @@ async def main():
         "grounding_confirmed": grounded,
         "results": results,
     }
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     print(f"\n== {ok}/{len(results)} agents succeeded, {grounded} grounding-confirmed ==")
     print(f"report: {REPORT}")
+
+    if hard_fail:
+        print(f"[validate] FAIL: {len(hard_fail)} agent(s) failed: "
+              f"{', '.join(r['agent'] for r in hard_fail)}")
+        sys.exit(1)
+    if ok == 0:
+        print("[validate] FAIL: nothing validated (no seeded rows for any agent)")
+        sys.exit(1)
+    print(f"[validate] OK: {ok} agent(s) validated, 0 hard failures")
 
 
 if __name__ == "__main__":
