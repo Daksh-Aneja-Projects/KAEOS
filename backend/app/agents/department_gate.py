@@ -9,9 +9,10 @@ were drift. Four examples found in the tree:
   * ``extract_decision`` existed in ten copies that had diverged into five
     textually different (but semantically identical) variants;
   * the Gate-6 lawful-basis fix ("derive the flag from a real ``legal_basis``,
-    never assert it") was applied to hr, sales, support and healthcare, but
-    ``legal`` — the department whose entire remit is GDPR/CCPA — still sets
-    ``data_processing_basis_logged = True`` unconditionally;
+    never assert it") reached hr, sales, support and healthcare but had missed
+    ``legal`` — the department whose entire remit is GDPR/CCPA — which used to
+    set ``data_processing_basis_logged = True`` unconditionally (now fixed: it
+    derives the flag like the rest, and every legal agent supplies a real basis);
   * hr and healthcare distinguish ``compliance_tags=[]`` ("deliberately no
     tags") from ``None`` ("use the default"); the other eight silently replace
     an explicit empty list with their defaults;
@@ -306,17 +307,14 @@ LEGAL = DepartmentGate(
     domain="legal",
     default_compliance=("GDPR", "CCPA", "PRIVACY"),
     audit_flags=(
-        # REVIEW — highest-value item in this file. `source=None, force=True`
-        # reproduces `ctx["data_processing_basis_logged"] = True`: an assertion
-        # that a lawful basis was logged, made without checking that one exists,
-        # and overwriting any caller-supplied value. Every other department that
-        # touched this flag was fixed to derive it from `legal_basis`; legal —
-        # the privacy department — was missed because the code was duplicated.
-        # Preserved here to keep this refactor behaviour-free. The fix is
-        # `AuditFlag("data_processing_basis_logged", ("GDPR", "CCPA"),
-        # source="legal_basis")`, which is a behavioural change: Gate 6 starts
-        # failing legal runs that never supplied a basis. Ship it deliberately.
-        AuditFlag("data_processing_basis_logged", ("GDPR", "CCPA"), source=None, force=True),
+        # Derived from a real `legal_basis`, exactly like hr/sales/support/
+        # healthcare. This department IS GDPR/CCPA, so it was the one that most
+        # needed to PROVE a lawful basis rather than assert one — yet the old
+        # duplicated code hardcoded it (source=None, force=True), leaving legal
+        # structurally unable to fail its own Gate-6 lawful-basis audit. Now Gate
+        # 6 fails a legal run that supplies no basis, and every legal agent
+        # supplies a genuine one (see app/legal/agents/*_agent.py).
+        AuditFlag("data_processing_basis_logged", ("GDPR", "CCPA"), source="legal_basis"),
     ),
 )
 
@@ -379,13 +377,17 @@ if __name__ == "__main__":
         f.seed(_ctx, {"legal_basis": "contract"}, _tags)
     assert _ctx["data_processing_basis_logged"] is True, "a real legal_basis must be honoured"
 
-    # Preserved quirk: legal asserts the flag unconditionally and overwrites the
-    # caller. This assertion is the tripwire — when the REVIEW above is actioned,
-    # it fails and forces this self-check to be updated with the fix.
-    _ctx = {"data_processing_basis_logged": False}
+    # Legal now derives the lawful-basis flag from a real `legal_basis`, like
+    # every other department: no basis -> False (Gate 6 fails the run), a real
+    # basis -> True. Every legal agent supplies one.
+    _ctx = {}
     for f in LEGAL.audit_flags:
         f.seed(_ctx, {}, ["GDPR"])
-    assert _ctx["data_processing_basis_logged"] is True, "legal's hardcoded True is preserved"
+    assert _ctx["data_processing_basis_logged"] is False, "legal: no legal_basis must not assert one"
+    _ctx = {}
+    for f in LEGAL.audit_flags:
+        f.seed(_ctx, {"legal_basis": "legal_obligation:dsar"}, ["GDPR"])
+    assert _ctx["data_processing_basis_logged"] is True, "legal: a real legal_basis is honoured"
 
     # Empty-tag semantics differ by department, on purpose.
     assert HR.resolve_tags([]) == [], "hr: explicit [] means no tags"

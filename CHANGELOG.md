@@ -11,6 +11,19 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S4 governance, behaviour-changing (2026-08-19)
+
+- **Legal can no longer pass its own lawful-basis audit for free (4.1).** The
+  `legal` department — whose entire remit is GDPR/CCPA — hardcoded Gate 6's
+  `data_processing_basis_logged` to `True` (`source=None, force=True`), so it was
+  the ONE department structurally unable to fail its own lawful-basis check (the
+  Gate-6 fix had reached hr/sales/support/healthcare but missed legal when the
+  runner was duplicated). It now DERIVES the flag from a real `legal_basis` like
+  the rest, and force=True is dropped so a caller value is honoured. All five
+  legal agents (contract-review, compliance-audit, litigation, DSAR, IP) now
+  supply a genuine Art.6 lawful basis, so real runs pass and a run that omits one
+  fails Gate 6 as intended.
+
 ### Fixed - schema-truth drift repairs + e2e hang (2026-08-19)
 
 - **`pytest tests/` no longer hangs forever (M9.0):** the e2e `BASE_URL` defaults

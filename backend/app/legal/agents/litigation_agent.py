@@ -48,6 +48,11 @@ class LitigationAgent:
             steps=steps,
             context={
                 "case_id": case_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 lawful basis: evaluating a case is processing for
+                # the establishment, exercise or defence of legal claims
+                # (Art.6(1)(f) legitimate interests; Art.9(2)(f) for any special
+                # categories in the record).
+                "legal_basis": "legitimate_interests:legal_claim_defense",
                 "instruction": "Output strict JSON: {case_strength, risk_score, settle_or_fight, rationale}.",
             },
             tenant_id=tenant_id,

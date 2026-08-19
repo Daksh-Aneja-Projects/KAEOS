@@ -49,6 +49,9 @@ class PrivacyDSARAgent:
             steps=steps,
             context={
                 "dsar_id": dsar_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 lawful basis: fulfilling a data-subject request is
+                # processing to comply with a legal obligation (Art.12/15-22).
+                "legal_basis": "legal_obligation:data_subject_request",
                 "instruction": "Output strict JSON: {response_plan, systems_to_query, deadline_risk}.",
             },
             tenant_id=tenant_id,

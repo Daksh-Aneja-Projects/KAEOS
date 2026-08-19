@@ -59,6 +59,10 @@ class ContractReviewAgent:
             steps=steps,
             context={
                 "contract_id": contract_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 lawful basis: reviewing a counterparty's contract
+                # is processing for the firm's legitimate interest in managing
+                # its contractual relationships (Art.6(1)(f)).
+                "legal_basis": "legitimate_interests:contract_review",
                 # CONTRACT_CLAUSE (app/compliance/checkers/legal.py) needs
                 # context['contract'] = {type, clauses}. Real clause inventory,
                 # not fabricated, so an unmodeled type/no clauses reads ADVISORY.

@@ -52,6 +52,9 @@ class ComplianceAuditAgent:
             steps=steps,
             context={
                 "obligation_id": obligation_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 lawful basis: auditing a regulatory obligation is
+                # processing to comply with a legal obligation (Art.6(1)(c)).
+                "legal_basis": "legal_obligation:regulatory_compliance_audit",
                 "instruction": "Output strict JSON: {compliant, gaps, remediation, risk_level}.",
             },
             tenant_id=tenant_id,

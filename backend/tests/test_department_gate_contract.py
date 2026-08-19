@@ -146,6 +146,7 @@ async def test_only_healthcare_sets_always_hitl(captured):
     ("sales", "sales_score"),
     ("support", "support_triage"),
     ("healthcare", "healthcare_code"),
+    ("legal", "legal_review"),  # legal now derives it too (was hardcoded True)
 ])
 async def test_lawful_basis_flag_requires_a_real_basis(captured, dept, skill_id):
     """Gate 6 must not be satisfied by an assertion that no basis backs."""
@@ -157,21 +158,26 @@ async def test_lawful_basis_flag_requires_a_real_basis(captured, dept, skill_id)
 
 
 @pytest.mark.asyncio
-async def test_legal_still_asserts_lawful_basis_without_one(captured):
-    """Tripwire for a known, deliberately preserved inconsistency.
-
-    Every other department derives this flag from a real ``legal_basis``. Legal
-    — the privacy department — still hardcodes ``True`` and overwrites whatever
-    the caller supplied, because the code was duplicated and the fix reached
-    only four of the five copies. Preserved so consolidation changed no
-    behaviour. When that decision is revisited, this test fails and must be
-    rewritten to match ``test_lawful_basis_flag_requires_a_real_basis``.
+async def test_legal_derives_lawful_basis_and_honours_caller(captured):
+    """Legal — the GDPR/CCPA department — now derives Gate 6's lawful-basis flag
+    from a real ``legal_basis`` instead of hardcoding ``True`` (source=None,
+    force=True). It was previously the ONE department structurally unable to fail
+    its own lawful-basis audit. Its agents now supply a genuine basis (see
+    app/legal/agents/*_agent.py), and force=True is dropped, so an explicit
+    caller value is honoured like every other department.
     """
+    # No basis -> the flag is False (Gate 6 will fail the run), not asserted True.
     await run("legal", "legal_review", compliance_tags=["GDPR"])
+    assert captured["ctx"]["data_processing_basis_logged"] is False
+
+    # A real basis -> True.
+    await run("legal", "legal_review", compliance_tags=["GDPR"],
+              context={"legal_basis": "legal_obligation:dsar"})
     assert captured["ctx"]["data_processing_basis_logged"] is True
 
+    # force=True dropped: an explicit caller value now survives (setdefault).
     await run("legal", "legal_review", compliance_tags=["GDPR"],
-              context={"data_processing_basis_logged": False})
+              context={"data_processing_basis_logged": True})
     assert captured["ctx"]["data_processing_basis_logged"] is True
 
 

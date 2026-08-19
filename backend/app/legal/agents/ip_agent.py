@@ -55,6 +55,10 @@ class IPAgent:
             steps=steps,
             context={
                 "patent_id": patent_id, "tenant_id": tenant_id, **facts,
+                # GDPR Gate-6 lawful basis: assessing patentability is processing
+                # for the firm's legitimate interest in managing its IP portfolio
+                # (Art.6(1)(f)).
+                "legal_basis": "legitimate_interests:ip_portfolio_management",
                 "instruction": (
                     "Output strict JSON: {is_novel, confidence_score, "
                     "prior_art_found, recommendation}."
