@@ -13,6 +13,23 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ### Changed - S4 governance, behaviour-changing (2026-08-19)
 
+- **HR transactional money is exact Decimal, not binary Float (4.6).** Payroll
+  totals, payslip pay, compensation base and benefit-plan costs (10 columns
+  across hr_payroll_runs / hr_payslips / hr_compensation / hr_benefit_plans) moved
+  from `Float` to `NUMERIC(18,2)`, matching the finance tables - a paycheck must
+  be exact to the cent. Migration `0053` (Postgres-scoped ALTER; SQLite builds
+  Numeric from the models). The Decimal/Float arithmetic that surfaced was fixed
+  properly: the compensation display band uses float (a shown estimate), while
+  stored payslip gross stays exact Decimal and the run accumulators start at
+  `Decimal("0")`. The ~17 other money-NAMED Floats (org-graph budgets, ARR/MRR,
+  per-1k-token cost rates, statistical estimates) are deliberately left Float -
+  they are analytics/rates, not transactional amounts, and `(18,2)` would
+  truncate the token rates. Drift gate green on pg16.
+- **`SorObject.deleted` annotation matches its column (4.9).** It was
+  `Mapped[bool]` over an `Integer` column that the actuator reads/writes as 0/1;
+  the annotation is now `Mapped[int]`, honest to the column and the usage (no
+  migration - the column is unchanged).
+
 - **Consistent gated-agent-endpoint error contract (4.5 + 4.11).** finance's
   `/invoices/{id}/match` and `/receivables/{id}/dunning` had the 500 handler but
   no `ValueError -> 404`, so a not-found id returned 500 where nine siblings

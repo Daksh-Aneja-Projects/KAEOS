@@ -10,6 +10,7 @@ AI actions that change state (candidate screening) run through the gated
 Execute -> Audit) via the HR agents, and responses carry provenance / HITL
 references so callers can trace or resolve them.
 """
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -895,7 +896,8 @@ async def compensation_market_analysis(
     # ponytail: Compensation stores a single point value, not a band, so a
     # +/-10% envelope around the real current pay stands in for "current
     # band" here — upgrade to real min/max columns if banded comp is modeled.
-    current_band = {"min": round(comp.base_amount * 0.9, 2), "max": round(comp.base_amount * 1.1, 2)}
+    _base = float(comp.base_amount)  # a display band, not stored money -> float math is fine
+    current_band = {"min": round(_base * 0.9, 2), "max": round(_base * 1.1, 2)}
     # Through the 7-gate pipeline (not the ungated agent method): only trust the
     # decision when the run cleared every gate.
     result = await agent.execute_via_pipeline(db, tenant_id, {
@@ -1489,7 +1491,7 @@ async def generate_payslips(
 
     period_days = max(1, (run.period_end - run.period_start).days + 1)
     created = skipped_no_comp = skipped_existing = 0
-    total_gross = 0.0
+    total_gross = Decimal("0")
     for emp in employees:
         if emp.id in existing_emp_ids:
             skipped_existing += 1
@@ -1500,7 +1502,8 @@ async def generate_payslips(
             continue
         comp_type = comp.comp_type.value if hasattr(comp.comp_type, "value") else str(comp.comp_type)
         annual = comp.base_amount if comp_type == "SALARY" else comp.base_amount * 2080  # full-time hourly annualized
-        gross = round(annual * (period_days / 365.0), 2)
+        # gross is stored to Payslip.gross_pay (Numeric), so keep it exact Decimal.
+        gross = round(annual * Decimal(period_days) / Decimal(365), 2)
         db.add(Payslip(tenant_id=tenant_id, run_id=run_id, employee_id=emp.id, gross_pay=gross, net_pay=gross))
         total_gross += gross
         created += 1

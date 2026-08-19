@@ -2,7 +2,7 @@
 KAEOS HR Vertical — Benefits Models
 Function 4: Benefits Administration
 """
-from sqlalchemy import Column, String, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date
+from sqlalchemy import Column, String, Numeric, DateTime, Boolean, JSON, ForeignKey, Enum, Date
 from sqlalchemy.sql import func
 import enum
 
@@ -34,9 +34,9 @@ class BenefitPlan(Base):
     coverage_details = Column(JSON, default=dict)
     
     # Costs (Monthly)
-    employee_cost_individual = Column(Float, default=0.0)
-    employee_cost_family = Column(Float, default=0.0)
-    employer_contribution = Column(Float, default=0.0)
+    employee_cost_individual = Column(Numeric(18, 2), default=0)
+    employee_cost_family = Column(Numeric(18, 2), default=0)
+    employer_contribution = Column(Numeric(18, 2), default=0)
     
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

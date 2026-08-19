@@ -5,6 +5,7 @@ Run with: python -m app.hr.seed
 """
 import asyncio
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 import random
 
 
@@ -393,7 +394,7 @@ async def seed_tenant(db, tenant: str) -> bool:
 
     for run in payroll_runs:
         period_days = (run.period_end - run.period_start).days + 1
-        run_total_gross = 0.0
+        run_total_gross = Decimal("0")
         for emp in employees:
             if emp.status == EmploymentStatus.TERMINATED and emp.termination_date \
                     and emp.termination_date < run.period_start:
@@ -401,7 +402,7 @@ async def seed_tenant(db, tenant: str) -> bool:
             comp = comp_by_emp.get(emp.id)
             if not comp:
                 continue
-            gross = round(comp.base_amount * (period_days / 365.0), 2)
+            gross = round(comp.base_amount * Decimal(period_days) / Decimal(365), 2)
             run_total_gross += gross
             db.add(Payslip(id=new_id(), tenant_id=tenant, run_id=run.id, employee_id=emp.id,
                            gross_pay=gross, net_pay=gross))

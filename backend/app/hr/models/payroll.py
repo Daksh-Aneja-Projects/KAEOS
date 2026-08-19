@@ -2,7 +2,7 @@
 KAEOS HR Vertical — Payroll
 Function 11: Payroll Processing
 """
-from sqlalchemy import Column, String, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date
+from sqlalchemy import Column, String, Numeric, DateTime, Boolean, JSON, ForeignKey, Enum, Date
 from sqlalchemy.sql import func
 import enum
 
@@ -31,10 +31,10 @@ class PayrollRun(Base):
     status = Column(Enum(PayrollRunStatus), default=PayrollRunStatus.PREP)
     
     # Aggregated Financials
-    total_gross = Column(Float, default=0.0)
-    total_net = Column(Float, default=0.0)
-    total_taxes = Column(Float, default=0.0)
-    total_deductions = Column(Float, default=0.0)
+    total_gross = Column(Numeric(18, 2), default=0)
+    total_net = Column(Numeric(18, 2), default=0)
+    total_taxes = Column(Numeric(18, 2), default=0)
+    total_deductions = Column(Numeric(18, 2), default=0)
     
     # Auto-Calculated by Agent
     ai_anomalies_detected = Column(JSON, default=list)
@@ -53,8 +53,8 @@ class Payslip(Base):
     run_id = Column(String, ForeignKey("hr_payroll_runs.id"), nullable=False, index=True)
     employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
     
-    gross_pay = Column(Float, default=0.0)
-    net_pay = Column(Float, default=0.0)
+    gross_pay = Column(Numeric(18, 2), default=0)
+    net_pay = Column(Numeric(18, 2), default=0)
     taxes = Column(JSON, default=dict)
     deductions = Column(JSON, default=dict)
     

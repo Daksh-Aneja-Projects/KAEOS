@@ -2,7 +2,7 @@
 KAEOS HR Vertical — Compensation Models
 Function 5: Compensation & Equity
 """
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, ForeignKey, Enum, Date
+from sqlalchemy import Column, String, Integer, Float, Numeric, DateTime, Boolean, ForeignKey, Enum, Date
 from sqlalchemy.sql import func
 import enum
 
@@ -26,7 +26,7 @@ class Compensation(Base):
     employee_id = Column(String, ForeignKey("hr_employees.id"), nullable=False, index=True)
     
     comp_type = Column(Enum(CompType), default=CompType.SALARY)
-    base_amount = Column(Float, nullable=False)
+    base_amount = Column(Numeric(18, 2), nullable=False)
     currency = Column(String(3), default="USD")
     
     # Bonuses/Variables

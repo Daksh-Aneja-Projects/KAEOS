@@ -37,7 +37,7 @@ class SorObject(Base):
     external_id: Mapped[str] = mapped_column(String(128), nullable=False)
     state: Mapped[dict] = mapped_column(JSON, default=dict)                   # current field values
     version: Mapped[int] = mapped_column(Integer, default=0)
-    deleted: Mapped[bool] = mapped_column(Integer, default=0)                 # soft-delete (reversible)
+    deleted: Mapped[int] = mapped_column(Integer, default=0)                  # soft-delete flag: 0 live / 1 deleted (reversible)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
