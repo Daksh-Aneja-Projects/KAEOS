@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.agents.gated_runner import run_gated_finance_skill
 from app.finance.models.expense import ExpenseReport
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class ExpenseAgent:
@@ -32,7 +28,7 @@ class ExpenseAgent:
             "report_number": report.report_number,
             "title": report.title,
             "description": (report.description or "")[:1000],
-            "status": _v(report.status),
+            "status": enum_value(report.status),
             "total_amount": report.total_amount,
             "currency": report.currency,
             "department": report.department,

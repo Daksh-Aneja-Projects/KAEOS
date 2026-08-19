@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 
+from app.core.department_endpoints import (
+    make_department_workflow_router, run_agent_endpoint,
+)
 from app.core.database import get_db
 
 # Models
@@ -132,96 +135,45 @@ async def list_tickets(
         })
     return result
 
+# REVIEW: support passes actor=tenant.get("name") (unattributed when the
+# principal has no name) where engineering and operations use
+# approver_identity(tenant). Drift preserved - see
+# app/core/department_endpoints.py.
 @router.post("/tickets/{ticket_id}/triage")
 async def triage_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = TriageAgent()
-    try:
-        result = await agent.triage_ticket(db, ticket_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="ticket", resource_id=ticket_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        TriageAgent().triage_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+    )
 
 @router.post("/tickets/{ticket_id}/solve")
 async def solve_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = ResolutionAgent()
-    try:
-        result = await agent.solve_ticket(db, ticket_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="ticket", resource_id=ticket_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ResolutionAgent().solve_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+    )
 
 @router.post("/tickets/{ticket_id}/auto-resolve")
 async def auto_resolve_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Draft a customer response - always pauses for human review (0.79 gate)."""
-    tenant_id = tenant["tenant_id"]
-    agent = AutoResolveAgent()
-    try:
-        result = await agent.generate_response(db, ticket_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="ticket", resource_id=ticket_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        AutoResolveAgent().generate_response(db, ticket_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+    )
 
 @router.post("/tickets/{ticket_id}/document")
 async def document_resolution(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = KBAgent()
-    try:
-        result = await agent.document_resolution(db, ticket_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="ticket", resource_id=ticket_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        KBAgent().document_resolution(db, ticket_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+    )
 
 @router.post("/tickets/{ticket_id}/escalate")
 async def escalate_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = EscalationAgent()
-    try:
-        result = await agent.escalate_ticket(db, ticket_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="ticket", resource_id=ticket_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        EscalationAgent().escalate_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="ticket", resource_id=ticket_id, logger=logger,
+    )
 
 
 @router.get("/tickets/{ticket_id}/comments")
@@ -492,21 +444,10 @@ async def list_csat_surveys(
 
 @router.post("/csat/{survey_id}/analyze")
 async def analyze_csat(survey_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = CSATAgent()
-    try:
-        result = await agent.analyze_surveys(db, survey_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="csat_survey", resource_id=survey_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        CSATAgent().analyze_surveys(db, survey_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="csat_survey", resource_id=survey_id, logger=logger,
+    )
 
 
 # --- NPS & Feedback Themes ---
@@ -697,6 +638,10 @@ async def get_sla_metrics(tenant_id: str = Depends(get_tenant_id), db: AsyncSess
     """Per-policy SLA compliance, computed live from ticket timestamps."""
     return await compute_sla_policy_metrics(db, tenant_id)
 
+# REVIEW: like finance's two agent endpoints, this has the 500 handler but no
+# "except ValueError" -> 404 mapping. Kept hand-written; it also takes no
+# entity id, so it is a tenant-wide sweep rather than a member of the
+# run_agent_endpoint() family.
 @router.post("/sla/check")
 async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     tenant_id = tenant["tenant_id"]
@@ -718,8 +663,7 @@ async def check_sla(tenant: dict = Depends(require_role("operator")), db: AsyncS
 # ═══════════════════════════════════════════════════════════════════════
 from typing import Optional  # noqa: E402
 from app.core.workflow import (  # noqa: E402
-    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.support.services.analytics import support_analytics  # noqa: E402
 from app.support.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -731,20 +675,14 @@ async def get_support_analytics(tenant_id: str = Depends(get_tenant_id), db: Asy
     return await support_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_support_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines - the frontend renders ticket actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_support_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for support entities."""
-    return await list_workflow_events(db, tenant_id, domain="support",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "support", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines - the frontend renders ticket actions from this.',
+    events_doc='Tenant-scoped transition audit trail for support entities.',
+))
 
 
 @router.post("/tickets/{ticket_id}/transition")
@@ -798,13 +736,7 @@ async def create_ticket(
             "priority": t.priority.value if hasattr(t.priority, "value") else str(t.priority)}
 
 
-@router.post("/workflows/{entity_type}/bulk-transition")
-async def bulk_transition_support(
-    entity_type: str, body: BulkTransitionRequest,
-    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
-):
-    """Apply one transition to up to 200 support entities; per-id outcomes."""
-    spec = WORKFLOW_SPECS.get(entity_type)
-    if not spec:
-        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+router.include_router(make_department_workflow_router(
+    "support", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 support entities; per-id outcomes.',
+))

@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.agents.gated_runner import run_gated_finance_skill
 from app.finance.models.budgeting import Budget
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class BudgetAgent:
@@ -30,10 +26,10 @@ class BudgetAgent:
 
         facts = {
             "name": budget.name,
-            "budget_type": _v(budget.budget_type),
+            "budget_type": enum_value(budget.budget_type),
             "fiscal_year": budget.fiscal_year,
             "department": budget.department,
-            "status": _v(budget.status),
+            "status": enum_value(budget.status),
             "total_planned": budget.total_planned,
             "total_actual": budget.total_actual,
             "total_committed": budget.total_committed,

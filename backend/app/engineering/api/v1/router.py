@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.department_endpoints import (
+    get_or_404, make_department_workflow_router, run_agent_endpoint,
+)
 from app.core.database import get_db
+from app.services.json_utils import enum_value
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.engineering.agents.code_review_agent import CodeReviewAgent
@@ -29,10 +33,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/engineering", tags=["Engineering & IT Ops"])
-
-
-def _enum(v):
-    return v.value if hasattr(v, "value") else v
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ async def list_services(
     services = (await db.execute(q.order_by(Service.name).limit(200))).scalars().all()
     return [{
         "id": s.id, "name": s.name, "slug": s.slug, "description": s.description,
-        "tier": _enum(s.tier), "health": _enum(s.health),
+        "tier": enum_value(s.tier), "health": enum_value(s.health),
         "owning_squad": s.owning_squad, "repo_url": s.repo_url,
         "slo_target": s.slo_availability_target, "slo_actual": s.slo_availability_actual,
         "error_budget_remaining_pct": s.error_budget_remaining_pct,
@@ -149,14 +149,10 @@ async def get_service(
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db),
 ):
-    s = (await db.execute(
-        select(Service).where(Service.id == service_id, Service.tenant_id == tenant_id)
-    )).scalar_one_or_none()
-    if not s:
-        raise HTTPException(404, "Service not found")
+    s = await get_or_404(db, Service, service_id, tenant_id, detail="Service not found")
     return {
         "id": s.id, "name": s.name, "slug": s.slug, "description": s.description,
-        "tier": _enum(s.tier), "health": _enum(s.health), "owning_squad": s.owning_squad,
+        "tier": enum_value(s.tier), "health": enum_value(s.health), "owning_squad": s.owning_squad,
         "repo_url": s.repo_url, "slo_target": s.slo_availability_target,
         "slo_actual": s.slo_availability_actual,
         "error_budget_remaining_pct": s.error_budget_remaining_pct,
@@ -196,7 +192,7 @@ def _rotation_row(r: OnCallRotation, engineers_by_id: dict) -> dict:
     return {
         "id": r.id, "engineer_id": r.engineer_id,
         "engineer_name": eng.name if eng else None,
-        "squad": r.squad, "role": _enum(r.role), "active": active,
+        "squad": r.squad, "role": enum_value(r.role), "active": active,
         "starts_at": r.starts_at.isoformat() if r.starts_at else None,
         "ends_at": r.ends_at.isoformat() if r.ends_at else None,
     }
@@ -235,18 +231,21 @@ async def list_pull_requests(
         q = q.where(PullRequest.status == status)
     prs = (await db.execute(q.order_by(PullRequest.opened_at.desc()).limit(200))).scalars().all()
     return [{
-        "id": p.id, "number": p.number, "title": p.title, "status": _enum(p.status),
+        "id": p.id, "number": p.number, "title": p.title, "status": enum_value(p.status),
         "branch": p.branch, "service_id": p.service_id, "author_id": p.author_id,
         "additions": p.additions, "deletions": p.deletions, "files_changed": p.files_changed,
         "touches_migrations": p.touches_migrations, "touches_auth": p.touches_auth,
         "test_coverage_delta": p.test_coverage_delta, "ci_passing": p.ci_passing,
         "approvals": p.approvals,
-        "ai_risk_level": _enum(p.ai_risk_level), "ai_summary": p.ai_summary,
+        "ai_risk_level": enum_value(p.ai_risk_level), "ai_summary": p.ai_summary,
         "ai_findings": p.ai_findings or [],
         "opened_at": p.opened_at.isoformat() if p.opened_at else None,
     } for p in prs]
 
 
+# REVIEW: engineering and operations pass actor=approver_identity(tenant);
+# legal, sales and support pass actor=tenant.get("name"). Drift preserved -
+# see the REVIEW block in app/core/department_endpoints.py.
 @router.post("/pull-requests/{pr_id}/review")
 async def review_pull_request(
     pr_id: str,
@@ -254,20 +253,10 @@ async def review_pull_request(
     db: AsyncSession = Depends(get_db),
 ):
     """Gated AI code review — writes risk + findings back onto the PR."""
-    tenant_id = tenant["tenant_id"]
-    try:
-        result = await CodeReviewAgent().review_pull_request(db, pr_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=approver_identity(tenant), actor_role=tenant.get("role"),
-            resource_type="pull_request", resource_id=pr_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        CodeReviewAgent().review_pull_request(db, pr_id, tenant["tenant_id"]), tenant,
+        actor=approver_identity(tenant), resource_type="pull_request", resource_id=pr_id, logger=logger,
+    )
 
 
 # ── Deployments ───────────────────────────────────────────────────────────────
@@ -284,10 +273,10 @@ async def list_deployments(
     deploys = (await db.execute(q.order_by(Deployment.started_at.desc()).limit(200))).scalars().all()
     return [{
         "id": d.id, "version": d.version, "environment": d.environment,
-        "status": _enum(d.status), "service_id": d.service_id,
+        "status": enum_value(d.status), "service_id": d.service_id,
         "deployed_by": d.deployed_by, "change_count": d.change_count,
         "is_rollback": d.is_rollback,
-        "ai_risk_level": _enum(d.ai_risk_level), "ai_risk_score": d.ai_risk_score,
+        "ai_risk_level": enum_value(d.ai_risk_level), "ai_risk_score": d.ai_risk_score,
         "ai_rationale": d.ai_rationale,
         "started_at": d.started_at.isoformat() if d.started_at else None,
         "duration_seconds": d.duration_seconds,
@@ -313,7 +302,7 @@ async def list_pipeline_runs(
     runs = (await db.execute(q.order_by(PipelineRun.started_at.desc()).limit(200))).scalars().all()
     return [{
         "id": r.id, "service_id": r.service_id, "pull_request_id": r.pull_request_id,
-        "pipeline_name": r.pipeline_name, "run_number": r.run_number, "status": _enum(r.status),
+        "pipeline_name": r.pipeline_name, "run_number": r.run_number, "status": enum_value(r.status),
         "trigger": r.trigger, "branch": r.branch, "commit_sha": r.commit_sha,
         "tests_passed": r.tests_passed, "tests_failed": r.tests_failed,
         "duration_seconds": r.duration_seconds,
@@ -329,20 +318,10 @@ async def assess_deployment(
     db: AsyncSession = Depends(get_db),
 ):
     """Gated deploy-risk assessment. Always routes to human approval."""
-    tenant_id = tenant["tenant_id"]
-    try:
-        result = await DeployRiskAgent().assess_deployment(db, deployment_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=approver_identity(tenant), actor_role=tenant.get("role"),
-            resource_type="deployment", resource_id=deployment_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        DeployRiskAgent().assess_deployment(db, deployment_id, tenant["tenant_id"]), tenant,
+        actor=approver_identity(tenant), resource_type="deployment", resource_id=deployment_id, logger=logger,
+    )
 
 
 # ── Incidents ─────────────────────────────────────────────────────────────────
@@ -362,7 +341,7 @@ async def list_incidents(
     incidents = (await db.execute(q.order_by(Incident.detected_at.desc()).limit(200))).scalars().all()
     return [{
         "id": i.id, "number": i.incident_number, "title": i.title,
-        "description": i.description, "severity": _enum(i.severity), "status": _enum(i.status),
+        "description": i.description, "severity": enum_value(i.severity), "status": enum_value(i.status),
         "service_id": i.service_id, "commander_id": i.commander_id,
         "customer_impacting": i.customer_impacting, "affected_users": i.affected_users,
         "detected_by": i.detected_by,
@@ -381,14 +360,10 @@ async def get_incident(
     tenant_id: str = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db),
 ):
-    i = (await db.execute(
-        select(Incident).where(Incident.id == incident_id, Incident.tenant_id == tenant_id)
-    )).scalar_one_or_none()
-    if not i:
-        raise HTTPException(404, "Incident not found")
+    i = await get_or_404(db, Incident, incident_id, tenant_id, detail="Incident not found")
     return {
         "id": i.id, "number": i.incident_number, "title": i.title, "description": i.description,
-        "severity": _enum(i.severity), "status": _enum(i.status), "service_id": i.service_id,
+        "severity": enum_value(i.severity), "status": enum_value(i.status), "service_id": i.service_id,
         "customer_impacting": i.customer_impacting, "affected_users": i.affected_users,
         "ai_probable_cause": i.ai_probable_cause,
         "ai_recommended_action": i.ai_recommended_action,
@@ -404,20 +379,10 @@ async def triage_incident(
     db: AsyncSession = Depends(get_db),
 ):
     """Gated AI incident triage — severity, probable cause, recommended action."""
-    tenant_id = tenant["tenant_id"]
-    try:
-        result = await IncidentAgent().triage_incident(db, incident_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=approver_identity(tenant), actor_role=tenant.get("role"),
-            resource_type="incident", resource_id=incident_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        IncidentAgent().triage_incident(db, incident_id, tenant["tenant_id"]), tenant,
+        actor=approver_identity(tenant), resource_type="incident", resource_id=incident_id, logger=logger,
+    )
 
 
 @router.get("/postmortems")
@@ -442,8 +407,7 @@ async def list_postmortems(
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from app.core.workflow import (  # noqa: E402
-    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.engineering.services.analytics import engineering_analytics  # noqa: E402
 from app.engineering.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -455,20 +419,14 @@ async def get_engineering_analytics(tenant_id: str = Depends(get_tenant_id), db:
     return await engineering_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_engineering_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines - the frontend renders incident/deploy actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_engineering_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for engineering entities."""
-    return await list_workflow_events(db, tenant_id, domain="engineering",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "engineering", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines - the frontend renders incident/deploy actions from this.',
+    events_doc='Tenant-scoped transition audit trail for engineering entities.',
+))
 
 
 @router.post("/incidents/{incident_id}/transition")
@@ -597,16 +555,10 @@ async def create_incident(
             "severity": inc.severity.value if hasattr(inc.severity, "value") else str(inc.severity)}
 
 
-@router.post("/workflows/{entity_type}/bulk-transition")
-async def bulk_transition_engineering(
-    entity_type: str, body: BulkTransitionRequest,
-    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
-):
-    """Apply one transition to up to 200 engineering entities; per-id outcomes."""
-    spec = WORKFLOW_SPECS.get(entity_type)
-    if not spec:
-        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+router.include_router(make_department_workflow_router(
+    "engineering", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 engineering entities; per-id outcomes.',
+))
 
 
 if __name__ == "__main__":  # security-path self-check: the deploy gate has teeth

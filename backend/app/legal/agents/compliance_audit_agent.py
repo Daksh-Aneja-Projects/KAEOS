@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.compliance import ComplianceObligation, ObligationStatus
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
-
-
-def _v(x):
-    return getattr(x, "value", x)
 
 
 class ComplianceAuditAgent:
@@ -41,7 +37,7 @@ class ComplianceAuditAgent:
             "requirement_id": ob.requirement_id,
             "owner": ob.owner,
             "due_date": str(ob.due_date) if ob.due_date else None,
-            "status": _v(ob.status),
+            "status": enum_value(ob.status),
             "has_evidence": bool(ob.evidence_path),
         }
         facts = plain_facts(facts)

@@ -7,6 +7,7 @@ from app.core.audit import record_security_event
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from datetime import date
+from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -645,6 +646,10 @@ async def list_compliance_rules(tenant_id: str = Depends(get_tenant_id), db: Asy
 # Agent Execution Triggers
 # ═══════════════════════════════════════════════════════════════════════
 
+# REVIEW: these two are the only gated agent endpoints with the 500 handler
+# but NO "except ValueError" - an unknown/other-tenant id surfaces as 500
+# where the nine sibling departments return 404. Kept hand-written because
+# routing them through run_agent_endpoint() would change that status code.
 @router.post("/invoices/{invoice_id}/match")
 async def run_ap_agent(invoice_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Triggers the Accounts Payable agent to perform 3-way matching."""
@@ -690,7 +695,7 @@ async def run_ar_agent(invoice_id: str, tenant: dict = Depends(require_role("ope
 # ═══════════════════════════════════════════════════════════════════════
 from app.core.workflow import (  # noqa: E402
     BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    apply_transition,
 )
 from app.finance.services.analytics import finance_analytics  # noqa: E402
 from app.finance.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -702,20 +707,14 @@ async def get_finance_analytics(tenant_id: str = Depends(get_tenant_id), db: Asy
     return await finance_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_finance_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines — the frontend renders transition actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_finance_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for finance entities."""
-    return await list_workflow_events(db, tenant_id, domain="finance",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "finance", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines — the frontend renders transition actions from this.',
+    events_doc='Tenant-scoped transition audit trail for finance entities.',
+))
 
 
 async def _apply_invoice_ledger_effects(
@@ -871,10 +870,7 @@ async def create_invoice(
 ):
     """Register an AP invoice (starts DRAFT; approval/payment via /transition)."""
     tenant_id = tenant["tenant_id"]
-    vendor = (await db.execute(select(Vendor).where(
-        Vendor.id == body.vendor_id, Vendor.tenant_id == tenant_id))).scalar_one_or_none()
-    if not vendor:
-        raise HTTPException(404, "Vendor not found")
+    vendor = await get_or_404(db, Vendor, body.vendor_id, tenant_id, detail="Vendor not found")
     total = body.subtotal + body.tax_amount
     # Resolve the entered PO reference to the real ops PO so the 3-way match
     # can run off the FK, not a free-text string. Unknown PO -> NULL, no error.

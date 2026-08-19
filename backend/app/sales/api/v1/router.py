@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 
+from app.core.department_endpoints import (
+    get_or_404, make_department_workflow_router, run_agent_endpoint,
+)
 from app.core.database import get_db
 
 # Models
@@ -117,23 +120,17 @@ async def list_leads(
         })
     return lead_list
 
+# REVIEW: sales, legal and support pass actor=tenant.get("name"), which is
+# None for any principal without a name, so the gated execution lands in the
+# audit ledger unattributed. engineering and operations use
+# approver_identity(tenant) instead. Drift preserved - see
+# app/core/department_endpoints.py.
 @router.post("/leads/{lead_id}/score")
 async def score_lead(lead_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = LeadScoringAgent()
-    try:
-        result = await agent.score_lead(db, lead_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="lead", resource_id=lead_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        LeadScoringAgent().score_lead(db, lead_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="lead", resource_id=lead_id, logger=logger,
+    )
 
 # --- Accounts ---
 @router.get("/accounts")
@@ -170,40 +167,18 @@ async def list_accounts(
 
 @router.post("/accounts/{account_id}/health")
 async def evaluate_account_health(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = AccountHealthAgent()
-    try:
-        result = await agent.assess_health(db, account_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="account", resource_id=account_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        AccountHealthAgent().assess_health(db, account_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="account", resource_id=account_id, logger=logger,
+    )
 
 
 @router.post("/accounts/{account_id}/churn-risk")
 async def assess_churn_risk(account_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = ChurnAgent()
-    try:
-        result = await agent.identify_churn_risk(db, account_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="account", resource_id=account_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ChurnAgent().identify_churn_risk(db, account_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="account", resource_id=account_id, logger=logger,
+    )
 
 # --- Opportunities ---
 @router.get("/opportunities")
@@ -238,59 +213,26 @@ async def list_opportunities(
 
 @router.post("/opportunities/{opportunity_id}/coach")
 async def coach_opportunity(opportunity_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = PipelineCoachAgent()
-    try:
-        result = await agent.coach_opportunity(db, opportunity_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="opportunity", resource_id=opportunity_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        PipelineCoachAgent().coach_opportunity(db, opportunity_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+    )
 
 
 @router.post("/opportunities/{opportunity_id}/proposal")
 async def generate_proposal(opportunity_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Always routes to HITL - a customer-facing document never ships unreviewed."""
-    tenant_id = tenant["tenant_id"]
-    agent = ProposalGenAgent()
-    try:
-        result = await agent.generate_proposal(db, opportunity_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="opportunity", resource_id=opportunity_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ProposalGenAgent().generate_proposal(db, opportunity_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+    )
 
 @router.post("/opportunities/{opportunity_id}/cpq")
 async def cpq_review(opportunity_id: str, discount: float = Query(...), tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = CPQAgent()
-    try:
-        result = await agent.evaluate_quote(db, opportunity_id, discount, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="opportunity", resource_id=opportunity_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        CPQAgent().evaluate_quote(db, opportunity_id, discount, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="opportunity", resource_id=opportunity_id, logger=logger,
+    )
 
 # --- Forecasts ---
 @router.get("/forecasts")
@@ -346,21 +288,10 @@ async def list_forecasts(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
 
 @router.post("/forecasts/{forecast_id}/predict")
 async def predict_forecast(forecast_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = ForecastAgent()
-    try:
-        result = await agent.predict_forecast(db, forecast_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="forecast", resource_id=forecast_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ForecastAgent().predict_forecast(db, forecast_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="forecast", resource_id=forecast_id, logger=logger,
+    )
 
 # --- Commission ---
 @router.get("/commission")
@@ -396,29 +327,17 @@ async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), 
 
 @router.post("/commission/{calculation_id}/payout")
 async def calculate_commission(calculation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = CommissionAgent()
-    try:
-        result = await agent.calculate_payout(db, calculation_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="commission_calculation", resource_id=calculation_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        CommissionAgent().calculate_payout(db, calculation_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="commission_calculation", resource_id=calculation_id, logger=logger,
+    )
 
 # ═══════════════════════════════════════════════════════════════════════
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from typing import Optional  # noqa: E402
 from app.core.workflow import (  # noqa: E402
-    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.sales.services.analytics import sales_analytics  # noqa: E402
 from app.sales.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -430,20 +349,14 @@ async def get_sales_analytics(tenant_id: str = Depends(get_tenant_id), db: Async
     return await sales_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_sales_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines — the frontend renders stage actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_sales_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for sales entities."""
-    return await list_workflow_events(db, tenant_id, domain="sales",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "sales", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines — the frontend renders stage actions from this.',
+    events_doc='Tenant-scoped transition audit trail for sales entities.',
+))
 
 
 @router.post("/opportunities/{opportunity_id}/transition")
@@ -494,16 +407,10 @@ async def create_opportunity(
             "amount": float(o.amount or 0), "probability": o.probability}
 
 
-@router.post("/workflows/{entity_type}/bulk-transition")
-async def bulk_transition_sales(
-    entity_type: str, body: BulkTransitionRequest,
-    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
-):
-    """Apply one transition to up to 200 sales entities; per-id outcomes."""
-    spec = WORKFLOW_SPECS.get(entity_type)
-    if not spec:
-        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+router.include_router(make_department_workflow_router(
+    "sales", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 sales entities; per-id outcomes.',
+))
 
 # ═══════════════════════════════════════════════════════════════════════
 # Data Privacy (CCPA / TCPA / DSAR) — real fail-closed call sites for the
@@ -531,10 +438,7 @@ async def check_lead_contact(
     """TCPA gate: verifies a lead can be called or texted before a rep or
     dialer reaches out. Fail-closed - a BLOCK stops the contact."""
     tenant_id = tenant["tenant_id"]
-    lead = (await db.execute(select(Lead).where(
-        Lead.id == lead_id, Lead.tenant_id == tenant_id))).scalar_one_or_none()
-    if not lead:
-        raise HTTPException(404, detail=f"Lead {lead_id} not found")
+    lead = await get_or_404(db, Lead, lead_id, tenant_id, detail=f"Lead {lead_id} not found")
     try:
         verdict = await check_contact(db, tenant_id, lead=lead, channel=body.channel,
                                       do_not_contact=body.do_not_contact, consent=body.consent)
@@ -555,10 +459,7 @@ async def check_account_data_sale(
     """CCPA gate: verifies an account's data can be shared with a partner
     (e.g. a data-enrichment vendor sync) before it runs."""
     tenant_id = tenant["tenant_id"]
-    account = (await db.execute(select(Account).where(
-        Account.id == account_id, Account.tenant_id == tenant_id))).scalar_one_or_none()
-    if not account:
-        raise HTTPException(404, detail=f"Account {account_id} not found")
+    account = await get_or_404(db, Account, account_id, tenant_id, detail=f"Account {account_id} not found")
     try:
         verdict = await check_data_sale(db, tenant_id, account=account,
                                         opted_out_of_sale=body.opted_out_of_sale)

@@ -115,6 +115,27 @@ def extract_json_list(content: str) -> List[Any]:
         raise ValueError(f"Expected a JSON array, got {type(parsed).__name__}")
     return parsed
 
+def enum_value(x: Any) -> Any:
+    """Unwrap an Enum member to its ``.value``; pass anything else through.
+
+    ORM columns come back as Enum members on Postgres and as plain strings on
+    SQLite, so every prompt-facts builder needs this same unwrap before the dict
+    reaches an f-string. It had been copy-pasted into 14 agent modules as a
+    private ``_v``; this is that function, unchanged.
+
+    Note this is NOT interchangeable with the enum branch of ``plain_facts()``
+    below, which skips str/int/float/bool subclasses: a ``class X(str, Enum)``
+    member is unwrapped here and left as-is there.
+
+    REVIEW: nor is it interchangeable with the ~66 router/service sites spelled
+    ``x.value if hasattr(x, "value") else str(x)``. Those stringify every
+    non-enum, so None serialises as "None" and 42 as "42". Collapsing them onto
+    this helper would change those HTTP payloads; they are left alone on
+    purpose. Decide per endpoint whether "None" or null is the intended JSON.
+    """
+    return getattr(x, "value", x)
+
+
 def plain_facts(facts: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize ORM column values to JSON-safe primitives for LLM prompts.
 

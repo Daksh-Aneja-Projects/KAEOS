@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.litigation import Case
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
-
-
-def _v(x):
-    return getattr(x, "value", x)
 
 
 class LitigationAgent:
@@ -34,11 +30,11 @@ class LitigationAgent:
             "case_name": case.case_name,
             "case_number": case.case_number,
             "court": case.court,
-            "stage": _v(case.stage),
+            "stage": enum_value(case.stage),
             "exposure_amount": case.exposure_amount,
             "opposing_party": case.opposing_party,
             "description": (case.description or "")[:1200],
-            "outcome": _v(case.outcome) if case.outcome else None,
+            "outcome": enum_value(case.outcome) if case.outcome else None,
         }
         facts = plain_facts(facts)
         steps = [

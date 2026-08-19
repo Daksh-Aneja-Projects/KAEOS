@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.ip import IPStatus, Patent
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class IPAgent:
             "inventors": patent.inventors,
             "abstract": (patent.abstract or "")[:1500],
             "jurisdiction": patent.jurisdiction,
-            "status": patent.status.value if hasattr(patent.status, "value") else patent.status,
+            "status": enum_value(patent.status),
         }
         facts = plain_facts(facts)
         steps = [

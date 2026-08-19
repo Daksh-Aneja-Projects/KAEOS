@@ -8,6 +8,7 @@ from datetime import timezone
 from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.support.models.tickets import Ticket, TicketStatus
 
 _OPEN = [TicketStatus.NEW, TicketStatus.ASSIGNED, TicketStatus.OPEN,
@@ -24,7 +25,7 @@ def _hours_between(start, end) -> float:
     return max((end - start).total_seconds() / 3600.0, 0.0)
 
 
-async def support_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+async def support_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> DomainAnalytics:
     """`charts=False` skips the series queries that feed no KPI and no insight,
     for callers (the org pulse) that only read kpis + insights."""
     status_q = await db.execute(

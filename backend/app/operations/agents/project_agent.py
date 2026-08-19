@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.projects import Project
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
-
-
-def _v(x):
-    return getattr(x, "value", x)
 
 
 class ProjectAgent:
@@ -33,7 +29,7 @@ class ProjectAgent:
         facts = {
             "name": project.name,
             "description": (project.description or "")[:1000],
-            "status": _v(project.status),
+            "status": enum_value(project.status),
             "start_date": str(project.start_date) if project.start_date else None,
             "end_date": str(project.end_date) if project.end_date else None,
             "completion_percentage": project.completion_percentage,

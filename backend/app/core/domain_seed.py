@@ -13,6 +13,7 @@ non-zero, internally consistent numbers.
 """
 import importlib
 import logging
+import uuid
 
 from sqlalchemy import select, func as sqlfunc
 
@@ -60,10 +61,61 @@ def _resolve(path: str):
     return getattr(importlib.import_module(mod_path), cls_name)
 
 
+# ── Shared department-seeder scaffold ────────────────────────────────────────
+# The ten app/<dept>/seed.py modules used to each carry their own copy of these
+# three things: a one-line uuid helper, an "already seeded?" guard spelled five
+# different ways (whole-entity SELECT, id SELECT, db.scalar, COUNT(*) ...), and
+# a create_all + open-a-session standalone wrapper. They are identical work, so
+# they live here once. Every seeder now exposes the same pair:
+#     async def seed_tenant(db, tenant) -> bool   # does the work in YOUR session
+#     async def seed(tenant=None) -> bool         # standalone: builds + opens one
+def new_id() -> str:
+    """Fresh row id for seeded data."""
+    return str(uuid.uuid4())
+
+
+async def already_seeded(db, label: str, sentinel, tenant: str, *extra) -> bool:
+    """True when ``tenant`` already has ``sentinel`` rows, so the seeder must
+    no-op. Every department seeder is runnable standalone (python -m
+    app.<dept>.seed) and re-triggerable from startup, and none of them have the
+    unique constraints that would block a duplicate insert, so this guard is
+    the only thing standing between a re-run and a doubled demo dataset.
+    """
+    hit = (await db.execute(
+        select(sentinel.id).where(sentinel.tenant_id == tenant, *extra).limit(1)
+    )).first() is not None
+    if hit:
+        print(f"[SKIP] {label} already seeded for {tenant}; leaving existing data untouched.")
+    return hit
+
+
+async def run_standalone(engine, session_factory, seed_tenant, tenant: str) -> bool:
+    """Standalone entry point body: ensure the tables exist, open one session on
+    the department's own engine, and run its ``seed_tenant``.
+
+    ``engine``/``session_factory`` are passed in (rather than imported here) so
+    each seed module keeps them as module-level names - tests monkeypatch
+    ``app.<dept>.seed.async_engine`` / ``.AsyncSessionLocal`` onto a throwaway
+    test engine and call ``seed()``.
+    """
+    from app.models.domain import Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with session_factory() as db:
+        return await seed_tenant(db, tenant)
+
+
 async def seed_domains_if_empty() -> None:
     for name, seed_module, sentinel_path in _DOMAINS:
         try:
             sentinel = _resolve(sentinel_path)
+            # REVIEW: this orchestrator gate counts the sentinel table across ALL
+            # tenants, while the guard inside every seeder (already_seeded above)
+            # is scoped to one tenant. On a multi-tenant database the first
+            # tenant with HR employees makes startup skip HR forever, so a later
+            # SEED_TENANT never gets its demo data - the seeder's own guard would
+            # have allowed it. Preserved as-is: adding `.where(sentinel.tenant_id
+            # == SEED_TENANT)` here would start seeding databases that skip today.
             async with AsyncSessionLocal() as db:
                 count = (
                     await db.execute(select(sqlfunc.count()).select_from(sentinel))
@@ -73,7 +125,6 @@ async def seed_domains_if_empty() -> None:
                 continue
 
             mod = importlib.import_module(seed_module)
-            mod.TENANT = SEED_TENANT
             # Each per-domain seeder opens its OWN session on the app engine
             # (kaeos_app, a NON-owner), so on Postgres its writes are subject to
             # RLS. Startup seeding has no request context, so app.tenant_id was
@@ -82,10 +133,18 @@ async def seed_domains_if_empty() -> None:
             # listener (see database.py after_begin) sets app.tenant_id and the
             # tenant_acme rows are accepted. Masked until now by a persisted
             # volume that already held seed data from an older code path.
+            #
+            # The tenant goes in as an ARGUMENT. This used to be `mod.TENANT =
+            # SEED_TENANT`, which could not work: every seeder bound its tenant
+            # as a def-time default (`seed_tenant(db, tenant=TENANT)`), so
+            # rebinding the module global reached nothing. Harmless only because
+            # SEED_TENANT and every module's TENANT are both "tenant_acme"; the
+            # day they diverged, the seed would silently land on the old tenant
+            # while the RLS context below said the new one - i.e. seed nothing.
             from app.core.context import current_tenant_id
             _tok = current_tenant_id.set(SEED_TENANT)
             try:
-                await mod.seed()
+                await mod.seed(SEED_TENANT)
             finally:
                 current_tenant_id.reset(_tok)
             logger.info(f"[DomainSeed] {name}: seeded")

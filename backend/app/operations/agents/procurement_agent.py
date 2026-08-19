@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.procurement import PurchaseRequest
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class ProcurementAgent:
@@ -33,7 +29,7 @@ class ProcurementAgent:
             "quantity": req.quantity,
             "unit_price": req.unit_price,
             "total_estimated_cost": req.total_estimated_cost,
-            "status": _v(req.status),
+            "status": enum_value(req.status),
             "department": req.department,
         }
         facts = plain_facts(facts)
