@@ -10,6 +10,23 @@ Two interchangeable backends:
 
 Selection is driven by ``settings.is_sqlite`` (and Neo4j reachability) via
 :func:`get_graph_store`.
+
+DELIBERATELY OUTSIDE ALEMBIC AND Base.metadata
+----------------------------------------------
+``polystore_graph_nodes`` / ``polystore_graph_edges`` are created lazily by
+``initialize()`` below, not by a migration and not by an ORM model — same as
+``polystore_vectors`` in vector_store.py. Kept that way on purpose: under the
+Neo4j backend these tables do not exist at all, so a migration would create dead
+tables for half the deployments, and the rows are regenerable derived structure
+with nothing to preserve. ``initialize()`` also performs its own repair (dropping
+a pre-tenant-scoped table and rebuilding it), which is migration work that has to
+run per-backend anyway.
+
+What a schema checker needs to know: these tables exist in a live database but in
+NEITHER ``Base.metadata`` NOR any migration, so a check diffing those two sources
+against a running DB must treat them as a known exemption, not drift. The
+tenant_id column, RLS policy and indexes are all installed here at create time,
+so the exemption costs no isolation.
 """
 from __future__ import annotations
 

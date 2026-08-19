@@ -66,6 +66,11 @@ GLOBAL_TABLES = {
     # listed here to record the deliberate global scope (matches `tenants`).
     "marketplace_templates",
     "domain_packs",
+    # Stripe's webhook idempotency ledger: events arrive on an unauthenticated
+    # webhook with no tenant session, and Stripe's evt_… ids are not tenant-scoped.
+    # No tenant_id column either, so — like the two above — this entry is a record
+    # of deliberate global scope, not something the RLS sweep acts on.
+    "stripe_webhook_events",
 }
 
 

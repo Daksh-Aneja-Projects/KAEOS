@@ -9,8 +9,23 @@ interchangeable backends selected at runtime:
                           computed in-process). Used on the zero-dependency dev stack.
 
 Selection is driven by ``settings.is_sqlite`` via :func:`get_vector_store`.
-Both backends share a self-contained ``polystore_vectors`` table created lazily,
-so no external migration is required.
+
+DELIBERATELY OUTSIDE ALEMBIC AND Base.metadata
+----------------------------------------------
+``polystore_vectors`` is created lazily by ``_initialize()`` below, not by a
+migration and not by an ORM model — the same choice as ``polystore_graph_nodes``
+/ ``polystore_graph_edges`` in graph_store.py. It stays that way on purpose: its
+column type is backend-dependent (``vector(dim)`` on Postgres, ``TEXT`` JSON on
+SQLite) and its width follows the configured embedding model, so a single static
+migration could not express it for both dialects. It also holds regenerable
+derived data, so there is nothing to preserve across a rebuild.
+
+What a schema checker needs to know: these three tables exist in a live database
+but in NEITHER ``Base.metadata`` NOR any migration, so any check that diffs those
+two sources against a running DB must treat them as a known exemption, not drift.
+Everything a migration would normally guarantee is instead guaranteed here at
+create time — the tenant_id column, the RLS policy, and the indexes — so the
+exemption costs no isolation.
 """
 from __future__ import annotations
 

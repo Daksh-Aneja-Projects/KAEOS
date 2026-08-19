@@ -7,10 +7,12 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 import uuid
 import enum
-try:
-    from pgvector.sqlalchemy import Vector
-except ImportError:
-    Vector = None  # Fallback if pgvector is not installed locally
+# pgvector is a hard, pinned requirement (requirements.txt) and this is its only
+# import site. The old `except ImportError: Vector = None` fallback paired with an
+# `if Vector:` guard on the column below, so a broken install silently produced a
+# skill_embeddings table with NO embedding column at all — a schema defect that
+# only surfaced much later as a failing insert. Let the ImportError raise instead.
+from pgvector.sqlalchemy import Vector
 
 
 def _embedding_dim() -> int:
@@ -19,12 +21,20 @@ def _embedding_dim() -> int:
     Hardcoding 1536 broke every non-1536 model (nomic 768, 3-large 3072) with an
     'expected 1536 dimensions' error on insert. Derived here so the ORM column,
     the PgVectorStore, and any migration agree on one number.
+
+    NOTE: this makes the emitted DDL a function of the EMBEDDING_MODEL setting, so
+    two processes with different environments describe skill_embeddings.embedding
+    differently. That is deliberate (the column must match the model), but it means
+    a schema-drift checker has to compare under one EMBEDDING_MODEL, not two.
+
+    Resolution failure used to fall back to 1536 silently, which is the same
+    'expected 1536 dimensions' bug this function exists to prevent — only now
+    undiagnosable. Raise instead: there is no import cycle here (llm_support
+    imports no models and reads config lazily), so this can only fire on a genuine
+    misconfiguration, and a wrong vector width is not survivable.
     """
-    try:
-        from app.services.llm_support import configured_embedding_dim
-        return configured_embedding_dim()
-    except Exception:
-        return 1536
+    from app.services.llm_support import configured_embedding_dim
+    return configured_embedding_dim()
 
 
 _EMBED_DIM = _embedding_dim()
@@ -121,8 +131,7 @@ class SkillEmbedding(Base):
 
     skill_db_id = Column(String, primary_key=True)
     tenant_id = Column(String, nullable=False, index=True)
-    if Vector:
-        embedding = Column(Vector(_EMBED_DIM))
+    embedding = Column(Vector(_EMBED_DIM))
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
