@@ -13,6 +13,18 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ### Changed - S4 governance, behaviour-changing (2026-08-19)
 
+- **`financial_amount_logged` is GAAP-inclusive everywhere (4.2).** finance seeded
+  this Gate-6 flag for SOX or GAAP; hr and sales seeded it for SOX alone, so a
+  GAAP-only financial amount escaped the "was the amount logged?" check in two
+  departments. hr and sales converged on finance's GAAP-inclusive standard.
+- **Empty compliance-tags mean the same thing in every department (4.3).**
+  `compliance_tags=[]` meant "deliberately no tags" in hr/healthcare/engineering
+  but was silently replaced with the defaults in the other seven (truthiness, not
+  `is None`). Standardised on `is None`: only `None` falls back to the department
+  default, `[]` always means no tags. The `explicit_empty_tags` flag is removed.
+  No live caller passed `[]` to a converging department, so this closes a latent
+  inconsistency rather than changing today's runs.
+
 - **One canonical, always-attributable audit actor (4.10 + M8.8).** Audit-write
   sites derived the actor three ways: `approver_identity(tenant)` (always
   attributes), `tenant.get("email") or tenant.get("name")`, and plain

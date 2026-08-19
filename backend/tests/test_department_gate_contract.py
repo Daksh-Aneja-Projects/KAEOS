@@ -77,13 +77,14 @@ async def test_department_defaults(captured, dept, skill_id, expected_tags, expe
 # ── Empty-tag semantics differ by department, deliberately ──────────────────
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dept,skill_id,expected", [
-    # These three honour an explicit [] as "no compliance tags". The hr fairness
-    # sweep depends on it: its EEOC check *is* the fairness gate.
-    ("hr", "hr_sweep", []),
-    ("healthcare", "healthcare_code", []),
-    ("engineering", "engineering_lint", []),
-    # The other seven replace [] with their defaults (truthiness, not `is None`).
+@pytest.mark.parametrize("dept,skill_id,defaults", [
+    # Every department now honours an explicit [] as "no compliance tags" and
+    # falls back to its defaults ONLY on None (S4.3). Three already did (the hr
+    # fairness sweep depends on it - its EEOC check IS the fairness gate); the
+    # other seven used to replace [] with their defaults via truthiness.
+    ("hr", "hr_sweep", ["EEOC", "GDPR"]),
+    ("healthcare", "healthcare_code", ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "PART2"]),
+    ("engineering", "engineering_lint", ["SOC2", "CHANGE_MANAGEMENT"]),
     ("sales", "sales_score", ["GDPR"]),
     ("finance", "finance_ap", ["SOX", "GAAP", "PCI"]),
     ("legal", "legal_review", ["GDPR", "CCPA", "PRIVACY"]),
@@ -93,9 +94,11 @@ async def test_department_defaults(captured, dept, skill_id, expected_tags, expe
     ("procurement", "procurement_source", ["THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES",
                                            "SPEND_AUTHORIZATION", "OFAC_SANCTIONS"]),
 ])
-async def test_explicit_empty_tags(captured, dept, skill_id, expected):
+async def test_empty_tags_are_uniform_is_none(captured, dept, skill_id, defaults):
     await run(dept, skill_id, compliance_tags=[])
-    assert captured["skill"]["compliance_tags"] == expected
+    assert captured["skill"]["compliance_tags"] == [], f"{dept}: [] means no tags"
+    await run(dept, skill_id, compliance_tags=None)
+    assert captured["skill"]["compliance_tags"] == defaults, f"{dept}: None means defaults"
 
 
 # ── Skills that must always reach a human ───────────────────────────────────
@@ -194,14 +197,15 @@ async def test_audit_flags_are_scoped_to_their_tags(captured):
 
 
 @pytest.mark.asyncio
-async def test_finance_amount_flag_also_covers_gaap(captured):
-    """Deliberately preserved: finance gates on SOX *or* GAAP, hr/sales on SOX
-    alone. Documented as a REVIEW item in department_gate.FINANCE."""
-    await run("finance", "finance_ap", compliance_tags=["GAAP"], context={"amount": 100})
-    assert captured["ctx"]["financial_amount_logged"] is True
-
-    await run("hr", "hr_comp", compliance_tags=["GAAP"], context={"amount": 100})
-    assert "financial_amount_logged" not in captured["ctx"]
+async def test_financial_amount_flag_is_gaap_inclusive_everywhere(captured):
+    """financial_amount_logged is GAAP-inclusive in every department that has it:
+    a financial amount under GAAP must be logged just as one under SOX must. hr
+    and sales used to gate on SOX alone; converged to finance's standard (S4.2)."""
+    for dept, skill in (("finance", "finance_ap"), ("hr", "hr_comp"), ("sales", "sales_score")):
+        await run(dept, skill, compliance_tags=["GAAP"], context={"amount": 100})
+        assert captured["ctx"]["financial_amount_logged"] is True, f"{dept} GAAP"
+        await run(dept, skill, compliance_tags=["SOX"], context={"amount": 100})
+        assert captured["ctx"]["financial_amount_logged"] is True, f"{dept} SOX"
 
 
 @pytest.mark.asyncio

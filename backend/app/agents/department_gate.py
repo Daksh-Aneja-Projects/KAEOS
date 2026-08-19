@@ -13,9 +13,10 @@ were drift. Four examples found in the tree:
     ``legal`` — the department whose entire remit is GDPR/CCPA — which used to
     set ``data_processing_basis_logged = True`` unconditionally (now fixed: it
     derives the flag like the rest, and every legal agent supplies a real basis);
-  * hr and healthcare distinguish ``compliance_tags=[]`` ("deliberately no
-    tags") from ``None`` ("use the default"); the other eight silently replace
-    an explicit empty list with their defaults;
+  * hr and healthcare distinguished ``compliance_tags=[]`` ("deliberately no
+    tags") from ``None`` ("use the default") while the other eight silently
+    replaced an explicit empty list with their defaults (now uniform: only
+    ``None`` means defaults, in every department);
   * ``financial_amount_logged`` is gated on ``SOX`` in hr/sales but on
     ``SOX or GAAP`` in finance.
 
@@ -110,10 +111,6 @@ class DepartmentGate:
         audit_flags:         Gate-6 flags to seed (see :class:`AuditFlag`).
         always_hitl:         when set, written to the skill dict so Gate 3
                              cannot de-escalate below a human.
-        explicit_empty_tags: ``True`` treats ``compliance_tags=[]`` as a
-                             deliberate "no tags"; ``False`` (today's behaviour
-                             in eight departments) replaces ``[]`` with the
-                             defaults.
     """
 
     domain: str
@@ -123,26 +120,25 @@ class DepartmentGate:
     compliance_overrides: Mapping[str, Sequence[str]] = field(default_factory=dict)
     audit_flags: Sequence[AuditFlag] = ()
     always_hitl: Optional[bool] = None
-    explicit_empty_tags: bool = False
 
     def resolve_tags(
         self, compliance_tags: Optional[List[str]], skill_id: str = "",
     ) -> List[str]:
-        """Apply the department's empty-tag semantics and per-skill defaults.
+        """Apply empty-tag semantics and per-skill defaults, uniformly (S4.3).
 
-        ``explicit_empty_tags`` departments use ``is None`` so a caller can pass
-        ``[]`` to mean "no compliance tags" — the hr fairness sweep relies on
-        this, because its EEOC check *is* the fairness gate. The others use
-        truthiness, which silently turns ``[]`` back into the defaults.
+        Only ``None`` means "use the department default"; ``[]`` means
+        "deliberately no compliance tags" everywhere — the hr fairness sweep
+        relies on this (its EEOC check IS the fairness gate). Departments used to
+        disagree: three distinguished ``[]`` from ``None`` while seven silently
+        turned ``[]`` back into the defaults (truthiness). Standardised on ``is
+        None`` so the same argument means the same thing in every department.
 
         A ``compliance_overrides`` entry replaces the department default for one
         skill, and only when the caller supplied no tags: an explicit argument
         always wins over a per-skill default.
         """
         default = list(self.compliance_overrides.get(skill_id, self.default_compliance))
-        if self.explicit_empty_tags:
-            return default if compliance_tags is None else compliance_tags
-        return compliance_tags or default
+        return default if compliance_tags is None else compliance_tags
 
     async def run(
         self,
@@ -263,7 +259,6 @@ DEPLOY_COMPLIANCE = ("SOC2", "ISO27001", "CHANGE_FREEZE")
 ENGINEERING = DepartmentGate(
     domain="engineering",
     default_compliance=("SOC2", "CHANGE_MANAGEMENT"),
-    explicit_empty_tags=True,
     compliance_overrides={_ENGINEERING_DEPLOY_SKILL: DEPLOY_COMPLIANCE},
     # Below the 0.82 HITL threshold on purpose: skills that mutate production
     # route to a human regardless of the model's confidence.
@@ -274,8 +269,8 @@ FINANCE = DepartmentGate(
     domain="finance",
     default_compliance=("SOX", "GAAP", "PCI"),
     audit_flags=(
-        # REVIEW: finance gates this on SOX *or* GAAP; hr and sales gate the
-        # same flag on SOX alone. One of the two is wrong.
+        # GAAP-inclusive is the standard: a financial amount under GAAP must be
+        # logged just as one under SOX must (hr and sales now match this).
         AuditFlag("financial_amount_logged", ("SOX", "GAAP"), source="amount"),
         AuditFlag("pci_dss_compliant", ("PCI",), source="pci_validated"),
     ),
@@ -286,7 +281,6 @@ HEALTHCARE = DepartmentGate(
     default_compliance=("HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "PART2"),
     default_confidence=0.95,  # the pack's confidence floor
     always_hitl=True,         # a clinical action never de-escalates below a human
-    explicit_empty_tags=True,
     # Unconditional by design: every healthcare action is a HIPAA disclosure, so
     # the flag is seeded regardless of which tags are attached — but its value is
     # still derived from a real lawful basis rather than asserted.
@@ -296,10 +290,9 @@ HEALTHCARE = DepartmentGate(
 HR = DepartmentGate(
     domain="hr",
     default_compliance=("EEOC", "GDPR"),
-    explicit_empty_tags=True,  # the fairness sweep passes [] on purpose
     audit_flags=(
         AuditFlag("data_processing_basis_logged", ("GDPR", "HIPAA", "CCPA"), source="legal_basis"),
-        AuditFlag("financial_amount_logged", ("SOX",), source="amount"),
+        AuditFlag("financial_amount_logged", ("SOX", "GAAP"), source="amount"),
     ),
 )
 
@@ -347,7 +340,7 @@ SALES = DepartmentGate(
     confidence_overrides={"sales_proposal_gen": 0.50},  # force HITL: customer-facing
     audit_flags=(
         AuditFlag("data_processing_basis_logged", ("GDPR", "HIPAA", "CCPA"), source="legal_basis"),
-        AuditFlag("financial_amount_logged", ("SOX",), source="amount"),
+        AuditFlag("financial_amount_logged", ("SOX", "GAAP"), source="amount"),
     ),
 )
 
@@ -390,9 +383,10 @@ if __name__ == "__main__":
     assert _ctx["data_processing_basis_logged"] is True, "legal: a real legal_basis is honoured"
 
     # Empty-tag semantics differ by department, on purpose.
-    assert HR.resolve_tags([]) == [], "hr: explicit [] means no tags"
-    assert HEALTHCARE.resolve_tags([]) == [], "healthcare: explicit [] means no tags"
-    assert SALES.resolve_tags([]) == ["GDPR"], "sales: [] falls back to defaults"
+    assert HR.resolve_tags([]) == [], "explicit [] means no tags, uniformly"
+    assert HEALTHCARE.resolve_tags([]) == [], "explicit [] means no tags, uniformly"
+    assert SALES.resolve_tags([]) == [], "sales too: [] now means no tags (S4.3)"
+    assert SALES.resolve_tags(None) == ["GDPR"], "only None falls back to the default"
     assert HR.resolve_tags(None) == ["EEOC", "GDPR"], "None always means defaults"
 
     # Tag-scoped flags stay unseeded when the tag is absent.
