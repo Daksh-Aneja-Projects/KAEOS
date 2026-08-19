@@ -89,22 +89,46 @@ def ollama_reachable() -> bool:
         return False
 
 
+_BACKEND_STATUS = None  # session cache: None = unprobed, True/False = result
+
+
 def backend_reachable() -> bool:
-    """Is the backend the tests actually target up?
+    """Is the KAEOS backend the tests target up — AND is it actually KAEOS?
 
     Derived from BASE_URL, never hardcoded: with a fixed ("localhost", 8001)
     this probed a DIFFERENT server than the tests hit whenever KAEOS_TEST_URL
     pointed elsewhere - so the suite would happily run against one backend
     while its skip-guard reported on another. That mismatch produced a full
     suite of bogus 401 failures once already.
+
+    A bare TCP connect is NOT enough. BASE_URL defaults to port 8001, which is
+    also where a sibling project (SANJAY) runs. When that server holds the port
+    it ACCEPTS the connection, the skip-guard passes, nothing skips, and every
+    e2e test then blocks for the full 300s read timeout against a server that
+    never answers the KAEOS routes - which is exactly how `pytest tests/` hung
+    forever (`test_legal_obligations` was simply the node that happened to be
+    running). So we also require /health/live to return KAEOS's own identity
+    payload. Cached for the whole session: this probes once, not once per test.
     """
+    global _BACKEND_STATUS
+    if _BACKEND_STATUS is not None:
+        return _BACKEND_STATUS
     parsed = urlparse(BASE_URL)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    host = parsed.hostname or "localhost"
+    ok = False
     try:
-        with socket.create_connection((parsed.hostname or "localhost", port), timeout=2):
-            return True
+        with socket.create_connection((host, port), timeout=2):
+            pass
+        # Socket opened — confirm it is KAEOS, not a foreign server on the port,
+        # before letting a 300s-timeout client loose on it.
+        r = httpx.get(f"{BACKEND_ROOT}/health/live", timeout=3)
+        body = r.json()
+        ok = r.status_code == 200 and isinstance(body.get("app"), str)
     except Exception:
-        return False
+        ok = False
+    _BACKEND_STATUS = ok
+    return ok
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -140,7 +164,12 @@ async def client():
     # follow_redirects: FastAPI 307-redirects between /path and /path/ variants;
     # a browser follows those transparently, so the suite should too - otherwise
     # every route defined as "" breaks any test that asks for the "/" spelling.
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=TIMEOUT,
+    # connect=5 bounds the connection phase: the long TIMEOUT is for LLM reads
+    # (gated agents make 3+ sequential Ollama calls), never for waiting on a
+    # server that isn't accepting - that is what turned a wrong-port run into a
+    # multi-minute-per-test hang.
+    async with httpx.AsyncClient(base_url=BASE_URL,
+                                 timeout=httpx.Timeout(TIMEOUT, connect=5.0),
                                  follow_redirects=True) as c:
         yield c
 
