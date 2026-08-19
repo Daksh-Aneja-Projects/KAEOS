@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_security_event
+from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.operations.models.procurement import (
@@ -118,6 +119,10 @@ async def create_requisition(
             "status": req.status.value if hasattr(req.status, "value") else str(req.status)}
 
 
+# REVIEW: like healthcare, this endpoint maps ValueError -> 404 but has no 500
+# handler and raises HTTPException(404, str(e)) positionally. Kept
+# hand-written; adding the 500 handler is a behaviour change. Procurement also
+# has no bulk-transition endpoint.
 @router.post("/requisitions/{request_id}/assess")
 async def assess_requisition(
     request_id: str,
@@ -298,11 +303,7 @@ async def create_goods_receipt(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    po = (await db.execute(select(PurchaseOrder).where(
-        PurchaseOrder.id == body.purchase_order_id, PurchaseOrder.tenant_id == tenant_id
-    ))).scalar_one_or_none()
-    if po is None:
-        raise HTTPException(404, "Purchase order not found")
+    await get_or_404(db, PurchaseOrder, body.purchase_order_id, tenant_id, detail="Purchase order not found")
     gr = GoodsReceipt(
         tenant_id=tenant_id, purchase_order_id=body.purchase_order_id,
         po_line_item_id=body.po_line_item_id, receiver_name=body.receiver_name,
@@ -393,7 +394,7 @@ async def screen_procurement_vendor(
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from app.core.workflow import (  # noqa: E402
-    TransitionRequest, apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.procurement.services.analytics import procurement_analytics  # noqa: E402
 from app.procurement.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -408,21 +409,14 @@ async def get_procurement_analytics(
     return await procurement_analytics(db, tenant_id, charts=True)
 
 
-@router.get("/workflows")
-async def get_procurement_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines - the frontend can render lifecycle actions from
-    this. PO approval itself stays off this map; see services/workflows.py."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_procurement_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for procurement entities."""
-    return await list_workflow_events(db, tenant_id, domain="procurement",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "procurement", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines - the frontend can render lifecycle actions from\n    this. PO approval itself stays off this map; see services/workflows.py.',
+    events_doc='Tenant-scoped transition audit trail for procurement entities.',
+))
 
 
 @router.post("/requisitions/{request_id}/transition")

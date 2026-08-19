@@ -18,6 +18,7 @@ from datetime import date
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.operations.models.procurement import (
     PurchaseOrder, PurchaseRequest,
 )
@@ -38,8 +39,16 @@ def _risk_bucket(renewal_date, perf_score) -> str:
     return "LOW"
 
 
+# REVIEW: charts defaults to False here and to True in the other nine services.
+# Drift, not intent: the docstring above says this "mirrors
+# app.operations.services.analytics", and operations defaults to True. It is
+# inert today - every caller passes the flag explicitly (org_pulse.py:_compute_pulse
+# charts=False, procurement/api/v1/router.py:408 charts=True, all five test call
+# sites) - so flipping it changes no response. Left alone anyway: the default is
+# part of the public signature and this sprint freezes that. Fix = change to
+# `charts: bool = True`.
 async def procurement_analytics(db: AsyncSession, tenant_id: str,
-                                charts: bool = False) -> dict:
+                                charts: bool = False) -> DomainAnalytics:
     # PO funnel + committed spend.
     po_q = await db.execute(
         select(PurchaseOrder.status, sqlfunc.count(),

@@ -12,11 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.sales.agents.gated_runner import run_gated_sales_skill
 from app.sales.models.accounts import Account
 from app.sales.models.pipeline import Opportunity
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class ProposalGenAgent:
@@ -36,7 +32,7 @@ class ProposalGenAgent:
 
         facts = {
             "opportunity_name": opp.name,
-            "stage": _v(opp.stage),
+            "stage": enum_value(opp.stage),
             "amount": opp.amount,
             "close_date": str(opp.close_date) if opp.close_date else None,
             "account_name": account.name if account else None,

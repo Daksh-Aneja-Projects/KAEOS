@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.quality import Inspection, QualityStatus
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class QAAgent:
@@ -31,7 +27,7 @@ class QAAgent:
         facts = {
             "inspected_item": insp.inspected_item,
             "inspector": insp.inspector,
-            "status": _v(insp.status),
+            "status": enum_value(insp.status),
             "notes": (insp.notes or "")[:1000],
             "standard_id": insp.standard_id,
         }

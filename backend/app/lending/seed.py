@@ -14,13 +14,13 @@ Protected-class attributes are stored ONLY for fair-lending analysis, never as a
 credit input - the decision below uses score / DTI / income / amount only.
 """
 import asyncio
-import uuid
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 
 from sqlalchemy import func as sqlfunc, select
 
 from app.core.database import AsyncSessionLocal, async_engine
+from app.core.domain_seed import SEED_TENANT as TENANT, already_seeded, new_id, run_standalone
 from app.lending.models.core import (
     AdverseActionNotice, CreditPolicy, LoanApplication, LoanStatus,
     UnderwritingDecision,
@@ -29,13 +29,6 @@ from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
                                           ServicedLoan, ServicingStatus)
 from app.lending.services.servicing import (build_amortization_schedule,
                                             delinquency_bucket)
-from app.models.domain import Base
-
-TENANT = "tenant_acme"
-
-
-def _id():
-    return str(uuid.uuid4())
 
 
 def _ago(days):
@@ -109,7 +102,7 @@ def _apr(product, score):
     return round(base + spread, 2)
 
 
-def _fund_loan(app_id, num, name, product, amount, term, score, funded_days_ago, delinquent_days=0):
+def _fund_loan(tenant, app_id, num, name, product, amount, term, score, funded_days_ago, delinquent_days=0):
     """Build a ServicedLoan (+ its amortization schedule) that is internally
     consistent with how long ago it funded and how delinquent it is today.
     Returns (ServicedLoan, days_past_due)."""
@@ -149,7 +142,7 @@ def _fund_loan(app_id, num, name, product, amount, term, score, funded_days_ago,
         status = ServicingStatus.DELINQUENT.value
 
     loan = ServicedLoan(
-        id=_id(), tenant_id=TENANT, application_id=app_id,
+        id=new_id(), tenant_id=tenant, application_id=app_id,
         loan_number=num, product=product, borrower_name=name,
         principal=principal, outstanding_principal=outstanding.quantize(Decimal("0.01")),
         apr=apr, term_months=term, monthly_payment=Decimal(str(schedule[0]["amount"])),
@@ -170,7 +163,7 @@ def _contact(days_ago, hour_local, channel, notes):
             "harassment": False, "notes": notes, "actor": "collections_agent"}
 
 
-async def _seed_servicing(db):
+async def _seed_servicing(db, tenant):
     """Fund the approved applications selected in _SERVICING and open FDCPA-
     governed collections cases on the delinquent ones. Independently idempotent:
     guarded on a ServicedLoan sentinel (NOT LoanApplication) so a tenant seeded
@@ -179,20 +172,20 @@ async def _seed_servicing(db):
     caller commits."""
     existing_loans = (await db.execute(
         select(sqlfunc.count()).select_from(ServicedLoan)
-        .where(ServicedLoan.tenant_id == TENANT))).scalar() or 0
+        .where(ServicedLoan.tenant_id == tenant))).scalar() or 0
     if existing_loans:
         return
 
     app_ids_by_number = {num: aid for num, aid in (await db.execute(
         select(LoanApplication.application_number, LoanApplication.id)
-        .where(LoanApplication.tenant_id == TENANT))).all()}
+        .where(LoanApplication.tenant_id == tenant))).all()}
 
     apps_by_number = {row[0]: row for row in _APPS}
     loans_by_number: dict[str, tuple] = {}
     for num, delinquent_days in _SERVICING.items():
         (_n, name, product, amount, term, score, _income, _dti, _pclass,
          decided_ago) = apps_by_number[num]
-        loan, dpd = _fund_loan(app_ids_by_number[num], num, name, product, amount,
+        loan, dpd = _fund_loan(tenant, app_ids_by_number[num], num, name, product, amount,
                                term, score, decided_ago, delinquent_days)
         db.add(loan)
         loans_by_number[num] = (loan, dpd)
@@ -205,7 +198,7 @@ async def _seed_servicing(db):
     # contact history - validation notice mailed, one call, one follow-up.
     loan_1002, dpd_1002 = loans_by_number["LN-1002"]
     db.add(CollectionCase(
-        id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1002.id,
+        id=new_id(), tenant_id=tenant, serviced_loan_id=loan_1002.id,
         status=CollectionCaseStatus.IN_PROGRESS.value,
         delinquency_bucket=delinquency_bucket(dpd_1002),
         validation_notice_sent=True, validation_notice_sent_at=_ago(14),
@@ -224,7 +217,7 @@ async def _seed_servicing(db):
     # several weeks, every contact inside the 8am-9pm FDCPA window.
     loan_1005, dpd_1005 = loans_by_number["LN-1005"]
     db.add(CollectionCase(
-        id=_id(), tenant_id=TENANT, serviced_loan_id=loan_1005.id,
+        id=new_id(), tenant_id=tenant, serviced_loan_id=loan_1005.id,
         status=CollectionCaseStatus.ESCALATED.value,
         delinquency_bucket=delinquency_bucket(dpd_1005),
         validation_notice_sent=True, validation_notice_sent_at=_ago(63),
@@ -245,92 +238,93 @@ async def _seed_servicing(db):
           f"(FDCPA-governed contact log)")
 
 
-async def seed():
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with AsyncSessionLocal() as db:
-        # Idempotency guard: a second run (direct script invocation, a test
-        # fixture, a re-triggered startup seed) must not duplicate rows or
-        # crash on the application_number unique constraint.
-        existing = (await db.execute(
-            select(sqlfunc.count()).select_from(LoanApplication)
-            .where(LoanApplication.tenant_id == TENANT))).scalar() or 0
-        if existing:
-            print(f"[SKIP] Lending already seeded for {TENANT} ({existing} applications) - skipping.")
-            # Servicing/collections were added in a later wave; backfill them if
-            # this tenant predates it (guarded on its own ServicedLoan sentinel).
-            await _seed_servicing(db)
-            await db.commit()
-            return
-
-        for product, p in _POLICIES.items():
-            db.add(CreditPolicy(id=_id(), tenant_id=TENANT, product=product,
-                                is_active=True, **p))
-
-        approvals = denials = pending = 0
-        for (num, name, product, amount, term, score, income, dti, pclass, decided_ago) in _APPS:
-            app_id = _id()
-            if decided_ago is None:
-                status = LoanStatus.RECEIVED.value
-            else:
-                decision, reasons = _decide(product, amount, score, income, dti)
-                status = LoanStatus.APPROVED.value if decision == "APPROVE" else LoanStatus.DENIED.value
-            db.add(LoanApplication(
-                id=app_id, tenant_id=TENANT, application_number=num, applicant_name=name,
-                product=product, credit_purpose="business" if product == "small_business" else "consumer",
-                amount=Decimal(str(amount)), term_months=term, credit_score=score,
-                annual_income=Decimal(str(income)), dti_ratio=Decimal(str(dti)),
-                monthly_debt=Decimal(str(round(income * dti / 12, 2))),
-                protected_class=pclass, status=status,
-                intake_score=Decimal(str(round(min(1.0, score / 850), 4)))))
-
-            if decided_ago is None:
-                pending += 1
-                continue
-
-            dec_id = _id()
-            apr = _apr(product, score)
-            if decision == "APPROVE":
-                approvals += 1
-                fin_charge = round(amount * (apr / 100) * (term / 12), 2)
-                db.add(UnderwritingDecision(
-                    id=dec_id, tenant_id=TENANT, application_id=app_id, decision="APPROVE",
-                    reasons=["Meets credit-score, DTI, income and program-limit policy"],
-                    confidence=Decimal("0.92"), decided_by="underwriter_agent",
-                    decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN",
-                    apr=Decimal(str(apr)), finance_charge=Decimal(str(fin_charge)),
-                    amount_financed=Decimal(str(amount)),
-                    total_of_payments=Decimal(str(round(amount + fin_charge, 2)))))
-            else:
-                denials += 1
-                db.add(UnderwritingDecision(
-                    id=dec_id, tenant_id=TENANT, application_id=app_id, decision="DENY",
-                    reasons=reasons, confidence=Decimal("0.95"), decided_by="underwriter_agent",
-                    decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN"))
-                # Persist the application + decision before the notice references
-                # them: on Postgres the FK is enforced, so the parent rows must
-                # exist first (SQLite defers FK checks, which hid this).
-                await db.flush()
-                db.add(AdverseActionNotice(
-                    id=_id(), tenant_id=TENANT, application_id=app_id, decision_id=dec_id,
-                    specific_reasons=reasons,
-                    body=("We are unable to approve your application at this time for the "
-                          "following principal reason(s): " + "; ".join(reasons) +
-                          ". You have the right to a free copy of your credit report and to "
-                          "dispute its accuracy. (ECOA / Reg B, 12 CFR 1002.9)"),
-                    decision_date=date.today() - timedelta(days=decided_ago),
-                    sent_at=_ago(decided_ago - 1 if decided_ago > 1 else 0),
-                    within_30_days=True))
-
-        # Servicing + collections (independently idempotent - see _seed_servicing).
-        await _seed_servicing(db)
-
+async def seed_tenant(db, tenant: str) -> bool:
+    # A second run must not duplicate rows or crash on the application_number
+    # unique constraint.
+    # REVIEW: lending is the ONE department whose "already seeded" branch is not
+    # a pure no-op - it still backfills servicing/collections, because those were
+    # added in a later wave and tenants seeded before it have applications but no
+    # ServicedLoan rows. Reproduced exactly (backfill, commit, return False).
+    # Fix, if this is unwanted: move the backfill to a migration and make the
+    # skip branch a plain `return False` like the other nine. Behaviour change -
+    # deliberately NOT made here.
+    if await already_seeded(db, "Lending", LoanApplication, tenant):
+        await _seed_servicing(db, tenant)
         await db.commit()
-        print("[SUCCESS] Seeded Lending database:")
-        print(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
-              f"{pending} in intake), {len(_POLICIES)} credit policies, "
-              f"{denials} adverse-action notices")
+        return False
+
+    for product, p in _POLICIES.items():
+        db.add(CreditPolicy(id=new_id(), tenant_id=tenant, product=product,
+                            is_active=True, **p))
+
+    approvals = denials = pending = 0
+    for (num, name, product, amount, term, score, income, dti, pclass, decided_ago) in _APPS:
+        app_id = new_id()
+        if decided_ago is None:
+            status = LoanStatus.RECEIVED.value
+        else:
+            decision, reasons = _decide(product, amount, score, income, dti)
+            status = LoanStatus.APPROVED.value if decision == "APPROVE" else LoanStatus.DENIED.value
+        db.add(LoanApplication(
+            id=app_id, tenant_id=tenant, application_number=num, applicant_name=name,
+            product=product, credit_purpose="business" if product == "small_business" else "consumer",
+            amount=Decimal(str(amount)), term_months=term, credit_score=score,
+            annual_income=Decimal(str(income)), dti_ratio=Decimal(str(dti)),
+            monthly_debt=Decimal(str(round(income * dti / 12, 2))),
+            protected_class=pclass, status=status,
+            intake_score=Decimal(str(round(min(1.0, score / 850), 4)))))
+
+        if decided_ago is None:
+            pending += 1
+            continue
+
+        dec_id = new_id()
+        apr = _apr(product, score)
+        if decision == "APPROVE":
+            approvals += 1
+            fin_charge = round(amount * (apr / 100) * (term / 12), 2)
+            db.add(UnderwritingDecision(
+                id=dec_id, tenant_id=tenant, application_id=app_id, decision="APPROVE",
+                reasons=["Meets credit-score, DTI, income and program-limit policy"],
+                confidence=Decimal("0.92"), decided_by="underwriter_agent",
+                decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN",
+                apr=Decimal(str(apr)), finance_charge=Decimal(str(fin_charge)),
+                amount_financed=Decimal(str(amount)),
+                total_of_payments=Decimal(str(round(amount + fin_charge, 2)))))
+        else:
+            denials += 1
+            db.add(UnderwritingDecision(
+                id=dec_id, tenant_id=tenant, application_id=app_id, decision="DENY",
+                reasons=reasons, confidence=Decimal("0.95"), decided_by="underwriter_agent",
+                decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN"))
+            # Persist the application + decision before the notice references
+            # them: on Postgres the FK is enforced, so the parent rows must
+            # exist first (SQLite defers FK checks, which hid this).
+            await db.flush()
+            db.add(AdverseActionNotice(
+                id=new_id(), tenant_id=tenant, application_id=app_id, decision_id=dec_id,
+                specific_reasons=reasons,
+                body=("We are unable to approve your application at this time for the "
+                      "following principal reason(s): " + "; ".join(reasons) +
+                      ". You have the right to a free copy of your credit report and to "
+                      "dispute its accuracy. (ECOA / Reg B, 12 CFR 1002.9)"),
+                decision_date=date.today() - timedelta(days=decided_ago),
+                sent_at=_ago(decided_ago - 1 if decided_ago > 1 else 0),
+                within_30_days=True))
+
+    # Servicing + collections (independently idempotent - see _seed_servicing).
+    await _seed_servicing(db, tenant)
+
+    await db.commit()
+    print("[SUCCESS] Seeded Lending database:")
+    print(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
+          f"{pending} in intake), {len(_POLICIES)} credit policies, "
+          f"{denials} adverse-action notices")
+    return True
+
+
+async def seed(tenant: str | None = None) -> bool:
+    return await run_standalone(async_engine, AsyncSessionLocal, seed_tenant, tenant or TENANT)
 
 
 if __name__ == "__main__":

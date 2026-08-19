@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.contracts import Contract, ContractClause
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
-
-
-def _v(x):
-    return getattr(x, "value", x)
 
 
 class ContractReviewAgent:
@@ -43,8 +39,8 @@ class ContractReviewAgent:
         facts = {
             "title": contract.title,
             "counterparty": contract.counterparty,
-            "contract_type": _v(contract.contract_type),
-            "status": _v(contract.status),
+            "contract_type": enum_value(contract.contract_type),
+            "status": enum_value(contract.status),
             "contract_value": contract.contract_value,
             "effective_date": str(contract.effective_date) if contract.effective_date else None,
             "expiry_date": str(contract.expiry_date) if contract.expiry_date else None,

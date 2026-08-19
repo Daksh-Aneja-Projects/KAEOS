@@ -6,6 +6,7 @@ enterprise_graph.json artifact, so the Reality Experience reflects the same
 data as every other dashboard: departments, capabilities, agents, processes,
 HR employees, finance vendors, and operations projects.
 """
+import importlib
 import logging
 from collections import deque
 from typing import Dict, List, Tuple
@@ -40,6 +41,34 @@ GROUPS = {
 # for a rich, balanced constellation; the physics stays smooth and stats stay
 # honest (computed from the full graph before sampling).
 _ENTITY_SAMPLE = 14
+
+# One headline entity per department, woven in on top of the structural
+# backbone. Each row is exactly the _weave() call it declares:
+#   ("module:Class", node label, department slug, edge type, name attribute,
+#    extra _weave kwargs)
+# The import is late and by name (same "module:Class" convention as
+# app/core/domain_seed.py) so a department whose models are absent degrades to
+# "missing from the twin" instead of breaking the whole build.
+_HEADLINE_WEAVES = [
+    ("app.finance.models.accounts_receivable:Customer", "Customer", "finance", "SERVES", "name", {}),
+    ("app.sales.models.accounts:Account", "Account", "sales", "OWNS", "name",
+     {"status_attr": "health_score"}),
+    ("app.support.models.tickets:Ticket", "Ticket", "support", "HANDLES", "subject", {}),
+    ("app.legal.models.contracts:Contract", "Contract", "legal", "GOVERNS", "title",
+     {"name_fn": lambda c: getattr(c, "title", None) or getattr(c, "counterparty", None) or "Contract"}),
+    ("app.engineering.models.incidents:Incident", "Incident", "engineering", "OWNS", "title",
+     {"name_fn": lambda i: getattr(i, "title", None) or getattr(i, "incident_number", None) or "Incident"}),
+    ("app.operations.models.procurement:PurchaseOrder", "PurchaseOrder", "operations", "ORDERS", "po_number",
+     {"name_fn": lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60]}),
+    ("app.healthcare.models.core:PatientEncounter", "Encounter", "healthcare", "TREATS", "encounter_number",
+     {"name_fn": lambda e: f"Encounter {getattr(e, 'encounter_number', '') or ''}".strip() or "Encounter"}),
+    ("app.lending.models.core:LoanApplication", "LoanApplication", "lending", "UNDERWRITES", "applicant_name",
+     {"name_fn": lambda loan: getattr(loan, "applicant_name", None) or getattr(loan, "application_number", None) or "Loan Application"}),
+    # The dedicated Procurement department's headline record: internal purchase
+    # claims before a PO is issued (distinct from Operations' PurchaseOrder row
+    # above, which tracks the PO once it exists).
+    ("app.operations.models.procurement:PurchaseRequest", "Requisition", "procurement", "REQUESTS", "item_description", {}),
+]
 
 
 async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
@@ -153,95 +182,21 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
                 add_node(r.id, label, str(name)[:60], **props)
                 add_edge(dept, r.id, rel)
 
-        try:
-            from app.finance.models.accounts_receivable import Customer
-        except ImportError:
-            pass
-        else:
+        for path, label, slug, rel, name_attr, opts in _HEADLINE_WEAVES:
+            module, _, cls = path.partition(":")
             try:
-                await _weave(Customer, "Customer", "finance", "SERVES", "name")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Customer domain", exc_info=True)
-        try:
-            from app.sales.models.accounts import Account
-        except ImportError:
-            pass
-        else:
+                model = getattr(importlib.import_module(module), cls)
+            except (ImportError, AttributeError):
+                # Was silent: a renamed or moved model deleted a whole
+                # department from the twin with no trace. Still degrades
+                # (the twin builds without it), but now it is visible.
+                logger.warning("Reality twin: cannot import %s - the %s department "
+                               "will have no %s nodes", path, slug, label, exc_info=True)
+                continue
             try:
-                await _weave(Account, "Account", "sales", "OWNS", "name", status_attr="health_score")
+                await _weave(model, label, slug, rel, name_attr, **opts)
             except Exception:
-                logger.warning("Reality twin: failed to weave Account domain", exc_info=True)
-        try:
-            from app.support.models.tickets import Ticket
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(Ticket, "Ticket", "support", "HANDLES", "subject")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Ticket domain", exc_info=True)
-        try:
-            from app.legal.models.contracts import Contract as _Contract
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_Contract, "Contract", "legal", "GOVERNS", "title",
-                             name_fn=lambda c: getattr(c, "title", None) or getattr(c, "counterparty", None) or "Contract")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Contract domain", exc_info=True)
-        try:
-            from app.engineering.models.incidents import Incident as _Incident
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_Incident, "Incident", "engineering", "OWNS", "title",
-                             name_fn=lambda i: getattr(i, "title", None) or getattr(i, "incident_number", None) or "Incident")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Incident domain", exc_info=True)
-        try:
-            from app.operations.models.procurement import PurchaseOrder as _PO
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_PO, "PurchaseOrder", "operations", "ORDERS", "po_number",
-                             name_fn=lambda p: f"PO {getattr(p, 'po_number', '')} · {getattr(p, 'vendor_name', '')}"[:60])
-            except Exception:
-                logger.warning("Reality twin: failed to weave PurchaseOrder domain", exc_info=True)
-        try:
-            from app.healthcare.models.core import PatientEncounter as _Encounter
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_Encounter, "Encounter", "healthcare", "TREATS", "encounter_number",
-                             name_fn=lambda e: f"Encounter {getattr(e, 'encounter_number', '') or ''}".strip() or "Encounter")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Encounter domain", exc_info=True)
-        try:
-            from app.lending.models.core import LoanApplication as _LoanApplication
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_LoanApplication, "LoanApplication", "lending", "UNDERWRITES", "applicant_name",
-                             name_fn=lambda l: getattr(l, "applicant_name", None) or getattr(l, "application_number", None) or "Loan Application")
-            except Exception:
-                logger.warning("Reality twin: failed to weave LoanApplication domain", exc_info=True)
-        try:
-            # The dedicated Procurement department's headline record: internal
-            # purchase claims before a PO is issued (distinct from Operations'
-            # PurchaseOrder weave above, which tracks the PO once it exists).
-            from app.operations.models.procurement import PurchaseRequest as _Requisition
-        except ImportError:
-            pass
-        else:
-            try:
-                await _weave(_Requisition, "Requisition", "procurement", "REQUESTS", "item_description")
-            except Exception:
-                logger.warning("Reality twin: failed to weave Requisition domain", exc_info=True)
+                logger.warning("Reality twin: failed to weave %s domain", label, exc_info=True)
 
     return nodes, edges
 

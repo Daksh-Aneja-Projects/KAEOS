@@ -12,13 +12,14 @@ value=None with a note, never a fabricated 0.
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.healthcare.models.core import (
     ClinicalTask, ConsentRecord, PatientEncounter, PHIDisclosure,
 )
 
 
 async def healthcare_analytics(db: AsyncSession, tenant_id: str,
-                               charts: bool = True) -> dict:
+                               charts: bool = True) -> DomainAnalytics:
     # Encounters by status.
     enc_q = await db.execute(
         select(PatientEncounter.status, sqlfunc.count())

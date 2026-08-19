@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.agents.gated_runner import run_gated_finance_skill
 from app.hr.models.payroll import PayrollRun
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class TaxAgent:
@@ -32,7 +28,7 @@ class TaxAgent:
             "period_start": str(run.period_start) if run.period_start else None,
             "period_end": str(run.period_end) if run.period_end else None,
             "pay_date": str(run.pay_date) if run.pay_date else None,
-            "status": _v(run.status),
+            "status": enum_value(run.status),
             "total_gross": run.total_gross,
             "total_net": run.total_net,
             "total_taxes": run.total_taxes,

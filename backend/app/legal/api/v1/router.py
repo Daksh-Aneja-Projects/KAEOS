@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 
+from app.core.department_endpoints import (
+    make_department_workflow_router, run_agent_endpoint,
+)
 from app.core.database import get_db
 
 # Models
@@ -122,21 +125,10 @@ async def list_contract_templates(tenant_id: str = Depends(get_tenant_id), db: A
 @router.post("/contracts/{contract_id}/review")
 async def review_contract(contract_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     """Full 7-gate review (compliance -> fairness -> HITL -> debate -> execute -> audit)."""
-    tenant_id = tenant["tenant_id"]
-    agent = ContractReviewAgent()
-    try:
-        result = await agent.review_contract(db, contract_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="contract", resource_id=contract_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ContractReviewAgent().review_contract(db, contract_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="contract", resource_id=contract_id, logger=logger,
+    )
 
 # --- Compliance ---
 @router.get("/compliance/obligations")
@@ -167,21 +159,10 @@ async def list_compliance_assessments(tenant_id: str = Depends(get_tenant_id), d
 
 @router.post("/compliance/obligations/{obligation_id}/audit")
 async def audit_obligation(obligation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = ComplianceAuditAgent()
-    try:
-        result = await agent.audit_obligation(db, obligation_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="obligation", resource_id=obligation_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        ComplianceAuditAgent().audit_obligation(db, obligation_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="obligation", resource_id=obligation_id, logger=logger,
+    )
 
 # --- Litigation ---
 @router.get("/cases")
@@ -221,6 +202,10 @@ async def list_case_filings(case_id: str, tenant_id: str = Depends(get_tenant_id
     return [{"id": f.id, "document_name": f.document_name, "filing_date": str(f.filing_date),
              "filed_by": f.filed_by} for f in filings]
 
+# REVIEW: the only member of the family whose 500 branch logs a bespoke message
+# ("legal case evaluation failed") instead of the shared
+# logger.exception("%s failed", __name__). Kept hand-written so the log line is
+# byte-identical; normalising it is a (log-only) behaviour change.
 @router.post("/cases/{case_id}/evaluate")
 async def evaluate_case(case_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     # The old body fell back to `agent.evaluate_exposure`, which does not
@@ -269,21 +254,10 @@ async def list_ropa(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
 
 @router.post("/privacy/dsars/{dsar_id}/validate")
 async def validate_dsar(dsar_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = PrivacyDSARAgent()
-    try:
-        result = await agent.process_dsar(db, dsar_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="dsar", resource_id=dsar_id,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        PrivacyDSARAgent().process_dsar(db, dsar_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="dsar", resource_id=dsar_id, logger=logger,
+    )
 
 # --- IP ---
 @router.get("/ip/patents")
@@ -309,22 +283,11 @@ async def list_trade_secrets(tenant_id: str = Depends(get_tenant_id), db: AsyncS
 
 @router.post("/ip/patents/{patent_id}/evaluate")
 async def evaluate_patent(patent_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    tenant_id = tenant["tenant_id"]
-    agent = IPAgent()
-    try:
-        result = await agent.evaluate_patentability(db, patent_id, tenant_id)
-        await record_security_event(
-            tenant_id=tenant_id, event_type="MODIFICATION", action="EXECUTE",
-            actor=tenant.get("name"), actor_role=tenant.get("role"),
-            resource_type="patent", resource_id=patent_id,
-        )
-        return result
-    except ValueError as e:
         # 404 (not 403) so another tenant's id is not confirmed to exist.
-        raise HTTPException(404, detail=str(e))
-    except Exception as e:
-        logger.exception("%s failed", __name__)
-        raise HTTPException(500, detail="Internal error - see server logs") from e
+    return await run_agent_endpoint(
+        IPAgent().evaluate_patentability(db, patent_id, tenant["tenant_id"]), tenant,
+        actor=tenant.get("name"), resource_type="patent", resource_id=patent_id, logger=logger,
+    )
 
 # --- Team ---
 @router.get("/team")
@@ -339,8 +302,7 @@ async def list_team(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
 # ═══════════════════════════════════════════════════════════════════════
 from typing import Optional  # noqa: E402
 from app.core.workflow import (  # noqa: E402
-    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.legal.services.analytics import legal_analytics  # noqa: E402
 from app.legal.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -352,20 +314,14 @@ async def get_legal_analytics(tenant_id: str = Depends(get_tenant_id), db: Async
     return await legal_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_legal_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines - the frontend renders contract actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_legal_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for legal entities."""
-    return await list_workflow_events(db, tenant_id, domain="legal",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "legal", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines - the frontend renders contract actions from this.',
+    events_doc='Tenant-scoped transition audit trail for legal entities.',
+))
 
 
 @router.post("/contracts/{contract_id}/transition")
@@ -514,13 +470,7 @@ async def create_matter(
             "status": m.status.value, "priority": m.priority.value}
 
 
-@router.post("/workflows/{entity_type}/bulk-transition")
-async def bulk_transition_legal(
-    entity_type: str, body: BulkTransitionRequest,
-    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
-):
-    """Apply one transition to up to 200 legal entities; per-id outcomes."""
-    spec = WORKFLOW_SPECS.get(entity_type)
-    if not spec:
-        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+router.include_router(make_department_workflow_router(
+    "legal", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 legal entities; per-id outcomes.',
+))

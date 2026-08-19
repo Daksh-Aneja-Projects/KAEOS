@@ -14,12 +14,13 @@ from collections import defaultdict
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.lending.models.core import LoanApplication, LoanStatus, UnderwritingDecision
 from app.services.disparate_impact import four_fifths_test
 
 
 async def lending_analytics(db: AsyncSession, tenant_id: str,
-                            charts: bool = True) -> dict:
+                            charts: bool = True) -> DomainAnalytics:
     # Status mix.
     status_q = await db.execute(
         select(LoanApplication.status, sqlfunc.count())
@@ -42,7 +43,12 @@ async def lending_analytics(db: AsyncSession, tenant_id: str,
     approval_rate = round(approved / decided, 4) if decided else None
     approval_note = None if decided else "No underwriting decisions yet."
 
-    kpis = [
+    # Annotated like charts_out/insights below: without it the heterogeneous
+    # literals infer as list[object] and no longer satisfy DomainAnalytics.
+    # REVIEW: this domain alone emits format "int"/"ratio" where the other nine
+    # use "number"/"percent", and carries "note" on a non-null value. Preserved:
+    # the frontend formats off these strings.
+    kpis: list[dict] = [
         {"key": "total_applications", "label": "Applications", "value": total_apps,
          "format": "int"},
         {"key": "approval_rate", "label": "Approval Rate",

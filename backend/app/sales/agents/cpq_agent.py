@@ -13,13 +13,9 @@ from sqlalchemy import select
 
 from app.sales.agents.gated_runner import run_gated_sales_skill, extract_decision
 from app.sales.models.pipeline import Opportunity
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
-
-
-def _v(x):
-    return getattr(x, "value", x)
 
 
 class CPQAgent:
@@ -40,7 +36,7 @@ class CPQAgent:
 
         facts = {
             "opportunity_name": opp.name,
-            "stage": _v(opp.stage),
+            "stage": enum_value(opp.stage),
             "amount": float(opp.amount or 0),
             "requested_discount_pct": requested_discount,
         }

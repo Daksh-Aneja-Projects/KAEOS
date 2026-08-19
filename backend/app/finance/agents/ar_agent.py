@@ -11,11 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance.agents.gated_runner import run_gated_finance_skill
 from app.finance.models.accounts_receivable import CustomerInvoice
-from app.services.json_utils import plain_facts
-
-
-def _v(x):
-    return getattr(x, "value", x)
+from app.services.json_utils import enum_value, plain_facts
 
 
 class ARAgent:
@@ -30,7 +26,7 @@ class ARAgent:
 
         facts = {
             "invoice_number": invoice.invoice_number,
-            "status": _v(invoice.status),
+            "status": enum_value(invoice.status),
             "total_amount": invoice.total_amount,
             "balance_due": invoice.balance_due,
             "currency": invoice.currency,

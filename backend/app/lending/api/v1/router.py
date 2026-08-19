@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_security_event
+from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.lending.agents.adverse_action_agent import AdverseActionAgent
@@ -127,11 +128,7 @@ async def get_application(application_id: str,
                           tenant: dict = Depends(require_role("viewer")),
                           db: AsyncSession = Depends(get_db)):
     tenant_id = tenant["tenant_id"]
-    a = (await db.execute(select(LoanApplication).where(
-        LoanApplication.id == application_id,
-        LoanApplication.tenant_id == tenant_id))).scalar_one_or_none()
-    if not a:
-        raise HTTPException(status_code=404, detail="Application not found")
+    a = await get_or_404(db, LoanApplication, application_id, tenant_id, detail="Application not found")
     return _app_out(a, include_protected=tenant.get("role") in _ADMIN_ROLES)
 
 
@@ -400,25 +397,21 @@ async def attempt_collection_case_contact(
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from app.core.workflow import (  # noqa: E402
-    TransitionRequest, apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.lending.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 
 
-@router.get("/workflows")
-async def get_lending_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines - the frontend renders transition actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_lending_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for lending entities."""
-    return await list_workflow_events(db, tenant_id, domain="lending",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+# REVIEW: lending has /workflows and /workflow-events but no bulk-transition
+# endpoint, unlike the six departments that do. Gap preserved.
+router.include_router(make_department_workflow_router(
+    "lending", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines - the frontend renders transition actions from this.',
+    events_doc='Tenant-scoped transition audit trail for lending entities.',
+))
 
 
 @router.post("/applications/{application_id}/transition")

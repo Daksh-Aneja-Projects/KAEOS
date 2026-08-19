@@ -6,6 +6,7 @@ utilization, computed live from tenant rows.
 from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.operations.models.procurement import (
     GoodsReceipt, ProcurementStatus, PurchaseOrder, PurchaseRequest,
 )
@@ -15,7 +16,7 @@ _FUNNEL = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ORDERED", "RECEIVED"]
 
 
 async def operations_analytics(db: AsyncSession, tenant_id: str,
-                               charts: bool = True) -> dict:
+                               charts: bool = True) -> DomainAnalytics:
     """`charts=False` skips the series queries that feed no KPI and no insight,
     for callers (the org pulse) that only read kpis + insights."""
     po_q = await db.execute(

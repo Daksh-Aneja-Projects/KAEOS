@@ -15,6 +15,7 @@ from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_security_event
+from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.healthcare.models.compliance import ComplianceReport
@@ -54,10 +55,13 @@ async def get_healthcare_analytics(tenant_id: str = Depends(get_tenant_id), db: 
     return await healthcare_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_healthcare_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines — the frontend renders transition actions from this."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "healthcare", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines — the frontend renders transition actions from this.',
+))
 
 
 @router.get("/compliance-reports")
@@ -130,6 +134,12 @@ class PriorAuthRequest(BaseModel):
     payer: Optional[str] = Field(None, max_length=128)
 
 
+# REVIEW: healthcare's gated agent endpoints map ValueError -> 404 but have no
+# 500 handler, record the audit event OUTSIDE the try, and raise
+# HTTPException(404, str(e)) positionally instead of detail=str(e). Kept
+# hand-written; adding the 500 handler is a behaviour change. Healthcare also
+# has no /workflow-events and no bulk-transition endpoint (see the single
+# make_department_workflow_router() mount below).
 @router.post("/encounters/{encounter_id}/triage")
 async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(require_role("operator")),
                                  db: AsyncSession = Depends(get_db)):
@@ -320,10 +330,7 @@ async def revoke_consent(consent_id: str, tenant: dict = Depends(require_role("o
                          db: AsyncSession = Depends(get_db)):
     from datetime import datetime, timezone
     tenant_id = tenant["tenant_id"]
-    c = (await db.execute(select(ConsentRecord).where(
-        ConsentRecord.id == consent_id, ConsentRecord.tenant_id == tenant_id))).scalar_one_or_none()
-    if not c:
-        raise HTTPException(404, "Consent not found")
+    c = await get_or_404(db, ConsentRecord, consent_id, tenant_id, detail="Consent not found")
     if c.revoked_at is None:
         c.revoked_at = datetime.now(timezone.utc)
         db.add(c)

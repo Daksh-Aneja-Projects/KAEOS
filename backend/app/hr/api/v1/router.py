@@ -17,6 +17,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import case, select, func as sqlfunc
 
+from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.core.audit import record_security_event
@@ -183,14 +184,7 @@ async def add_candidate(
 ):
     """Add a candidate to a requisition (scoped to the caller's tenant)."""
     tenant_id = tenant["tenant_id"]
-    req = (await db.execute(
-        select(JobRequisition).where(
-            JobRequisition.id == body.requisition_id,
-            JobRequisition.tenant_id == tenant_id,
-        )
-    )).scalar_one_or_none()
-    if not req:
-        raise HTTPException(status_code=404, detail="Requisition not found")
+    await get_or_404(db, JobRequisition, body.requisition_id, tenant_id, detail="Requisition not found")
 
     candidate = Candidate(
         tenant_id=tenant_id,
@@ -213,6 +207,10 @@ async def add_candidate(
     return {"id": candidate.id, "stage": candidate.stage.value}
 
 
+# REVIEW: hr's gated agent endpoints have neither the ValueError -> 404 nor the
+# 500 handler its siblings share. Their bodies are bespoke (pre-fetch, mutate,
+# custom response shape) so they are not instances of the run_agent_endpoint()
+# family; the missing handlers are a real gap, quarantined as a behaviour change.
 @router.post("/candidates/{candidate_id}/screen")
 async def trigger_screening(
     candidate_id: str,
@@ -226,11 +224,7 @@ async def trigger_screening(
     gated status and an ``execution_id`` that can be resolved via the HITL API.
     """
     tenant_id = tenant["tenant_id"]
-    candidate = (await db.execute(
-        select(Candidate).where(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
-    )).scalar_one_or_none()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    candidate = await get_or_404(db, Candidate, candidate_id, tenant_id, detail="Candidate not found")
 
     from app.hr.agents.recruiting_agent import RecruitingAgent
 
@@ -279,14 +273,7 @@ async def run_requisition_fairness_sweep_route(
     sub-threshold cohort returns INSUFFICIENT_GROUPS (advisory, non-blocking).
     """
     tenant_id = tenant["tenant_id"]
-    req = (await db.execute(
-        select(JobRequisition).where(
-            JobRequisition.id == requisition_id,
-            JobRequisition.tenant_id == tenant_id,
-        )
-    )).scalar_one_or_none()
-    if not req:
-        raise HTTPException(status_code=404, detail="Requisition not found")
+    await get_or_404(db, JobRequisition, requisition_id, tenant_id, detail="Requisition not found")
 
     from app.hr.services.fairness_sweep import run_requisition_fairness_sweep
 
@@ -325,11 +312,7 @@ async def advance_candidate_stage(
 ):
     """Advance (or reject/withdraw) a candidate's pipeline stage."""
     tenant_id = tenant["tenant_id"]
-    candidate = (await db.execute(
-        select(Candidate).where(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
-    )).scalar_one_or_none()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    candidate = await get_or_404(db, Candidate, candidate_id, tenant_id, detail="Candidate not found")
 
     try:
         target = CandidateStage(body.target_stage)
@@ -553,8 +536,7 @@ async def get_hr_dashboard(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
 # Analytics & Workflow Layer (shared engine: app.core.workflow)
 # ═══════════════════════════════════════════════════════════════════════
 from app.core.workflow import (  # noqa: E402
-    BulkTransitionRequest, TransitionRequest, apply_bulk_transition,
-    apply_transition, list_workflow_events,
+    TransitionRequest, apply_transition,
 )
 from app.hr.services.analytics import hr_analytics  # noqa: E402
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
@@ -566,20 +548,14 @@ async def get_hr_analytics(tenant_id: str = Depends(get_tenant_id), db: AsyncSes
     return await hr_analytics(db, tenant_id)
 
 
-@router.get("/workflows")
-async def get_hr_workflows(tenant_id: str = Depends(get_tenant_id)):
-    """Declared state machines — candidate stages stay on /candidates/{id}/advance."""
-    return {name: spec.describe() for name, spec in WORKFLOW_SPECS.items()}
-
-
-@router.get("/workflow-events")
-async def get_hr_workflow_events(
-    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-    tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db),
-):
-    """Tenant-scoped transition audit trail for HR entities."""
-    return await list_workflow_events(db, tenant_id, domain="hr",
-                                      entity_type=entity_type, entity_id=entity_id)
+# Generated from the shared factory in app/core/department_endpoints.py.
+# Endpoint names and docstrings are the hand-written originals, so the
+# operationIds and descriptions in the OpenAPI schema are unchanged.
+router.include_router(make_department_workflow_router(
+    "hr", WORKFLOW_SPECS,
+    workflows_doc='Declared state machines — candidate stages stay on /candidates/{id}/advance.',
+    events_doc='Tenant-scoped transition audit trail for HR entities.',
+))
 
 
 @router.post("/time-off-requests/{request_id}/transition")
@@ -649,16 +625,10 @@ async def create_time_off_request(
             "hours_requested": req.hours_requested}
 
 
-@router.post("/workflows/{entity_type}/bulk-transition")
-async def bulk_transition_hr(
-    entity_type: str, body: BulkTransitionRequest,
-    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
-):
-    """Apply one transition to up to 200 hr entities; per-id outcomes."""
-    spec = WORKFLOW_SPECS.get(entity_type)
-    if not spec:
-        raise HTTPException(404, detail=f"Unknown workflow entity '{entity_type}'. Known: {sorted(WORKFLOW_SPECS)}")
-    return await apply_bulk_transition(db, spec, body.ids, body.to_state, tenant, note=body.note)
+router.include_router(make_department_workflow_router(
+    "hr", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 hr entities; per-id outcomes.',
+))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -768,14 +738,8 @@ async def create_benefit_enrollment(
     body: BenefitEnrollmentCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
-    plan = (await db.execute(select(BenefitPlan).where(
-        BenefitPlan.id == body.plan_id, BenefitPlan.tenant_id == tenant_id))).scalar_one_or_none()
-    if not plan:
-        raise HTTPException(404, "Benefit plan not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
+    await get_or_404(db, BenefitPlan, body.plan_id, tenant_id, detail="Benefit plan not found")
     enrollment = BenefitEnrollment(
         tenant_id=tenant_id, employee_id=body.employee_id, plan_id=body.plan_id,
         coverage_level=body.coverage_level, effective_date=body.effective_date,
@@ -809,10 +773,7 @@ async def verify_benefit_enrollment(
     pass). Wires BenefitsAgent, previously bound only to dead org-graph
     metadata (HR_AGENT_REGISTRY['benefits'])."""
     tenant_id = tenant["tenant_id"]
-    enrollment = (await db.execute(select(BenefitEnrollment).where(
-        BenefitEnrollment.id == enrollment_id, BenefitEnrollment.tenant_id == tenant_id))).scalar_one_or_none()
-    if not enrollment:
-        raise HTTPException(404, "Enrollment not found")
+    enrollment = await get_or_404(db, BenefitEnrollment, enrollment_id, tenant_id, detail="Enrollment not found")
     plan = (await db.execute(select(BenefitPlan).where(BenefitPlan.id == enrollment.plan_id))).scalar_one_or_none()
     emp = (await db.execute(select(HREmployee).where(HREmployee.id == enrollment.employee_id))).scalar_one_or_none()
     if not plan or not emp:
@@ -882,10 +843,7 @@ async def create_compensation(
     body: CompensationCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
     # A new current record supersedes the previous one, so is_current stays a
     # real, queryable invariant instead of drifting stale with multiple rows.
     prior = (await db.execute(select(Compensation).where(
@@ -919,10 +877,14 @@ async def compensation_market_analysis(
     approve any pay change; the agent only informs. Wires CompensationAgent,
     previously bound only to dead org-graph metadata."""
     tenant_id = tenant["tenant_id"]
-    comp = (await db.execute(select(Compensation).where(
-        Compensation.id == compensation_id, Compensation.tenant_id == tenant_id))).scalar_one_or_none()
-    if not comp:
-        raise HTTPException(404, "Compensation record not found")
+    comp = await get_or_404(db, Compensation, compensation_id, tenant_id, detail="Compensation record not found")
+    # REVIEW: this is the ONE fetch-or-404 in the ten department routers with no
+    # tenant_id predicate, so it is left hand-written rather than routed through
+    # get_or_404() (which requires one). Reachable rows are still tenant-scoped in
+    # practice - comp came from a tenant-filtered read and RLS covers the session -
+    # but the query itself is unscoped, so the belt-and-braces filter every sibling
+    # carries is missing here. The fix is `HREmployee.tenant_id == tenant_id` as a
+    # second predicate; it changes the emitted SQL, so it is quarantined, not done here.
     emp = (await db.execute(select(HREmployee).where(HREmployee.id == comp.employee_id))).scalar_one_or_none()
     if not emp:
         raise HTTPException(404, "Linked employee not found")
@@ -1000,10 +962,7 @@ async def create_boarding_plan(
     body: BoardingPlanCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
     titles = body.tasks or (
         _DEFAULT_ONBOARDING_TASKS if body.plan_type == "ONBOARDING"
         else _DEFAULT_OFFBOARDING_TASKS if body.plan_type == "OFFBOARDING" else []
@@ -1058,10 +1017,7 @@ async def create_boarding_task(
     body: BoardingTaskCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    plan = (await db.execute(select(BoardingPlan).where(
-        BoardingPlan.id == body.plan_id, BoardingPlan.tenant_id == tenant_id))).scalar_one_or_none()
-    if not plan:
-        raise HTTPException(404, "Boarding plan not found")
+    plan = await get_or_404(db, BoardingPlan, body.plan_id, tenant_id, detail="Boarding plan not found")
     task = BoardingTask(
         tenant_id=tenant_id, plan_id=body.plan_id, title=body.title, description=body.description,
         assignee_id=body.assignee_id, due_date=body.due_date, status=TaskStatus.PENDING,
@@ -1116,10 +1072,7 @@ async def onboarding_checkin(
     pipeline. Wires OnboardingAgent, previously bound only to dead org-graph
     metadata (HR_AGENT_REGISTRY['onboarding'])."""
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, employee_id, tenant_id, detail="Employee not found")
     from app.hr.agents.onboarding_agent import OnboardingAgent
     agent = OnboardingAgent()
     result = await agent.check_in_with_new_hire(db, employee_id, body.week_num, body.response)
@@ -1143,10 +1096,7 @@ async def offboarding_exit_interview(
     task the first time this runs for them). Wires OffboardingAgent,
     previously bound only to dead org-graph metadata."""
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, employee_id, tenant_id, detail="Employee not found")
 
     from app.hr.agents.offboarding_agent import OffboardingAgent
     from app.hr.agents.gated_runner import extract_decision
@@ -1294,14 +1244,8 @@ async def create_course_enrollment(
     body: CourseEnrollmentCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
-    course = (await db.execute(select(Course).where(
-        Course.id == body.course_id, Course.tenant_id == tenant_id))).scalar_one_or_none()
-    if not course:
-        raise HTTPException(404, "Course not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
+    await get_or_404(db, Course, body.course_id, tenant_id, detail="Course not found")
     enrollment = CourseEnrollment(
         tenant_id=tenant_id, employee_id=body.employee_id, course_id=body.course_id, due_date=body.due_date,
     )
@@ -1401,10 +1345,7 @@ async def triage_er_case(
     gated 7-gate pipeline (EEOC + GDPR). Wires EmployeeRelationsAgent,
     previously bound only to dead org-graph metadata."""
     tenant_id = tenant["tenant_id"]
-    case = (await db.execute(select(ERCase).where(
-        ERCase.id == case_id, ERCase.tenant_id == tenant_id))).scalar_one_or_none()
-    if not case:
-        raise HTTPException(404, "ER case not found")
+    await get_or_404(db, ERCase, case_id, tenant_id, detail="ER case not found")
     from app.hr.agents.employee_relations_agent import EmployeeRelationsAgent
     agent = EmployeeRelationsAgent()
     result = await agent.triage_case(db, case_id)
@@ -1524,10 +1465,7 @@ async def generate_payslips(
     tax-withholding engine, so taxes/deductions stay empty and net equals
     gross rather than presenting a guessed number as a real one."""
     tenant_id = tenant["tenant_id"]
-    run = (await db.execute(select(PayrollRun).where(
-        PayrollRun.id == run_id, PayrollRun.tenant_id == tenant_id))).scalar_one_or_none()
-    if not run:
-        raise HTTPException(404, "Payroll run not found")
+    run = await get_or_404(db, PayrollRun, run_id, tenant_id, detail="Payroll run not found")
 
     existing_emp_ids = set((await db.execute(
         select(Payslip.employee_id).where(Payslip.run_id == run_id)
@@ -1702,10 +1640,7 @@ async def resolve_compliance_violation(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    v = (await db.execute(select(ComplianceViolation).where(
-        ComplianceViolation.id == violation_id, ComplianceViolation.tenant_id == tenant_id))).scalar_one_or_none()
-    if not v:
-        raise HTTPException(404, "Violation not found")
+    v = await get_or_404(db, ComplianceViolation, violation_id, tenant_id, detail="Violation not found")
     v.resolved = True
     v.resolution_notes = body.resolution_notes
     db.add(v)
@@ -1835,14 +1770,8 @@ async def schedule_interview(
     body: InterviewCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    cand = (await db.execute(select(Candidate).where(
-        Candidate.id == body.candidate_id, Candidate.tenant_id == tenant_id))).scalar_one_or_none()
-    if not cand:
-        raise HTTPException(404, "Candidate not found")
-    interviewer = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.interviewer_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not interviewer:
-        raise HTTPException(404, "Interviewer not found")
+    await get_or_404(db, Candidate, body.candidate_id, tenant_id, detail="Candidate not found")
+    await get_or_404(db, HREmployee, body.interviewer_id, tenant_id, detail="Interviewer not found")
     interview = Interview(
         tenant_id=tenant_id, candidate_id=body.candidate_id, interviewer_id=body.interviewer_id,
         scheduled_at=body.scheduled_at, duration_mins=body.duration_mins, interview_type=body.interview_type,
@@ -1867,10 +1796,7 @@ async def submit_interview_feedback(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    interview = (await db.execute(select(Interview).where(
-        Interview.id == interview_id, Interview.tenant_id == tenant_id))).scalar_one_or_none()
-    if not interview:
-        raise HTTPException(404, "Interview not found")
+    interview = await get_or_404(db, Interview, interview_id, tenant_id, detail="Interview not found")
     interview.score = body.score
     interview.recommendation = body.recommendation
     interview.notes = body.notes
@@ -1917,10 +1843,7 @@ async def create_employee_document(
     body: EmployeeDocumentCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
     doc = EmployeeDocument(
         tenant_id=tenant_id, employee_id=body.employee_id, doc_type=body.doc_type, title=body.title,
         file_path=body.file_path, is_pii=body.is_pii, expiration_date=body.expiration_date,
@@ -1939,10 +1862,7 @@ async def sign_employee_document(
     document_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    doc = (await db.execute(select(EmployeeDocument).where(
-        EmployeeDocument.id == document_id, EmployeeDocument.tenant_id == tenant_id))).scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
+    doc = await get_or_404(db, EmployeeDocument, document_id, tenant_id, detail="Document not found")
     doc.is_signed = True
     doc.signature_date = datetime.now(timezone.utc)
     db.add(doc)
@@ -1986,10 +1906,7 @@ async def create_timesheet(
     body: TimesheetCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
     if body.period_end < body.period_start:
         raise HTTPException(422, "period_end must be on or after period_start")
     ts = Timesheet(
@@ -2058,18 +1975,9 @@ async def create_performance_review(
     body: PerformanceReviewCreate, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    cycle = (await db.execute(select(ReviewCycle).where(
-        ReviewCycle.id == body.cycle_id, ReviewCycle.tenant_id == tenant_id))).scalar_one_or_none()
-    if not cycle:
-        raise HTTPException(404, "Review cycle not found")
-    emp = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.employee_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not emp:
-        raise HTTPException(404, "Employee not found")
-    reviewer = (await db.execute(select(HREmployee).where(
-        HREmployee.id == body.reviewer_id, HREmployee.tenant_id == tenant_id))).scalar_one_or_none()
-    if not reviewer:
-        raise HTTPException(404, "Reviewer not found")
+    await get_or_404(db, ReviewCycle, body.cycle_id, tenant_id, detail="Review cycle not found")
+    await get_or_404(db, HREmployee, body.employee_id, tenant_id, detail="Employee not found")
+    await get_or_404(db, HREmployee, body.reviewer_id, tenant_id, detail="Reviewer not found")
     review = PerformanceReview(
         tenant_id=tenant_id, cycle_id=body.cycle_id, employee_id=body.employee_id,
         reviewer_id=body.reviewer_id, status="DRAFT",
@@ -2106,10 +2014,7 @@ async def submit_self_rating(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    review = (await db.execute(select(PerformanceReview).where(
-        PerformanceReview.id == review_id, PerformanceReview.tenant_id == tenant_id))).scalar_one_or_none()
-    if not review:
-        raise HTTPException(404, "Performance review not found")
+    review = await get_or_404(db, PerformanceReview, review_id, tenant_id, detail="Performance review not found")
     if review.status not in ("DRAFT", "PENDING_EMPLOYEE"):
         raise HTTPException(409, detail={"error": "invalid_transition", "from_state": review.status,
                                           "reason": "Self-rating can only be submitted from DRAFT or PENDING_EMPLOYEE."})
@@ -2132,10 +2037,7 @@ async def submit_manager_rating(
     tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
 ):
     tenant_id = tenant["tenant_id"]
-    review = (await db.execute(select(PerformanceReview).where(
-        PerformanceReview.id == review_id, PerformanceReview.tenant_id == tenant_id))).scalar_one_or_none()
-    if not review:
-        raise HTTPException(404, "Performance review not found")
+    review = await get_or_404(db, PerformanceReview, review_id, tenant_id, detail="Performance review not found")
     if review.status != "PENDING_MANAGER":
         raise HTTPException(409, detail={"error": "invalid_transition", "from_state": review.status,
                                           "reason": "Manager rating can only be submitted from PENDING_MANAGER."})
@@ -2165,10 +2067,7 @@ async def synthesize_review_feedback(
     ai_feedback_summary/ai_growth_areas directly onto the review. Wires
     PerformanceAgent, previously bound only to dead org-graph metadata."""
     tenant_id = tenant["tenant_id"]
-    review = (await db.execute(select(PerformanceReview).where(
-        PerformanceReview.id == review_id, PerformanceReview.tenant_id == tenant_id))).scalar_one_or_none()
-    if not review:
-        raise HTTPException(404, "Performance review not found")
+    review = await get_or_404(db, PerformanceReview, review_id, tenant_id, detail="Performance review not found")
     from app.hr.agents.performance_agent import PerformanceAgent
     from app.hr.agents.gated_runner import extract_decision
     agent = PerformanceAgent()

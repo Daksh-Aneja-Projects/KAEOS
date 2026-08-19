@@ -13,6 +13,7 @@ from decimal import Decimal
 from sqlalchemy import case, func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor
 from app.finance.models.accounts_receivable import CustomerInvoice, CustomerInvoiceStatus
 from app.finance.models.expense import ExpenseReport
@@ -23,7 +24,7 @@ OPEN_AP = [InvoiceStatus.PENDING_APPROVAL, InvoiceStatus.APPROVED,
 
 
 async def finance_analytics(db: AsyncSession, tenant_id: str,
-                            charts: bool = True) -> dict:
+                            charts: bool = True) -> DomainAnalytics:
     """`charts=False` skips the series queries that feed no KPI and no insight,
     for callers (the org pulse) that read only kpis + insights."""
     today = date.today()

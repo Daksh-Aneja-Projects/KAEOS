@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.department_gate import PROCUREMENT, extract_decision
 from app.operations.models.procurement import PurchaseOrder, PurchaseRequest
-from app.services.json_utils import plain_facts
+from app.services.json_utils import enum_value, plain_facts
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ async def sourcing_agent(db: AsyncSession, request_id: str, tenant_id: str) -> D
         "quantity": req.quantity,
         "unit_price": req.unit_price,
         "total_estimated_cost": req.total_estimated_cost,
-        "status": getattr(req.status, "value", req.status),
+        "status": enum_value(req.status),
         "department": req.department,
     })
     return await run_gated_procurement_skill(

@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, case, func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.legal.models.compliance import ComplianceObligation, ObligationStatus
 from app.legal.models.contracts import Contract, ContractClause, ContractStatus
 from app.legal.models.ip import IPStatus, Patent, Trademark
@@ -21,7 +22,7 @@ _DSAR_RISK_WINDOW_DAYS = 7
 _DSAR_TERMINAL = (DsarStatus.COMPLETED, DsarStatus.FAILED)
 
 
-async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+async def legal_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> DomainAnalytics:
     """`charts=False` skips the series queries that feed no KPI and no insight,
     for callers (the org pulse) that only read kpis + insights."""
     today = date.today()

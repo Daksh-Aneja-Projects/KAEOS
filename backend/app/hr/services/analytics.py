@@ -6,6 +6,7 @@ computed live from tenant rows in the shared domain-analytics shape.
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.domain_analytics import DomainAnalytics
 from app.hr.models.core import HREmployee
 from app.hr.models.recruiting import Candidate, JobRequisition, ReqStatus
 from app.hr.models.time_attendance import TimeOffRequest
@@ -14,7 +15,7 @@ _FUNNEL_ORDER = ["APPLIED", "AI_SCREENING", "RECRUITER_SCREEN", "HM_INTERVIEW",
                  "PANEL_INTERVIEW", "OFFER_PREP", "OFFER_EXTENDED", "HIRED"]
 
 
-async def hr_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> dict:
+async def hr_analytics(db: AsyncSession, tenant_id: str, charts: bool = True) -> DomainAnalytics:
     """`charts=False` skips the series queries that feed no KPI and no insight,
     for callers (the org pulse) that read only kpis + insights."""
     # Headcount by employment status.
