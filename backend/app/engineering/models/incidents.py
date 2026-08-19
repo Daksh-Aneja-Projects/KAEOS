@@ -3,14 +3,12 @@ KAEOS Engineering Domain — Incident Models (IT Ops)
 """
 from sqlalchemy import Column, String, DateTime, Enum, Text, Integer, Boolean, JSON, ForeignKey
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class IncidentSeverity(str, enum.Enum):

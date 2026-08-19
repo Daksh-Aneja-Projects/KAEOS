@@ -17,7 +17,6 @@ through the same guarded paths a human action would, so audit and RBAC hold.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -29,14 +28,13 @@ from app.core.workflow import (
     WorkflowSpec, _current_state, apply_transition,
 )
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 logger = logging.getLogger(__name__)
 
 VALID_ACTIONS = {"transition", "assign", "escalate"}
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class AutomationRule(Base):

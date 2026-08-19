@@ -14,14 +14,12 @@ from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
                         JSON, Numeric, String, Text, UniqueConstraint)
 from sqlalchemy.sql import func
 import enum
-import uuid
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class LoanStatus(str, enum.Enum):

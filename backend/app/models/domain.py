@@ -5,7 +5,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-import uuid
 import enum
 # pgvector is a hard, pinned requirement (requirements.txt) and this is its only
 # import site. The old `except ImportError: Vector = None` fallback paired with an
@@ -13,6 +12,7 @@ import enum
 # skill_embeddings table with NO embedding column at all — a schema defect that
 # only surfaced much later as a failing insert. Let the ImportError raise instead.
 from pgvector.sqlalchemy import Vector
+from app.models.mixins import new_uuid as _uuid
 
 
 def _embedding_dim() -> int:
@@ -43,8 +43,6 @@ _EMBED_DIM = _embedding_dim()
 Base = declarative_base()
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class ConfidenceTier(str, enum.Enum):

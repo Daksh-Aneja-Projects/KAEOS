@@ -1,6 +1,18 @@
 """Reusable SQLAlchemy declarative mixins."""
+import uuid
+
 from sqlalchemy import Boolean, false
 from sqlalchemy.orm import Mapped, mapped_column
+
+
+def new_uuid() -> str:
+    """Canonical string-UUID4 primary-key default.
+
+    Replaces the ~80 identical per-model ``def _uuid(): return str(uuid.uuid4())``
+    helpers. Models that spell the default ``_uuid`` import it aliased:
+        from app.models.mixins import new_uuid as _uuid
+    """
+    return str(uuid.uuid4())
 
 
 class LegalHoldMixin:

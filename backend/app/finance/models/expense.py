@@ -4,14 +4,12 @@ Employee expense reports, line items, and policy enforcement.
 """
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class ExpenseCategory(str, enum.Enum):

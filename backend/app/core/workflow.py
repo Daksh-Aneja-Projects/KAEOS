@@ -18,7 +18,6 @@ platform a uniform, queryable transition history across all domains.
 """
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -31,10 +30,9 @@ from sqlalchemy.sql import func
 
 from app.core.audit import record_security_event
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class WorkflowEvent(Base):

@@ -4,13 +4,11 @@ Sales reps, teams, and territories.
 """
 from sqlalchemy import Column, String, DateTime, Boolean, Numeric, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class SalesTeam(Base):
     """Sales teams (e.g. North America Enterprise, EMEA Mid-Market)."""

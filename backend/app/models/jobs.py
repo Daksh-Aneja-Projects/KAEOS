@@ -12,13 +12,11 @@ session (leader only) so it can drain every tenant's jobs.
 """
 from sqlalchemy import Column, String, Integer, DateTime, JSON, Index
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class Job(Base):

@@ -13,13 +13,11 @@ the same necessary carve-out as email->tenant login.
 """
 from sqlalchemy import Column, String, Boolean, Integer, DateTime, JSON
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class ApiKey(Base):

@@ -8,13 +8,11 @@ other status column in this codebase - see the migration for why.
 """
 from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class ComplianceReport(Base):

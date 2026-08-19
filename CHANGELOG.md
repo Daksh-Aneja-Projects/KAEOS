@@ -38,6 +38,22 @@ All notable changes to KAEOS are documented here. This project adheres to
   4 of 673 routes under the pinned FastAPI 0.140), gained a `--check` mode against a
   committed 671-operation baseline, wired into the equivalence job.
 
+### Changed - M1.8 model boilerplate (2026-08-19)
+
+- **Consolidated the 83 identical per-model `_uuid()` helpers** into one canonical
+  `app/models/mixins.py::new_uuid`, imported aliased as `_uuid` so every
+  `default=_uuid` keeps working; the now-unused `import uuid` is dropped per file.
+  Proven byte-identical: a fresh `create_all` on pg16 pg_dumps to the exact same
+  DDL as before (only pg_dump's random session nonce differs).
+- **Deferred (not a shortcut - a correctness call):** the created_at/updated_at,
+  tenant_id and id column mixins. A `mapped_column` mixin cannot sit between two
+  model-defined columns, so applying them reorders columns in ~30 tables (the
+  DDL-dump gate caught it). That is functionally inert (the drift gate compares by
+  name) but diverges `create_all` column order from the frozen `0001` literal DDL,
+  which is exactly the "invisible column-ORDER change" M1.8 was gated against. Not
+  worth a schema-order divergence for a cosmetic saving; the reusable mixin lives
+  in `mixins.py` for opt-in, byte-identical adoption on new/verified models.
+
 ### Fixed - MED backlog cleanup batch (2026-08-17)
 
 - **Outbound idempotency (§14):** a duplicate queued write could double-meter /

@@ -12,13 +12,11 @@ from sqlalchemy import (
     Boolean, BigInteger, Column, Date, DateTime, Integer, Numeric, String, UniqueConstraint, Index,
 )
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class BillingAccount(Base):

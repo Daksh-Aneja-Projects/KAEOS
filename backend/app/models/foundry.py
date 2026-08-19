@@ -19,13 +19,11 @@ another's.
 """
 from sqlalchemy import Column, String, Text, JSON, Float, Boolean, DateTime, Integer
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class TrainingExample(Base):

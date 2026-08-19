@@ -4,13 +4,11 @@ Chart of Accounts, Journal Entries, and General Ledger line items.
 """
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class AccountType(str, enum.Enum):

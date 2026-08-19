@@ -3,12 +3,10 @@ KAEOS Sales Domain — Commission Models
 """
 from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Float, Boolean
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class CommissionPlan(Base):
     """Compensation plans describing base quotas, OTE, and commission rates."""

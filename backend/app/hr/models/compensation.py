@@ -4,13 +4,11 @@ Function 5: Compensation & Equity
 """
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, ForeignKey, Enum, Date
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class CompType(str, enum.Enum):
     SALARY = "SALARY"

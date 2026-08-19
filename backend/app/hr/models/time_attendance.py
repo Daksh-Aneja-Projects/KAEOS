@@ -4,13 +4,11 @@ Function 10: Time & Attendance
 """
 from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Enum, Date
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class LeaveType(str, enum.Enum):
     PTO = "PTO"

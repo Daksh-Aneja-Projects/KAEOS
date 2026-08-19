@@ -4,14 +4,12 @@ Internal audit trails, findings, and control testing.
 """
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Date, Text, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class AuditTrail(Base):

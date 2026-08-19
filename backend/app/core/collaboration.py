@@ -13,7 +13,6 @@ Everything is tenant-scoped and identity-keyed by the caller's email or name.
 from __future__ import annotations
 
 import re
-import uuid
 from typing import List, Optional
 
 from sqlalchemy import Column, DateTime, JSON, String, Text, select
@@ -21,10 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 def caller_identity(tenant: dict) -> str:

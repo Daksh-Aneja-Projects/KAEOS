@@ -4,14 +4,12 @@ Roles: ADMIN (full access), ANALYST (read + execute), VIEWER (read only)
 """
 from sqlalchemy import Column, String, Boolean, Integer, DateTime, Enum
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 class UserRole(str, enum.Enum):

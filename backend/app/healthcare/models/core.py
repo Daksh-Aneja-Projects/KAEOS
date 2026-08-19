@@ -15,14 +15,12 @@ from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint,
 )
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class PatientEncounter(Base, LegalHoldMixin):

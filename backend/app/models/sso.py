@@ -8,13 +8,11 @@ other tenant table.
 """
 from sqlalchemy import Column, String, Boolean, DateTime, Text, Index, text
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 class SSOConnection(Base):

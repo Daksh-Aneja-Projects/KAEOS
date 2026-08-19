@@ -3,14 +3,12 @@ KAEOS Sales Domain — Leads Models
 """
 from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Boolean
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class LeadSource(str, enum.Enum):
     WEBSITE = "WEBSITE"

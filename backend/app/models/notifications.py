@@ -11,13 +11,11 @@ was sent where - governance products cannot have silent side channels.
 """
 from sqlalchemy import Column, String, Boolean, DateTime, JSON, Text
 from sqlalchemy.sql import func
-import uuid
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 # Events a channel can subscribe to. Kept as a module constant so routes and

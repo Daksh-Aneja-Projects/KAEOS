@@ -9,14 +9,12 @@ from sqlalchemy import (
     Column, String, Boolean, Integer, Float, DateTime, Text, JSON, Enum, Numeric, Index,
 )
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
 
-def _uuid():
-    return str(uuid.uuid4())
 
 
 # ── N1: Model Management ─────────────────────────────────────────────────────

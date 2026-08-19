@@ -3,13 +3,11 @@ KAEOS Legal Domain — Intellectual Property Models
 """
 from sqlalchemy import Column, String, DateTime, Text, Date, Enum
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class IPStatus(str, enum.Enum):
     PENDING = "PENDING"

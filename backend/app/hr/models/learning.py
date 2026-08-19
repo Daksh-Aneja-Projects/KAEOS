@@ -4,13 +4,11 @@ Function 7: Learning & Development
 """
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, ForeignKey, Enum, Text
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class CourseStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"

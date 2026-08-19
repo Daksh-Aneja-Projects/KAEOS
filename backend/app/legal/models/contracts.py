@@ -3,14 +3,12 @@ KAEOS Legal Domain — Contracts Models
 """
 from sqlalchemy import Column, String, DateTime, Enum, Text, ForeignKey, Numeric, Date, Boolean
 from sqlalchemy.sql import func
-import uuid
 import enum
 
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
+from app.models.mixins import new_uuid as _uuid
 
-def _uuid():
-    return str(uuid.uuid4())
 
 class ContractStatus(str, enum.Enum):
     DRAFT = "DRAFT"
