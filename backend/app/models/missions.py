@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, JSON, Integer, Float, Numeric, Text, Boolean, Index
+from sqlalchemy import String, DateTime, JSON, Integer, Float, Numeric, Text, Boolean, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Mission money is exact decimal, not binary float: spent_usd accumulates per-step
@@ -40,7 +40,9 @@ class Mission(Base):
     status: Mapped[str] = mapped_column(String(24), default="PLANNING", index=True)
 
     budget_usd: Mapped[Optional[Decimal]] = mapped_column(_MONEY, nullable=True)   # None = uncapped
-    spent_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
+    # server_default matches the migration DDL: a raw INSERT that omits this
+    # column gets 0, not NULL, so the budget gate never sums a NULL spend.
+    spent_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), server_default=text("0"))
 
     narrative: Mapped[Optional[str]] = mapped_column(Text, nullable=True)        # why this plan
     departments: Mapped[list] = mapped_column(JSON, default=list)                # departments in scope
@@ -85,7 +87,8 @@ class MissionStep(Base):
 
     execution_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    cost_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
+    # server_default matches the migration DDL (see spent_usd above).
+    cost_usd: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), server_default=text("0"))
 
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

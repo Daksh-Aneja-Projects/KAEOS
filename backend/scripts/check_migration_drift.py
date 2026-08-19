@@ -52,13 +52,6 @@ KNOWN_DRIFT = {
     # it only reaches Base.metadata once a router imports it.
     "remove_table:ops_work_orders",
     "remove_index:ops_work_orders.ix_ops_work_orders_tenant_id",
-    # Numeric money columns: the migrations carry server_default '0', the models
-    # declare only a Python-side default.
-    "modify_default:mission_steps.cost_usd",
-    "modify_default:missions.spent_usd",
-    # Indexes created by migration only, never declared on the model:
-    "remove_index:skill_embeddings.ix_skill_embeddings_hnsw",  # 0038 HNSW ANN index
-    "remove_index:sso_connections.uq_sso_verified_domain",     # 0036 partial unique
 }
 
 _DIRECTION = {"add": "in models, NOT in migrations",

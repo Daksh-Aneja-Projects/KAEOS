@@ -11,6 +11,22 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - schema-truth drift repairs + e2e hang (2026-08-19)
+
+- **`pytest tests/` no longer hangs forever (M9.0):** the e2e `BASE_URL` defaults
+  to port 8001 (a sibling project's port); when that server held it, the
+  bare-socket reachability probe passed, nothing skipped, and every e2e test
+  blocked on a 300s read against the wrong server. `backend_reachable()` now
+  requires `/health/live` to return KAEOS's identity payload (foreign server ->
+  skip), cached per session; the e2e client gets a 5s connect timeout.
+- **Four genuine model/migration drifts repaired** (removed from the drift-gate
+  allowlist): `missions.spent_usd` / `mission_steps.cost_usd` now declare the
+  `server_default('0')` their migration already carries; the
+  `ix_skill_embeddings_hnsw` HNSW index and the `uq_sso_verified_domain` partial
+  unique index are now declared on their models (the latter on both dialects, so
+  the SQLite test schema keeps the partial semantics). Drift gate: 256 tables, 0
+  unaccepted differences on pg16.
+
 ### Fixed - MED backlog cleanup batch (2026-08-17)
 
 - **Outbound idempotency (§14):** a duplicate queued write could double-meter /

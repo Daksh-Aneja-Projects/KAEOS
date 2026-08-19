@@ -128,6 +128,14 @@ class Rule(Base):
 class SkillEmbedding(Base):
     """Vector storage for skills, used in L9 SkillRouter fuzzy matching"""
     __tablename__ = 'skill_embeddings'
+    # HNSW cosine index so <=> similarity is an ANN lookup, not a seq scan.
+    # Declared here (not only in migration 0038) so the schema-drift gate sees
+    # it and create_all on Postgres builds it; ignored by SQLite create_all.
+    __table_args__ = (
+        Index("ix_skill_embeddings_hnsw", "embedding",
+              postgresql_using="hnsw",
+              postgresql_ops={"embedding": "vector_cosine_ops"}),
+    )
 
     skill_db_id = Column(String, primary_key=True)
     tenant_id = Column(String, nullable=False, index=True)

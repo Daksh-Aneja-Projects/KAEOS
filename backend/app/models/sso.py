@@ -6,7 +6,7 @@ client secret is stored Fernet-encrypted at rest (never in plaintext, never
 returned by the API). Tenant-scoped: placed under RLS on Postgres like every
 other tenant table.
 """
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Index, text
 from sqlalchemy.sql import func
 import uuid
 
@@ -20,6 +20,18 @@ def _uuid() -> str:
 class SSOConnection(Base):
     """An IdP connection for one tenant."""
     __tablename__ = "sso_connections"
+    # At most one VERIFIED owner per email domain (partial unique), so a second
+    # tenant cannot verify a domain another tenant already proved it controls.
+    # Unverified duplicate claims are allowed - that is what the DNS-TXT
+    # challenge arbitrates. Declared on BOTH dialects (SQLite supports partial
+    # indexes) so the drift gate matches migration 0036 and the test schema
+    # keeps the same semantics. NOTE: alembic's autogenerate does not diff the
+    # partial WHERE predicate, so keep it matching 0036 by hand.
+    __table_args__ = (
+        Index("uq_sso_verified_domain", "email_domain", unique=True,
+              postgresql_where=text("domain_verified"),
+              sqlite_where=text("domain_verified")),
+    )
 
     id = Column(String, primary_key=True, default=_uuid)
     tenant_id = Column(String, nullable=False, index=True)
