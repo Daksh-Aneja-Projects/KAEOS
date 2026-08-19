@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 
 from app.core.department_endpoints import (
-    make_department_workflow_router, run_agent_endpoint,
+    get_or_404, make_department_workflow_router, run_agent_endpoint,
 )
 from app.core.database import get_db
 
@@ -183,9 +183,7 @@ async def list_ticket_comments(
     """The actual support conversation thread (customer messages, agent
     replies, system entries) - written by ResolutionAgent/KBAgent today but
     never surfaced anywhere until now."""
-    ticket_q = await db.execute(select(Ticket).where(Ticket.id == ticket_id, Ticket.tenant_id == tenant_id))
-    if not ticket_q.scalar_one_or_none():
-        raise HTTPException(404, detail=f"Ticket {ticket_id} not found")
+    await get_or_404(db, Ticket, ticket_id, tenant_id, detail=f"Ticket {ticket_id} not found")
 
     q = await db.execute(
         select(TicketComment).where(TicketComment.ticket_id == ticket_id, TicketComment.tenant_id == tenant_id)
@@ -360,10 +358,7 @@ async def list_kb_articles(
 
 async def _set_kb_published(article_id: str, tenant: dict, db: AsyncSession, published: bool) -> dict:
     tenant_id = tenant["tenant_id"]
-    q = await db.execute(select(KBArticle).where(KBArticle.id == article_id, KBArticle.tenant_id == tenant_id))
-    article = q.scalar_one_or_none()
-    if not article:
-        raise HTTPException(404, detail=f"KB article {article_id} not found")
+    article = await get_or_404(db, KBArticle, article_id, tenant_id, detail=f"KB article {article_id} not found")
     article.is_published = published
     db.add(article)
     await db.commit()
