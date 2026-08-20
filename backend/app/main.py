@@ -124,66 +124,89 @@ async def lifespan(app: FastAPI):
 
     setup_logging()
 
-    await init_db()
-    # Verify Postgres RLS is actually in force (not inert due to owner-role
-    # misconfig) before serving any traffic. Fails closed in production.
-    from app.core.database import assert_rls_effective
-    try:
-        await assert_rls_effective()
-    except RuntimeError:
-        raise
-    except Exception as _rls_exc:
-        logger.warning(f"[RLS] effectiveness check could not run: {_rls_exc}")
-    # Seeding is maintenance: run it on the owner connection. Under RLS the
-    # app role cannot insert rows without a tenant context (by design), so
-    # seeding through it fails closed - which is the policy working, not a bug.
-    async with MaintenanceSessionLocal() as session:
-        # Demo/fictional dataset (tenant_acme) is opt-out: set SEED_DEMO_DATA=false
-        # in a real deployment so dashboards only reflect genuinely ingested data.
-        if settings.SEED_DEMO_DATA and not settings.is_production_like:
-            seeded = await seed_database(session)
-            if seeded:
-                logger.info("Database seeded with KAEOS demo data")
-            else:
-                logger.info("Database already contains data, skipping seed")
-        else:
-            logger.info("Skipping fictional demo dataset (SEED_DEMO_DATA off or "
-                        "production-like environment)")
-        # Provision the root admin account from configuration (no public default).
-        from app.services.auth import AuthService
-        await AuthService.seed_admin_user(session)
-
-        # Sync built-in domain packs (HR, etc.) from YAML into DB
-        try:
-            from app.workforce.domain_packs.engine import DomainPackEngine
-            await DomainPackEngine.sync_built_in_packs(session)
-            logger.info("Built-in domain packs synced to database")
-        except Exception as e:
-            logger.warning(f"Domain pack sync failed (non-fatal): {e}")
-
-    # Seed department domain data (HR/Finance/Legal/Sales/Support/Operations)
-    # when empty, then roll up department KPI metrics. Idempotent per domain.
-    # Same gate as the core demo dataset above: this is FICTIONAL department
-    # data (employees, contracts, loans, tickets), and without the gate a fresh
-    # production database would seed tenant_acme demo rows on first boot.
-    if settings.SEED_DEMO_DATA and not settings.is_production_like:
-        from app.core.domain_seed import seed_domains_if_empty
-        await seed_domains_if_empty()
-    else:
-        logger.info("Skipping fictional department demo data (SEED_DEMO_DATA off "
-                    "or production-like environment)")
-
-    # Give every department its capability + agent backbone by running the real
-    # WorkforceGenerator against each synced pack. Without this the org-wide
-    # views (neural map, reality, org pulse) render an empty graph even though
-    # the departments and their domain data exist. Deterministic + idempotent.
-    from app.core.workforce_seed import seed_workforce_graph
-    await seed_workforce_graph()
-
-
-    # Initialize Redis
+    # Redis first: it depends only on settings, and the bootstrap lock below
+    # can only choose its strongest backend (Redis > Postgres advisory > local)
+    # if the client already exists. Initialised after the lock, every worker
+    # would fall back to the weaker backend on the one boot that matters.
     from app.core.redis import init_redis, close_redis
     await init_redis()
+
+    # ── Bootstrap, serialized across workers ─────────────────────────────
+    # Everything below (schema creation, the RLS sweep, every seed) runs on ALL
+    # 8 gunicorn workers and on every replica. The steps are idempotent-by-CHECK,
+    # not atomic: two workers can both pass "is it seeded?" before either writes,
+    # which is how duplicate packs and admin rows appear. So we serialize rather
+    # than skip - a worker that skipped would start serving against a schema the
+    # winner has not finished creating. The winner bootstraps; each next worker
+    # then runs the same steps and their already-seeded checks no-op.
+    #
+    # A SEPARATE short-lived lock, never the background-jobs singleton: that one
+    # must stay held for the whole process lifetime to keep leadership.
+    #
+    # ttl 300s: bootstrap is ~10-30s warm, but a cold first boot also builds the
+    # pgvector index, and a lease that expires mid-DDL lets a second worker in -
+    # exactly what this guards against. Nothing waits on the TTL in the happy
+    # path (release() is explicit); it only bounds how long a crashed winner can
+    # block the others. The Postgres backend does not use it at all - a dropped
+    # connection frees the advisory lock immediately.
+    from app.services.leader_lock import LeaderLock, hold
+    boot_lock = LeaderLock(name="kaeos:leader:bootstrap", ttl_seconds=300)
+    async with hold(boot_lock):
+        await init_db()
+        # Verify Postgres RLS is actually in force (not inert due to owner-role
+        # misconfig) before serving any traffic. Fails closed in production.
+        from app.core.database import assert_rls_effective
+        try:
+            await assert_rls_effective()
+        except RuntimeError:
+            raise
+        except Exception as _rls_exc:
+            logger.warning(f"[RLS] effectiveness check could not run: {_rls_exc}")
+        # Seeding is maintenance: run it on the owner connection. Under RLS the
+        # app role cannot insert rows without a tenant context (by design), so
+        # seeding through it fails closed - which is the policy working, not a bug.
+        async with MaintenanceSessionLocal() as session:
+            # Demo/fictional dataset (tenant_acme) is opt-out: set SEED_DEMO_DATA=false
+            # in a real deployment so dashboards only reflect genuinely ingested data.
+            if settings.SEED_DEMO_DATA and not settings.is_production_like:
+                seeded = await seed_database(session)
+                if seeded:
+                    logger.info("Database seeded with KAEOS demo data")
+                else:
+                    logger.info("Database already contains data, skipping seed")
+            else:
+                logger.info("Skipping fictional demo dataset (SEED_DEMO_DATA off or "
+                            "production-like environment)")
+            # Provision the root admin account from configuration (no public default).
+            from app.services.auth import AuthService
+            await AuthService.seed_admin_user(session)
+
+            # Sync built-in domain packs (HR, etc.) from YAML into DB
+            try:
+                from app.workforce.domain_packs.engine import DomainPackEngine
+                await DomainPackEngine.sync_built_in_packs(session)
+                logger.info("Built-in domain packs synced to database")
+            except Exception as e:
+                logger.warning(f"Domain pack sync failed (non-fatal): {e}")
+
+        # Seed department domain data (HR/Finance/Legal/Sales/Support/Operations)
+        # when empty, then roll up department KPI metrics. Idempotent per domain.
+        # Same gate as the core demo dataset above: this is FICTIONAL department
+        # data (employees, contracts, loans, tickets), and without the gate a fresh
+        # production database would seed tenant_acme demo rows on first boot.
+        if settings.SEED_DEMO_DATA and not settings.is_production_like:
+            from app.core.domain_seed import seed_domains_if_empty
+            await seed_domains_if_empty()
+        else:
+            logger.info("Skipping fictional department demo data (SEED_DEMO_DATA off "
+                        "or production-like environment)")
+
+        # Give every department its capability + agent backbone by running the real
+        # WorkforceGenerator against each synced pack. Without this the org-wide
+        # views (neural map, reality, org pulse) render an empty graph even though
+        # the departments and their domain data exist. Deterministic + idempotent.
+        from app.core.workforce_seed import seed_workforce_graph
+        await seed_workforce_graph()
 
     # Background Service 1: PreCog Engine (L24 Ambient Intelligence)
     # Background Service 2: Event Bus Queue Worker

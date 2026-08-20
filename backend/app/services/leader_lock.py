@@ -26,8 +26,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import socket
 import uuid
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -167,12 +169,18 @@ class LeaderLock:
             elif backend == "postgres" and self._pg_conn is not None:
                 from sqlalchemy import text
                 k1, k2 = _advisory_keys(self.name)
+                conn, self._pg_conn = self._pg_conn, None
                 try:
-                    await self._pg_conn.execute(text("SELECT pg_advisory_unlock(:k1, :k2)"),
-                                                {"k1": k1, "k2": k2})
-                    await self._pg_conn.close()
+                    await conn.execute(text("SELECT pg_advisory_unlock(:k1, :k2)"),
+                                       {"k1": k1, "k2": k2})
                 finally:
-                    self._pg_conn = None
+                    # close() must run even when the unlock statement fails,
+                    # otherwise the pool connection is dropped un-returned. A
+                    # long-lived election lock leaks one; a short-lived lock
+                    # (the bootstrap lock, acquired/released every boot) leaks
+                    # one per process. Closing also drops the advisory lock
+                    # server-side, so it is the real release either way.
+                    await conn.close()
         except Exception as e:
             logger.warning("[Leader] release failed (lease will expire): %s", e)
         finally:
@@ -224,6 +232,29 @@ class LeaderLock:
 
 # Process-wide singleton used by main.py's lifespan.
 leader_lock = LeaderLock()
+
+
+@asynccontextmanager
+async def hold(lock: LeaderLock):
+    """Block until this process owns ``lock``, run the body, then release.
+
+    The opposite trade-off to ``run_election``: there, one process leads and the
+    followers SKIP the work; here every caller eventually runs the body, one at a
+    time. That is what boot-time work needs - it is idempotent-by-check but not
+    atomic, so concurrent workers can interleave between the check and the act,
+    while a worker that skipped entirely would serve traffic against a
+    half-created schema.
+
+    On the "local" backend ``acquire()`` always grants, so single-instance dev
+    and the SQLite test suite never wait and behave exactly as before.
+    """
+    while not await lock.acquire():
+        # Jitter so N workers released together do not re-collide in lockstep.
+        await asyncio.sleep(1.0 + random.random())
+    try:
+        yield
+    finally:
+        await lock.release()
 
 
 async def run_election(lock: LeaderLock, on_acquire, on_release, interval: float | None = None):
