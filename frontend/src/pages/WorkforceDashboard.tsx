@@ -191,10 +191,12 @@ export default function WorkforceDashboard({ domain }: { domain?: string }) {
                     {trendDelta >= 0 ? '+' : ''}{trendDelta} pts vs earlier this month
                   </div>
                 )}
+                {/* The rate covers a window, so the sentence under it names the
+                    window. Without that, a reader takes the number for "ever". */}
                 <div className="text-[11px] mt-2" style={{ color: colors.inkSubtle }}>
                   {overview?.total_executions
-                    ? `${overview.autonomous_executions ?? 0} of ${overview.total_executions} executions ran without a human gate`
-                    : 'No executions recorded yet'}
+                    ? `${overview.autonomous_executions ?? 0} of ${overview.total_executions} executions ran without a human gate in the last ${overview.safe_autonomy_window_days ?? 30} days`
+                    : `No executions in the last ${overview?.safe_autonomy_window_days ?? 30} days`}
                 </div>
                 {trendSeries.length > 1 && (
                   <div className="mt-2">

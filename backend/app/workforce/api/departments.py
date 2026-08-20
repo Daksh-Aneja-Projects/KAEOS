@@ -21,6 +21,11 @@ from app.workforce.models.core import (
 
 router = APIRouter(prefix="/workforce", tags=["Workforce — Departments"])
 
+# The operator-dashboard window. Matches /metrics/safe-autonomy, the /ops
+# blended rate and /autonomy-trend below, so the headline tile and the
+# views an operator drills into from it describe the same population.
+_HEADLINE_WINDOW_DAYS = 30
+
 
 async def _resolve_department(db: AsyncSession, dept_ref: str, tenant_id: str) -> Optional[Department]:
     """Resolve a department by DB id OR slug (the frontend routes use slugs like 'hr')."""
@@ -494,24 +499,21 @@ async def workforce_overview(
     # a human gate. Derived from SkillExecution rows - not a stored guess.
     # (`automation_coverage` was seeded 0.0 for every department, which is why
     # the dashboard tile read a permanent "0%".)
-    # NOTE (scope, not vocabulary): unlike every other consumer this counts the
-    # tenant's ENTIRE history, while /metrics/safe-autonomy, /billing/roi, the
-    # operator console and the Time Machine all use a 30-day window. Same rule,
-    # different denominator, so this tile can legitimately differ from them on
-    # an old tenant. Left as-is deliberately - narrowing it would move a
-    # customer-visible headline number, which is not this refactor's business.
-    from app.models.domain import SkillExecution
-    from app.models.execution_status import is_safe_autonomous
-    exec_q = await db.execute(
-        select(SkillExecution.status, SkillExecution.hitl_required)
-        .where(SkillExecution.tenant_id == tenant_id)
-    )
-    execs = exec_q.all()
-    total_execs = len(execs)
-    autonomous = [e for e in execs if is_safe_autonomous(e[1], e[0])]
-    safe_autonomy_rate = (
-        round(len(autonomous) / total_execs * 100, 1) if total_execs else None
-    )
+    #
+    # Delegated to the canonical implementation rather than re-derived here. The
+    # local version counted the tenant's ENTIRE history while the sibling
+    # operator views (/metrics/safe-autonomy, the /ops blended rate, and this
+    # module's own /autonomy-trend) all report the last 30 days, so the headline
+    # tile lagged every other place the same metric appears and diluted a recent
+    # improvement. /billing/roi is deliberately all-time - it sits beside
+    # lifetime cost figures - and says so in its payload; this one now does too.
+    from app.services.safe_autonomy import compute_safe_autonomy
+    sar = await compute_safe_autonomy(db, tenant_id, days=_HEADLINE_WINDOW_DAYS)
+    rate = sar.get("safe_autonomy_rate")
+    safe_autonomy_rate = round(rate * 100, 1) if rate is not None else None
+    total_execs = sar.get("total_executions") or 0
+    autonomous_execs = sar.get("safe_autonomous") or 0
+
 
     # Active deployments
     deploy_q = await db.execute(
@@ -530,8 +532,11 @@ async def workforce_overview(
         "avg_health_score": round(avg_health * 100, 1),
         # The north-star metric: real executions, no human gate, from the DB.
         "safe_autonomy_rate_pct": safe_autonomy_rate,
+        # The window travels with the number so the UI can name the period it
+        # covers instead of implying "ever".
+        "safe_autonomy_window_days": _HEADLINE_WINDOW_DAYS,
         "total_executions": total_execs,
-        "autonomous_executions": len(autonomous),
+        "autonomous_executions": autonomous_execs,
         # `hours_saved` used to be tasks x 0.5 - a number with no basis. It
         # needs a per-skill human baseline and loaded hourly rate (tenant
         # inputs), so it is null rather than invented. Same rule as /billing.

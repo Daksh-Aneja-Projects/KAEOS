@@ -87,5 +87,63 @@ async def test_roi_matches_canonical_and_labels_the_loose_measure(db, async_clie
     assert body["safe_autonomy_window_days"] is not None
 
 
+WORKFORCE_TENANT = "tenant_sar_workforce_window"
+
+
+async def _seed_across_windows(db):
+    """4 executions, one of them OLD.
+
+    Inside the last 30 days: 1 safe-autonomous, 1 unattended failure, 1 routed to
+    a human -> 1/3 = 33.3%. Sixty days back: one more safe-autonomous run, which
+    an all-time count would fold in for 2/4 = 50.0%. The two windows therefore
+    disagree by design, so a test asserting the window cannot pass by accident.
+    """
+    skill = Skill(id=str(uuid.uuid4()), skill_id=f"sarw_{uuid.uuid4().hex[:6]}",
+                  tenant_id=WORKFORCE_TENANT, department="support", domain="support",
+                  status="ACTIVE", confidence=0.9)
+    db.add(skill)
+    await db.flush()
+    now = datetime.now(timezone.utc)
+    rows = [
+        ("SUCCESS_CLEAN", False, now - timedelta(days=1)),
+        ("FAILED_RULE_MISMATCH", False, now - timedelta(days=1)),
+        ("SUCCESS_CLEAN", True, now - timedelta(days=1)),
+        ("SUCCESS_CLEAN", False, now - timedelta(days=60)),   # outside the window
+    ]
+    for status, hitl, started in rows:
+        db.add(SkillExecution(
+            id=str(uuid.uuid4()), skill_db_id=skill.id, skill_id_name=skill.skill_id,
+            tenant_id=WORKFORCE_TENANT, status=status, route_type="SKILL_EXEC",
+            started_at=started, duration_ms=100, hitl_required=hitl, outcome_type=status,
+        ))
+    await db.commit()
+
+
+async def test_workforce_headline_tile_uses_the_operator_window(db, async_client, monkeypatch):
+    """The workforce dashboard headline must agree with the other operator views.
+
+    /metrics/safe-autonomy and the /ops blended rate both report the last 30
+    days; this tile counted the tenant's entire history, so the headline number
+    lagged behind every other place the same metric appears and diluted a recent
+    improvement. (/billing/roi is deliberately all-time - it sits beside lifetime
+    cost - and declares its own window, so it is not the odd one out here.)
+    """
+    await _seed_across_windows(db)
+
+    from app.core import tenant as tenant_mod
+    monkeypatch.setattr(tenant_mod, "_DEV_TENANT",
+                        {"tenant_id": WORKFORCE_TENANT, "role": "admin", "name": "dev_user"})
+
+    r = await async_client.get("/api/v1/workforce/overview")
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    sar = await compute_safe_autonomy(db, WORKFORCE_TENANT, days=30)
+    assert body["safe_autonomy_rate_pct"] == round(sar["safe_autonomy_rate"] * 100, 1)
+    assert body["safe_autonomy_rate_pct"] == pytest.approx(33.3, abs=0.1),         "the headline tile is counting outside its stated window"
+    # The window travels with the number, so the UI can say which period it means.
+    assert body["safe_autonomy_window_days"] == 30
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
