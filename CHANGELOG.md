@@ -11,6 +11,23 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S6 final: the gate pipeline is one gate per function (2026-08-20)
+
+- **M2.2, the highest-risk item in the plan, done dead last as ordered.** The
+  966-line runtime's _run_gates/_run_post_hitl monoliths are now six named
+  gate functions (compliance+fairness, confidence/HITL, debate, execute,
+  actuation, audit) under one explicit GateOutcome contract (None = proceed;
+  a dict = the pipeline's terminal result), with _run_gates and _run_post_hitl
+  reduced to thin orchestrators - the three-divergent-pipelines failure mode
+  the original comments warned about is now structurally impossible. Every
+  incident-encoding comment moved verbatim. One gate per commit, each proven
+  behavior-identical against the pinned pre-split baseline by a new
+  differential harness (scripts/diff_gate_equivalence.py: 36 branch-reaching
+  pipeline runs comparing results, ordered boundary-call sequences and context
+  mutations), which was itself proven able to fail before being trusted - the
+  red-proof caught the harness's own first bug, then two planted defect
+  classes (a fail-closed status lie and a call reorder).
+
 ### Changed - S6 wave 3: structure, hoisting, clarity (2026-08-20)
 
 - **The hr god router is 18 sub-routers behind a byte-identical surface
