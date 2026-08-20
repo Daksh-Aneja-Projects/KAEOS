@@ -44,6 +44,7 @@ from app.models.foundry import (
     POSITIVE_LABELS,
 )
 from app.services.json_utils import plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,8 @@ logger = logging.getLogger(__name__)
 # Outcome/status values that mean "a human edited the agent's answer" - the
 # highest-value supervised signal, but we can only mine it once the corrected
 # answer has been captured via record_human_feedback().
-_EDITED_OUTCOMES = {"SUCCESS_WITH_EDIT", "HUMAN_OVERRIDDEN"}
-_CLEAN_OK = {"SUCCESS_CLEAN"}
+_EDITED_OUTCOMES = {ExecutionStatus.SUCCESS_WITH_EDIT, ExecutionStatus.HUMAN_OVERRIDDEN}
+_CLEAN_OK = {ExecutionStatus.SUCCESS_CLEAN}
 
 
 def _extract_answer(reasoning_chain: Any) -> Optional[str]:

@@ -16,6 +16,7 @@ from app.healthcare.agents.gated_runner import extract_decision, run_gated_healt
 from app.healthcare.models.core import ClinicalTask, PatientEncounter
 from app.healthcare.services.workflows import CLINICAL_TASK_WORKFLOW
 from app.services.provenance import append_ledger_event
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class PriorAuthAgent:
             context={"encounter_id": enc.id, "procedure": procedure},
             tenant_id=tenant_id,
         )
-        decision = extract_decision(result) if result.get("status") == "SUCCESS_CLEAN" else {}
+        decision = extract_decision(result) if result.get("status") == ExecutionStatus.SUCCESS_CLEAN else {}
         return {"encounter_id": enc.id, "task_id": task_id,
                 "status": result.get("status"),
                 "recommendation": decision.get("recommendation"),

@@ -30,6 +30,7 @@ from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
                                           ServicedLoan, ServicingStatus)
 from app.lending.services.servicing import (build_amortization_schedule,
                                             delinquency_bucket)
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,7 @@ async def seed_tenant(db, tenant: str) -> bool:
                 id=dec_id, tenant_id=tenant, application_id=app_id, decision="APPROVE",
                 reasons=["Meets credit-score, DTI, income and program-limit policy"],
                 confidence=Decimal("0.92"), decided_by="underwriter_agent",
-                decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN",
+                decided_at=_ago(decided_ago), gate_status=ExecutionStatus.SUCCESS_CLEAN,
                 apr=Decimal(str(apr)), finance_charge=Decimal(str(fin_charge)),
                 amount_financed=Decimal(str(amount)),
                 total_of_payments=Decimal(str(round(amount + fin_charge, 2)))))
@@ -299,7 +300,7 @@ async def seed_tenant(db, tenant: str) -> bool:
             db.add(UnderwritingDecision(
                 id=dec_id, tenant_id=tenant, application_id=app_id, decision="DENY",
                 reasons=reasons, confidence=Decimal("0.95"), decided_by="underwriter_agent",
-                decided_at=_ago(decided_ago), gate_status="SUCCESS_CLEAN"))
+                decided_at=_ago(decided_ago), gate_status=ExecutionStatus.SUCCESS_CLEAN))
             # Persist the application + decision before the notice references
             # them: on Postgres the FK is enforced, so the parent rows must
             # exist first (SQLite defers FK checks, which hid this).

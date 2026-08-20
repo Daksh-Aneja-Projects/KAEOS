@@ -13,6 +13,7 @@ from app.support.agents.gated_runner import extract_decision, run_gated_support_
 from app.support.models.escalation import EscalationEvent, EscalationRule
 from app.support.models.tickets import Ticket
 from app.services.json_utils import plain_facts
+from app.models.execution_status import ExecutionStatus
 
 
 class EscalationAgent:
@@ -69,7 +70,7 @@ class EscalationAgent:
         # action left no trail and /escalation-events never grew past its seed
         # row. A PENDING_HITL / blocked run writes nothing - nothing escalated
         # yet. Mirrors how the other support agents commit on their own session.
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             if decision.get("escalate"):
                 # The LLM names a tier, not a rule id, so attribute to the

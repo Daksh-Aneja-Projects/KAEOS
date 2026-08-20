@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.vendors import VendorContract, VendorPerformance
 from app.services.json_utils import plain_facts
+from app.models.execution_status import ExecutionStatus
 
 
 class VendorAgent:
@@ -53,7 +54,7 @@ class VendorAgent:
             tenant_id=tenant_id,
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             # A labeled AI opinion, kept deliberately separate from the
             # measured risk_level badge (/vendors derives that one from real

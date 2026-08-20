@@ -20,6 +20,7 @@ from app.hr.api.v1.routers._shared import _exec_id
 from app.hr.models.core import HREmployee
 from app.hr.models.performance import PerformanceReview, ReviewCycle
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter()
 
@@ -185,7 +186,7 @@ async def synthesize_review_feedback(
         "raw_feedback": body.raw_feedback,
     })
     status = result.get("status")
-    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
+    analysis = extract_decision(result) if status == ExecutionStatus.SUCCESS_CLEAN else {}
     if analysis:
         review.ai_feedback_summary = analysis.get("summary")
         review.ai_growth_areas = analysis.get("growth_areas", [])

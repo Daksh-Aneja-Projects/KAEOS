@@ -17,6 +17,7 @@ from app.core.tenant import approver_identity, get_tenant_id, require_role
 from app.hr.api.v1.routers._shared import _exec_id
 from app.hr.models.compensation import Compensation
 from app.hr.models.core import HREmployee
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter()
 
@@ -122,7 +123,7 @@ async def compensation_market_analysis(
         "current_band": current_band,
     })
     status = result.get("status")
-    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
+    analysis = extract_decision(result) if status == ExecutionStatus.SUCCESS_CLEAN else {}
 
     reasoning = str(analysis.get("reasoning") or "")[:100]
     if reasoning:

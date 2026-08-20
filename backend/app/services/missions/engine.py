@@ -130,7 +130,7 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
             f"[mission] step {step.seq} is hitl_required with no approval record; "
             "refusing to execute and re-gating to HITL."
         )
-        return {"status": "PENDING_HITL",
+        return {"status": ExecutionStatus.PENDING_HITL,
                 "reason": "HITL-gated step has no persisted approval record"}
 
     from app.agents.runtime import AgentExecutor

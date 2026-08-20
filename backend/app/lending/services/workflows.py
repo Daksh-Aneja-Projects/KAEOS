@@ -14,6 +14,7 @@ finance's INVOICE_WORKFLOW has no manual PAID transition.
 from app.core.workflow import TransitionContext, WorkflowSpec
 from app.lending.models.core import LoanApplication
 from app.lending.models.servicing import ServicedLoan
+from app.models.execution_status import ExecutionStatus
 
 
 def _application_withdrawn(app: LoanApplication, ctx: TransitionContext) -> None:
@@ -28,10 +29,10 @@ APPLICATION_WORKFLOW = WorkflowSpec(
     transitions={
         "RECEIVED": ["WITHDRAWN"],
         "IN_REVIEW": ["WITHDRAWN"],
-        "PENDING_HITL": ["WITHDRAWN"],
+        ExecutionStatus.PENDING_HITL: ["WITHDRAWN"],
     },
     on_enter={"WITHDRAWN": _application_withdrawn},
-    sla_hours={"IN_REVIEW": 48, "PENDING_HITL": 24},
+    sla_hours={"IN_REVIEW": 48, ExecutionStatus.PENDING_HITL: 24},
 )
 
 

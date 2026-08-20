@@ -18,6 +18,7 @@ import enum
 from app.models.domain import Base
 from app.models.mixins import LegalHoldMixin
 from app.models.mixins import new_uuid as _uuid
+from app.models.execution_status import ExecutionStatus
 
 
 
@@ -25,7 +26,7 @@ from app.models.mixins import new_uuid as _uuid
 class LoanStatus(str, enum.Enum):
     RECEIVED = "RECEIVED"
     IN_REVIEW = "IN_REVIEW"
-    PENDING_HITL = "PENDING_HITL"
+    PENDING_HITL = ExecutionStatus.PENDING_HITL
     APPROVED = "APPROVED"
     DENIED = "DENIED"
     WITHDRAWN = "WITHDRAWN"

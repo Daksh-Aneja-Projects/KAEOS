@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.lending.agents.gated_runner import extract_decision, run_gated_lending_skill
 from app.lending.services.servicing import (attempt_collection_contact,
                                              load_collection_case)
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +75,12 @@ class CollectionsAgent:
             tenant_id=tenant_id, compliance_tags=["FDCPA"], confidence=0.9)
 
         status = result.get("status")
-        if status == "PENDING_HITL":
-            return {"status": "PENDING_HITL", "case_id": case.id,
+        if status == ExecutionStatus.PENDING_HITL:
+            return {"status": ExecutionStatus.PENDING_HITL, "case_id": case.id,
                     "execution_id": result.get("execution_id"),
                     "reason": "Collection contact requires human approval."}
 
-        if status in ("BLOCKED_COMPLIANCE", "BLOCKED_FAIRNESS", "BLOCKED_DEBATE"):
+        if status in (ExecutionStatus.BLOCKED_COMPLIANCE, "BLOCKED_FAIRNESS", ExecutionStatus.BLOCKED_DEBATE):
             logger.warning("CollectionsAgent: case %s blocked by %s", case_id, status)
             return result
 

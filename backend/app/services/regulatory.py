@@ -19,6 +19,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ async def build_overview(db: AsyncSession, tenant_id: str, days: int = 30) -> di
 
     # Continuous monitor: recent compliance-relevant execution outcomes.
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    monitor_states = ("BLOCKED_COMPLIANCE", "FAILED_AUDIT", "HUMAN_OVERRIDDEN")
+    monitor_states = (ExecutionStatus.BLOCKED_COMPLIANCE, ExecutionStatus.FAILED_AUDIT, ExecutionStatus.HUMAN_OVERRIDDEN)
     rows = (await db.execute(
         select(SkillExecution.status, func.count())
         .where(SkillExecution.tenant_id == tenant_id,
@@ -124,9 +125,9 @@ async def build_overview(db: AsyncSession, tenant_id: str, days: int = 30) -> di
         "risk_summary": tier_counts,
         "control_map": control_map,
         "monitor": {
-            "compliance_blocks": monitor.get("BLOCKED_COMPLIANCE", 0),
-            "audit_failures": monitor.get("FAILED_AUDIT", 0),
-            "human_overrides": monitor.get("HUMAN_OVERRIDDEN", 0),
+            "compliance_blocks": monitor.get(ExecutionStatus.BLOCKED_COMPLIANCE, 0),
+            "audit_failures": monitor.get(ExecutionStatus.FAILED_AUDIT, 0),
+            "human_overrides": monitor.get(ExecutionStatus.HUMAN_OVERRIDDEN, 0),
         },
         "note": "Risk tiers, control coverage, and the monitor are computed from real skills and executions.",
     }

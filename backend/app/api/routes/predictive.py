@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.models.execution_status import SUCCEEDED_STATUSES
 from app.models.domain import Signal, SkillExecution
 from app.services.predictive_ops import PredictiveOpsEngine
 from app.core.tenant import approver_identity
@@ -108,7 +109,10 @@ async def discover_patterns(tenant_id: str = Depends(get_tenant_id), db: AsyncSe
                 "hitl_required": 1.0 if e.hitl_required else 0.0,
                 "confidence_delta": float(e.confidence_delta or 0.0),
             },
-            "success_score": 100.0 if "SUCCESS" in (e.status or "") else 0.0,
+            # Was this a success? The named set, not a substring test: "SUCCESS"
+            # in status would also match any future member that merely contains
+            # the word (a FAILED_AFTER_SUCCESS would have scored 100).
+            "success_score": 100.0 if (e.status or "") in SUCCEEDED_STATUSES else 0.0,
             "domain": e.skill_id_name or "general",
             "enterprise_type": "Technology",
         }

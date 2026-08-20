@@ -15,6 +15,7 @@ from app.models.domain import (
 )
 from app.models.settings import TenantLLMConfig, MCPToolConfig, OntologyConfig, FederatedConfig
 from app.models.agent_factory import AgentBlueprint, BlueprintStatus
+from app.models.execution_status import ExecutionStatus
 
 T = "tenant_acme"
 NOW = None  # Set at seed time by seed_database()
@@ -220,8 +221,8 @@ def seed_executions(skills):
     random.seed(42)
     execs = []
     {s.skill_id: s for s in skills}
-    statuses = ["SUCCESS_CLEAN", "SUCCESS_CLEAN", "SUCCESS_CLEAN", "SUCCESS_CLEAN",
-                 "SUCCESS_CLEAN", "SUCCESS_WITH_EDIT", "HUMAN_OVERRIDDEN", "FAILED_RULE_MISMATCH"]
+    statuses = [ExecutionStatus.SUCCESS_CLEAN, ExecutionStatus.SUCCESS_CLEAN, ExecutionStatus.SUCCESS_CLEAN, ExecutionStatus.SUCCESS_CLEAN,
+                 ExecutionStatus.SUCCESS_CLEAN, ExecutionStatus.SUCCESS_WITH_EDIT, ExecutionStatus.HUMAN_OVERRIDDEN, ExecutionStatus.FAILED_RULE_MISMATCH]
     intents = {
         "handle_refund_request": ["Process refund for order #ORD-{}", "Customer requesting refund on order #{}", "Refund ticket #{} needs processing"],
         "enterprise_discount_approval": ["20% discount requested on deal #{}", "Enterprise discount for opportunity #{}", "Pricing exception for account #{}"],

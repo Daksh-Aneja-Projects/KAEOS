@@ -20,6 +20,7 @@ from app.hr.api.v1.routers._shared import _exec_id
 from app.hr.models.core import HREmployee
 from app.hr.models.onboarding import BoardingPlan, BoardingTask, BoardingType, TaskStatus
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter()
 
@@ -214,7 +215,7 @@ async def offboarding_exit_interview(
         "survey_responses": body.survey_responses,
     })
     status = result.get("status")
-    analysis = extract_decision(result) if status == "SUCCESS_CLEAN" else {}
+    analysis = extract_decision(result) if status == ExecutionStatus.SUCCESS_CLEAN else {}
 
     plan = (await db.execute(select(BoardingPlan).where(
         BoardingPlan.tenant_id == tenant_id, BoardingPlan.employee_id == employee_id,

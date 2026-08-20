@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter(prefix="/governance", tags=["Governance — AI Inventory"])
 
@@ -133,7 +134,7 @@ async def ai_inventory(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
         Rule.is_executable == False))).scalar() or 0  # noqa: E712
     pending_hitl = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(
         SkillExecution.tenant_id == tenant_id,
-        SkillExecution.status == "PENDING_HITL"))).scalar() or 0
+        SkillExecution.status == ExecutionStatus.PENDING_HITL))).scalar() or 0
     executions = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(
         SkillExecution.tenant_id == tenant_id))).scalar() or 0
     hitl_routed = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(

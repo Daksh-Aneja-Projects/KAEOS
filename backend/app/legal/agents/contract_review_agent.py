@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.contracts import Contract, ContractClause
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +74,9 @@ class ContractReviewAgent:
             confidence=0.75,  # Contracts need human review
             compliance_tags=["GDPR", "CCPA", "CONTRACT_CLAUSE"],
         )
-        if result.get("status") == "PENDING_HITL":
-            return {"status": "PENDING_HITL", "execution_id": result.get("execution_id")}
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.PENDING_HITL:
+            return {"status": ExecutionStatus.PENDING_HITL, "execution_id": result.get("execution_id")}
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
 
             # Persist the AI's conclusion onto the contract — a missing field

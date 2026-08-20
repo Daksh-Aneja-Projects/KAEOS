@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.legal.agents.gated_runner import run_gated_legal_skill, extract_decision
 from app.legal.models.ip import IPStatus, Patent
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +68,9 @@ class IPAgent:
             tenant_id=tenant_id,
             confidence=0.75,  # An irreversible status change needs human review
         )
-        if result.get("status") == "PENDING_HITL":
-            return {"status": "PENDING_HITL", "patent_id": patent_id, "execution_id": result.get("execution_id")}
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.PENDING_HITL:
+            return {"status": ExecutionStatus.PENDING_HITL, "patent_id": patent_id, "execution_id": result.get("execution_id")}
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
 
             # Abandoning a patent is irreversible, so it must require an explicit

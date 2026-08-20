@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.quality import Inspection, QualityStatus
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 
 class QAAgent:
@@ -43,7 +44,7 @@ class QAAgent:
             tenant_id=tenant_id,
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             verdict = decision.get("pass_or_fail")
             if isinstance(verdict, str):

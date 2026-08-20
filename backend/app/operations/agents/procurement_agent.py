@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.procurement import PurchaseRequest
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 
 class ProcurementAgent:
@@ -44,7 +45,7 @@ class ProcurementAgent:
             tenant_id=tenant_id,
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             # Advisory only — the request still moves through the governed
             # workflow transitions (/purchase-requests/{id}/transition), which

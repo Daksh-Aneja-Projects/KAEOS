@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.services.llm_router import LLMRouter
 from app.hr.models.core import HREmployee as Employee
 from app.hr.models.onboarding import BoardingTask, TaskStatus
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class OnboardingAgent:
             )
 
             status = result.get("status")
-            if status != "SUCCESS_CLEAN":
+            if status != ExecutionStatus.SUCCESS_CLEAN:
                 logger.warning(f"OnboardingAgent check-in gated: {status} for {employee_id}")
                 return {
                     "status": status,

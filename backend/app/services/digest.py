@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from sqlalchemy import func, select
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ async def build_digest(tenant_id: str, days: int = 7) -> Dict[str, Any]:
             pending = (await db.execute(
                 select(func.count()).select_from(SkillExecution).where(
                     SkillExecution.tenant_id == tenant_id,
-                    SkillExecution.status == "PENDING_HITL")
+                    SkillExecution.status == ExecutionStatus.PENDING_HITL)
             )).scalar() or 0
         except Exception:
             logger.warning("digest: pending-HITL count failed for %s", tenant_id, exc_info=True)

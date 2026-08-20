@@ -41,6 +41,7 @@ from app.procurement.services.source_to_pay import (
     run_three_way_match,
     screen_vendor,
 )
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ async def assess_requisition(
         resource_type="purchase_request", resource_id=request_id,
         details={"status": result.get("status")},
     )
-    if result.get("status") == "SUCCESS_CLEAN":
+    if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
         result["assessment"] = extract_decision(result)
     return result
 
@@ -275,7 +276,7 @@ async def guard_purchase_order(
         details={"safe_to_approve": result.get("safe_to_approve")},
     )
     gated = result.get("gated") or {}
-    if gated.get("status") == "SUCCESS_CLEAN":
+    if gated.get("status") == ExecutionStatus.SUCCESS_CLEAN:
         result["rationale"] = extract_decision(gated)
     return result
 

@@ -18,6 +18,7 @@ from app.finance.agents.gated_runner import run_gated_finance_skill, extract_dec
 from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor
 from app.finance.services.three_way_match import evaluate_three_way_match, match_summary
 from app.services.provenance import append_ledger_event
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -161,17 +162,17 @@ Check if math is correct.""",
         )
 
         # If PENDING_HITL, return immediately (non-blocking)
-        if result.get("status") == "PENDING_HITL":
+        if result.get("status") == ExecutionStatus.PENDING_HITL:
             logger.info(f"APAgent: Invoice {invoice_id} awaiting human approval (PENDING_HITL)")
             return {
-                "status": "PENDING_HITL",
+                "status": ExecutionStatus.PENDING_HITL,
                 "execution_id": result.get("execution_id"),
                 "invoice_id": invoice_id,
                 "reason": "High-value invoice requires human approval",
             }
 
         # If blocked by compliance, return error
-        if result.get("status") in ("BLOCKED_COMPLIANCE", "BLOCKED_FAIRNESS", "BLOCKED_DEBATE"):
+        if result.get("status") in (ExecutionStatus.BLOCKED_COMPLIANCE, "BLOCKED_FAIRNESS", ExecutionStatus.BLOCKED_DEBATE):
             logger.warning(f"APAgent: Invoice {invoice_id} blocked by gate: {result.get('status')}")
             invoice.status = InvoiceStatus.DISPUTED
             db.add(invoice)
@@ -179,7 +180,7 @@ Check if math is correct.""",
             return result
 
         # If successful, extract decision and update invoice
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             _apply_decision(invoice, decision)
             db.add(invoice)

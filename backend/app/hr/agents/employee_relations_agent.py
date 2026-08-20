@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.services.llm_router import LLMRouter
 from app.hr.models.employee_relations import ERCase, CaseSeverity
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class EmployeeRelationsAgent:
             )
 
             status = result.get("status")
-            if status != "SUCCESS_CLEAN":
+            if status != ExecutionStatus.SUCCESS_CLEAN:
                 logger.warning(f"ER Agent triage gated: {status} for {case_id}")
                 return {
                     "status": status,

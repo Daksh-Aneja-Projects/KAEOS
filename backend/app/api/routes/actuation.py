@@ -19,6 +19,7 @@ from app.models.actuation import ActionRecord
 from app.models.domain import SkillExecution
 from app.services.actuation import Actuator, ActuationError
 from app.core.tenant import approver_identity
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter(prefix="/actuation", tags=["Actuation"])
 
@@ -130,7 +131,7 @@ async def execute_action(
             details={"execution_id": exec_id, "operation": body.operation},
         )
         return {
-            "status": "PENDING_HITL", "execution_id": exec_id,
+            "status": ExecutionStatus.PENDING_HITL, "execution_id": exec_id,
             "detail": (f"{body.operation} on {target} is high-consequence and "
                        "awaits human approval in the HITL queue; the write "
                        "applies only after approval."),

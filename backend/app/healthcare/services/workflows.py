@@ -9,6 +9,7 @@ healthcare.yaml): triage in 2h, coding/prior-auth work in 8h.
 """
 from app.core.workflow import WorkflowSpec
 from app.healthcare.models.core import ClinicalTask, PatientEncounter
+from app.models.execution_status import ExecutionStatus
 
 # OPEN -> TRIAGED -> CODED -> CLOSED, matching PatientEncounter.status's
 # documented enum (models/core.py). A CLOSED encounter never reopens through
@@ -36,14 +37,14 @@ CLINICAL_TASK_WORKFLOW = WorkflowSpec(
     model=ClinicalTask,
     transitions={
         "OPEN": ["IN_PROGRESS", "BLOCKED"],
-        "IN_PROGRESS": ["PENDING_HITL", "DONE", "BLOCKED"],
-        "PENDING_HITL": ["DONE", "BLOCKED", "IN_PROGRESS"],
+        "IN_PROGRESS": [ExecutionStatus.PENDING_HITL, "DONE", "BLOCKED"],
+        ExecutionStatus.PENDING_HITL: ["DONE", "BLOCKED", "IN_PROGRESS"],
         "BLOCKED": ["IN_PROGRESS", "OPEN"],
     },
     # coding_suggestion and prior_auth_prep both declare an 8h SLA; PENDING_HITL
     # gets a tighter 4h floor (matches phi_disclosure_review's human-turnaround
     # expectation) since a task waiting on a human reviewer should not linger.
-    sla_hours={"OPEN": 2, "IN_PROGRESS": 8, "PENDING_HITL": 4},
+    sla_hours={"OPEN": 2, "IN_PROGRESS": 8, ExecutionStatus.PENDING_HITL: 4},
 )
 
 SPECS = {"encounter": ENCOUNTER_WORKFLOW, "clinical_task": CLINICAL_TASK_WORKFLOW}

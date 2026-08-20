@@ -98,6 +98,23 @@ SAFE_AUTONOMOUS_STATUSES: frozenset[ExecutionStatus] = frozenset({
     ExecutionStatus.SUCCESS_CLEAN,
 })
 
+#: The agent's answer STOOD - it completed, with or without a human correcting
+#: it afterwards. Deliberately wider than :data:`SAFE_AUTONOMOUS_STATUSES`,
+#: which is the north star and additionally requires that no human was involved
+#: at all. Use this one for "did the work get delivered / did this run succeed",
+#: never for the autonomy rate.
+#:
+#: HUMAN_OVERRIDDEN is OUT: a human replaced the decision, so the agent's answer
+#: did not stand. This set replaces two hand-rolled string tests
+#: (``status.startswith("SUCCESS")`` in the genome traits and ``"SUCCESS" in
+#: status`` in the predictive feature build) that matched these same two members
+#: by accident of spelling - and would have silently absorbed any future member
+#: that happened to start with, or merely contain, the word SUCCESS.
+SUCCEEDED_STATUSES: frozenset[ExecutionStatus] = frozenset({
+    ExecutionStatus.SUCCESS_CLEAN,
+    ExecutionStatus.SUCCESS_WITH_EDIT,
+})
+
 #: Waiting on a human; the run is not finished and must not be counted as
 #: either a success or a failure.
 PENDING_STATUSES: frozenset[ExecutionStatus] = frozenset({
@@ -150,5 +167,10 @@ if __name__ == "__main__":
     assert not is_safe_autonomous(False, "FAILED_RULE_MISMATCH")
     assert not is_safe_autonomous(False, "SUCCESS")  # step vocabulary, not ours
     assert ExecutionStatus.PENDING_HITL not in TERMINAL_STATUSES
+    # SUCCEEDED is the old startswith("SUCCESS") test, made explicit: exactly the
+    # members that spelling used to catch, and nothing else.
+    assert SUCCEEDED_STATUSES == {m for m in ExecutionStatus if m.startswith("SUCCESS")}
+    assert ExecutionStatus.HUMAN_OVERRIDDEN not in SUCCEEDED_STATUSES
+    assert SAFE_AUTONOMOUS_STATUSES < SUCCEEDED_STATUSES
     assert ExecutionStatus.FAILED_RESUME in TERMINAL_STATUSES
     print("execution_status self-check OK")

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.facilities import WorkOrder
 from app.services.json_utils import plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class FacilityAgent:
                              "INCIDENT_POSTMORTEM", "BACKUP_RETENTION"],
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             note_parts = []
             risk = decision.get("risk_assessment")

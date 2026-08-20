@@ -20,6 +20,7 @@ from app.hr.api.v1.routers._shared import _exec_id
 from app.hr.models.benefits import BenefitPlan, BenefitEnrollment, EnrollmentStatus as BenefitEnrollmentStatus
 from app.hr.models.core import HREmployee
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS
+from app.models.execution_status import ExecutionStatus
 
 router = APIRouter()
 
@@ -150,7 +151,7 @@ async def verify_benefit_enrollment(
         "coverage_level": enrollment.coverage_level,
     })
     status = result.get("status")
-    verified = status == "SUCCESS_CLEAN"
+    verified = status == ExecutionStatus.SUCCESS_CLEAN
     if verified:
         enrollment.agent_verified = True
         current_status = enrollment.status.value if hasattr(enrollment.status, "value") else str(enrollment.status)

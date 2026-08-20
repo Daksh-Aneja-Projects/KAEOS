@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.domain_seed import _DEPT_SLUG_MAP
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import ExecutionStatus
 
 # A named adversarial playbook: an ordered cascade of (shock, target-dept, severity).
 PLAYBOOKS = {
@@ -41,7 +42,7 @@ PLAYBOOKS = {
     ],
 }
 
-_ADVERSE_PREFIXES = ("FAILED", "BLOCKED", "HUMAN_OVERRIDDEN", "TIMEOUT", "ERROR")
+_ADVERSE_PREFIXES = ("FAILED", "BLOCKED", ExecutionStatus.HUMAN_OVERRIDDEN, "TIMEOUT", "ERROR")
 _HITL_SEVERITY = 70   # a shock at/above this needs a human in the loop
 
 

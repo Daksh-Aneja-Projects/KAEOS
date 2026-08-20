@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.services.llm_router import LLMRouter
 from app.hr.models.recruiting import Candidate, JobRequisition, CandidateStage
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class RecruitingAgent:
             )
 
             status = result.get("status")
-            if status != "SUCCESS_CLEAN":
+            if status != ExecutionStatus.SUCCESS_CLEAN:
                 # Fairness/compliance/debate gate intervened, or HITL/override.
                 logger.warning(f"RecruitingAgent screening gated: {status} for {candidate_id}")
                 # Persist a human-readable trace of the gated outcome so the
@@ -111,10 +112,10 @@ class RecruitingAgent:
                 # decision yet; if one exists (e.g. debate produced a chain),
                 # keep its score/red-flags too.
                 gated_note = {
-                    "PENDING_HITL": "Screening paused for human approval before a recommendation was recorded.",
-                    "BLOCKED_COMPLIANCE": "Screening was stopped by a compliance rule; no AI recommendation was recorded.",
-                    "BLOCKED_DEBATE": "Screening was held after the internal debate check; no recommendation was recorded.",
-                    "HUMAN_OVERRIDDEN": "A reviewer overrode the screening before a recommendation was recorded.",
+                    ExecutionStatus.PENDING_HITL: "Screening paused for human approval before a recommendation was recorded.",
+                    ExecutionStatus.BLOCKED_COMPLIANCE: "Screening was stopped by a compliance rule; no AI recommendation was recorded.",
+                    ExecutionStatus.BLOCKED_DEBATE: "Screening was held after the internal debate check; no recommendation was recorded.",
+                    ExecutionStatus.HUMAN_OVERRIDDEN: "A reviewer overrode the screening before a recommendation was recorded.",
                 }.get(status, "Screening was held for human review before a recommendation was recorded.")
                 partial = extract_decision(result)
                 candidate.ai_summary = partial.get("summary") or gated_note
@@ -125,7 +126,7 @@ class RecruitingAgent:
                 # A compliance block means screening was refused, not that the
                 # candidate cleared it - do not advance them. Other gated states
                 # (pending approval, fairness/debate hold) park them for a human.
-                if status != "BLOCKED_COMPLIANCE":
+                if status != ExecutionStatus.BLOCKED_COMPLIANCE:
                     candidate.stage = CandidateStage.RECRUITER_SCREEN  # hold for human review
                 db.add(candidate)
                 await db.commit()

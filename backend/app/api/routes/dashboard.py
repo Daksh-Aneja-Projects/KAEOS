@@ -17,6 +17,7 @@ from app.schemas.dashboard import (
     DecayAlert, AgentMetrics, ElicitationMetrics,
     ComplianceDashboardResponse, ComplianceStatus,
 )
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         select(sqlfunc.count(SkillExecution.id)).where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= week_ago,
-            SkillExecution.status == "SUCCESS_CLEAN",
+            SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN,
         )
     )
     success_count = success_7d.scalar() or 0
@@ -136,7 +137,7 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         select(sqlfunc.count(SkillExecution.id)).where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= week_ago,
-            SkillExecution.outcome_type == "HUMAN_OVERRIDDEN",
+            SkillExecution.outcome_type == ExecutionStatus.HUMAN_OVERRIDDEN,
         )
     )
     override_count = override_7d.scalar() or 0
@@ -300,7 +301,7 @@ async def compliance_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asyn
     """
     from app.hr.models.compliance import ComplianceViolation, ComplianceReport
 
-    _MONITOR_STATES = ("BLOCKED_COMPLIANCE", "FAILED_AUDIT", "HUMAN_OVERRIDDEN")
+    _MONITOR_STATES = (ExecutionStatus.BLOCKED_COMPLIANCE, ExecutionStatus.FAILED_AUDIT, ExecutionStatus.HUMAN_OVERRIDDEN)
 
     def _norm(fw: str) -> str:
         return (fw or "").upper().replace("-", "_")
@@ -558,14 +559,14 @@ async def ooda_events(tenant_id: str = Depends(get_tenant_id), db: AsyncSession 
         elif e.hitl_required and not e.hitl_approved:
             phase = "DECIDE"
             gate = "HITL_REQUIRED"
-        elif e.status == "SUCCESS_CLEAN":
+        elif e.status == ExecutionStatus.SUCCESS_CLEAN:
             phase = "ACT"
             gate = "AUTO_APPROVED"
 
         events.append({
             "id": e.id,
             "phase": phase,
-            "status": "complete" if e.status == "SUCCESS_CLEAN" else "active" if e.status == "RUNNING" else "pending",
+            "status": "complete" if e.status == ExecutionStatus.SUCCESS_CLEAN else "active" if e.status == "RUNNING" else "pending",
             "title": f"{e.skill_id_name or 'Agent'}: {e.task_intent or 'Execution'}",
             "detail": f"Route: {e.route_type or 'DIRECT'}, Duration: {e.duration_ms or 0}ms",
             "confidence": e.confidence_delta,

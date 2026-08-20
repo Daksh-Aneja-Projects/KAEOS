@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
 from app.operations.models.projects import Project
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class ProjectAgent:
             tenant_id=tenant_id,
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             # Write the outcome onto the real entity. A healthy verdict (no
             # delay risk / no blockers / no recommendation) clears any stale

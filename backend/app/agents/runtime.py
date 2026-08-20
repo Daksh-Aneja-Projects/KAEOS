@@ -31,6 +31,7 @@ from app.core.metrics import GATE_TRANSITIONS, observe_pipeline
 from app.core.telemetry import tracer
 from app.models.agent_factory import ActivityEventType, ActivitySeverity
 from app.models.domain import SkillExecution
+from app.models.execution_status import AgentState, ExecutionStatus
 from app.models.infrastructure import CostEvent
 from app.services.activity_feed import ActivityFeedService
 from app.services.actuation import Actuator
@@ -247,7 +248,7 @@ class AgentExecutor:
                     "execution_id": context.get("execution_id"),
                     "steps_completed": result.get("steps_completed", 0),
                 },
-                outcome=result.get("status", "SUCCESS_CLEAN"),
+                outcome=result.get("status", ExecutionStatus.SUCCESS_CLEAN),
             )
         except Exception as e:
             logger.error(f"[Memory] store failed for {context.get('execution_id')}: {e}")
@@ -269,7 +270,7 @@ class AgentExecutor:
                 if row is not None:
                     row.status = status
                     row.outcome_type = status
-                    row.agent_state = "FAILED"
+                    row.agent_state = AgentState.FAILED
                     await session.commit()
         except Exception as e:
             logger.error(f"[Gate 5b] could not mark execution {execution_id} {status}: {e}")
@@ -441,10 +442,10 @@ class AgentExecutor:
             _dur = int((time.perf_counter() - context.get("_gate_t_last", time.perf_counter())) * 1000)
             await persist_blocked_execution(
                 context["execution_id"], context.get("tenant_id", "default"),
-                skill, "BLOCKED_COMPLIANCE", reason or "compliance blocker", _dur,
+                skill, ExecutionStatus.BLOCKED_COMPLIANCE, reason or "compliance blocker", _dur,
             )
             return {
-                "status": "BLOCKED_COMPLIANCE",
+                "status": ExecutionStatus.BLOCKED_COMPLIANCE,
                 "violations": blockers,
                 "warnings": warnings,
                 "cost": await self._gate_cost(context),
@@ -501,7 +502,7 @@ class AgentExecutor:
                 await self._emit_gate(context, "fairness", "paused")
                 _flagged = ", ".join(fairness_result["flagged_attributes"]) or "protected attributes"
                 return {
-                    "status": "PENDING_HITL",
+                    "status": ExecutionStatus.PENDING_HITL,
                     "execution_id": gate_decision.get("execution_id"),
                     "reason": f"Fairness review required: adverse impact on {_flagged}",
                     "fairness_score": fairness_result["score"],
@@ -605,14 +606,14 @@ class AgentExecutor:
             if gate_decision.get("pending"):
                 await self._emit_gate(context, "hitl", "paused")
                 return {
-                    "status": "PENDING_HITL",
+                    "status": ExecutionStatus.PENDING_HITL,
                     "execution_id": gate_decision.get("execution_id"),
                     "reason": gate_decision.get("reason", "Awaiting human approval"),
                     "cost": await self._gate_cost(context),
                 }
             # If somehow approved/rejected (shouldn't happen with non-blocking), handle it
             if gate_decision.get("approved") is False:
-                return {"status": "HUMAN_OVERRIDDEN", "reason": gate_decision.get("reason", "Rejected by human")}
+                return {"status": ExecutionStatus.HUMAN_OVERRIDDEN, "reason": gate_decision.get("reason", "Rejected by human")}
 
         await self._emit_gate(context, "confidence", "passed")
         await self._emit_gate(context, "hitl", "passed")
@@ -690,7 +691,7 @@ class AgentExecutor:
                         requires_action=True,
                     )
                     return {
-                        "status": "BLOCKED_DEBATE",
+                        "status": ExecutionStatus.BLOCKED_DEBATE,
                         "debate_decision": decision,
                         "rationale": (transcript.arbitrator_decision or {}).get("rationale"),
                         "transcript_id": transcript.id,
@@ -706,7 +707,7 @@ class AgentExecutor:
                         requires_action=True,
                     )
                     return {
-                        "status": "ESCALATED_DEBATE",
+                        "status": ExecutionStatus.ESCALATED_DEBATE,
                         "debate_decision": decision,
                         "transcript_id": transcript.id,
                         "cost": await self._gate_cost(context),
@@ -736,7 +737,7 @@ class AgentExecutor:
             compliance_warnings=warnings,
         )
 
-        if exec_result["status"] != "SUCCESS_CLEAN":
+        if exec_result["status"] != ExecutionStatus.SUCCESS_CLEAN:
             await self.activity_feed.emit(
                 event_type=ActivityEventType.AGENT_FAILED,
                 title=f"Execution failed: {skill.get('skill_id', 'unknown')}",
@@ -819,7 +820,7 @@ class AgentExecutor:
                         f"[Gate 5b] governed write {exec_id} ({_tgt}) BLOCKED by "
                         f"compliance; refused fail-closed: {_reason}"
                     )
-                    await self._mark_execution_failed(exec_id, "BLOCKED_ACTUATION")
+                    await self._mark_execution_failed(exec_id, ExecutionStatus.BLOCKED_ACTUATION)
                     await self._emit_gate(context, "execute", "failed",
                                           f"governed write to {_tgt} blocked: {_reason}")
                     await self.activity_feed.emit(
@@ -833,7 +834,7 @@ class AgentExecutor:
                         requires_action=True,
                     )
                     return {
-                        "status": "BLOCKED_ACTUATION",
+                        "status": ExecutionStatus.BLOCKED_ACTUATION,
                         "execution_id": exec_id,
                         "reason": f"Approved write to {_tgt} blocked by compliance: {_reason}",
                         "violations": _wblk,
@@ -872,7 +873,7 @@ class AgentExecutor:
                     f"[Gate 5b] actuation FAILED for {exec_id} ({_target}); the "
                     f"execution is reported as FAILED_ACTUATION (fail-closed): {e}"
                 )
-                await self._mark_execution_failed(exec_id, "FAILED_ACTUATION")
+                await self._mark_execution_failed(exec_id, ExecutionStatus.FAILED_ACTUATION)
                 await self._emit_gate(context, "execute", "failed",
                                       f"governed write to {_target} failed")
                 await self.activity_feed.emit(
@@ -889,7 +890,7 @@ class AgentExecutor:
                     requires_action=True,
                 )
                 return {
-                    "status": "FAILED_ACTUATION",
+                    "status": ExecutionStatus.FAILED_ACTUATION,
                     "execution_id": exec_id,
                     "reason": f"Approved write to {_target} failed: {e}",
                     "skill_output_produced": True,
@@ -934,33 +935,33 @@ class AgentExecutor:
                             action_id=_actuation_record_id,
                             actor="gate6-audit-compensation",
                         )
-                    await self._mark_execution_failed(exec_id, "FAILED_AUDIT_REVERSED")
+                    await self._mark_execution_failed(exec_id, ExecutionStatus.FAILED_AUDIT_REVERSED)
                     await self._emit_gate(context, "audit", "failed",
                                           "post-execution audit failed; governed write reversed")
                     logger.error(
                         f"[Gate 6] audit failed after actuation {exec_id}; governed "
                         f"write reversed (action {_actuation_record_id})"
                     )
-                    return {"status": "FAILED_AUDIT_REVERSED",
+                    return {"status": ExecutionStatus.FAILED_AUDIT_REVERSED,
                             "execution_id": exec_id, "actuation_reversed": True,
                             "warnings": warnings}
                 except Exception as e:
-                    await self._mark_execution_failed(exec_id, "FAILED_AUDIT")
+                    await self._mark_execution_failed(exec_id, ExecutionStatus.FAILED_AUDIT)
                     await self._emit_gate(context, "audit", "failed",
                                           "post-execution audit failed; compensation ALSO failed")
                     logger.error(
                         f"[Gate 6] audit failed AND compensation failed for {exec_id}; "
                         f"the governed write STANDS and is flagged (fail-closed): {e}"
                     )
-                    return {"status": "FAILED_AUDIT",
+                    return {"status": ExecutionStatus.FAILED_AUDIT,
                             "execution_id": exec_id, "actuation_reversed": False,
                             "compensation_error": str(e), "warnings": warnings}
             await self._emit_gate(context, "audit", "failed")
-            return {"status": "FAILED_AUDIT", "warnings": warnings}
+            return {"status": ExecutionStatus.FAILED_AUDIT, "warnings": warnings}
         await self._emit_gate(context, "audit", "passed")
 
         result = {
-            "status": "SUCCESS_CLEAN",
+            "status": ExecutionStatus.SUCCESS_CLEAN,
             "execution_id": exec_id,
             "reasoning_chain": exec_result.get("reasoning_chain", []),
             "steps_completed": exec_result.get("steps_completed", 0),

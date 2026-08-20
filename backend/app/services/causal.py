@@ -18,8 +18,9 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import ExecutionStatus
 
-_ADVERSE_PREFIXES = ("FAILED", "BLOCKED", "HUMAN_OVERRIDDEN", "TIMEOUT", "ERROR")
+_ADVERSE_PREFIXES = ("FAILED", "BLOCKED", ExecutionStatus.HUMAN_OVERRIDDEN, "TIMEOUT", "ERROR")
 
 
 def _is_adverse(status: Optional[str]) -> bool:

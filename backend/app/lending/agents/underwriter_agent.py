@@ -18,6 +18,7 @@ from app.lending.agents.gated_runner import extract_decision, run_gated_lending_
 from app.lending.models.core import CreditPolicy, LoanApplication, LoanStatus
 from app.lending.services.underwriting import (evaluate_policy,
                                                underwrite_application)
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +92,15 @@ class UnderwriterAgent:
             tenant_id=tenant_id, confidence=0.9)
 
         status = result.get("status")
-        if status == "PENDING_HITL":
+        if status == ExecutionStatus.PENDING_HITL:
             app.status = LoanStatus.PENDING_HITL.value
             db.add(app)
             await db.commit()
-            return {"status": "PENDING_HITL", "application_id": app.id,
+            return {"status": ExecutionStatus.PENDING_HITL, "application_id": app.id,
                     "execution_id": result.get("execution_id"),
                     "reason": "Underwriting decision requires human approval."}
 
-        if status in ("BLOCKED_COMPLIANCE", "BLOCKED_FAIRNESS", "BLOCKED_DEBATE"):
+        if status in (ExecutionStatus.BLOCKED_COMPLIANCE, "BLOCKED_FAIRNESS", ExecutionStatus.BLOCKED_DEBATE):
             logger.warning("UnderwriterAgent: %s blocked by %s", application_id, status)
             return result
 

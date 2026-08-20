@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.sales.agents.gated_runner import run_gated_sales_skill, extract_decision
 from app.sales.models.pipeline import Opportunity
 from app.services.json_utils import enum_value, plain_facts
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +75,10 @@ class CPQAgent:
             compliance_tags=["SOX"],
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             return {
-                "status": "SUCCESS_CLEAN",
+                "status": ExecutionStatus.SUCCESS_CLEAN,
                 "approved": decision.get("approved"),
                 "maximum_allowable_discount": decision.get("maximum_allowable_discount"),
                 "margin_impact_summary": decision.get("margin_impact_summary"),
@@ -86,15 +87,15 @@ class CPQAgent:
                 "reasoning_chain": result.get("reasoning_chain", []),
             }
 
-        if result.get("status") == "PENDING_HITL":
+        if result.get("status") == ExecutionStatus.PENDING_HITL:
             logger.info(f"CPQAgent: quote for {opportunity_id} awaiting human approval (PENDING_HITL)")
             return {
-                "status": "PENDING_HITL",
+                "status": ExecutionStatus.PENDING_HITL,
                 "execution_id": result.get("execution_id"),
                 "reason": "This discount needs human review before it is approved.",
             }
 
-        if result.get("status") in ("BLOCKED_COMPLIANCE", "BLOCKED_FAIRNESS", "BLOCKED_DEBATE"):
+        if result.get("status") in (ExecutionStatus.BLOCKED_COMPLIANCE, "BLOCKED_FAIRNESS", ExecutionStatus.BLOCKED_DEBATE):
             logger.warning(f"CPQAgent: quote for {opportunity_id} blocked by gate: {result.get('status')}")
             return result
 

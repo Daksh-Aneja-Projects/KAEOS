@@ -15,6 +15,7 @@ from app.healthcare.agents.gated_runner import run_gated_healthcare_skill
 from app.healthcare.services.phi_disclosure import (
     PHIDisclosureError, build_context, evaluate_disclosure, record_disclosure,
 )
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,10 @@ class PHIGuardAgent:
                     part2_consent=part2_consent, recorded_by=recorded_by,
                 )
             except PHIDisclosureError as e:
-                return {"status": "BLOCKED_COMPLIANCE", "recorded": False,
+                return {"status": ExecutionStatus.BLOCKED_COMPLIANCE, "recorded": False,
                         "reason": str(e), "blocking": e.blocking}
             # Unreachable: an unverified verdict always raises above.
-            return {"status": "BLOCKED_COMPLIANCE", "recorded": False}
+            return {"status": ExecutionStatus.BLOCKED_COMPLIANCE, "recorded": False}
 
         # Clean gate: run the governance pipeline (compliance gate re-checks the
         # same tags; always_hitl routes it to a human), then persist.

@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.operations.agents.gated_runner import extract_decision, run_gated_operations_skill
+from app.models.execution_status import ExecutionStatus
 
 class ResourceAgent:
     async def check_resources(self, db: AsyncSession, resource_id: str, tenant_id: str) -> Dict[str, Any]:
@@ -52,7 +53,7 @@ class ResourceAgent:
             tenant_id=tenant_id,
         )
 
-        if result.get("status") == "SUCCESS_CLEAN":
+        if result.get("status") == ExecutionStatus.SUCCESS_CLEAN:
             decision = extract_decision(result)
             note_parts = []
             plan = decision.get("rebalance_plan")

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id
+from app.models.execution_status import SUCCEEDED_STATUSES
 
 router = APIRouter(tags=["Genome & Evolution — Live Fitness"])
 
@@ -49,7 +50,10 @@ async def _live_features(db: AsyncSession, tenant_id: str) -> Dict[str, float]:
         .order_by(SkillExecution.started_at.desc())
         .limit(300)
     )).scalars().all()
-    successes = sum(1 for e in executions if (e.status or "").upper().startswith("SUCCESS"))
+    # Delivery counts a run whose answer stood, including one a human corrected -
+    # that work still shipped. It is NOT the safe-autonomy rate, which excludes
+    # anything a human touched; see execution_status.SUCCEEDED_STATUSES.
+    successes = sum(1 for e in executions if (e.status or "").upper() in SUCCEEDED_STATUSES)
     project_delivery = (successes / len(executions) * 100) if executions else 50.0
 
     # Vendor spend — SQL aggregation to avoid loading all vendor rows.
