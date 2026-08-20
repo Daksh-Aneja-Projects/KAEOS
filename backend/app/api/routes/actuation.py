@@ -85,12 +85,18 @@ async def execute_action(
         if known is None:
             raise HTTPException(status_code=404, detail="Execution not found")
 
-    from app.services.consequence import is_high_consequence
+    from app.services.consequence import is_high_consequence, is_high_consequence_api_write
     _probe = {
         "skill_id": f"actuation.{body.system}.{body.object_type}.{body.operation}".lower(),
         "tags": ["data_deletion"] if body.operation.upper() == "DELETE" else [],
+        # Rule 1b sees the real write (DELETE intent, payload shape) instead of
+        # only a name; the api-write rule additionally pauses money-shaped
+        # CREATE/UPDATE payloads, which the old name-only probe let through -
+        # a payout UPDATE issued straight at this route applied on one
+        # operator's sole authority.
+        "actuation": {"operation": body.operation, "payload": body.payload},
     }
-    if is_high_consequence(_probe):
+    if is_high_consequence(_probe) or is_high_consequence_api_write(body.operation, body.payload):
         import uuid as _uuid
 
         from app.services.hitl_manager import hitl_manager
@@ -163,11 +169,41 @@ async def reverse_action(
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reverse a previously applied action by replaying its compensator."""
+    """Reverse a previously applied action by replaying its compensator.
+
+    Four-eyes on consequential reversals: a reversal is itself a system-of-
+    record mutation (reversing a payment moves the money back; reversing a
+    DELETE resurrects data), so a high-consequence action cannot be reversed
+    by the same identity that performed it — a second operator must decide.
+    Autonomous actions (actor = the skill id) are always reversible by any
+    operator; a human undoing an agent is the feature's whole point.
+    """
     tenant_id = tenant["tenant_id"]
+    actor_now = approver_identity(tenant)
+
+    from app.services.consequence import is_high_consequence_api_write
+    original = (await db.execute(
+        select(ActionRecord).where(
+            ActionRecord.id == action_id, ActionRecord.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if (original is not None and original.status == "APPLIED"
+            and is_high_consequence_api_write(original.operation, original.request_payload)
+            and (original.actor or "") == actor_now):
+        await record_security_event(
+            tenant_id=tenant_id, event_type="ACTUATION", action="DENY",
+            actor=actor_now, actor_role=tenant.get("role"),
+            resource_type=f"{original.system}:{original.object_type}",
+            resource_id=original.external_id,
+            details={"action_id": original.id, "reason": "four_eyes_reverse"})
+        raise HTTPException(
+            status_code=403,
+            detail="Four-eyes: a high-consequence action cannot be reversed by "
+                   "the same identity that performed it; a different operator "
+                   "must reverse it.")
+
     try:
         record = await Actuator.reverse_action(
-            db, tenant_id=tenant_id, action_id=action_id, actor=approver_identity(tenant))
+            db, tenant_id=tenant_id, action_id=action_id, actor=actor_now)
     except ActuationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

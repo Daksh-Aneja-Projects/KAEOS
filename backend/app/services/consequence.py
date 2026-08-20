@@ -40,6 +40,22 @@ def _moves_money(payload: Any) -> bool:
     return any(tok in keys for tok in _MONEY_TOKENS)
 
 
+def is_high_consequence_api_write(operation: str, payload: Any) -> bool:
+    """Consequence rule for RAW API writes (/actuation/execute and /reverse).
+
+    A raw API write carries no skill, no department, and no compliance tags,
+    so the department-aware rule 1b below cannot see it. At this boundary the
+    posture is strictest: DELETE always escalates, and a CREATE/UPDATE whose
+    payload is money-shaped escalates too (fail-closed on an empty/opaque
+    payload, same bias as _moves_money) — a wire, payout, or balance change
+    issued straight at the API must never apply on one person's authority.
+    """
+    op = str(operation or "").strip().upper()
+    if op == "DELETE":
+        return True
+    return op in ("CREATE", "UPDATE") and _moves_money(payload)
+
+
 def is_high_consequence(skill: Any) -> bool:
     """True when this skill must always route to a human, regardless of
     confidence. Accepts a Skill ORM object or the executor's skill dict."""
@@ -101,4 +117,10 @@ if __name__ == "__main__":  # tiny self-check of the actuation-consequence branc
                                                   "payload": {"memo": "x"}}})
     # The explicit flag still wins.
     assert is_high_consequence({"always_hitl": True})
+    # Raw API writes: DELETE always; money-shaped payloads on CREATE/UPDATE;
+    # empty payload fail-closed; plain non-money UPDATE passes.
+    assert is_high_consequence_api_write("DELETE", {"note": "x"})
+    assert is_high_consequence_api_write("UPDATE", {"payout_usd": 5000})
+    assert is_high_consequence_api_write("CREATE", {})
+    assert not is_high_consequence_api_write("UPDATE", {"note": "ok"})
     print("consequence actuation self-check passed")

@@ -171,5 +171,72 @@ def test_approval_applies_the_paused_write():
     asyncio.run(run())
 
 
+def test_money_shaped_api_write_pauses_for_hitl():
+    """A payout/wire-shaped payload issued straight at the route never applies
+    on one operator's sole authority: it pauses, and no ActionRecord exists.
+    The old name-only probe let any money-moving UPDATE through."""
+    from app.api.routes.actuation import execute_action
+
+    t = f"tenant_act_{uuid.uuid4().hex[:6]}"
+    ext_id = f"obj-{uuid.uuid4().hex[:6]}"
+
+    async def run():
+        async with AsyncSessionLocal() as db:
+            out = await execute_action(
+                _body(external_id=ext_id, operation="UPDATE",
+                      payload={"payout_usd": 5000, "beneficiary": "acct-9"}),
+                tenant=_tenant(t), db=db)
+        assert out["status"] == "PENDING_HITL"
+        async with AsyncSessionLocal() as s:
+            rec = (await s.execute(select(ActionRecord).where(
+                ActionRecord.tenant_id == t,
+                ActionRecord.external_id == ext_id))).scalar_one_or_none()
+        assert rec is None
+
+    asyncio.run(run())
+
+
+def test_high_consequence_reverse_requires_second_operator():
+    """Four-eyes on consequential reversals: the identity that performed a
+    money-shaped action cannot also reverse it; a different operator can."""
+    from fastapi import HTTPException
+
+    from app.api.routes.actuation import reverse_action
+    from app.core.tenant import approver_identity
+    from app.services.actuation import Actuator
+
+    t = f"tenant_act_{uuid.uuid4().hex[:6]}"
+    maker = _tenant(t)                                     # maker@acme
+    checker = {**_tenant(t), "name": "checker", "email": "checker@acme"}
+
+    async def run():
+        async with AsyncSessionLocal() as db:
+            rec = await Actuator.apply_action(
+                db, tenant_id=t, system="sandbox", object_type="record",
+                external_id=f"obj-{uuid.uuid4().hex[:6]}", operation="CREATE",
+                payload={"payout_usd": 750}, execution_id=None,
+                actor=approver_identity(maker), idempotency_key=None)
+            assert rec.status == "APPLIED"
+            action_id = rec.id
+
+        # The same identity that made the write may not reverse it.
+        async with AsyncSessionLocal() as db:
+            with pytest.raises(HTTPException) as exc:
+                await reverse_action(action_id, tenant=maker, db=db)
+            assert exc.value.status_code == 403
+            assert "Four-eyes" in exc.value.detail
+        async with AsyncSessionLocal() as s:
+            row = (await s.execute(select(ActionRecord).where(
+                ActionRecord.id == action_id))).scalar_one()
+            assert row.status == "APPLIED"                 # untouched
+
+        # A second operator reverses it.
+        async with AsyncSessionLocal() as db:
+            out = await reverse_action(action_id, tenant=checker, db=db)
+        assert out["status"] == "REVERSED"
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
