@@ -7,7 +7,6 @@ Proves the retrieval layer never launders a non-semantic match as a cosine score
     ``retrieval_mode="lexical"`` and a real bounded ``lexical_score``.
   * enterprise_memory.recall and hr.retrieve_context refuse to return
     pseudo-vector matches, falling back honestly (empty / keyword).
-  * route_task never auto-binds a skill on a lexical (non-cosine) hit.
 
 All deterministic — no live Ollama, no live DB (the Skill query is stubbed to
 sidestep the dual in-memory-engine split between the app engine and the test
@@ -307,32 +306,6 @@ async def test_hr_retrieve_falls_to_keyword_when_simulated(monkeypatch):
     out = await kb.HRKnowledgeBase.retrieve_context("t1", "vacation days")
     assert "FABRICATED" not in out, "must not surface pseudo-vector matches"
     assert "vacation days" in out, "honest keyword fallback must still answer"
-
-
-# ── route_task never auto-binds on a lexical hit ─────────────────────────────
-
-@pytest.mark.asyncio
-async def test_route_task_does_not_bind_on_lexical(monkeypatch):
-    from app.agents.runtime import SkillRouter
-
-    class _FakeVector:
-        async def search_skills(self, *_a, **_k):
-            # Lexical hit: similarity None. A high lexical_score must NOT auto-bind.
-            return [{"skill_id": "x", "skill_db_id": "s1", "domain": "it",
-                     "similarity": None, "lexical_score": 1.0, "retrieval_mode": "lexical"}]
-
-    router = SkillRouter(registry_client=None, vector_store=_FakeVector())
-
-    # Force the LLM classifier to abstain so only the fallback path is exercised.
-    async def _abstain(*_a, **_k):
-        return '{"selected_skill_id": "NONE", "confidence": 0.0}'
-    monkeypatch.setattr(router.llm, "complete", _abstain)
-
-    result = await router.route_task("do something", {"tenant_id": "t1"})
-    assert result["route_type"] == "RAG_EXEC", (
-        "a lexical (non-cosine) hit must never fuzzy-bind a skill"
-    )
-    assert result["skill"] is None
 
 
 if __name__ == "__main__":

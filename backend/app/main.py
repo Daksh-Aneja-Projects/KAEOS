@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import init_db, MaintenanceSessionLocal
-from app.core.seed import seed_database
 from app.core.tenant import TenantMiddleware                # ← NEW
 from app.core.logging import setup_logging
 try:
@@ -169,6 +168,10 @@ async def lifespan(app: FastAPI):
             # Demo/fictional dataset (tenant_acme) is opt-out: set SEED_DEMO_DATA=false
             # in a real deployment so dashboards only reflect genuinely ingested data.
             if settings.SEED_DEMO_DATA and not settings.is_production_like:
+                # Imported here, not at module scope: app.core.seed is the demo
+                # fixture module and main.py is its only app-side importer, so a
+                # production worker never parses it at all.
+                from app.core.seed import seed_database
                 seeded = await seed_database(session)
                 if seeded:
                     logger.info("Database seeded with KAEOS demo data")

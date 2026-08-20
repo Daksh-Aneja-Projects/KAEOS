@@ -1,5 +1,5 @@
 """KAEOS L9 — Agent Runtime (AEOS Enhanced)
-SkillRouter + AgentExecutor with Debate Engine and Fairness Engine gates.
+AgentExecutor with Debate Engine and Fairness Engine gates.
 """
 from collections import OrderedDict, deque
 from typing import Dict, Any, List
@@ -79,94 +79,6 @@ async def persist_blocked_execution(
             await session.commit()
     except Exception as e:  # pragma: no cover - metering must never break a gate
         logger.warning("[Usage] could not persist blocked execution %s: %s", execution_id, e)
-
-
-class SkillRouter:
-    """L9 - Multi-Agent Skill Router"""
-    
-    def __init__(self, registry_client, vector_store):
-        self.registry = registry_client
-        self.vector = vector_store
-        from app.services.llm_router import LLMRouter
-        self.llm = LLMRouter()
-
-    async def route_task(self, task_intent: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Routes a natural language task to the best matching skill."""
-        
-        # 1. Broad Vector Search to narrow down candidates
-        tenant_id = context.get("tenant_id", "default")
-        candidates = await self.vector.search_skills(task_intent, tenant_id=tenant_id, top_k=5)
-        
-        if not candidates:
-            logger.warning(f"No skill match for intent: {task_intent}. Falling back to RAG.")
-            return {"route_type": "RAG_EXEC", "skill": None}
-
-        # 2. LLM Intent Classification over candidates (versioned, pinned prompt)
-        from app.services.prompts import render_prompt
-        prompt = render_prompt(
-            "skill_routing", version=1, task_intent=task_intent, candidates=candidates
-        )
-
-        try:
-            raw = await self.llm.complete(
-                prompt=prompt,
-                model_tier="classification",
-                temperature=0.0
-            )
-            content = raw if isinstance(raw, str) else raw.get("content", "{}")
-            from app.services.json_utils import extract_json_object
-            decision = extract_json_object(content)
-            
-            selected = decision.get("selected_skill_id")
-            conf = decision.get("confidence", 0.0)
-            
-            if selected and selected != "NONE" and conf >= 0.8:
-                from sqlalchemy import select
-                from app.core.database import AsyncSessionLocal
-                from app.models.domain import Skill
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(select(Skill).where(Skill.skill_id == selected, Skill.tenant_id == tenant_id))
-                    skill_obj = res.scalar_one_or_none()
-                    if skill_obj:
-                        skill_dict = {
-                            "id": skill_obj.id,
-                            "skill_id": skill_obj.skill_id,
-                            "department": skill_obj.department,
-                            "steps": skill_obj.steps,
-                            "confidence": conf,
-                            "compliance_tags": skill_obj.compliance_tags
-                        }
-                        logger.info(f"LLM routed to skill: {selected} (conf={conf})")
-                        return {"route_type": "SKILL_EXEC", "skill": skill_dict}
-        except Exception as e:
-            logger.error(f"Intent classification failed: {e}")
-            
-        # 3. Fallback to vector search match — ONLY on a real cosine. A lexical
-        # (keyword) hit has similarity=None and must never auto-bind a skill on a
-        # fabricated threshold; it can only win via the LLM classifier above.
-        top = candidates[0]
-        if top.get("retrieval_mode") in ("semantic", "hybrid") and (top.get("similarity") or 0.0) > 0.85:
-            from sqlalchemy import select
-            from app.core.database import AsyncSessionLocal
-            from app.models.domain import Skill
-            async with AsyncSessionLocal() as session:
-                res = await session.execute(select(Skill).where(Skill.id == candidates[0]["skill_db_id"]))
-                skill_obj = res.scalar_one_or_none()
-                if skill_obj:
-                    skill_dict = {
-                        "id": skill_obj.id,
-                        "skill_id": skill_obj.skill_id,
-                        "department": skill_obj.department,
-                        "steps": skill_obj.steps,
-                        "confidence": candidates[0]['similarity'],
-                        "compliance_tags": skill_obj.compliance_tags
-                    }
-                    logger.info(f"Fuzzy skill match found: {candidates[0]['skill_id']}")
-                    return {"route_type": "SKILL_EXEC", "skill": skill_dict}
-            
-        # 4. RAG Fallback
-        logger.warning(f"No strong skill match for intent: {task_intent}. Falling back to RAG.")
-        return {"route_type": "RAG_EXEC", "skill": None}
 
 
 class AgentExecutor:
@@ -367,7 +279,7 @@ class AgentExecutor:
         except Exception:
             pass
         try:
-            from app.api.routes.ws import manager
+            from app.services.realtime import manager
             from app.core.context import current_actor
             await manager.broadcast_to_tenant(context.get("tenant_id", "default"), {
                 "type": "gate_event",
