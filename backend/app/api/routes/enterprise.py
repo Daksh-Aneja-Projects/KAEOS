@@ -584,19 +584,32 @@ async def generate_compliance_report(tenant_id: str = Depends(get_tenant_id), db
     numbers were computed from every tenant's rules and audit rows.
     """
     frameworks = ["SOX", "GDPR", "HIPAA", "PCI", "CCPA"]
-    coverage = []
-    for fw in frameworks:
-        # compliance_tags is JSON: cast to text for the substring match -
-        # Postgres has no `json LIKE text` operator (SQLite coerces silently).
-        from sqlalchemy import String, cast
-        r = await db.execute(
-            select(sqlfunc.count(Rule.id)).where(
-                cast(Rule.compliance_tags, String).contains(fw),
-                Rule.tenant_id == tenant_id,
-            )
-        )
-        count = r.scalar() or 0
-        coverage.append({"framework": fw, "rule_count": count, "coverage": "COVERED" if count > 0 else "GAP"})
+    # One scan of this tenant's rule tags, counted in Python. It used to run one
+    # `cast(compliance_tags AS TEXT) LIKE '%FW%'` per framework: five unindexable
+    # full scans of the tenant's rules per report.
+    #
+    # SEMANTIC CHANGE: that LIKE matched the framework name ANYWHERE in the JSON
+    # array text, so a rule tagged "EU_GDPR" or "NOT_PCI" was counted as GDPR/PCI
+    # coverage. Matching is now anchored at the start of an individual tag, which
+    # still counts the free-text framework labels the regulatory engine writes
+    # ("SOX_2026", "PCI-DSS v4.0") but no longer counts a mid-string coincidence.
+    counts = dict.fromkeys(frameworks, 0)
+    rows = (await db.execute(
+        select(Rule.compliance_tags).where(Rule.tenant_id == tenant_id)
+    )).scalars().all()
+    for tags in rows:
+        if isinstance(tags, str):  # defensive: a JSON column handed back as raw text
+            tags = [tags]
+        tags = [t for t in (tags or []) if isinstance(t, str)]
+        for fw in frameworks:
+            # `any` keeps a rule counted ONCE per framework, as count(Rule.id) did.
+            if any(t.startswith(fw) for t in tags):
+                counts[fw] += 1
+    coverage = [
+        {"framework": fw, "rule_count": counts[fw],
+         "coverage": "COVERED" if counts[fw] > 0 else "GAP"}
+        for fw in frameworks
+    ]
 
     r = await db.execute(
         select(sqlfunc.count(SecurityAuditLog.id)).where(SecurityAuditLog.tenant_id == tenant_id)

@@ -666,6 +666,11 @@ async def replay_deletions(db: AsyncSession, tenant_id: Optional[str] = None) ->
     entries = (await db.execute(q)).scalars().all()
 
     replayed = 0
+    # tenant -> {email_hash: email}, built on first need. Without this, every
+    # email-keyed entry re-scanned every people table: O(entries x all-emails).
+    # A hash already erased earlier in this pass still resolves from the index;
+    # re-erasing it is an idempotent no-op, so the reuse is safe.
+    indexes: dict[str, dict[str, str]] = {}
     for entry in entries:
         try:
             if entry.operation == "PURGE_TENANT":
@@ -674,7 +679,9 @@ async def replay_deletions(db: AsyncSession, tenant_id: Optional[str] = None) ->
                 await erase_subject(db, entry.tenant_id,
                                     employee_id=entry.subject_employee_id, _journal=False)
             elif entry.subject_email_hash:
-                email = await _find_email_by_hash(db, entry.tenant_id, entry.subject_email_hash)
+                if entry.tenant_id not in indexes:
+                    indexes[entry.tenant_id] = await _email_hash_index(db, entry.tenant_id)
+                email = indexes[entry.tenant_id].get(entry.subject_email_hash)
                 if email:
                     await erase_subject(db, entry.tenant_id, email=email, _journal=False)
             entry.replayed_at = datetime.now(timezone.utc)
@@ -713,6 +720,7 @@ async def replay_deletions_from_external(
     known = {tuple(r) for r in (await db.execute(q)).all()}
 
     seen = replayed = 0
+    indexes: dict[str, dict[str, str]] = {}  # tenant -> {email_hash: email}, see replay_deletions
     for e in external:
         etid = e.get("tenant_id")
         if tenant_id and etid != tenant_id:
@@ -728,7 +736,9 @@ async def replay_deletions_from_external(
             elif e.get("employee_id"):
                 await erase_subject(db, etid, employee_id=e["employee_id"], _journal=False)
             elif e.get("email_hash"):
-                email = await _find_email_by_hash(db, etid, e["email_hash"])
+                if etid not in indexes:
+                    indexes[etid] = await _email_hash_index(db, etid)
+                email = indexes[etid].get(e["email_hash"])
                 if email:
                     await erase_subject(db, etid, email=email, _journal=False)
             replayed += 1
@@ -739,12 +749,19 @@ async def replay_deletions_from_external(
     return {"external_entries": seen, "replayed": replayed}
 
 
-async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str) -> Optional[str]:
-    """Locate a live email whose SHA-256 matches, without storing raw email."""
+async def _email_hash_index(db: AsyncSession, tenant_id: str) -> dict[str, str]:
+    """Build ``{sha256(email): email}`` for one tenant in a single pass.
+
+    Replay resolves many journal entries against the same tenant, so the scan is
+    done ONCE and shared instead of once per entry. Memory is bounded by one
+    tenant's people rows, and only the email column is loaded - the same data a
+    single lookup already pulled.
+    """
     from app.models.domain import Base
     import app.core.database  # noqa: F401
 
     tables = Base.metadata.tables
+    index: dict[str, str] = {}
     for tname in ("hr_employees", "hr_candidates",
                   "sls_contacts", "sls_leads", "sls_reps", "fin_vendors", "fin_customers",
                   "sup_agents", "eng_engineers", "ops_team_members"):
@@ -755,9 +772,19 @@ async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str)
             select(t.c.email).where(t.c.tenant_id == tenant_id)
         )).scalars().all()
         for e in emails:
-            if e and _email_hash(e) == email_hash:
-                return e
-    return None
+            if e:
+                # setdefault keeps the first table in the list winning, which is
+                # the row the old per-lookup scan would have returned.
+                index.setdefault(_email_hash(e), e)
+    return index
+
+
+async def _find_email_by_hash(db: AsyncSession, tenant_id: str, email_hash: str) -> Optional[str]:
+    """Locate a live email whose SHA-256 matches, without storing raw email.
+
+    Single-shot wrapper; the replay loops build the index once and reuse it.
+    """
+    return (await _email_hash_index(db, tenant_id)).get(email_hash)
 
 
 if __name__ == "__main__":  # tiny schema self-check for the erasure targets.
