@@ -26,7 +26,7 @@ interface ChatCopilotProps {
 }
 
 const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`;
+  (import.meta as any).env?.VITE_API_BASE || `http://${window.location.hostname}:8011/api/v1`;
 
 const GREETING: Message = {
   id: 'greeting',

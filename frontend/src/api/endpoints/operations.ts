@@ -320,7 +320,7 @@ export const operationsApi = {
   // ─── WebSocket helper (returns URL, not a fetch) ───
   // The ws router is mounted at the server root (/ws/...), NOT under /api/v1.
   getWebSocketUrl: (path: string) => {
-    const wsBase = (import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`)
+    const wsBase = (import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8011/api/v1`)
       .replace(/^http/, 'ws')
       .replace(/\/api\/v1\/?$/, '');
     // The token is NOT put in the query string (it would leak into proxy/access

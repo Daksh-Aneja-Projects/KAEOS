@@ -9,15 +9,32 @@ existing install. For local development, see the Quick Start in the README.
   ADMIN_EMAIL=you@yourco.com
   ADMIN_PASSWORD=<a strong password>
   ADMIN_DISPLAY_NAME=Your Name
-  ADMIN_TENANT=tenant_acme
+  ADMIN_TENANT=your_company            # NOT tenant_acme - see below
   ```
+- **`ADMIN_TENANT` must not be left at `tenant_acme`.** Outside `DEV_MODE` the
+  app refuses to boot if it is. That id is the DEMO tenant, and every fixture
+  path in the tree writes to it by name (`app/core/seed.py`, `domain_seed`,
+  `workforce_seed`, `scripts/seed_master`), so a real deployment that kept the
+  default would put customer records under the same tenant the demo data
+  targets - one mis-set `ENVIRONMENT`, or one `seed_master` run to show someone
+  the demo, and fictional employees and invoices land among live rows with no
+  way to tell them apart afterwards.
 - There is **no** default/public login. Outside `DEV_MODE`, if `ADMIN_PASSWORD`
   is empty, no admin is seeded (deliberate: a public deployment never ships
   with known credentials). You can't lock yourself out: the last active admin
   in a tenant can't be deactivated.
 
 ## Production configuration (the app fails fast on insecure config)
-- Set a strong `SECRET_KEY` (≥16 chars) and a unique `ADMIN_SECRET`.
+- Set a strong `SECRET_KEY` (≥16 chars) and a unique `ADMIN_SECRET`. Shipped
+  placeholders (`CHANGE_ME…`, `your-secret…`) are rejected by name, not just by
+  length.
+- `ADMIN_TENANT` must name your real tenant, never the demo `tenant_acme`.
+- `CORS_ORIGINS` must list explicit origins. `"*"` is refused: the app allows
+  credentials, so a wildcard is reflected back to whatever site the caller is
+  on, and any page a signed-in operator visits could read their responses.
+- These are enforced together by `Settings.validate_production_security()`,
+  which `app/main.py` runs at startup and which refuses to serve if it returns
+  anything. Its controls are pinned by `tests/test_production_config_guards.py`.
 - `DATABASE_URL` must be **PostgreSQL**. The app refuses to boot on SQLite in a
   production environment (SQLite has no row-level security). Use the
   `pgvector/pgvector:pg16` image; plain Postgres lacks the `vector` type.

@@ -9,12 +9,29 @@ We'd rather you read this from us than find it. What's shipped and verified vs. 
 backing the regulated departments (an unbacked compliance tag returns `UNBACKED`, which blocks -
 never a silent pass), per-tenant PostgreSQL row-level security (isolation proven on Postgres -
 cross-tenant reads scoped, cross-tenant writes blocked), default-deny authorization on every
-mutating endpoint (227/242 explicitly gated, the rest a reviewed allowlist, both regression-locked),
-BYOK LLM routing with real cost metering, an 816-test unit lane plus a 441-test E2E suite green on
-SQLite **and** Postgres+pgvector, and real-data benchmarks that report losses as well as wins.
+mutating endpoint (293 of 308 mutating paths explicitly gated, the remaining 15 a reviewed
+allowlist where another authenticator applies - an HMAC body signature, the Stripe signature, a
+signed SAML assertion, `verify_admin_secret`, or the caller's own session - all regression-locked),
+BYOK LLM routing with real cost metering, a 1,392-test unit lane plus a 443-test E2E suite green on
+SQLite **and** Postgres+pgvector (the E2E lane last run end to end against a real local model:
+440 passed, 3 skipped, 0 failed), and real-data benchmarks that report losses as well as wins.
 
 Here is exactly what is shipped versus in progress. We treat this candor as an asset, not an apology.
 Each item below states the capability, its honest boundary, and anything still ahead.
+
+**Not done, and blocking a public launch.** These are operational and legal, not code; the
+codebase itself carries no open critical or high finding from the standing pre-launch audit.
+
+- **The database restore drill has not been run.** Automated backups exist; a backup nobody has
+  restored is a hypothesis, not a recovery plan. RPO/RTO stay unproven until a restore is timed.
+- **SPF, DKIM and DMARC are not configured** for the sending domain, so transactional mail
+  (invites, password resets, mission checkpoint alerts) will be treated as unauthenticated by
+  receiving servers.
+- **KAEOS has no Privacy Policy or Terms of Service of its own.** There is no public legal
+  surface in the app today; `/departments/legal/privacy` is the *product's* GDPR department -
+  the tooling a tenant uses to run their own privacy operations - not our terms. Deliberately
+  not scaffolded with placeholder text: a privacy page that misstates how data is handled is
+  worse than no page.
 
 **Capabilities, honest boundaries, and roadmap:**
 

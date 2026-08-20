@@ -102,7 +102,7 @@ choice becomes a governance dial, not a gamble.
 Reproduce a ceiling on your own model:
 
 ```bash
-curl -X POST http://localhost:8001/api/v1/config/llm-routing/reasoning/probe -H "X-Tenant-ID: tenant_acme"
+curl -X POST http://localhost:8011/api/v1/config/llm-routing/reasoning/probe -H "X-Tenant-ID: tenant_acme"
 ```
 
 Full detail, including the observed `phi4-mini` result and data-residency notes:
@@ -185,7 +185,7 @@ before starting. Demo data seeds automatically on first boot
 | Service | URL |
 |---------|-----|
 | Frontend | http://localhost:5174 |
-| API + Swagger UI | http://localhost:8001/docs |
+| API + Swagger UI | http://localhost:8011/docs |
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3000 |
 | PostgreSQL | `localhost:5432` |

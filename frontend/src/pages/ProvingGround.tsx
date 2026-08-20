@@ -219,11 +219,28 @@ function FiringRange({ run, colors, sevColor }: { run: BatteryRun | null; colors
         }
         for (let i = bursts.length - 1; i >= 0; i--) if (bursts[i].t > 26) bursts.splice(i, 1);
       } else {
-        // reduced-motion: static dots blocked at the wall
+        // Reduced motion: the SAME story, told without movement. Each known-bad
+        // action is drawn as a spent shot - a severity-coloured trail from the
+        // left edge ending at the wall, with a deflection tick where the gates
+        // turned it back. The previous fallback drew a bare column of dots at
+        // the wall, which left the panel reading as an empty box: a
+        // reduced-motion user got no picture of what had happened at all.
         results.forEach((a, i) => {
-          const y = 24 + (i / results.length) * (h - 48);
+          const y = 24 + ((i + 0.5) / results.length) * (h - 48);
+          ctx.strokeStyle = sevColor(a.severity);
+          ctx.globalAlpha = 0.4;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(wallX - 7, y); ctx.stroke();
+          ctx.globalAlpha = 1;
           ctx.fillStyle = a.caught ? colors.success : DANGER;
-          ctx.beginPath(); ctx.arc(wallX - 10, y, 3, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(wallX - 7, y, 3.2, 0, Math.PI * 2); ctx.fill();
+          if (a.caught) {
+            // deflected: the shot bounces back off the shield
+            ctx.strokeStyle = colors.success; ctx.globalAlpha = 0.55;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(wallX - 9, y); ctx.lineTo(wallX - 26, y - 6); ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
         });
       }
 

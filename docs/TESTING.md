@@ -3,7 +3,7 @@
 Back to the [README](../README.md). Related: [Benchmarks](BENCHMARKS.md) |
 [Security model](SECURITY_MODEL.md)
 
-## E2E Test Suite (441 tests across 30 files, live backend + real Ollama)
+## E2E Test Suite (443 tests across 31 files, live backend + real Ollama)
 
 The full E2E suite exercises every functional surface against a running backend with real
 seeded data - all 10 department brains and their AI agents, the 7-gate skill pipeline
@@ -16,7 +16,7 @@ LLM-dependent tests use a local Ollama instance (`qwen2.5-coder:7b` model) - no 
 ```bash
 # 1. Start the backend
 cd backend
-python -m uvicorn app.main:app --port 8001 --log-level warning
+python -m uvicorn app.main:app --port 8011 --log-level warning
 
 # 2. Seed all data (separate terminal, from backend/)
 python -m scripts.seed_master
@@ -29,7 +29,7 @@ python -m pytest tests/e2e/ -v --tb=short
 
 # No model at all? The deterministic fake-LLM lane covers the gate/pipeline
 # logic (this is what CI runs; ~17 min for the whole suite):
-#   KAEOS_FAKE_LLM=1 DEV_MODE=true ENVIRONMENT=ci python -m uvicorn app.main:app --port 8001 &
+#   KAEOS_FAKE_LLM=1 DEV_MODE=true ENVIRONMENT=ci python -m uvicorn app.main:app --port 8011 &
 #   pytest tests/e2e -m "not ollama" -q
 
 # Run a single test file
@@ -82,12 +82,15 @@ backend and no model - see "Statutory checkers and the new departments" below.
 
 ## Current status
 
-The end-to-end suite (441 tests) passes against both SQLite (local dev)
+The end-to-end suite (443 tests) passes against both SQLite (local dev)
 and **PostgreSQL 16 + pgvector** (the production data stack) with row-level security enforced.
 CI runs the non-Ollama suite against Postgres+pgvector, so a bug SQLite silently tolerates is
 caught automatically (this is real: a `NUMERIC`-returns-`Decimal` bug that passed on SQLite was
 found and fixed exactly this way). Exact pass counts are run-dependent - a few tests exercise a
-live LLM whose availability and output vary. On a fresh Postgres deploy the app self-bootstraps:
+live LLM whose availability and output vary. Last full run against a real local model
+(qwen2.5-coder:7b, 2026-08-20): **440 passed, 3 skipped, 0 failed in 19m48s**; the three skips are
+state-conditional (no answered elicitation question to double-answer, no executions in the second
+tenant, an unprobed model tier), not masked failures. On a fresh Postgres deploy the app self-bootstraps:
 `init_db` creates the non-owner `kaeos_app` role, installs RLS on every tenant table, and
 `assert_rls_effective` refuses to serve traffic if isolation isn't actually in force.
 
@@ -98,7 +101,7 @@ rejects a `boolean = integer` comparison SQLite happily evaluates (fixed in `002
 at upgrade time rather than at review time. Two ids were shortened for exactly that reason. If you
 add a migration, keep the revision id at or under 32 characters and run the chain on Postgres.
 
-## Unit tests (816 tests)
+## Unit tests (1,392 tests)
 
 ```bash
 cd backend
@@ -113,7 +116,7 @@ cd backend
 pytest tests/ --ignore=tests/e2e -n auto
 ```
 
-Do NOT add `-n auto` to the e2e lane: those tests share one live backend on :8001
+Do NOT add `-n auto` to the e2e lane: those tests share one live backend on :8011
 and would collide under parallel workers.
 
 `tests/acceptance/` (4 scenario tests: Decision Studio, evolution engine, genome intelligence,
@@ -151,7 +154,7 @@ the `NOT_APPLICABLE` / `ADVISORY` branch for every framework tag.
 | `test_entitlements.py` | Plan entitlements (no-op self-hosted, enforced in managed cloud), metered execution rating, and idempotent Stripe webhook handling |
 | `test_prompt_guard.py` | Prompt-injection screening: benign text stays quiet, payloads are detected, command spans are redacted, untrusted text is fenced |
 
-## Frontend tests (67 tests across 9 files)
+## Frontend tests (115 tests across 19 files)
 
 ```bash
 cd frontend

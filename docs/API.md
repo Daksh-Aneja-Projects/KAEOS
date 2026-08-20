@@ -4,12 +4,12 @@ Back to the [documentation index](README.md) and the [project README](../README.
 Related: [Architecture](ARCHITECTURE.md) | [Connectors](CONNECTORS.md) |
 [Security model](SECURITY_MODEL.md)
 
-All endpoints are documented at `http://localhost:8001/docs` (Swagger UI).
+All endpoints are documented at `http://localhost:8011/docs` (Swagger UI).
 
 > **Every prefix below is relative to the API prefix `/api/v1`** (set by
 > `API_PREFIX`, default `/api/v1`). So the HR employees route is really
 > `GET /api/v1/hr/employees`, and against a default local stack that is
-> `http://localhost:8001/api/v1/hr/employees`. A handful of routes are mounted
+> `http://localhost:8011/api/v1/hr/employees`. A handful of routes are mounted
 > bare at the app root and are called out explicitly below: the WebSocket feed
 > `/ws/{tenant_id}`, the liveness probes `/health` and `/health/live`, the public
 > `/status` page, and the ADMIN_SECRET-gated `/admin/security/api-keys`.

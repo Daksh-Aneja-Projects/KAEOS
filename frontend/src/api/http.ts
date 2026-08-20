@@ -5,7 +5,7 @@
 
 declare global { interface Window { __kaeos_reloading?: boolean; } }
 
-export const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8001/api/v1`;
+export const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8011/api/v1`;
 
 // The app root, with the versioned "/api/v1" segment stripped. A couple of
 // endpoints (the public /status page) are mounted at the root, not under the
