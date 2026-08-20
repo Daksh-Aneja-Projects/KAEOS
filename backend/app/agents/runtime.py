@@ -653,19 +653,11 @@ class AgentExecutor:
         return await self._run_post_hitl(skill, context, skill_obj, warnings,
                                          _pre_approved=bool(hitl_pre_approved))
 
-    async def _run_post_hitl(
+    async def _gate_debate(
         self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
-        warnings: list, *, _pre_approved: bool,
-    ) -> Dict[str, Any]:
-        """Gates 4-6 - everything past the human gate. One body shared by the
-        normal flow and the pre-approved (mission / HITL-resume) shortcut, so
-        the two can never drift apart again (three divergent pipelines each
-        skipping different gates is the exact defect this collapses)."""
-        # ── Enterprise memory: what happened last time we faced this? ───
-        # Recalled BEFORE deliberation so the debate and the execution both
-        # reason over the organization's own history, not a blank slate.
-        await self._recall_memory(context, skill)
-
+        *, pre_approved: bool,
+    ) -> GateOutcome:
+        _pre_approved = pre_approved
         # ── Gate 4: Debate Engine (AEOS P6) ─────────────────────────────
         # Skipped for pre-approved (HITL-resumed / mission-approved) runs:
         # debate's strongest outcome is "escalate to a human", and a human has
@@ -722,6 +714,25 @@ class AgentExecutor:
                 # PROCEED — fall through to Gate 5
 
         await self._emit_gate(context, "debate", "passed")
+        return None
+
+    async def _run_post_hitl(
+        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
+        warnings: list, *, _pre_approved: bool,
+    ) -> Dict[str, Any]:
+        """Gates 4-6 - everything past the human gate. One body shared by the
+        normal flow and the pre-approved (mission / HITL-resume) shortcut, so
+        the two can never drift apart again (three divergent pipelines each
+        skipping different gates is the exact defect this collapses)."""
+        # ── Enterprise memory: what happened last time we faced this? ───
+        # Recalled BEFORE deliberation so the debate and the execution both
+        # reason over the organization's own history, not a blank slate.
+        await self._recall_memory(context, skill)
+
+        outcome = await self._gate_debate(
+            skill, context, skill_obj, pre_approved=_pre_approved)
+        if outcome is not None:
+            return outcome
         await self._emit_gate(context, "execute", "running")
 
         # ── Gate 5: Generative Skill Execution ──────────────────────────
