@@ -1,11 +1,37 @@
-import logging
+import asyncio
 import json
-from typing import Dict, Any
+import logging
 from datetime import datetime, timezone
-from app.models.agent_factory import ActivityEventType, ActivitySeverity
+from typing import Dict, Any
+
+from sqlalchemy import select, update
+
+# S6 M8.3 - hoisted out of the method bodies; all cycle-free from here and all
+# at or below this layer. Two imports deliberately STAY in-function below:
+#   - app.api.routes.approvals (approval_links) points UP into the API layer,
+#     which the M8.2 layering tripwire forbids at top level;
+#   - app.agents.runtime (AgentExecutor) would pull the whole gate stack -
+#     executor, debate, fairness, actuation, llm_router - into every module
+#     that touches HITL, and it is reached once per human approval.
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
-from app.models.domain import SkillExecution
+from app.core.metrics import HITL_REQUESTS, HITL_RESOLUTIONS
+from app.core.redis import get_redis
+from app.models.agent_factory import ActivityEventType, ActivitySeverity
+from app.models.domain import Skill, SkillExecution
 from app.models.execution_status import AgentState, ExecutionStatus
+from app.models.notifications import NotificationChannel
+from app.services import job_queue
+# Imported as a MODULE, not as the bare function: the notifier is substituted by
+# attribute (monkeypatch.setattr(notifier, "notify_fire_and_forget", ...)) in the
+# HITL suites, because its fire-and-forget task opens a second session on the
+# in-memory StaticPool's single shared connection and an interleaved ROLLBACK
+# silently undoes the resolve transaction. A `from ... import` binding here would
+# snapshot the real function and make that substitution a no-op.
+from app.services import notifier
+from app.services.activity_feed import ActivityFeedService
+from app.services.compliance import ComplianceEngine
+from app.services.live_connectors import decrypt_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +109,6 @@ class HITLManager:
     async def _get_redis(self):
         """Return the Redis client if available, else None."""
         try:
-            from app.core.redis import get_redis
             # Call the accessor rather than importing the module global: the
             # global is rebound on (re)connect, and a `from ... import
             # redis_client` binding is a snapshot taken at first call.
@@ -100,7 +125,6 @@ class HITLManager:
             return {"approved": None, "pending": True, "execution_id": None, "reason": "System error: No execution_id"}
 
         try:
-            from app.core.metrics import HITL_REQUESTS
             HITL_REQUESTS.inc()
         except Exception:
             pass
@@ -108,7 +132,6 @@ class HITLManager:
         logger.info(f"[HITL] Approval required for execution {exec_id} — returning immediately (non-blocking)")
 
         # Emit an event to the activity feed
-        from app.services.activity_feed import ActivityFeedService
         feed = ActivityFeedService()
         tenant_id = context.get("tenant_id", "default")
 
@@ -163,9 +186,8 @@ class HITLManager:
         # The Redis/memory record above is a cache carrying the resume payload.
         try:
             async with AsyncSessionLocal() as session:
-                from sqlalchemy import select as _select
                 existing = (await session.execute(
-                    _select(SkillExecution).where(SkillExecution.id == exec_id)
+                    select(SkillExecution).where(SkillExecution.id == exec_id)
                 )).scalar_one_or_none()
                 if existing:
                     existing.agent_state = AgentState.PAUSED
@@ -198,8 +220,8 @@ class HITLManager:
         # in-app queue - a governance loop that pauses silently stalls autonomy.
         # Scheduled AFTER the pause is durably persisted: never announce an
         # approval that is not yet in the queue.
-        from app.services.notifier import notify_fire_and_forget
-        from app.core.config import get_settings
+        # KEPT in-function (M8.3): app.api.routes.approvals is the API layer,
+        # and app/services may not import it at top level (M8.2 tripwire).
         from app.api.routes.approvals import approval_links
         base = get_settings().PUBLIC_BASE_URL or "http://localhost:8001"
         subject = f"KAEOS approval needed: {skill.get('skill_id', 'unknown')}"
@@ -239,7 +261,7 @@ class HITLManager:
             # minting inside notifier.notify()'s channel fan-out.
             for addr in recipients:
                 links = _mint(addr)
-                notify_fire_and_forget(
+                notifier.notify_fire_and_forget(
                     tenant_id, "hitl.pending", subject=subject, body=_body(links),
                     data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
                           **({"approval_links": links} if links else {})},
@@ -249,7 +271,7 @@ class HITLManager:
             # No resolvable recipient identity: single notification with a
             # fail-closed, non-attributable link set.
             links = _mint(None)
-            notify_fire_and_forget(
+            notifier.notify_fire_and_forget(
                 tenant_id, "hitl.pending", subject=subject, body=_body(links),
                 data={"execution_id": exec_id, "skill_id": skill.get("skill_id"),
                       **({"approval_links": links} if links else {})},
@@ -277,9 +299,6 @@ class HITLManager:
         single non-attributable, fail-closed link set.
         """
         try:
-            from sqlalchemy import select
-            from app.models.notifications import NotificationChannel
-            from app.services.live_connectors import decrypt_secrets
             async with AsyncSessionLocal() as db:
                 channels = (await db.execute(
                     select(NotificationChannel).where(
@@ -481,9 +500,8 @@ class HITLManager:
             else:
                 # Cache expired/absent: fall back to the DB row's tenant.
                 async with AsyncSessionLocal() as session:
-                    from sqlalchemy import select as _select
                     owner_q = await session.execute(
-                        _select(SkillExecution.tenant_id).where(
+                        select(SkillExecution.tenant_id).where(
                             SkillExecution.id == execution_id
                         )
                     )
@@ -498,7 +516,6 @@ class HITLManager:
                 return False
 
         try:
-            from app.core.metrics import HITL_RESOLUTIONS
             HITL_RESOLUTIONS.labels(decision="approved" if approved else "rejected").inc()
         except Exception:
             pass
@@ -521,7 +538,6 @@ class HITLManager:
         # resume path below creates one via the executor.
         # Use optimistic locking to prevent double-resolution races.
         async with AsyncSessionLocal() as session:
-            from sqlalchemy import select, update
             exec_q = await session.execute(
                 select(SkillExecution).where(SkillExecution.id == execution_id)
             )
@@ -571,7 +587,6 @@ class HITLManager:
                 # normal case), the handler sees a terminal row and no-ops -
                 # at-least-once, idempotent on execution_id.
                 try:
-                    from app.services import job_queue
                     _job_tenant = ((record or {}).get("tenant_id")
                                    or (execution.tenant_id if execution else None)
                                    or "default")
@@ -598,7 +613,6 @@ class HITLManager:
         # Immediate in-process resume for latency; the durable job above is
         # the crash-safety net, not the primary path.
         if approved:
-            import asyncio
             asyncio.create_task(self._resume_from_hitl(execution_id, fallback_record=record))
 
         return True
@@ -615,7 +629,6 @@ class HITLManager:
         # Idempotency guard: the at-least-once backstop means this can run
         # after (or even while) another attempt handled the same approval.
         async with AsyncSessionLocal() as session:
-            from sqlalchemy import select
             row = (await session.execute(
                 select(SkillExecution).where(SkillExecution.id == execution_id)
             )).scalar_one_or_none()
@@ -632,8 +645,6 @@ class HITLManager:
         try:
             # 1. Load execution record and the associated compiled Skill from the DB
             async with AsyncSessionLocal() as session:
-                from sqlalchemy import select
-                from app.models.domain import Skill
                 exec_q = await session.execute(
                     select(SkillExecution).where(SkillExecution.id == execution_id)
                 )
@@ -723,8 +734,11 @@ class HITLManager:
             if skill_obj is not None:
                 context["_skill_obj"] = skill_obj
 
+            # KEPT in-function (M8.3): app.agents.runtime pulls the entire gate
+            # stack (executor, debate, fairness, actuation, llm_router) at
+            # import time, and this line runs once per human approval. Hoisting
+            # it would put all of that behind every `import hitl_manager`.
             from app.agents.runtime import AgentExecutor
-            from app.services.compliance import ComplianceEngine
             executor = AgentExecutor(ComplianceEngine(), self)
             result = await executor.execute_skill(
                 skill_def, context, hitl_pre_approved=True
@@ -737,7 +751,6 @@ class HITLManager:
             terminal = result.get("status", ExecutionStatus.FAILED)
             if terminal not in (ExecutionStatus.SUCCESS_CLEAN,):
                 async with AsyncSessionLocal() as session:
-                    from sqlalchemy import update
                     await session.execute(
                         update(SkillExecution)
                         .where(SkillExecution.id == execution_id,
@@ -753,8 +766,6 @@ class HITLManager:
                     await session.commit()
 
             # 4. Emit activity event for the resumed execution
-            from app.services.activity_feed import ActivityFeedService
-            from app.models.agent_factory import ActivityEventType, ActivitySeverity
             feed = ActivityFeedService()
             await feed.emit(
                 event_type=ActivityEventType.AGENT_COMPLETED,
@@ -771,7 +782,6 @@ class HITLManager:
         except Exception as e:
             logger.error(f"[HITL] Error resuming execution {execution_id}: {e}", exc_info=True)
             async with AsyncSessionLocal() as session:
-                from sqlalchemy import update
                 await session.execute(
                     update(SkillExecution)
                     .where(SkillExecution.id == execution_id)

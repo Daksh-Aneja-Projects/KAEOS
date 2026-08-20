@@ -1,10 +1,51 @@
 """KAEOS L9 — Agent Runtime (AEOS Enhanced)
 AgentExecutor with Debate Engine and Fairness Engine gates.
 """
-from collections import OrderedDict, deque
-from typing import Dict, Any, List
+import asyncio
 import logging
 import time
+import uuid
+from collections import OrderedDict, deque
+from datetime import datetime, timezone
+from typing import Dict, Any, List
+
+from opentelemetry import trace as _otel_trace
+from sqlalchemy import func as sqlfunc, select
+
+# S6 M8.3 - hoisted out of the gate bodies. These were ~40 in-function import
+# statements, several of them inside _emit_gate, which every governed execution
+# runs about ten times; the modules below are all cycle-free from here (proven
+# by an AST closure over top-level imports) and all sit at or below this layer.
+# The M8.2 boundary still holds: nothing here is app.api, and the one upward
+# import in this package's neighbourhood (approval links) stays in-function.
+from app.core.config import get_settings
+from app.core.context import (
+    current_actor,
+    current_execution_id,
+    current_request_db,
+    current_skill_id,
+    current_tenant_id,
+)
+from app.core.database import AsyncSessionLocal
+from app.core.metrics import GATE_TRANSITIONS, observe_pipeline
+from app.core.telemetry import tracer
+from app.models.agent_factory import ActivityEventType, ActivitySeverity
+from app.models.domain import SkillExecution
+from app.models.infrastructure import CostEvent
+from app.services.activity_feed import ActivityFeedService
+from app.services.actuation import Actuator
+from app.services.autonomy_policy import resolve_min_confidence
+from app.services.consequence import is_high_consequence
+from app.services.debate_engine import DebateEngine
+from app.services.fairness_engine import FairnessEngine
+from app.services.llm_router import LLMRouter
+from app.services.memory.enterprise_memory import EnterpriseMemoryService
+from app.services.realtime import manager
+# Imported as a MODULE, not as the bare class: the execution engine is
+# substituted by attribute (monkeypatch.setattr(skill_executor,
+# "SkillExecutionEngine", Fake)) in the HITL-resume suites, and a
+# `from ... import` binding here would snapshot the real class.
+from app.services import skill_executor
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +92,6 @@ async def persist_blocked_execution(
     Idempotent on execution_id, and never allowed to raise into the gate path.
     """
     try:
-        from datetime import datetime, timezone
-        from sqlalchemy import select
-        from app.core.database import AsyncSessionLocal
-        from app.models.domain import SkillExecution
         async with AsyncSessionLocal() as session:
             exists = (await session.execute(
                 select(SkillExecution.id).where(SkillExecution.id == execution_id)
@@ -96,7 +133,9 @@ class AgentExecutor:
     def __init__(self, compliance_engine, hitl_manager):
         self.compliance = compliance_engine
         self.hitl = hitl_manager
-        # Lazy-load AEOS engines to avoid circular imports
+        # Lazily CONSTRUCTED (not lazily imported - M8.3 hoisted the imports):
+        # a run touches at most a couple of these engines, so building all four
+        # per executor instance would be work most executions never need.
         self._debate_engine = None
         self._fairness_engine = None
         self._activity_feed = None
@@ -105,29 +144,25 @@ class AgentExecutor:
     @property
     def debate_engine(self):
         if self._debate_engine is None:
-            from app.services.debate_engine import DebateEngine
             self._debate_engine = DebateEngine()
         return self._debate_engine
 
     @property
     def fairness_engine(self):
         if self._fairness_engine is None:
-            from app.services.fairness_engine import FairnessEngine
             self._fairness_engine = FairnessEngine()
         return self._fairness_engine
 
     @property
     def activity_feed(self):
         if self._activity_feed is None:
-            from app.services.activity_feed import ActivityFeedService
             self._activity_feed = ActivityFeedService()
         return self._activity_feed
 
     @property
     def exec_engine(self):
         if self._exec_engine is None:
-            from app.services.skill_executor import SkillExecutionEngine
-            self._exec_engine = SkillExecutionEngine()
+            self._exec_engine = skill_executor.SkillExecutionEngine()
         return self._exec_engine
 
 
@@ -141,9 +176,6 @@ class AgentExecutor:
         the number an evaluator wants to see.
         """
         try:
-            from sqlalchemy import func as sqlfunc, select
-            from app.core.database import AsyncSessionLocal
-            from app.models.infrastructure import CostEvent
             exec_id = context.get("execution_id")
             tenant_id = context.get("tenant_id")
             if not exec_id or not tenant_id:
@@ -183,7 +215,6 @@ class AgentExecutor:
         governed decision, but it IS logged - silent memory is dead memory.
         """
         try:
-            from app.services.memory.enterprise_memory import EnterpriseMemoryService
             recalled = await EnterpriseMemoryService.recall_similar_situations(
                 None, context.get("tenant_id", "default"),
                 self._memory_key(context, skill), limit=3,
@@ -200,7 +231,6 @@ class AgentExecutor:
     async def _store_memory(self, context: dict, skill: Dict[str, Any], result: dict) -> None:
         """Persist this governed decision so future executions can recall it."""
         try:
-            from app.services.memory.enterprise_memory import EnterpriseMemoryService
             await EnterpriseMemoryService.store_decision_memory(
                 None, context.get("tenant_id", "default"),
                 self._memory_key(context, skill),
@@ -224,9 +254,6 @@ class AgentExecutor:
         safe autonomy.
         """
         try:
-            from sqlalchemy import select
-            from app.core.database import AsyncSessionLocal
-            from app.models.domain import SkillExecution
             async with AsyncSessionLocal() as session:
                 row = (await session.execute(
                     select(SkillExecution).where(SkillExecution.id == execution_id)
@@ -267,20 +294,16 @@ class AgentExecutor:
         # event on the pipeline span opened by execute_skill. Both best-effort -
         # a metrics/trace error must never stop a governed decision.
         try:
-            from app.core.metrics import GATE_TRANSITIONS
             GATE_TRANSITIONS.labels(gate=gate, state=state).inc()
         except Exception:
             pass
         try:
-            from opentelemetry import trace as _otel_trace
             _otel_trace.get_current_span().add_event(
                 "gate", {"gate": gate, "state": state, "ms": ms if ms is not None else -1}
             )
         except Exception:
             pass
         try:
-            from app.services.realtime import manager
-            from app.core.context import current_actor
             await manager.broadcast_to_tenant(context.get("tenant_id", "default"), {
                 "type": "gate_event",
                 "execution_id": context.get("execution_id"),
@@ -326,7 +349,6 @@ class AgentExecutor:
         # post-gate code transparently re-acquires a connection on its next
         # statement. Background callers (HITL resume, missions, jobs) have no
         # request session bound - the guard no-ops.
-        from app.core.context import current_request_db
         _req_db = current_request_db.get()
         if _req_db is not None and _req_db.in_transaction():
             try:
@@ -339,7 +361,6 @@ class AgentExecutor:
         # OTLP: one span per governed execution. _emit_gate attaches a per-gate
         # event to this span (get_current_span). No-op overhead when tracing is
         # not configured, so it is always on.
-        from app.core.telemetry import tracer
         with tracer.start_as_current_span("kaeos.gate_pipeline") as _span:
             try:
                 _span.set_attribute("kaeos.skill_id", str(skill.get("skill_id", "unknown")))
@@ -354,7 +375,6 @@ class AgentExecutor:
                     pass
         total_ms = int((time.perf_counter() - t0) * 1000)
         if isinstance(result, dict):
-            from app.core.metrics import observe_pipeline
             observe_pipeline(result.get("status"), total_ms)
             stages = context.get("_stage_timings", [])
             result["stage_timings"] = stages
@@ -386,10 +406,7 @@ class AgentExecutor:
         # (fairness scoring, debate), so setting this only in the executor
         # (gate 5) left every pre-execution call unattributed - and a decision
         # stopped at a gate looked free when it was not.
-        import uuid as _uuid
-
-        from app.core.context import current_execution_id, current_skill_id, current_tenant_id
-        context.setdefault("execution_id", f"exec-{_uuid.uuid4().hex[:8]}")
+        context.setdefault("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
         current_tenant_id.set(context.get("tenant_id", "default"))
         current_skill_id.set(skill.get("skill_id", "unknown"))
         current_execution_id.set(context["execution_id"])
@@ -403,8 +420,6 @@ class AgentExecutor:
         # NOTE: check_before_execution is async — it MUST be awaited. A prior
         # bug called it without await, yielding a truthy coroutine that blocked
         # every execution as BLOCKED_COMPLIANCE.
-        import asyncio
-
         skill_obj = context.get("_skill_obj")
         fairness_result = None
         if skill_obj and self.fairness_engine.requires_fairness_check(skill_obj, context):
@@ -472,7 +487,6 @@ class AgentExecutor:
                 await self._emit_gate(context, "fairness", "overridden")
             else:
                 logger.warning(f"Fairness gate BLOCKED: {fairness_result['flagged_attributes']}")
-                from app.models.agent_factory import ActivityEventType, ActivitySeverity
                 await self.activity_feed.emit(
                     event_type=ActivityEventType.FAIRNESS_BLOCKED,
                     title=f"Fairness gate blocked: {skill.get('skill_id', 'unknown')}",
@@ -524,11 +538,9 @@ class AgentExecutor:
         # BYOK: the tenant's probed model ceiling caps every skill's
         # confidence. A weak model mechanically routes more decisions to
         # humans - in the domain-agent path too, not just /skills routes.
-        from app.core.config import get_settings
         _settings = get_settings()
         effective_confidence = skill.get("confidence", 0)
         try:
-            from app.services.llm_router import LLMRouter
             _router = await LLMRouter.for_tenant(context.get("tenant_id", "default"))
             effective_confidence = min(
                 effective_confidence, _router.confidence_ceiling("reasoning")
@@ -551,7 +563,6 @@ class AgentExecutor:
                 f"ceiling lookup failed; failsafe cap {_settings.FAILSAFE_CONFIDENCE_CEILING} applied",
             )
             try:
-                from app.models.agent_factory import ActivityEventType, ActivitySeverity
                 await self.activity_feed.emit(
                     event_type=ActivityEventType.PROACTIVE_ALERT,
                     title=f"Gate 3 failsafe engaged: {skill.get('skill_id', 'unknown')}",
@@ -580,14 +591,12 @@ class AgentExecutor:
         # The Autonomy Dial: per-domain risk appetite set by an executive overrides
         # the platform default threshold (falls back to it when unset). Gives the
         # dial real teeth at the confidence gate.
-        from app.services.autonomy_policy import resolve_min_confidence
         _threshold = await resolve_min_confidence(
             context.get("tenant_id", "default"), skill.get("department"),
         )
         # Shared helper (explicit always_hitl flag first, tag inference as an
         # escalate-only fallback). The persisted Skill row is checked too: the
         # executor's skill dict may not carry the explicit flag.
-        from app.services.consequence import is_high_consequence
         _high_consequence = is_high_consequence(skill) or is_high_consequence(skill_obj)
 
         if _high_consequence or effective_confidence < _threshold:
@@ -646,7 +655,6 @@ class AgentExecutor:
                     await self._emit_gate(context, "debate", decision.lower())
 
                 if decision == "BLOCK":
-                    from app.models.agent_factory import ActivityEventType, ActivitySeverity
                     await self.activity_feed.emit(
                         event_type=ActivityEventType.DEBATE_BLOCKED,
                         title=f"Debate Engine BLOCKED: {skill.get('skill_id', 'unknown')}",
@@ -664,7 +672,6 @@ class AgentExecutor:
                         "transcript_id": transcript.id,
                     }
                 elif decision == "ESCALATE":
-                    from app.models.agent_factory import ActivityEventType, ActivitySeverity
                     await self.activity_feed.emit(
                         event_type=ActivityEventType.DEBATE_ESCALATED,
                         title=f"Debate escalated to HITL: {skill.get('skill_id', 'unknown')}",
@@ -686,8 +693,6 @@ class AgentExecutor:
         await self._emit_gate(context, "execute", "running")
 
         # ── Gate 5: Generative Skill Execution ──────────────────────────
-        import uuid
-
         exec_id = context.get("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
         context["execution_id"] = exec_id
         context["tenant_id"] = context.get("tenant_id", "default")
@@ -702,7 +707,6 @@ class AgentExecutor:
         )
 
         if exec_result["status"] != "SUCCESS_CLEAN":
-            from app.models.agent_factory import ActivityEventType, ActivitySeverity
             await self.activity_feed.emit(
                 event_type=ActivityEventType.AGENT_FAILED,
                 title=f"Execution failed: {skill.get('skill_id', 'unknown')}",
@@ -778,7 +782,6 @@ class AgentExecutor:
                     await self._mark_execution_failed(exec_id, "BLOCKED_ACTUATION")
                     await self._emit_gate(context, "execute", "failed",
                                           f"governed write to {_tgt} blocked: {_reason}")
-                    from app.models.agent_factory import ActivityEventType, ActivitySeverity
                     await self.activity_feed.emit(
                         event_type=ActivityEventType.AGENT_FAILED,
                         title=f"Governed write blocked by compliance: {skill.get('skill_id', 'unknown')}",
@@ -803,8 +806,6 @@ class AgentExecutor:
                         "warnings": warnings,
                     }
             try:
-                from app.services.actuation import Actuator
-                from app.core.database import AsyncSessionLocal
                 async with AsyncSessionLocal() as _adb:
                     _rec = await Actuator.apply_action(
                         _adb, tenant_id=context["tenant_id"],
@@ -834,7 +835,6 @@ class AgentExecutor:
                 await self._mark_execution_failed(exec_id, "FAILED_ACTUATION")
                 await self._emit_gate(context, "execute", "failed",
                                       f"governed write to {_target} failed")
-                from app.models.agent_factory import ActivityEventType, ActivitySeverity
                 await self.activity_feed.emit(
                     event_type=ActivityEventType.AGENT_FAILED,
                     title=f"Governed write failed: {skill.get('skill_id', 'unknown')}",
@@ -875,8 +875,6 @@ class AgentExecutor:
             # write stands, flagged) so the failure is never silently hidden.
             if _actuation_record_id:
                 try:
-                    from app.services.actuation import Actuator
-                    from app.core.database import AsyncSessionLocal
                     async with AsyncSessionLocal() as _rdb:
                         await Actuator.reverse_action(
                             _rdb, tenant_id=context["tenant_id"],

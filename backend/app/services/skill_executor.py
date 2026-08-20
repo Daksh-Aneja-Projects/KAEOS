@@ -11,21 +11,24 @@ Responsibilities:
   - Append a ProvenanceLedger entry for the execution event
 """
 import asyncio
+import hashlib
 import json
 import logging
-
-from app.services.json_utils import compact_context
 import time
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func as sqlfunc, select
+
+from app.agents.mcp_tools_dynamic.registry import MCPToolRegistry
+from app.core.context import current_execution_id, current_skill_id, current_tenant_id
 from app.core.database import AsyncSessionLocal
 from app.models.domain import Skill, SkillExecution
 from app.models.execution_status import AgentState, ExecutionStatus
-from app.services.llm_router import LLMRouter
+from app.models.infrastructure import CostEvent
 from app.services.confidence import ConfidenceEngine
+from app.services.json_utils import compact_context, extract_json_object
+from app.services.llm_router import LLMRouter
 from app.services.provenance import ProvenanceEngine
-from app.core.context import current_execution_id, current_skill_id, current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +115,6 @@ class SkillExecutionEngine:
         self.llm = LLMRouter()
         self.confidence_engine = ConfidenceEngine()
         self.provenance = ProvenanceEngine()
-        from app.agents.mcp_tools_dynamic.registry import MCPToolRegistry
         self.tool_registry = MCPToolRegistry()
 
     async def run(
@@ -523,9 +525,6 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
         zero, not a missing value.
         """
         try:
-            from sqlalchemy import func as sqlfunc
-
-            from app.models.infrastructure import CostEvent
             async with AsyncSessionLocal() as db:
                 row = (await db.execute(
                     select(
@@ -599,6 +598,11 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
         awaited on the execution path); swallows all errors so a failed
         self-heal can never crash the response."""
         try:
+            # KEPT in-function (M8.3): the import is part of the isolation. The
+            # KB self-heal is a cold, fire-and-forget failure path, and this
+            # except clause is what stops a broken evolution package from
+            # reaching the execution response - hoisting it would turn that same
+            # breakage into an app-startup failure instead.
             from app.services.evolution import EvolutionEngine
             await EvolutionEngine.handle_agent_failure(
                 execution_id=execution_id,
@@ -634,7 +638,6 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
 
 def _is_json_safe(value) -> bool:
     """True if a value can be persisted to a JSON column."""
-    import json
     try:
         json.dumps(value)
         return True
@@ -643,12 +646,10 @@ def _is_json_safe(value) -> bool:
 
 
 def _safe_parse_json(raw: str) -> dict:
-    from app.services.json_utils import extract_json_object
     try:
         return extract_json_object(raw)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"LLM response parse failed: {e}")
+        logger.warning(f"LLM response parse failed: {e}")
         return {"status": "FAILED", "error": f"Could not parse LLM response: {raw[:200]}"}
 
 
@@ -674,5 +675,4 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 def _hash_actor(actor_str: str) -> str:
-    import hashlib
     return hashlib.sha256(actor_str.encode()).hexdigest()
