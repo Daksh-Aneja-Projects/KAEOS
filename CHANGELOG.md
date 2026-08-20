@@ -11,6 +11,47 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - integration-audit Phase 0: billing integrity and four governance boundary defects (2026-08-21)
+
+A five-track whole-system audit (department interlinking, cross-cutting
+engines, frontend/backend coverage, governance pipeline, knowledge layer)
+found five critical defects; four were fixed the same day and one was refuted
+on re-verification.
+
+- **The Stripe meter counted phantom rows that never ran.** Predictive-ops
+  wrote SkillExecution rows stamped `QUEUED` - a status no gate produces -
+  that nothing drained; usage rating counted every row in the period with no
+  status filter, so never-executed predictions were pushed to the billing
+  provider as metered work and diluted the safe-autonomy denominator. All
+  execution counts now filter on the canonical governed vocabulary, and
+  zero-prompt predictions enqueue a durable job that runs the skill through
+  the FULL gate pipeline - a prediction can no longer pre-claim (or pre-waive)
+  human review. The ghost-executions view reads the job queue, the honest
+  source of truth.
+- **Support agents ran raw LLM calls; one closed tickets on the model's own
+  confidence claim.** The resolution agent set `ticket.status = RESOLVED`
+  whenever the model's own JSON said resolved with confidence > 0.85 -
+  inverting Gate 3's premise - and the KB agent wrote articles ungated. Both
+  now route through the gated support runner (compliance/PII, fairness,
+  confidence/HITL at a forced 0.79, debate, audit, provenance); the
+  resolution agent only recommends, and ticket state changes remain a human
+  action.
+- **An emailed approval link could out-privilege the recipient's account.**
+  HITL links fan out tenant-wide, and the signed-link path applied no
+  department scoping, so a sales-scoped user could decide an HR pause their
+  own session would be 403'd for. The execution's department is minted into
+  the token and decide-time enforces the same scope rule as in-app.
+- **Raw actuation writes and reversals lacked their consequence gates.** A
+  money-shaped UPDATE at /actuation/execute applied on one operator's sole
+  authority (the probe was name-only and never saw the payload), and
+  /actuation/reverse had no gate beyond RBAC. Money-shaped writes now pause
+  for approval like DELETEs, and consequential reversals enforce four-eyes:
+  the identity that performed the action cannot also reverse it.
+- **Refuted on re-verification:** "ECOA adverse-action notices issue
+  ungated." The path already validates fail-closed against the registered
+  ECOA checker (specific-reasons bar, prohibited-basis, receipt-anchored
+  30-day clock) before persisting, is deterministic, and is ledgered.
+
 ### Fixed - the campaign tail: real-model verification, two governance defects, a pre-launch re-audit (2026-08-20)
 
 - **The e2e lane ran on a real model for the first time this campaign** -
