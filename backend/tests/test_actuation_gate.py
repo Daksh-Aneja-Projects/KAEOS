@@ -132,12 +132,25 @@ def test_approval_applies_the_paused_write():
         ok = await hitl_manager.resolve_hitl(
             exec_id, approved=True, approver="checker@acme", tenant_id=t)
         assert ok is True
-        await asyncio.sleep(0.3)  # drain the resume task
-
+        # Drain the background resume task by POLLING for its persisted effect.
+        # A fixed sleep(0.3) flaked under -n auto: the resume takes ~3s here, so
+        # a loaded worker read the row mid-resume. The poll is SPARSE (0.25s,
+        # sleep first) on purpose: both engines are StaticPool - one shared
+        # DBAPI connection - and a tight poll starves the resume task of that
+        # connection (measured: it then never completes). Bounded at 15s so a
+        # genuine hang still fails instead of spinning forever.
+        row = None
+        for _ in range(60):
+            await asyncio.sleep(0.25)
+            async with AsyncSessionLocal() as s:
+                row = (await s.execute(select(SkillExecution).where(
+                    SkillExecution.id == exec_id))).scalar_one()
+            if row.status == "SUCCESS_CLEAN":
+                break
+        assert row is not None and row.status == "SUCCESS_CLEAN"
         async with AsyncSessionLocal() as s:
             row = (await s.execute(select(SkillExecution).where(
                 SkillExecution.id == exec_id))).scalar_one()
-            assert row.status == "SUCCESS_CLEAN"
             assert row.hitl_approver == "checker@acme"
             rec = (await s.execute(select(ActionRecord).where(
                 ActionRecord.tenant_id == t,

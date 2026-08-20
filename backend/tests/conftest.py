@@ -68,22 +68,62 @@ async def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 
-@pytest.fixture(autouse=True)
-async def setup_db(request):
-    # e2e tests talk to the live server - skip the in-memory schema churn.
-    if "e2e" in str(getattr(request.node, "fspath", "")):
-        yield
-        return
+# ── Schema lifecycle (M9.4) ──────────────────────────────────────────────────
+# The schema is built ONCE per pytest process (per xdist worker), not per test:
+# the old autouse fixture ran create_all + drop_all on BOTH engines around EVERY
+# test - four DDL passes over 256 tables each, which was most of the suite's
+# wall time. Isolation between tests is per-test DATA cleanup instead: endpoints
+# commit mid-request, so transaction-rollback isolation is impossible, and a
+# DELETE sweep in reverse FK order preserves exactly what drop_all/create_all
+# gave each test - empty tables at start.
+#
+# The schema fixture is deliberately SYNC + asyncio.run: pytest.ini pins
+# asyncio_default_fixture_loop_scope = function (see its comment for why), so a
+# session-scoped ASYNC fixture would need a session loop and re-open that bug.
+# Running DDL on a private throwaway loop is safe because aiosqlite binds each
+# operation's future to the loop RUNNING AT CALL TIME, not the loop the pooled
+# connection was created on - the same property today's per-test function loops
+# already relied on against the module-global engines.
+
+_SWEEP_TABLES = None  # resolved lazily: model modules register during imports
+
+
+async def _create_schema_once() -> None:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     # The sidecar app engine must have the schema too (see module docstring).
     async with app_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema_for_worker():
+    import asyncio
+    asyncio.run(_create_schema_once())
     yield
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    async with app_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # No drop_all at session end: both engines are in-memory and die with the
+    # process; dropping 256 tables per worker would only slow the exit.
+
+
+@pytest.fixture(autouse=True)
+async def setup_db(request):
+    """Per-test DATA isolation: sweep every row after the test (name kept -
+    it is the anchor other fixtures order themselves against)."""
+    # e2e tests talk to the live server - skip the in-memory data churn.
+    if "e2e" in str(getattr(request.node, "fspath", "")):
+        yield
+        return
+    yield
+    global _SWEEP_TABLES
+    if _SWEEP_TABLES is None:
+        # Children before parents: 0055 added real FKs, and while this SQLite
+        # harness does not enforce them, the order documents (and future-proofs)
+        # the dependency the Postgres schema enforces.
+        _SWEEP_TABLES = list(reversed(Base.metadata.sorted_tables))
+    for eng in (test_engine, app_engine):
+        async with eng.begin() as conn:
+            for table in _SWEEP_TABLES:
+                await conn.execute(table.delete())
 
 
 @pytest.fixture
