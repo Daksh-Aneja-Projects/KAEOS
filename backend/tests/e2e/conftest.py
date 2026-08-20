@@ -16,7 +16,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 logger = logging.getLogger("e2e")
 
-BASE_URL = os.environ.get("KAEOS_TEST_URL", "http://localhost:8001/api/v1")
+# 8011, not 8001: on the maintainer's machine 8001 belongs to another service,
+# so a default of 8001 can silently point the whole suite at a backend that is
+# not the one under test. scripts/run_e2e_backend.py and CI both boot 8011.
+BASE_URL = os.environ.get("KAEOS_TEST_URL", "http://127.0.0.1:8011/api/v1")
 # Roots for the endpoints that live OUTSIDE /api/v1 (admin, /ws). DERIVED from
 # BASE_URL - never hardcode a port in a test. A hardcoded localhost:8001 hits
 # whatever happens to hold that port (a stale container, another service), so a

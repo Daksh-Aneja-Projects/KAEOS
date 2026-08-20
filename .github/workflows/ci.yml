@@ -51,7 +51,7 @@ jobs:
         ENVIRONMENT: "ci"
       run: |
         cd backend
-        # The e2e suite needs a live backend on :8001 plus a local Ollama, so it
+        # The e2e suite needs a live backend on :8011 plus a local Ollama, so it
         # cannot run here — it skips itself via the `client` fixture rather than
         # failing, which would make CI green while testing nothing. Run it
         # against a real stack: see README "E2E Test Suite".
@@ -146,9 +146,9 @@ jobs:
         REDIS_URL: "redis://localhost:6379/0"
       run: |
         cd backend
-        python -m uvicorn app.main:app --port 8001 --log-level warning &
+        python -m uvicorn app.main:app --port 8011 --log-level warning &
         for i in $(seq 1 30); do
-          curl -sf http://localhost:8001/health > /dev/null && break
+          curl -sf http://127.0.0.1:8011/health > /dev/null && break
           sleep 2
         done
         python scripts/seed_master.py

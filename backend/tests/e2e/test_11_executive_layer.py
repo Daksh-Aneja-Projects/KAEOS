@@ -4,7 +4,7 @@ Tests executive cockpit, command center, digital twin, predictive ops,
 OODA monitor, and reality experience.
 """
 import pytest
-from .conftest import assert_dashboard
+from .conftest import admin_secret, assert_dashboard
 
 
 @pytest.mark.asyncio
@@ -109,10 +109,12 @@ class TestExecutiveLayer:
     async def test_tenant_stats(self, client):
         """Multi-tenant stats. Cross-tenant enumeration is a platform-admin
         operation gated on X-Admin-Secret (a plain call correctly 403s)."""
-        import os
-        secret = os.environ.get("ADMIN_SECRET", "")
+        # Resolve it the way the BACKEND does (env, then backend/.env, then the
+        # root .env). Reading os.environ alone made this skip on every standard
+        # local run - a cross-tenant enumeration check that never actually ran.
+        secret = admin_secret()
         if not secret:
-            pytest.skip("ADMIN_SECRET not set in the test environment")
+            pytest.skip("ADMIN_SECRET is not configured for this stack")
         r = await client.get("/tenants/stats", headers={"X-Admin-Secret": secret})
         assert r.status_code == 200, f"{r.status_code}: {r.text[:200]}"
 
