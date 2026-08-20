@@ -347,7 +347,11 @@ SALES = DepartmentGate(
 SUPPORT = DepartmentGate(
     domain="support",
     default_compliance=("GDPR", "CCPA", "SLA_BREACH", "PII_REDACTION"),
-    confidence_overrides={"support_auto_resolve": 0.79},  # force HITL: customer-facing
+    # Force HITL on everything that drafts customer-facing reply text. The
+    # resolution skill previously bypassed the gate entirely and closed
+    # tickets on the model's own confidence claim.
+    confidence_overrides={"support_auto_resolve": 0.79,
+                          "support_ticket_resolution": 0.79},
     audit_flags=(
         AuditFlag("data_processing_basis_logged", ("GDPR", "HIPAA", "CCPA"), source="legal_basis"),
     ),
