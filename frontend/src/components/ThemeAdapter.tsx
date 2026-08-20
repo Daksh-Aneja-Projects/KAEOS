@@ -5,17 +5,22 @@ import { useTheme } from '../context/ThemeContext';
  * ThemeAdapter wraps legacy page components (which use hardcoded light-mode
  * Tailwind classes like bg-white, text-gray-900, border-gray-100) and injects
  * CSS overrides so they render correctly in dark mode.
+ *
+ * It renders the SAME element shape in both modes (one div, one style tag):
+ * switching the root between a Fragment and a div made React unmount and
+ * remount the entire page subtree on every theme toggle, losing all state.
+ * In light mode the div is layout-neutral via display:contents and the CSS
+ * below is inert because every selector is scoped under .dark-mode.
  */
 export default function ThemeAdapter({ children }: { children: React.ReactNode }) {
   const { theme, colors } = useTheme();
+  const dark = theme === 'dark';
 
-  if (theme === 'light') {
-    return <>{children}</>;
-  }
-
-  // Dark mode - override Tailwind light-mode colors via scoped CSS
   return (
-    <div className="theme-adapter dark-mode h-full">
+    <div
+      className={dark ? 'theme-adapter dark-mode h-full' : 'theme-adapter'}
+      style={dark ? undefined : { display: 'contents' }}
+    >
       <style>{`
         .dark-mode { color: ${colors.ink}; }
         /* Backgrounds */

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { SkillItem } from '../api/client';
 import {
   FileCode2, Play, ShieldCheck, AlertTriangle, Gauge, Wrench,
-  ChevronDown, ChevronRight, CheckCircle2, XCircle, ArrowRight,
+  ChevronDown, ChevronRight, CheckCircle2, ArrowRight,
   Clock, Link2, Eye, Sparkles
 } from 'lucide-react';
 import { humanize } from '../lib/format';
@@ -15,30 +15,18 @@ interface Props {
   onClose: () => void;
 }
 
-export default function SkillContractViewer({ skill, colors, onClose }: Props) {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['triggers', 'steps', 'guardrails'])
-  );
-
-  const toggle = (id: string) => {
-    setExpandedSections(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const confColor = (v: number) =>
-    v >= 0.85 ? colors.success : v >= 0.7 ? colors.info : v >= 0.5 ? colors.warning : colors.error;
-
-  // ── Section wrapper ─────────────────────────────────────────────────────
-  const Section = ({ id, title, icon: Icon, count, children }: {
-    id: string; title: string; icon: any; count?: number; children: React.ReactNode;
-  }) => {
-    const open = expandedSections.has(id);
-    return (
-      <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-        <button onClick={() => toggle(id)}
+// ── Section wrapper ───────────────────────────────────────────────────────
+// Module-level on purpose: defined inside the render it was re-created every
+// state change, so React remounted every section's subtree on each toggle.
+function Section({ id, title, icon: Icon, count, expanded, onToggle, colors, children }: {
+  id: string; title: string; icon: any; count?: number;
+  expanded: Set<string>; onToggle: (id: string) => void; colors: any;
+  children: React.ReactNode;
+}) {
+  const open = expanded.has(id);
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <button onClick={() => onToggle(id)}
           className="w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors"
           style={{ borderBottom: open ? `1px solid ${colors.hairline}` : 'none' }}
           onMouseEnter={e => (e.currentTarget.style.background = colors.surface2)}
@@ -55,8 +43,28 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
         </button>
         {open && <div className="px-5 py-4">{children}</div>}
       </div>
-    );
+  );
+}
+
+export default function SkillContractViewer({ skill, colors, onClose }: Props) {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set(['triggers', 'steps', 'guardrails'])
+  );
+
+  const toggle = (id: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
+
+  const confColor = (v: number) =>
+    v >= 0.85 ? colors.success : v >= 0.7 ? colors.info : v >= 0.5 ? colors.warning : colors.error;
+
+  // Shared by every <Section>, so the wrapper can live at module level.
+  const sectionCtx = { expanded: expandedSections, onToggle: toggle, colors };
 
   const steps = (skill.steps || []) as any[];
   const exceptions = (skill.exceptions || []) as any[];
@@ -130,7 +138,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
       </div>
 
       {/* ── Triggers ──────────────────────────────────────────────────────── */}
-      <Section id="triggers" title="Triggers" icon={Play} count={triggers.length}>
+      <Section id="triggers" title="Triggers" icon={Play} count={triggers.length} {...sectionCtx}>
         <div className="space-y-2">
           {triggers.map((t: any, i: number) => (
             <div key={i} className="flex items-center gap-3 p-3 rounded-lg"
@@ -146,7 +154,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
       </Section>
 
       {/* ── Execution Steps (Visual Pipeline) ─────────────────────────────── */}
-      <Section id="steps" title="Execution Steps" icon={ArrowRight} count={steps.length}>
+      <Section id="steps" title="Execution Steps" icon={ArrowRight} count={steps.length} {...sectionCtx}>
         <div className="space-y-1">
           {steps.map((step: any, i: number) => (
             <div key={step.id || i}>
@@ -200,7 +208,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
       </Section>
 
       {/* ── Exceptions ────────────────────────────────────────────────────── */}
-      <Section id="exceptions" title="Exceptions & Overrides" icon={AlertTriangle} count={exceptions.length}>
+      <Section id="exceptions" title="Exceptions & Overrides" icon={AlertTriangle} count={exceptions.length} {...sectionCtx}>
         <div className="space-y-2">
           {exceptions.map((exc: any, i: number) => (
             <div key={exc.id || i} className="flex items-start gap-3 p-3 rounded-lg"
@@ -231,7 +239,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
       </Section>
 
       {/* ── Guardrails ────────────────────────────────────────────────────── */}
-      <Section id="guardrails" title="Guardrails" icon={ShieldCheck}
+      <Section id="guardrails" title="Guardrails" icon={ShieldCheck} {...sectionCtx}
         count={(guardrails.pre_execution?.length || 0) + (guardrails.post_execution?.length || 0)}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Pre-execution */}
@@ -268,7 +276,7 @@ export default function SkillContractViewer({ skill, colors, onClose }: Props) {
       </Section>
 
       {/* ── MCP Tool Bindings ──────────────────────────────────────────────── */}
-      <Section id="tools" title="MCP Tool Bindings" icon={Link2} count={skill.mcp_tool_bindings?.length || 0}>
+      <Section id="tools" title="MCP Tool Bindings" icon={Link2} count={skill.mcp_tool_bindings?.length || 0} {...sectionCtx}>
         <div className="flex gap-2 flex-wrap">
           {(skill.mcp_tool_bindings || []).map((tool: string) => (
             <div key={tool} className="flex items-center gap-1.5 px-3 py-2 rounded-lg"

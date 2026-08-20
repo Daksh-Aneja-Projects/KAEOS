@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 interface CountUpProps {
   value: number;
@@ -23,6 +23,10 @@ export function prefersReducedMotion(): boolean {
  * one via requestAnimationFrame with an ease-out curve. A static number reads
  * as a picture; this makes every KPI feel live. Honors prefers-reduced-motion
  * by jumping straight to the final value with no animation.
+ *
+ * The animation writes el.textContent directly from the rAF loop (same
+ * pattern as TwinGraph): zero re-renders per frame instead of one setState
+ * per frame across every stat card.
  */
 export function CountUp({
   value,
@@ -32,49 +36,51 @@ export function CountUp({
   suffix = '',
   className,
 }: CountUpProps) {
-  const [display, setDisplay] = useState(value);
-  const displayRef = useRef(value); // latest rendered number, survives re-renders
+  const spanRef = useRef<HTMLSpanElement | null>(null);
+  const shownRef = useRef(value); // latest number written to the DOM, survives re-renders
   const rafRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  const to = Number.isFinite(value) ? value : 0;
+
+  useLayoutEffect(() => {
+    const el = spanRef.current;
+    if (!el) return;
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
 
-    const from = displayRef.current;
-    const to = Number.isFinite(value) ? value : 0;
+    const fmt = (n: number) => `${prefix}${n.toFixed(decimals)}${suffix}`;
+    const from = shownRef.current;
 
     if (from === to || prefersReducedMotion()) {
-      displayRef.current = to;
-      setDisplay(to);
+      shownRef.current = to;
+      el.textContent = fmt(to);
       return;
     }
+
+    // Layout effect runs before paint: rewind the DOM to the old number so
+    // the freshly committed final value never flashes for a frame.
+    el.textContent = fmt(from);
 
     const start = performance.now();
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
       const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      const current = from + (to - from) * eased;
-      displayRef.current = current;
-      setDisplay(current);
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        displayRef.current = to;
-        rafRef.current = null;
-      }
+      const current = t < 1 ? from + (to - from) * eased : to;
+      shownRef.current = current;
+      el.textContent = fmt(current);
+      rafRef.current = t < 1 ? requestAnimationFrame(tick) : null;
     };
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [value, duration]);
+  }, [to, duration, prefix, suffix, decimals]);
 
-  const num = Number.isFinite(display) ? display : 0;
+  // A single string child keeps React owning exactly one text node, so the
+  // rAF loop's textContent writes and React's own updates never desync.
   return (
-    <span className={className}>
-      {prefix}
-      {num.toFixed(decimals)}
-      {suffix}
+    <span ref={spanRef} className={className}>
+      {`${prefix}${to.toFixed(decimals)}${suffix}`}
     </span>
   );
 }

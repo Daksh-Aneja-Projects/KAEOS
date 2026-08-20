@@ -20,6 +20,10 @@ export default function Sparkline({
   height?: number;
   className?: string;
 }) {
+  // Hook first, unconditionally: this used to sit below the early return, so a
+  // series crossing the 2-point threshold between renders changed hook order.
+  const [hover, setHover] = React.useState<number | null>(null);
+
   const vals = points.filter((p): p is number => p !== null && !isNaN(p));
   if (vals.length < 2) return null;
 
@@ -38,7 +42,6 @@ export default function Sparkline({
   const area = `${path} L ${coords[coords.length - 1][0].toFixed(1)} ${height} L ${coords[0][0].toFixed(1)} ${height} Z`;
   const [lastX, lastY] = coords[coords.length - 1];
   const gradId = `spark-${color.replace('#', '')}`;
-  const [hover, setHover] = React.useState<number | null>(null);
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
