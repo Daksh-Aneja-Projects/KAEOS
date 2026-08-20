@@ -10,6 +10,13 @@ logger = logging.getLogger(__name__)
 
 # Redis key prefix for HITL pending approvals (survives restarts)
 _HITL_KEY_PREFIX = "kaeos:hitl:"
+# Per-tenant SET of the exec ids that are PENDING, so /hitl/pending is O(pending)
+# instead of O(whole keyspace). Deliberately NOT under "kaeos:hitl:": the record
+# MATCH pattern is "kaeos:hitl:*", and an index key under that prefix would be
+# returned by the backfill SCAN and by any other reader of the record prefix,
+# which would then try to json.loads() a Redis set. A disjoint prefix makes that
+# impossible by construction instead of by a remember-to-skip check.
+_HITL_INDEX_PREFIX = "kaeos:hitlidx:"
 # TTL: 24 hours (86400 seconds)
 _HITL_TTL = 86400
 # The durable resume backstop fires this long after approval. Long enough that
@@ -37,9 +44,26 @@ class HITLManager:
         # The old code logged "falling back to in-memory storage" but stored
         # nothing - every Gate-3 pause was announced yet unactionable.
         self._memory: Dict[str, Dict[str, Any]] = {}
+        # One backfill SCAN per process, not per empty index: an index set with
+        # no members does not exist in Redis, so an EXISTS check alone would
+        # re-scan on every poll for every tenant with nothing pending - which is
+        # the common case and the exact cost this change removes.
+        self._index_backfilled = False
 
     def _redis_key(self, exec_id: str) -> str:
         return f"{_HITL_KEY_PREFIX}{exec_id}"
+
+    def _index_key(self, tenant_id: str) -> str:
+        return f"{_HITL_INDEX_PREFIX}{tenant_id}"
+
+    async def _index_add(self, redis, tenant_id: str, exec_id: str) -> None:
+        key = self._index_key(tenant_id)
+        await redis.sadd(key, exec_id)
+        # Refreshed on every add so the index outlives its newest record.
+        await redis.expire(key, _HITL_TTL)
+
+    async def _index_discard(self, redis, tenant_id: str, exec_id: str) -> None:
+        await redis.srem(self._index_key(tenant_id), exec_id)
 
     @staticmethod
     def _json_safe(d: Dict[str, Any]) -> Dict[str, Any]:
@@ -58,8 +82,11 @@ class HITLManager:
     async def _get_redis(self):
         """Return the Redis client if available, else None."""
         try:
-            from app.core.redis import redis_client
-            return redis_client
+            from app.core.redis import get_redis
+            # Call the accessor rather than importing the module global: the
+            # global is rebound on (re)connect, and a `from ... import
+            # redis_client` binding is a snapshot taken at first call.
+            return await get_redis()
         except Exception:
             # Redis is optional; without it HITL falls back to DB-only state.
             return None
@@ -124,11 +151,10 @@ class HITLManager:
             "context": self._json_safe(context),
         }
 
-        if redis:
-            await redis.setex(self._redis_key(exec_id), _HITL_TTL, json.dumps(pending_data))
-        else:
+        if not redis:
             logger.warning("[HITL] Redis unavailable — using in-memory HITL store (single-instance only)")
-            self._memory[exec_id] = pending_data
+        # One write path, so the pending index is maintained in exactly one place.
+        await self._put_record(exec_id, pending_data)
 
         # The DATABASE is the source of truth for pending approvals: every
         # Gate-3 pause gets a PENDING_HITL SkillExecution row, so the single
@@ -296,7 +322,17 @@ class HITLManager:
     async def _put_record(self, execution_id: str, data: Dict[str, Any], ttl: int = _HITL_TTL):
         redis = await self._get_redis()
         if redis:
+            # Record key and JSON are unchanged, so a rolling deploy where old
+            # workers still read these records keeps working.
             await redis.setex(self._redis_key(execution_id), ttl, json.dumps(data))
+            tenant_id = data.get("tenant_id")
+            if tenant_id:
+                if data.get("status") == "PENDING":
+                    await self._index_add(redis, tenant_id, execution_id)
+                else:
+                    # Resolved (or any non-pending state): leaves the queue here,
+                    # so list_pending never has to read it to find that out.
+                    await self._index_discard(redis, tenant_id, execution_id)
         else:
             self._memory[execution_id] = data
 
@@ -307,21 +343,76 @@ class HITLManager:
             return None
         return (record.get("skill_def") or {}).get("department")
 
+    async def _backfill_index(self, redis) -> None:
+        """Rebuild the per-tenant indexes from the records, once per process.
+
+        Records written before this index existed (or by an old worker mid
+        rolling deploy) have no index entry, and the frontend must not lose
+        sight of a pending approval because of a deploy. One bounded SCAN pass
+        - never KEYS, which blocks the whole server for the length of the
+        keyspace - reconstructs them.
+        """
+        cursor = 0
+        while True:
+            cursor, keys = await redis.scan(
+                cursor, match=f"{_HITL_KEY_PREFIX}*", count=200
+            )
+            for key, raw in zip(keys, await redis.mget(keys) if keys else []):
+                try:
+                    data = json.loads(raw) if raw else None
+                except ValueError:
+                    continue
+                if not data or data.get("status") != "PENDING":
+                    continue
+                owner = data.get("tenant_id")
+                if owner:
+                    await self._index_add(redis, owner, key[len(_HITL_KEY_PREFIX):])
+            if int(cursor) == 0:
+                return
+
     async def list_pending(self, tenant_id: str) -> list:
-        """All PENDING approvals for a tenant, from Redis or the memory store."""
+        """All PENDING approvals for a tenant, from Redis or the memory store.
+
+        Reads the tenant's pending index and MGETs those records: one round
+        trip, O(that tenant's pending approvals). It used to KEYS the whole
+        keyspace and GET every match, per poll, per open browser tab.
+        """
         pending = []
         redis = await self._get_redis()
         if redis:
             try:
-                keys = await redis.keys(f"{_HITL_KEY_PREFIX}*")
-                for key in keys:
-                    raw = await redis.get(key)
-                    if raw:
-                        data = json.loads(raw)
-                        if data.get("tenant_id") == tenant_id and data.get("status") == "PENDING":
-                            pending.append(data)
+                idx = self._index_key(tenant_id)
+                if not self._index_backfilled:
+                    if not await redis.exists(idx):
+                        await self._backfill_index(redis)
+                    # ponytail: one backfill per process. A record written by a
+                    # DRAINING old worker after this worker backfilled stays
+                    # unindexed until it resolves or expires - it is still in
+                    # the DB-backed queue (/skills/hitl/pending) and still
+                    # resolvable by id, only this Redis listing misses it.
+                    # Upgrade path if that window ever matters: re-arm the flag
+                    # on a timer instead of a bool, trading one bounded SCAN per
+                    # interval for it.
+                    self._index_backfilled = True
+                exec_ids = list(await redis.smembers(idx))
+                raws = await redis.mget(
+                    [self._redis_key(i) for i in exec_ids]) if exec_ids else []
+                stale = []
+                for exec_id, raw in zip(exec_ids, raws):
+                    data = json.loads(raw) if raw else None
+                    # Belt and braces on tenant_id: the index says whose it is,
+                    # the record proves it.
+                    if (data and data.get("status") == "PENDING"
+                            and data.get("tenant_id") == tenant_id):
+                        pending.append(data)
+                    else:
+                        # Record expired, or resolved by a path that could not
+                        # update the index - self-heal so it converges.
+                        stale.append(exec_id)
+                if stale:
+                    await redis.srem(idx, *stale)
             except Exception as e:
-                logger.warning(f"[HITL] Redis scan failed: {e}")
+                logger.warning(f"[HITL] Redis pending-index read failed: {e}")
         for data in self._memory.values():
             if data.get("tenant_id") == tenant_id and data.get("status") == "PENDING":
                 pending.append(data)
