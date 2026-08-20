@@ -27,7 +27,9 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SkillExecution
-from app.models.execution_status import SAFE_AUTONOMOUS_STATUSES, ExecutionStatus
+from app.models.execution_status import (
+    GOVERNED_VOCABULARY, SAFE_AUTONOMOUS_STATUSES, ExecutionStatus,
+)
 
 
 def _rate(numerator: int, denominator: int) -> Optional[float]:
@@ -60,7 +62,11 @@ def _classify_counts():
 async def compute_safe_autonomy(db: AsyncSession, tenant_id: str, days: int = 30) -> dict[str, Any]:
     """Compute the safe-autonomy-rate and its explainable breakdown for a tenant."""
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    scope = (SkillExecution.tenant_id == tenant_id) & (SkillExecution.started_at >= since)
+    # Vocabulary filter: rows the pipeline never evaluated (legacy QUEUED ghost
+    # predictions) are not executions and must not dilute the denominator.
+    scope = ((SkillExecution.tenant_id == tenant_id)
+             & (SkillExecution.started_at >= since)
+             & (SkillExecution.status.in_(GOVERNED_VOCABULARY)))
 
     autonomous_safe, routed_to_human, overridden, edited, failed = _classify_counts()
     row = (await db.execute(

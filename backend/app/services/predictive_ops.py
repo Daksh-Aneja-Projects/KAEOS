@@ -4,13 +4,11 @@ Latent Intent Recognition & Zero-Prompt Execution
 """
 import logging
 from typing import Optional
-from datetime import datetime, timezone
-import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models.domain import Signal, Skill, SkillExecution
+from app.models.domain import Signal, Skill
 from app.services.llm_router import LLMRouter
 
 logger = logging.getLogger(__name__)
@@ -92,12 +90,19 @@ class PredictiveOpsEngine:
             return None
 
     @staticmethod
-    async def trigger_zero_prompt_execution(db: AsyncSession, intent: LatentIntent) -> SkillExecution:
+    async def trigger_zero_prompt_execution(db: AsyncSession, intent: LatentIntent) -> str:
+        """Enqueue a recognized latent intent for GOVERNED execution.
+
+        Historically this wrote a SkillExecution row stamped ``QUEUED`` — a
+        status no gate produces — that nothing ever drained, so the "queued"
+        run never ran, yet the row was metered for billing and diluted the
+        safe-autonomy denominator. It now enqueues a durable job whose handler
+        runs the skill through the full gate pipeline (see
+        job_handlers._run_zero_prompt_execution); the SkillExecution row that
+        eventually exists is a real, gated one. Returns the job id.
         """
-        Takes a recognized latent intent and auto-queues a skill execution.
-        """
-        logger.info(f"Triggering Zero-Prompt Execution for skill {intent.recommended_skill_id}")
-        
+        logger.info(f"Enqueuing zero-prompt execution for skill {intent.recommended_skill_id}")
+
         # Locate the skill - in the signal's tenant only (skill names are
         # unique per tenant, and the execution runs under skill.tenant_id).
         stmt = select(Skill).where(Skill.skill_id == intent.recommended_skill_id)
@@ -105,24 +110,19 @@ class PredictiveOpsEngine:
             stmt = stmt.where(Skill.tenant_id == intent.context["tenant_id"])
         skill_q = await db.execute(stmt)
         skill = skill_q.scalars().first()
-        
+
         if not skill:
             raise ValueError(f"Skill {intent.recommended_skill_id} not found.")
-            
-        execution = SkillExecution(
-            id=str(uuid.uuid4()),
-            skill_db_id=skill.id,
-            skill_id_name=skill.skill_id,
-            tenant_id=skill.tenant_id,
-            status="QUEUED",
-            route_type="ZERO_PROMPT_AUTO",
-            task_intent="Auto-predicted from latent intent analysis",
-            context=intent.context,
-            hitl_required=skill.confidence < 0.90,  # Requires human review if skill isn't highly confident
-            started_at=datetime.now(timezone.utc)
+
+        from app.services import job_queue
+        return await job_queue.enqueue(
+            db, skill.tenant_id, "zero_prompt_execution",
+            payload={
+                "skill_db_id": skill.id,
+                "skill_id": skill.skill_id,
+                "tenant_id": skill.tenant_id,
+                "intent_confidence": intent.confidence,
+                "context": intent.context,
+            },
         )
-        
-        db.add(execution)
-        await db.commit()
-        return execution
 

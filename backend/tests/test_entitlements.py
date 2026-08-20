@@ -82,6 +82,26 @@ async def test_rating_counts_blocked_executions(db):
     assert rating["overage_units"] == 0
 
 
+async def test_rating_never_bills_unevaluated_rows(db):
+    """A row the gate pipeline never evaluated is not a governed run.
+
+    Regression for the predictive-ops ghost defect: rows stamped QUEUED (a
+    status outside the ExecutionStatus vocabulary, drained by nothing) were
+    counted and pushed to the billing provider as metered work.
+    """
+    from app.services.usage_rating import rate_tenant_period
+    now = datetime.now(timezone.utc)
+    db.add(Tenant(tenant_id="t4q", plan="free"))
+    db.add(SkillExecution(id="q-real", tenant_id="t4q", skill_id_name="s",
+                          status="SUCCESS_CLEAN", started_at=now))
+    db.add(SkillExecution(id="q-ghost", tenant_id="t4q", skill_id_name="s",
+                          status="QUEUED", route_type="ZERO_PROMPT_AUTO",
+                          started_at=now))
+    await db.commit()
+    rating = await rate_tenant_period(db, "t4q")
+    assert rating["metered_executions"] == 1  # the ghost is not billable
+
+
 # ── ROI value delivered: honest null-with-note ──────────────────────────────
 async def test_value_delivered_null_without_baseline(db):
     from app.api.routes.billing import _value_delivered

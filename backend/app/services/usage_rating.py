@@ -9,6 +9,12 @@ early at Gate 1 (compliance), which previously returned without persisting and
 so were never counted (see runtime._persist_blocked_execution). A governed run
 that the platform evaluated is a governed run whether or not it was allowed to
 act.
+
+The inverse also holds: a row the pipeline NEVER evaluated is not a governed
+run and must not be billed. The count therefore filters on GOVERNED_VOCABULARY
+— the historical predictive-ops "ghost" rows (status ``QUEUED``, a value no
+gate writes, drained by nothing) were being metered and pushed to the billing
+provider as if they were work.
 """
 import logging
 from datetime import date, datetime, timezone
@@ -19,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.entitlements import allowance_for_plan, plan_for_tenant
 from app.models.billing import UsageMeterReport
 from app.models.domain import SkillExecution
+from app.models.execution_status import GOVERNED_VOCABULARY
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +55,8 @@ async def rate_tenant_period(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= datetime(period.year, period.month, period.day, tzinfo=timezone.utc),
             SkillExecution.started_at < datetime(nxt.year, nxt.month, nxt.day, tzinfo=timezone.utc),
+            # Only rows the gate pipeline actually evaluated are billable.
+            SkillExecution.status.in_(GOVERNED_VOCABULARY),
         )
     ) or 0
     plan = await plan_for_tenant(db, tenant_id)

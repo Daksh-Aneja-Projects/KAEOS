@@ -147,6 +147,16 @@ TERMINAL_STATUSES: frozenset[ExecutionStatus] = frozenset(
     set(ExecutionStatus) - PENDING_STATUSES
 )
 
+#: Every status the governed pipeline writes, as plain strings, for SQL ``IN``
+#: predicates. A ``skill_executions`` row whose status is OUTSIDE this
+#: vocabulary was never evaluated by the gates - the historical case is the
+#: pre-2026-08 predictive-ops "ghost" rows stamped ``QUEUED`` (a value no gate
+#: produces) that nothing ever drained. Such rows must not be metered for
+#: billing nor counted in any execution denominator: billing's unit is "a
+#: governed run the platform evaluated" (see services/usage_rating.py), and a
+#: never-evaluated row is not one.
+GOVERNED_VOCABULARY: tuple[str, ...] = tuple(m.value for m in ExecutionStatus)
+
 
 def is_safe_autonomous(hitl_required: Optional[bool], status: Optional[str]) -> bool:
     """The north-star predicate: ran with no human gate AND completed cleanly.
@@ -173,4 +183,6 @@ if __name__ == "__main__":
     assert ExecutionStatus.HUMAN_OVERRIDDEN not in SUCCEEDED_STATUSES
     assert SAFE_AUTONOMOUS_STATUSES < SUCCEEDED_STATUSES
     assert ExecutionStatus.FAILED_RESUME in TERMINAL_STATUSES
+    assert "QUEUED" not in GOVERNED_VOCABULARY  # ghost rows are not governed runs
+    assert "SUCCESS_CLEAN" in GOVERNED_VOCABULARY
     print("execution_status self-check OK")

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.execution_status import SUCCEEDED_STATUSES
 from app.models.domain import Signal, SkillExecution
+from app.models.jobs import Job
 from app.services.predictive_ops import PredictiveOpsEngine
 from app.core.tenant import approver_identity
 
@@ -35,12 +36,14 @@ async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_rol
     intent = await PredictiveOpsEngine.analyze_signal_for_intent(db, signal)
     
     if intent:
-        # Trigger execution based on intent
-        execution = await PredictiveOpsEngine.trigger_zero_prompt_execution(db, intent)
+        # Enqueue for governed execution: the durable job runs the skill
+        # through the full gate pipeline, which decides HITL — a prediction
+        # cannot pre-claim (or pre-waive) human review.
+        job_id = await PredictiveOpsEngine.trigger_zero_prompt_execution(db, intent)
         await record_security_event(
             tenant_id=tenant_id, event_type="AGENT_EXEC", action="EXECUTE",
             actor=approver_identity(tenant), actor_role=tenant.get("role"),
-            resource_type="zero_prompt_execution", resource_id=execution.id,
+            resource_type="zero_prompt_job", resource_id=job_id,
         )
         return {
             "status": "INTENT_DETECTED",
@@ -50,8 +53,7 @@ async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_rol
                 "recommended_skill": intent.recommended_skill_id
             },
             "action": "ZERO_PROMPT_EXECUTION_QUEUED",
-            "execution_id": execution.id,
-            "hitl_required": execution.hitl_required
+            "job_id": job_id,
         }
         
     return {
@@ -61,32 +63,33 @@ async def analyze_and_predict(signal_id: str, tenant: dict = Depends(require_rol
 
 @router.get("/ghost-executions")
 async def get_ghost_executions(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    """Retrieve all zero-prompt (ghost) executions."""
-    # Scoped: was returning every tenant's ghost executions (with task_intent
-    # and context) to any caller.
-    exec_q = await db.execute(
-        select(SkillExecution)
-        .where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.route_type == "ZERO_PROMPT_AUTO",
-        )
-        .order_by(SkillExecution.started_at.desc())
+    """Zero-prompt (ghost) executions: the runs KAEOS initiated on its own.
+
+    Reads the durable job queue — the source of truth since predictions became
+    governed jobs. A job's lifecycle (QUEUED → RUNNING → SUCCEEDED | FAILED) is
+    the ghost's honest status; the gated SkillExecution the handler creates
+    appears in every normal execution surface. hitl_required is null here
+    because the gate pipeline decides it at run time, not the prediction.
+    """
+    jobs = (await db.execute(
+        select(Job)
+        .where(Job.tenant_id == tenant_id, Job.job_type == "zero_prompt_execution")
+        .order_by(Job.created_at.desc())
         .limit(50)
-    )
-    executions = exec_q.scalars().all()
-    
+    )).scalars().all()
+
     return {
         "ghost_executions": [
             {
-                "id": e.id,
-                "skill_name": e.skill_id_name,
-                "status": e.status,
-                "task_intent": e.task_intent,
-                "context": e.context,
-                "hitl_required": e.hitl_required,
-                "started_at": e.started_at,
+                "id": j.id,
+                "skill_name": (j.payload or {}).get("skill_id"),
+                "status": "EXECUTED" if j.status == "SUCCEEDED" else j.status,
+                "task_intent": "Auto-predicted from latent intent analysis",
+                "context": (j.payload or {}).get("context"),
+                "hitl_required": None,
+                "started_at": j.created_at,
             }
-            for e in executions
+            for j in jobs
         ]
     }
 

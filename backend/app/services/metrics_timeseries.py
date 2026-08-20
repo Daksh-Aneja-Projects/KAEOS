@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SkillExecution
+from app.models.execution_status import GOVERNED_VOCABULARY
 from app.models.infrastructure import CostEvent
 from app.models.metrics_ts import MetricSample
 from app.services.safe_autonomy import _classify_counts
@@ -59,7 +60,10 @@ async def _bucket_metrics(db: AsyncSession, tenant_id: str,
         select(func.count().label("total"), autonomous_safe.label("safe"))
         .where(SkillExecution.tenant_id == tenant_id,
                SkillExecution.started_at >= start,
-               SkillExecution.started_at < end)
+               SkillExecution.started_at < end,
+               # Never-evaluated rows (e.g. legacy QUEUED ghost predictions)
+               # are not executions; they must not dilute the north star.
+               SkillExecution.status.in_(GOVERNED_VOCABULARY))
     )).one()
     total = int(exec_row.total or 0)
     if total > 0:
