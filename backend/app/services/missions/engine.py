@@ -107,6 +107,11 @@ async def _execute_step(db: AsyncSession, mission: Mission, step: MissionStep,
     skill = (await db.execute(
         select(Skill).where(Skill.skill_id == step.skill_id, Skill.tenant_id == mission.tenant_id)
     )).scalar_one_or_none()
+    # End the read transaction the Skill lookup opened, releasing this session's
+    # pooled connection for the minutes the gate pipeline below can take (M6.1).
+    # The engine committed all step/mission state before calling here, so this
+    # commits nothing but the read; expire_on_commit=False keeps `skill` live.
+    await db.commit()
 
     if skill is None:
         return {"status": "FAILED", "reason": f"skill {step.skill_id} not found"}

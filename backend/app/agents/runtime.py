@@ -375,6 +375,30 @@ class AgentExecutor:
         t0 = time.perf_counter()
         context["_gate_t_last"] = t0
         context["_stage_timings"] = []
+        # ── Release the caller's pooled DB connection before the gates (M6.1) ──
+        # The gates make real model calls (fairness, debate, execute; LLM timeout
+        # 240s). A department endpoint reaches here with its request session's
+        # read transaction still open, which pins one pooled connection for the
+        # whole pipeline - with pool_size+overflow = 15 per worker, ~15 concurrent
+        # governed runs used to exhaust a worker's pool and stall every other
+        # request on it. Committing (not rolling back) ends that transaction and
+        # returns the connection: every gated caller enters with a READ-only
+        # transaction (audited 2026-08-20 across all 58 gated agent methods - none
+        # carries an uncommitted write into the pipeline), and the sessionmaker's
+        # expire_on_commit=False keeps the caller's loaded objects live, so its
+        # post-gate code transparently re-acquires a connection on its next
+        # statement. Background callers (HITL resume, missions, jobs) have no
+        # request session bound - the guard no-ops.
+        from app.core.context import current_request_db
+        _req_db = current_request_db.get()
+        if _req_db is not None and _req_db.in_transaction():
+            try:
+                await _req_db.commit()
+            except Exception:
+                # Never let a pool optimisation take down a governed run.
+                logger.warning("[Pool] pre-gate release of the request session "
+                               "failed; continuing with the connection held",
+                               exc_info=True)
         # OTLP: one span per governed execution. _emit_gate attaches a per-gate
         # event to this span (get_current_span). No-op overhead when tracing is
         # not configured, so it is always on.

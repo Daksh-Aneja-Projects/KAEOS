@@ -23,3 +23,8 @@ current_request_id: ContextVar[str | None] = ContextVar("current_request_id", de
 # scheduler, precog, the autonomy governor) leave this None, which is how a
 # live UI can tell "my action" from "something the system started on its own".
 current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)
+# The request-scoped AsyncSession, published by get_db so the gate pipeline can
+# release its pooled connection before minutes of LLM calls (see
+# AgentExecutor.execute_skill). None outside a request; typed loosely to keep
+# this module import-light (no sqlalchemy import at context load).
+current_request_db: ContextVar = ContextVar("current_request_db", default=None)

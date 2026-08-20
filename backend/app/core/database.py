@@ -388,8 +388,16 @@ async def get_db():
     after a commit. Doing it here as well was redundant and, worse, only
     covered the first transaction of request-scoped sessions.
     """
+    from app.core.context import current_request_db
     async with AsyncSessionLocal() as session:
+        # Published so the gate pipeline can release this session's pooled
+        # connection before the multi-minute LLM gates (M6.1). A background
+        # task that inherited this context past the request's end sees a
+        # CLOSED session, whose in_transaction() is False, so the pipeline's
+        # release guard no-ops there.
+        token = current_request_db.set(session)
         try:
             yield session
         finally:
+            current_request_db.reset(token)
             await session.close()
