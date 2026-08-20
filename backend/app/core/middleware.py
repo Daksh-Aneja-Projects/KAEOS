@@ -8,18 +8,44 @@ import logging
 from collections import defaultdict
 
 from fastapi import Request
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
+# Every BaseHTTPMiddleware layer costs an anyio task group, two tasks and a
+# memory-object-stream pair on EVERY request, whether or not the layer does
+# anything. The three layers below only read a request header or stamp a
+# response header, so they are plain ASGI callables instead: same behaviour,
+# none of the per-request machinery. RequestLogging and RateLimit stay on
+# BaseHTTPMiddleware because they branch on the response object.
 
-class RequestIdMiddleware(BaseHTTPMiddleware):
+
+class RequestIdMiddleware:
     """Injects a unique X-Request-ID header into every request/response for tracing."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        request_id = request.headers.get("X-Request-ID", f"req-{uuid.uuid4().hex[:12]}")
-        request.state.request_id = request_id
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # raw=, not scope=: this only reads, and Headers(scope=...) would copy
+        # the header list and write it back into the scope for nothing.
+        request_id = Headers(raw=scope["headers"]).get("X-Request-ID", f"req-{uuid.uuid4().hex[:12]}")
+        # What `request.state.request_id = ...` writes to: Request.state is a
+        # view over scope["state"], so every layer above and below (and the
+        # global error handler) reads the same value off the shared scope.
+        scope.setdefault("state", {})["request_id"] = request_id
+
+        async def send_with_request_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Request-ID"] = request_id
+            await send(message)
 
         # Publish onto the ambient contextvar so the logging filter can stamp
         # every record produced while this request runs (deep in services that
@@ -28,9 +54,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         from app.core.context import current_request_id
         token = current_request_id.set(request_id)
         try:
-            response = await call_next(request)
-            response.headers["X-Request-ID"] = request_id
-            return response
+            await self.app(scope, receive, send_with_request_id)
         finally:
             current_request_id.reset(token)
 
@@ -71,7 +95,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+class BodySizeLimitMiddleware:
     """Reject over-large request bodies early (OOM guard).
 
     A single huge upload can exhaust worker memory before any handler runs. This
@@ -80,22 +104,28 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     own limits and the app's typed request models are the backstop there.)
     """
 
-    def __init__(self, app, max_bytes: int):
-        super().__init__(app)
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
         self.max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > self.max_bytes:
-                    return JSONResponse(
-                        status_code=413,
-                        content={"detail": f"Request body too large (max {self.max_bytes} bytes)."},
-                    )
-            except ValueError:
-                pass  # malformed header — let the server/handler deal with it
-        return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            content_length = Headers(raw=scope["headers"]).get("content-length")
+            too_large = False
+            if content_length:
+                try:
+                    too_large = int(content_length) > self.max_bytes
+                except ValueError:
+                    pass  # malformed header — let the server/handler deal with it
+            if too_large:
+                # A Response IS an ASGI app, so serving it directly keeps the
+                # body and content-type byte-identical to the returned one.
+                await JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Request body too large (max {self.max_bytes} bytes)."},
+                )(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -112,6 +142,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.rpm = requests_per_minute
         self._windows: dict[str, list[float]] = defaultdict(list)
+        self._calls_since_sweep = 0
+
+    # One window per caller id, kept forever, is itself a leak: an
+    # unauthenticated scraper mints a fresh key per source IP and nothing ever
+    # removed the quiet ones, so a long-lived worker grew without bound. Sweep
+    # them out every SWEEP_EVERY in-memory checks (one O(n) pass per 256
+    # requests, not per request) and cap what survives.
+    SWEEP_EVERY = 256
+    MAX_TRACKED_CALLERS = 10_000
 
     # Paths exempt from rate limiting. /health/live and /metrics are hit by
     # infra probes (kubelet, Prometheus) whose source IP is shared/anonymous, so
@@ -144,12 +183,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             logger.warning(f"[RateLimit] Redis check failed ({e}); using in-memory fallback")
             return None
 
+    def _sweep(self, now: float) -> None:
+        """Forget callers with nothing left inside the 60s window."""
+        stale = [cid for cid, w in self._windows.items() if not w or now - w[-1] >= 60]
+        for cid in stale:
+            del self._windows[cid]
+        if len(self._windows) > self.MAX_TRACKED_CALLERS:
+            # ponytail: hard reset, not per-key eviction. Everything still here
+            # is active (the quiet keys just went), so there is no cheap victim
+            # left and the trade is one forgiven minute against unbounded
+            # memory. Upgrade path if a worker ever legitimately serves >10k
+            # live callers: an OrderedDict keyed by last-seen, move_to_end on
+            # touch, popitem(last=False) down to the cap.
+            logger.warning(
+                f"[RateLimit] {len(self._windows)} active callers exceeds the "
+                f"{self.MAX_TRACKED_CALLERS} cap; resetting in-memory windows"
+            )
+            self._windows.clear()
+
     def _memory_exceeded(self, caller_id: str, now: float):
         window = self._windows[caller_id]
         window[:] = [t for t in window if now - t < 60]
         if len(window) >= self.rpm:
             return True, int(60 - (now - window[0])) + 1
         window.append(now)
+        # Swept after the append so this caller's own (now non-empty) window is
+        # never the entry that gets dropped.
+        self._calls_since_sweep += 1
+        if self._calls_since_sweep >= self.SWEEP_EVERY:
+            self._calls_since_sweep = 0
+            self._sweep(now)
         return False, 0
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -180,7 +243,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+class SecurityHeadersMiddleware:
     """Standard browser-hardening headers on every response.
 
     - nosniff stops MIME-confusion attacks on any served content.
@@ -217,32 +280,48 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         "ws://localhost:* ws://127.0.0.1:* https: wss:"
     )
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        response = await call_next(request)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "no-referrer")
-        from app.core.config import get_settings
-        settings = get_settings()
-        csp = getattr(settings, "CONTENT_SECURITY_POLICY", None)
-        if not csp:
-            csp = self.DEFAULT_CSP
-            # In production the default's wildcard `https:/wss:` connect-src would
-            # let any injected script exfiltrate anywhere. Scope it to self plus
-            # the configured API origin so an un-customised deploy is still tight.
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message: Message) -> None:
+            if message["type"] != "http.response.start":
+                await send(message)
+                return
+            # MutableHeaders.setdefault is case-insensitive and mutates
+            # message["headers"] in place: same "only if the handler did not
+            # already set it" semantics the response-object version had.
+            headers = MutableHeaders(scope=message)
+            headers.setdefault("X-Content-Type-Options", "nosniff")
+            headers.setdefault("X-Frame-Options", "DENY")
+            headers.setdefault("Referrer-Policy", "no-referrer")
+            from app.core.config import get_settings
+            settings = get_settings()
+            csp = getattr(settings, "CONTENT_SECURITY_POLICY", None)
+            if not csp:
+                csp = self.DEFAULT_CSP
+                # In production the default's wildcard `https:/wss:` connect-src would
+                # let any injected script exfiltrate anywhere. Scope it to self plus
+                # the configured API origin so an un-customised deploy is still tight.
+                if not settings.DEV_MODE:
+                    base = (getattr(settings, "PUBLIC_BASE_URL", "") or "").rstrip("/")
+                    connect = "connect-src 'self'"
+                    if base:
+                        ws = base.replace("https://", "wss://").replace("http://", "ws://")
+                        connect += f" {base} {ws}"
+                    csp = "; ".join(
+                        connect if part.strip().startswith("connect-src") else part
+                        for part in self.DEFAULT_CSP.split("; ")
+                    )
+            headers.setdefault("Content-Security-Policy", csp)
             if not settings.DEV_MODE:
-                base = (getattr(settings, "PUBLIC_BASE_URL", "") or "").rstrip("/")
-                connect = "connect-src 'self'"
-                if base:
-                    ws = base.replace("https://", "wss://").replace("http://", "ws://")
-                    connect += f" {base} {ws}"
-                csp = "; ".join(
-                    connect if part.strip().startswith("connect-src") else part
-                    for part in self.DEFAULT_CSP.split("; ")
+                headers.setdefault(
+                    "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
                 )
-        response.headers.setdefault("Content-Security-Policy", csp)
-        if not get_settings().DEV_MODE:
-            response.headers.setdefault(
-                "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
-            )
-        return response
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)

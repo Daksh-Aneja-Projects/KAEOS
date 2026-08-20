@@ -19,22 +19,43 @@ async def _ok(_req):
     return Response("ok")
 
 
+async def _ok_asgi(scope, receive, send):
+    await Response("ok")(scope, receive, send)
+
+
+async def _run(mw, headers, path="/x") -> Response:
+    """Drive a pure-ASGI middleware (BodySizeLimit, SecurityHeaders) and rebuild
+    what it sent as a Response, so the assertions below stay response-shaped."""
+    start = {}
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            start.update(message)
+
+    await mw(_req(headers, path).scope, receive, send)
+    return Response(status_code=start["status"],
+                    headers={k.decode("latin-1"): v.decode("latin-1") for k, v in start["headers"]})
+
+
 async def test_body_size_limit_rejects_oversized():
-    mw = BodySizeLimitMiddleware(app=None, max_bytes=100)
-    resp = await mw.dispatch(_req([(b"content-length", b"101")]), _ok)
+    mw = BodySizeLimitMiddleware(app=_ok_asgi, max_bytes=100)
+    resp = await _run(mw, [(b"content-length", b"101")])
     assert resp.status_code == 413
 
 
 async def test_body_size_limit_allows_within_limit():
-    mw = BodySizeLimitMiddleware(app=None, max_bytes=100)
-    resp = await mw.dispatch(_req([(b"content-length", b"100")]), _ok)
+    mw = BodySizeLimitMiddleware(app=_ok_asgi, max_bytes=100)
+    resp = await _run(mw, [(b"content-length", b"100")])
     assert resp.status_code == 200
 
 
 async def test_body_size_limit_ignores_missing_or_bad_header():
-    mw = BodySizeLimitMiddleware(app=None, max_bytes=100)
-    assert (await mw.dispatch(_req([]), _ok)).status_code == 200
-    assert (await mw.dispatch(_req([(b"content-length", b"abc")]), _ok)).status_code == 200
+    mw = BodySizeLimitMiddleware(app=_ok_asgi, max_bytes=100)
+    assert (await _run(mw, [])).status_code == 200
+    assert (await _run(mw, [(b"content-length", b"abc")])).status_code == 200
 
 
 async def test_rate_limit_memory_fallback_blocks_after_limit(monkeypatch):
@@ -64,8 +85,8 @@ async def test_rate_limit_exempt_paths_never_throttled(monkeypatch):
 
 
 async def test_security_headers_present():
-    mw = SecurityHeadersMiddleware(app=None)
-    resp = await mw.dispatch(_req([]), _ok)
+    mw = SecurityHeadersMiddleware(app=_ok_asgi)
+    resp = await _run(mw, [])
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
     assert resp.headers["X-Frame-Options"] == "DENY"
     assert resp.headers["Referrer-Policy"] == "no-referrer"
