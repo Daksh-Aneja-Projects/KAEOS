@@ -50,8 +50,8 @@ async def get_latency(
         by_tier.setdefault(tier or "unspecified", []).append(ms)
         by_model.setdefault(model or "unknown", []).append(ms)
 
-    from app.agents.runtime import RECENT_STAGE_TIMINGS
-    recent = [t for t in RECENT_STAGE_TIMINGS if t.get("tenant_id") == tenant_id]
+    from app.agents.runtime import recent_stage_timings
+    recent = recent_stage_timings(tenant_id)
 
     return {
         "window_hours": hours,

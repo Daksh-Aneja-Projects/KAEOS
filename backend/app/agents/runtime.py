@@ -1,17 +1,42 @@
 """KAEOS L9 — Agent Runtime (AEOS Enhanced)
 SkillRouter + AgentExecutor with Debate Engine and Fairness Engine gates.
 """
-from collections import deque
-from typing import Dict, Any
+from collections import OrderedDict, deque
+from typing import Dict, Any, List
 import logging
 import time
 
 logger = logging.getLogger(__name__)
 
-# Rolling window of recent per-execution gate timings, served by
-# GET /metrics/latency. In-process only: it answers "where do the seconds go
-# right now", not billing (that is CostEvent's job).
-RECENT_STAGE_TIMINGS: deque = deque(maxlen=50)
+# Per-tenant recent gate timings (per-process, best-effort telemetry). Keyed by
+# tenant so one busy tenant cannot evict every other tenant's entries; bounded
+# both per tenant (50) and across tenants (LRU cap 200 tenants) so an abandoned
+# tenant's deque does not live forever. Served by GET /metrics/latency: it
+# answers "where do the seconds go right now", not billing (that is CostEvent's
+# job). No lock needed: one asyncio loop per process and both helpers below are
+# fully synchronous, so no await can interleave mid-update.
+RECENT_STAGE_TIMINGS: "OrderedDict[str, deque]" = OrderedDict()
+_MAX_TIMINGS_PER_TENANT = 50
+_MAX_TIMING_TENANTS = 200
+
+
+def record_stage_timing(entry: Dict[str, Any]) -> None:
+    """Append one execution's gate timings to its own tenant's ring buffer."""
+    tenant_id = str(entry.get("tenant_id") or "default")
+    bucket = RECENT_STAGE_TIMINGS.get(tenant_id)
+    if bucket is None:
+        bucket = deque(maxlen=_MAX_TIMINGS_PER_TENANT)
+        RECENT_STAGE_TIMINGS[tenant_id] = bucket
+    else:
+        RECENT_STAGE_TIMINGS.move_to_end(tenant_id)
+    bucket.append(entry)
+    while len(RECENT_STAGE_TIMINGS) > _MAX_TIMING_TENANTS:
+        RECENT_STAGE_TIMINGS.popitem(last=False)
+
+
+def recent_stage_timings(tenant_id: str) -> List[Dict[str, Any]]:
+    """Recent gate timings for one tenant, oldest first (empty if none)."""
+    return list(RECENT_STAGE_TIMINGS.get(tenant_id, ()))
 
 
 async def persist_blocked_execution(
@@ -422,7 +447,7 @@ class AgentExecutor:
             stages = context.get("_stage_timings", [])
             result["stage_timings"] = stages
             result["pipeline_ms"] = total_ms
-            RECENT_STAGE_TIMINGS.append({
+            record_stage_timing({
                 "execution_id": context.get("execution_id"),
                 "tenant_id": context.get("tenant_id", "default"),
                 "skill_id": skill.get("skill_id", "unknown"),
