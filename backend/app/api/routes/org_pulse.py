@@ -36,6 +36,9 @@ router = APIRouter(prefix="/org", tags=["Org Pulse"])
 
 # Sequential on one session by design: AsyncSession is not safe for concurrent
 # use, and these are ten fast aggregate queries.
+# Each entry binds a slug to its own imported analytics callable, so this cannot
+# be derived from app.core.domain_seed.DEPARTMENT_SLUGS. Its slugs must still
+# COVER the roster - tests/test_s6_department_registry.py fails if they drift.
 _DOMAIN_ANALYTICS = [
     ("finance", finance_analytics),
     ("hr", hr_analytics),

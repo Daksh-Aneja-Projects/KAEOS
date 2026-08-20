@@ -168,7 +168,15 @@ async def seed_domains_if_empty() -> None:
         logger.warning(f"[DomainSeed] Department metric rollup failed (non-fatal): {e}")
 
 
-# Skill.department values → workforce Department slugs
+# Skill.department values → workforce Department slugs. The single backend
+# source of truth for this normalization: app/workforce/api/analytics.py and
+# app/services/wargame.py used to each carry their own partial copy over the
+# SAME Skill.department vocabulary, and they had already drifted - neither knew
+# "it ops"/"platform"/"customer success", so with their identity fallback those
+# leaked into the ROI dashboard and the wargame as phantom department slugs.
+# (event_mesh._ALIAS and missions/planner._ALIAS_TO_CANON are NOT copies of this
+# - they normalize free-text INBOUND SIGNAL and GOAL vocabulary, which includes
+# "marketing", a label with no department behind it. Keep them separate.)
 _DEPT_SLUG_MAP = {
     "customer_support": "support",
     "customer success": "support",
@@ -177,9 +185,12 @@ _DEPT_SLUG_MAP = {
     "finance": "finance",
     "hr": "hr",
     "human resources": "hr",
+    "human_resources": "hr",
     "legal": "legal",
     "operations": "operations",
+    "ops": "operations",
     "engineering": "engineering",
+    "eng": "engineering",
     "it ops": "engineering",
     "platform": "engineering",
     # The three regulated departments' gated_runner.py modules write these

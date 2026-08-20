@@ -68,7 +68,10 @@ _DEPT_SIGNALS = {
 # Canonical execution order (dependency priority) across departments: gate
 # departments first (legal/finance/healthcare/lending all carry regulatory
 # HITL weight), then hr/procurement feed operations/engineering, then the
-# customer-facing departments.
+# customer-facing departments. This is an ORDER, not the department roster
+# (app.core.domain_seed.DEPARTMENT_SLUGS): the ordering is the whole point, and
+# the eleventh entry "marketing" is a goal-text label with no department behind
+# it. Do not converge it onto DEPARTMENT_SLUGS.
 _DEPT_ORDER = ["legal", "finance", "healthcare", "lending", "hr", "procurement",
                "operations", "engineering", "marketing", "sales", "support"]
 

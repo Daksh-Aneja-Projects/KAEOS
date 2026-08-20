@@ -12,6 +12,12 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy import case
 
 from app.core.database import get_db
+# Skill-taxonomy department -> Department.slug (the two vocabularies differ).
+# Canonical map, shared with the metric rollup that also consumes
+# Skill.department; the local copy this file used to hold knew 9 labels and none
+# of the three regulated departments, so healthcare/lending/procurement and
+# "it ops"/"platform" fell through the identity fallback below as phantom slugs.
+from app.core.domain_seed import _DEPT_SLUG_MAP as _DEPT_ALIAS
 from app.workforce.models.core import (
     Department, DepartmentStatus, DepartmentAgent, hours_saved_payload,
 )
@@ -19,20 +25,6 @@ from app.workforce.models.runtime import WorkforceMetrics
 from app.models.domain import Skill, SkillExecution
 
 router = APIRouter(prefix="/workforce/analytics", tags=["Workforce — Analytics"])
-
-
-# Skill-taxonomy department -> Department.slug (the two vocabularies differ).
-_DEPT_ALIAS = {
-    "customer_support": "support",
-    "human_resources": "hr",
-    "hr": "hr",
-    "finance": "finance",
-    "sales": "sales",
-    "engineering": "engineering",
-    "operations": "operations",
-    "legal": "legal",
-    "support": "support",
-}
 
 
 async def _automation_by_department(db, tenant_id: str):

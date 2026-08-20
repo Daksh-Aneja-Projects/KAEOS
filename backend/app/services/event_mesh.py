@@ -25,9 +25,12 @@ _KIND_DEPT = {
     "SUPPLY_CHAIN": "operations", "MARKET": "finance", "NEWS": None,
 }
 
-# KAEOS is a fixed 10-department platform; these canonical departments always
-# exist in the twin. Skill departments may be tagged with aliases, normalized
-# here.
+# Canonical INBOUND SIGNAL vocabulary - deliberately NOT the department roster
+# (app.core.domain_seed.DEPARTMENT_SLUGS). It carries an eleventh label,
+# "marketing", because external signals arrive tagged with it and dropping the
+# label would silently discard the signal; there is no marketing department
+# behind it. Do not converge these two lists. Skill departments may be tagged
+# with aliases, normalized here.
 _CANON = ["finance", "hr", "sales", "support", "operations", "legal", "engineering",
           "marketing", "healthcare", "lending", "procurement"]
 _ALIAS = {

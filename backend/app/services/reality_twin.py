@@ -49,6 +49,9 @@ _ENTITY_SAMPLE = 14
 # The import is late and by name (same "module:Class" convention as
 # app/core/domain_seed.py) so a department whose models are absent degrades to
 # "missing from the twin" instead of breaking the whole build.
+# Not the department roster (app.core.domain_seed.DEPARTMENT_SLUGS): hr has no
+# entry on purpose - HREmployee is already woven in structurally below - and the
+# slug here selects a MODEL, so there is nothing to derive from the roster.
 _HEADLINE_WEAVES = [
     ("app.finance.models.accounts_receivable:Customer", "Customer", "finance", "SERVES", "name", {}),
     ("app.sales.models.accounts:Account", "Account", "sales", "OWNS", "name",

@@ -14,6 +14,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.domain_seed import _DEPT_SLUG_MAP
 from app.models.domain import Skill, SkillExecution
 
 # A named adversarial playbook: an ordered cascade of (shock, target-dept, severity).
@@ -45,9 +46,14 @@ _HITL_SEVERITY = 70   # a shock at/above this needs a human in the loop
 
 
 def _canon(dept: Optional[str]) -> str:
+    """Skill.department -> Department.slug, off the one canonical map.
+
+    The local 4-entry copy this replaced knew none of the three regulated
+    departments nor "it ops"/"platform", so those reached the fragility model
+    as phantom slugs that never matched a real department.
+    """
     r = (dept or "general").lower()
-    return {"human_resources": "hr", "customer_support": "support", "ops": "operations",
-            "eng": "engineering"}.get(r, r)
+    return _DEPT_SLUG_MAP.get(r, r)
 
 
 async def _twin_fragility(db: AsyncSession, tenant_id: str, days: int = 45) -> dict:
