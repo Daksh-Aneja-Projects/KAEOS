@@ -6,7 +6,10 @@ name used to live here and silently failed OPEN when Redis errored; it was dead
 code shadowing the live implementation by name, so it was removed rather than
 left as a landmine for a future import.
 """
+import asyncio
+import contextlib
 import logging
+import time
 
 import redis.asyncio as redis
 
@@ -18,10 +21,25 @@ settings = get_settings()
 
 redis_client = None
 
+# A worker that booted during a Redis outage used to stay Redis-less for its whole
+# life: JWT revocation, rate limiting and WS fan-out silently stayed per-process
+# even after Redis came back. ``get_redis()`` therefore re-probes, but at most once
+# per interval so a down Redis is not hammered once per request.
+RECONNECT_INTERVAL_SECONDS = 15
+PROBE_TIMEOUT_SECONDS = 1.0
+
+_now = time.monotonic  # seam for tests; production never rebinds it
+
+# Seconds (``_now()``) of the last connection attempt. ``None`` means ``init_redis()``
+# has never run, i.e. this process is not a served app (unit tests, CLI scripts) and
+# a getter must not open sockets on its behalf.
+_last_attempt: float | None = None
+
 
 async def init_redis():
     """Connect to Redis if reachable; otherwise run without it (in-memory fallbacks)."""
-    global redis_client
+    global redis_client, _last_attempt
+    _last_attempt = _now()
     try:
         client = redis.from_url(settings.REDIS_URL, decode_responses=True)
         await client.ping()
@@ -46,12 +64,42 @@ async def init_redis():
 
 
 async def get_redis():
-    """Return the shared Redis client, or None when Redis is not available."""
+    """Return the shared Redis client, or None when Redis is not available.
+
+    Re-probes a previously unreachable Redis at most once every
+    ``RECONNECT_INTERVAL_SECONDS`` so the process rejoins cluster-wide state on its
+    own. No stampede guard is needed: ``_last_attempt`` is written *before* the
+    first await, and asyncio cannot preempt between the check and that write, so a
+    concurrent caller already sees a fresh timestamp and skips.
+    """
+    global redis_client, _last_attempt
+    if redis_client is not None or _last_attempt is None:
+        return redis_client
+    if _now() - _last_attempt < RECONNECT_INTERVAL_SECONDS:
+        return None
+
+    _last_attempt = _now()
+    client = None
+    try:
+        client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        # Bounded: this runs on the request path (rate-limit middleware), and a
+        # blackholed host would otherwise stall it for the full TCP connect timeout.
+        await asyncio.wait_for(client.ping(), timeout=PROBE_TIMEOUT_SECONDS)
+        redis_client = client
+        logger.info("[Redis] Reconnected: %s", settings.REDIS_URL)
+    except Exception as e:
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.close()  # else every probe leaks a connection pool
+        logger.debug("[Redis] Still unreachable (%s); retrying in %ss",
+                     e, RECONNECT_INTERVAL_SECONDS)
     return redis_client
 
 
 async def close_redis():
-    global redis_client
+    global redis_client, _last_attempt
     if redis_client:
         await redis_client.close()
         redis_client = None
+    # A clean shutdown ends the probing window too: the next init_redis() decides.
+    _last_attempt = None

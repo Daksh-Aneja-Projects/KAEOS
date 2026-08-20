@@ -15,6 +15,7 @@ Use :func:`get_cache_bus` to obtain the active bus (async, cached).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -149,27 +150,68 @@ class MemoryCacheBus(CacheBus):
 
 _cache_bus: Optional[CacheBus] = None
 
+# A cold-start Redis blip used to demote the process to MemoryCacheBus until
+# restart. While the memory fallback is active, re-probe Redis this often.
+REDIS_REPROBE_SECONDS = 30
 
-async def get_cache_bus() -> CacheBus:
-    """Return the active CacheBus. Prefers Redis when reachable, else in-memory."""
-    global _cache_bus
-    if _cache_bus is not None:
-        return _cache_bus
+_now = time.monotonic  # seam for tests; production never rebinds it
+_last_redis_probe: float = float("-inf")
 
-    settings = get_settings()
+
+async def _connect_redis_bus() -> Optional[RedisCacheBus]:
+    """One bounded Redis probe. Returns a RedisCacheBus, or None if unreachable."""
+    global _last_redis_probe
+    # Written before the first await, so a concurrent caller sees a fresh
+    # timestamp and skips: that is the stampede guard, no flag needed.
+    _last_redis_probe = _now()
+    client = None
     try:
         import redis.asyncio as redis
-        client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        client = redis.from_url(get_settings().REDIS_URL, decode_responses=True)
         await asyncio.wait_for(client.ping(), timeout=1.0)
-        _cache_bus = RedisCacheBus(client)
-        logger.info("[Polystore] CacheBus backend = redis")
+        return RedisCacheBus(client)
     except Exception as e:
-        logger.info(f"[Polystore] Redis unavailable ({e}) — CacheBus backend = memory")
-        _cache_bus = MemoryCacheBus()
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.close()  # else every probe leaks a connection pool
+        logger.info("[Polystore] Redis unavailable (%s), CacheBus backend = memory", e)
+        return None
+
+
+async def get_cache_bus() -> CacheBus:
+    """Return the active CacheBus. Prefers Redis when reachable, else in-memory.
+
+    While the memory fallback is active this re-probes Redis every
+    ``REDIS_REPROBE_SECONDS`` and upgrades in place, so a blip at startup does not
+    cost the process its shared cache for the rest of its life.
+    """
+    global _cache_bus, _last_redis_probe
+    if _cache_bus is None:
+        _cache_bus = await _connect_redis_bus() or MemoryCacheBus()
+        if isinstance(_cache_bus, RedisCacheBus):
+            logger.info("[Polystore] CacheBus backend = redis")
+        return _cache_bus
+
+    if (isinstance(_cache_bus, MemoryCacheBus)
+            and _now() - _last_redis_probe >= REDIS_REPROBE_SECONDS):
+        # Cached entries are best-effort and fine to drop on upgrade, but a
+        # subscriber holds a queue on THIS object: swapping the bus out would
+        # strand it on a memory bus nobody publishes to. Nothing calls
+        # CacheBus.subscribe() today (result_cache.py is get/set/delete only, and
+        # ws.py / event_bus.py subscribe on raw clients from core.redis), so the
+        # upgrade is normally free; this keeps it honest if that ever changes.
+        if any(_cache_bus._subscribers.values()):
+            _last_redis_probe = _now()
+            logger.info("[Polystore] Staying on memory CacheBus: live subscribers "
+                        "cannot be re-pointed at Redis")
+        elif (upgraded := await _connect_redis_bus()) is not None:
+            _cache_bus = upgraded
+            logger.info("[Polystore] CacheBus upgraded to redis")
     return _cache_bus
 
 
 def reset_cache_bus() -> None:
     """Testing helper — clear the cached bus so it is re-selected on next call."""
-    global _cache_bus
+    global _cache_bus, _last_redis_probe
     _cache_bus = None
+    _last_redis_probe = float("-inf")
