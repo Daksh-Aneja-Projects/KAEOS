@@ -63,5 +63,9 @@ def test_lower_layers_do_not_import_the_api_at_top_level():
 
 
 def test_the_relocated_di_shim_still_serves_its_consumers():
-    from app.api.dependencies import get_llm_router, get_polystore_engine
-    assert callable(get_llm_router) and callable(get_polystore_engine)
+    # get_polystore_engine was removed with the SkillRouter tail: the skills list
+    # route took it as a dependency and never read it, and nothing else asked for
+    # one. What the relocation has to keep working is the provider that is
+    # actually injected.
+    from app.api.dependencies import get_llm_router
+    assert callable(get_llm_router)
