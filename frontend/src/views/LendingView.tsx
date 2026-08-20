@@ -30,7 +30,7 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 const ACCENT = DEPARTMENT_COLORS.lending;
 
 type Tab = 'overview' | 'applications' | 'underwriting' | 'adverse' | 'servicing' | 'policy' | 'analytics';
-const VALID: Tab[] = ['overview', 'applications', 'underwriting', 'adverse', 'servicing', 'policy'];
+const VALID: Tab[] = ['overview', 'applications', 'underwriting', 'adverse', 'servicing', 'policy', 'analytics'];
 
 const APPROVABLE = ['RECEIVED', 'IN_REVIEW'];
 const DECIDED = ['APPROVED', 'DENIED', 'PENDING_HITL'];

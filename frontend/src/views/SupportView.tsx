@@ -290,6 +290,7 @@ const SupportView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defau
           role="tablist" aria-label="Support sections" onKeyDown={onTabKey}>
           {TABS.map(t => (
             <button key={t.key} id={`support-tab-${t.key}`} role="tab" aria-selected={tab === t.key}
+              tabIndex={tab === t.key ? 0 : -1}
               onClick={() => setTab(t.key)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all"
               style={{ background: tab === t.key ? colors.canvas : 'transparent', color: tab === t.key ? t.color : colors.inkSubtle, boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>

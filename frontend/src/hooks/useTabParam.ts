@@ -7,7 +7,8 @@ import { useState } from 'react';
  *
  * Ten department views hand-rolled the same validate-or-fall-back check, and it
  * had already drifted: WorkforceView still carries a dead legacy-alias branch,
- * SupportView's tab bar lost its roving tabIndex. This is deliberately a thin
+ * and SupportView's tab bar had lost its roving tabIndex (restored since; it
+ * now matches its siblings). This is deliberately a thin
  * wrapper over `useState` - the views keep owning their tab state and call
  * `setTab` directly, so nothing else about them has to change.
  *
