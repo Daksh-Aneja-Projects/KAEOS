@@ -3,6 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
+#: The demo tenant id. Fixtures target it by name; a production deployment
+#: must NOT leave ADMIN_TENANT pointing here (see
+#: Settings.validate_production_security).
+_DEMO_TENANT = "tenant_acme"
+
+
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "KAEOS"
@@ -38,7 +44,7 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@kaeos.ai"
     ADMIN_PASSWORD: str = ""            # set in .env — this is the login password
     ADMIN_DISPLAY_NAME: str = "KAEOS Admin"
-    ADMIN_TENANT: str = "tenant_acme"
+    ADMIN_TENANT: str = _DEMO_TENANT
     # Seed the fictional demo dataset (tenant_acme). Turn OFF for a real deploy
     # so dashboards only show genuinely ingested data.
     SEED_DEMO_DATA: bool = True
@@ -332,6 +338,20 @@ class Settings(BaseSettings):
             problems.append("CONNECTOR_ENCRYPTION_KEY must not be a placeholder when DEV_MODE is off.")
         if self.ADMIN_PASSWORD and (len(self.ADMIN_PASSWORD) < 12 or _is_placeholder(self.ADMIN_PASSWORD)):
             problems.append("ADMIN_PASSWORD must be a strong, non-placeholder value (>=12 chars) when DEV_MODE is off.")
+        # The shipped ADMIN_TENANT default is the DEMO tenant, and every fixture
+        # path in the tree targets that id by name (app/core/seed.py,
+        # domain_seed, workforce_seed's SEED_TENANT, scripts/seed_master). A
+        # deployment that leaves the default puts REAL customer records under the
+        # same tenant id the demo data writes to, so a single mis-set ENVIRONMENT
+        # - or one `python -m scripts.seed_master` run "just to show someone the
+        # demo" - mixes fictional employees, invoices and contracts into live
+        # data. In a governance product that contamination is unrecoverable
+        # without knowing which rows were invented.
+        if self.ADMIN_TENANT.strip().lower() in ("", _DEMO_TENANT):
+            problems.append(
+                f"ADMIN_TENANT must name your real tenant, not the demo tenant "
+                f"'{_DEMO_TENANT}', when DEV_MODE is off - every seeder in the "
+                f"tree writes fixtures to that id.")
         problems.extend(self.validate_production_database())
         return problems
 
