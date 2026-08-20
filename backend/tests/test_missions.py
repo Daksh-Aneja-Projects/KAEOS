@@ -185,6 +185,45 @@ async def test_compliance_block_on_autonomous_step_escalates_to_human(db, monkey
     assert res2["steps"][0]["status"] == "DONE"
 
 
+async def test_debate_escalation_on_autonomous_step_escalates_to_human(db, monkeypatch):
+    """A debate arbitrator that ESCALATES pauses the step for a human.
+
+    Gate 4 returns ExecutionStatus.ESCALATED_DEBATE, whose whole meaning is
+    "a person must rule on this". Stamping it FAILED would both lie about the
+    outcome and drop the decision on the floor - it would never reach the
+    approval queue. Approval clears it: the resumed run is pre-approved, so
+    gate 4 is skipped (human override wins) and the step completes.
+    """
+    t = "tenant_m7b"
+    await _seed(db, t, "support")   # autonomous (not high-consequence)
+
+    calls = {"n": 0}
+
+    async def stub(db_, mission, step, execution_id):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"status": "ESCALATED_DEBATE", "debate_decision": "ESCALATE",
+                    "transcript_id": "dbt-1", "cost": {"total_usd": 0.0}}
+        return {"status": "SUCCESS_CLEAN", "steps_completed": 1, "duration_ms": 3,
+                "cost": {"total_usd": 0.0}}
+
+    monkeypatch.setattr(engine, "_execute_step", stub)
+
+    m = await planner.plan_mission(db, tenant_id=t, goal="update support tickets")
+    res = await _drive(db, t, m.id)
+    assert res["status"] == "AWAITING_HITL"
+    assert res["steps"][0]["status"] == "AWAITING_HITL"
+    # Without this the runner's executable-pick (which only skips a paused step
+    # when hitl_required is set) would re-run the step instead of waiting.
+    assert res["steps"][0]["hitl_required"] is True
+
+    await engine.resolve_hitl_step(db, tenant_id=t, mission_id=m.id, seq=1,
+                                   approved=True, approver="risk_officer")
+    res2 = await _drive(db, t, m.id)
+    assert res2["status"] == "COMPLETED"
+    assert res2["steps"][0]["status"] == "DONE"
+
+
 async def test_failed_step_is_an_exception_not_a_crash(db, monkeypatch):
     t = "tenant_m8"
     await _seed(db, t, "support")   # will fail

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rls import is_postgres
 from app.models.domain import Skill
-from app.models.execution_status import ExecutionStatus
+from app.models.execution_status import ExecutionStatus, PENDING_STATUSES
 from app.models.missions import Mission, MissionStep, MissionEvent
 from app.services import prompt_guard
 
@@ -477,16 +477,25 @@ def _apply_step_result(db, mission, step, result: dict) -> None:
             f"{result.get('steps_completed', 0)} steps, {result.get('duration_ms', 0)}ms"
         _event(db, mission, "STEP_DONE",
                f"Step {step.seq} ({step.name}): {step.result_summary}", step.seq)
-    # NOTE: deliberately NOT PENDING_STATUSES. This set carries two values the
-    # execution vocabulary does not have ("HITL_REQUIRED", "PENDING") and is
-    # missing ExecutionStatus.ESCALATED_DEBATE, so a debate-escalated step falls
-    # to the FAILED branch below. Converging the two is a behavior change to
-    # mission-step semantics, not a rename - left for a separate change.
-    elif status in ("HITL_REQUIRED", "PENDING", ExecutionStatus.PENDING_HITL) \
-            or result.get("pending"):
+    # Every way a run can end up waiting on a person lands here: PENDING_STATUSES
+    # (the confidence gate's PENDING_HITL and the debate arbitrator's
+    # ESCALATED_DEBATE) plus hitl_manager's own words for the same thing
+    # ("PENDING" / "HITL_REQUIRED" / pending=True), which are not execution-
+    # vocabulary values. ESCALATED_DEBATE used to fall through to the FAILED
+    # branch below - that both lied about the outcome and kept the decision out
+    # of the approval queue entirely.
+    elif (status in PENDING_STATUSES or status in ("HITL_REQUIRED", "PENDING")
+          or result.get("pending")):
+        # Record the requirement on the step, not just the pause: the runner only
+        # skips a paused step when hitl_required is set, so leaving it False lets
+        # the next advance re-run the step instead of waiting for the human.
+        step.hitl_required = True
         step.status = "AWAITING_HITL"
+        why = ("two agents disagreed and the arbitrator sent it to a human"
+               if status == ExecutionStatus.ESCALATED_DEBATE
+               else "the confidence gate routed it to a human")
         _event(db, mission, "HITL_PAUSE",
-               f"Step {step.seq} routed to human by the confidence gate.", step.seq)
+               f"Step {step.seq} ({step.name}) is waiting for approval: {why}.", step.seq)
     elif status == ExecutionStatus.BLOCKED_COMPLIANCE and not step.hitl_required:
         # An autonomous action the compliance gate blocked ESCALATES to a human;
         # on approval it re-runs carrying the human-approver flag.
