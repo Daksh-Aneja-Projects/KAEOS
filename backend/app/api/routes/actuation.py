@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.actuation import ActionRecord
+from app.models.domain import SkillExecution
 from app.services.actuation import Actuator, ActuationError
 from app.core.tenant import approver_identity
 
@@ -69,6 +70,19 @@ async def execute_action(
     after human approval, fail-closed, via the same resume path as every other
     approval."""
     tenant_id = tenant["tenant_id"]
+
+    # A client-supplied execution_id must name a real governed run of THIS
+    # tenant: action_records.execution_id is a FK to skill_executions.id, so an
+    # unknown id would otherwise die in the INSERT. 404, never 403/422 - the
+    # response must not confirm that a foreign tenant's id exists.
+    if body.execution_id:
+        known = (await db.execute(
+            select(SkillExecution.id).where(
+                SkillExecution.id == body.execution_id,
+                SkillExecution.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        if known is None:
+            raise HTTPException(status_code=404, detail="Execution not found")
 
     from app.services.consequence import is_high_consequence
     _probe = {

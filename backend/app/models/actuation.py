@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, JSON, Integer, Text, UniqueConstraint, Index
+from sqlalchemy import String, DateTime, JSON, Integer, Text, UniqueConstraint, Index, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -58,7 +58,13 @@ class ActionRecord(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    execution_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    # The governed run this write belongs to (None for reconciler heals). The
+    # SkillExecution row is always committed before Gate 5b actuates, and
+    # /actuation/execute verifies a client-supplied id before applying. The
+    # constraint name mirrors migration 0055 so the drift gate sees one FK.
+    execution_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("skill_executions.id", name="fk_action_records_execution_id"),
+        index=True, nullable=True)
 
     system: Mapped[str] = mapped_column(String(64), nullable=False)
     object_type: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -10,7 +10,8 @@ from decimal import Decimal
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, JSON, Integer, Float, Numeric, Text, Boolean, Index, text
+from sqlalchemy import (String, DateTime, JSON, Integer, Float, Numeric, Text, Boolean, Index,
+                        ForeignKey, text)
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Mission money is exact decimal, not binary float: spent_usd accumulates per-step
@@ -59,7 +60,10 @@ class MissionStep(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    mission_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Constraint name mirrors migration 0055 so the drift gate sees one FK, not two.
+    mission_id: Mapped[str] = mapped_column(
+        String, ForeignKey("missions.id", name="fk_mission_steps_mission_id"),
+        nullable=False, index=True)
 
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)

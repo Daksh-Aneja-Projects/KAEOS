@@ -6,7 +6,7 @@ IT ops ~10% of 2025 departmental spend per Menlo's enterprise survey), and it
 was the one major function KAEOS did not model. These tables cover the service
 catalog and the engineers who own it.
 """
-from sqlalchemy import Column, String, DateTime, Enum, Text, Integer, Float, Boolean
+from sqlalchemy import Column, String, DateTime, Enum, Text, Integer, Float, Boolean, ForeignKey
 from sqlalchemy.sql import func
 import enum
 
@@ -38,7 +38,10 @@ class Engineer(Base, LegalHoldMixin):
     tenant_id = Column(String, nullable=False, index=True)
 
     # Link to the canonical HR record when the person exists in the HRIS.
-    hr_employee_id = Column(String, nullable=True, index=True)
+    # Constraint name mirrors migration 0055 so the drift gate sees one FK.
+    hr_employee_id = Column(
+        String, ForeignKey("hr_employees.id", name="fk_eng_engineers_hr_employee_id"),
+        nullable=True, index=True)
 
     name = Column(String(128), nullable=False)
     email = Column(String(128), nullable=False)

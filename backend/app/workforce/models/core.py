@@ -313,9 +313,14 @@ class DepartmentAgent(Base):
     department_id = Column(String, ForeignKey("departments.id"), nullable=False, index=True)
     capability_id = Column(String, ForeignKey("capabilities.id"), nullable=True, index=True)
 
-    # Reference to existing KAEOS agent
-    deployed_agent_id = Column(String, nullable=True, index=True)  # FK to deployed_agents
-    blueprint_id = Column(String, nullable=True)                   # FK to agent_blueprints
+    # Reference to existing KAEOS agent. Constraint names mirror migration 0055
+    # so the drift gate sees one FK each, not two differently-named copies.
+    deployed_agent_id = Column(
+        String, ForeignKey("deployed_agents.id", name="fk_department_agents_deployed_agent_id"),
+        nullable=True, index=True)
+    blueprint_id = Column(
+        String, ForeignKey("agent_blueprints.id", name="fk_department_agents_blueprint_id"),
+        nullable=True)
 
     # Department context
     agent_name = Column(String(128), nullable=False)         # "RecruitingAgent"
