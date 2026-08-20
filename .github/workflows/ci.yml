@@ -178,25 +178,24 @@ jobs:
         pytest tests/e2e -m "not ollama" -q --tb=short
 
   equivalence:
-    # Differential equivalence harnesses. They load the PRE-refactor modules
-    # (extracted from the pinned refs below) as standalone modules, run them and
-    # today's consolidated replacements over the same input matrix with the
-    # boundary calls stubbed, and compare the captured payloads exactly — the
-    # harnesses that proved the consolidations safe in the first place. Pinning
-    # them here is what keeps those consolidations proven instead of merely
-    # once-proven: ~5400 input combinations plus a row-for-row seed comparison,
-    # about 90s total, no database or service container needed.
-    #
-    # If a behaviour change is INTENTIONAL, move the pinned ref forward in the
-    # same commit that makes it. That is the point: the ref bump is a reviewable
-    # admission that department behaviour changed, rather than a silent drift.
+    # The standing surface ratchet: the OpenAPI baseline check. The three
+    # differential harnesses (diff_refactor/diff_router/diff_seed_equivalence,
+    # and now diff_gate_equivalence for M2.2) are REFACTOR-TIME proof tools run
+    # locally against a pre-refactor git ref; they proved the M0/S2/M2.2
+    # consolidations and their job here is done. This job used to re-run them
+    # against pre-S4 refs, and S4 (2026-08-19/20) DELIBERATELY changed
+    # department gate/router/seed behaviour - the admission the old comment
+    # asked for lives in the fourteen S4 commit messages and the CHANGELOG, so
+    # the comparison went permanently red by design. Re-pinning the refs to a
+    # post-consolidation commit would be worse than deleting it: the "old"
+    # files are now thin wrappers importing the live shared modules, so old and
+    # new could never differ and the gate could never fail - theatre. The next
+    # refactor of those modules must run its harness locally against its own
+    # pre-refactor ref, exactly as M2.2 did (scripts/diff_gate_equivalence.py
+    # vs 2003950, one run per commit of the split).
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
-      with:
-        # `git show <pre-refactor ref>` needs real history; the default depth-1
-        # checkout cannot reach it.
-        fetch-depth: 0
     - name: Set up Python 3.12
       uses: actions/setup-python@v7
       with:
@@ -206,30 +205,6 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
-    - name: Gate / router / seed equivalence vs pre-refactor originals
-      env:
-        SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
-      run: |
-        cd backend
-        # Pinned pre-refactor refs (the ^ parent is the last commit that still
-        # had the clones):
-        #   e40bffd — ten cloned agents/gated_runner.py -> app/agents/department_gate.py
-        #   97f7889 — cloned api/v1/router.py + seed.py -> app/core/{department_endpoints,domain_seed}.py
-        for r in e40bffd 97f7889; do
-          git cat-file -e "$r^{commit}" 2>/dev/null || {
-            echo "::error::pinned pre-refactor ref $r is unreachable (rebased or squash-merged away). Re-pin it in .github/workflows/ci.yml."
-            exit 1
-          }
-        done
-        mkdir -p /tmp/old_gated /tmp/old_routers /tmp/old_seeds
-        for d in engineering finance healthcare hr legal lending operations procurement sales support; do
-          git show e40bffd^:backend/app/$d/agents/gated_runner.py > /tmp/old_gated/$d.py
-          git show 97f7889^:backend/app/$d/api/v1/router.py       > /tmp/old_routers/$d.py
-          git show 97f7889^:backend/app/$d/seed.py                > /tmp/old_seeds/$d.py
-        done
-        python scripts/diff_refactor_equivalence.py /tmp/old_gated
-        python scripts/diff_router_equivalence.py /tmp/old_routers
-        python scripts/diff_seed_equivalence.py /tmp/old_seeds
     - name: OpenAPI surface unchanged vs committed baseline
       # The public HTTP contract (paths, operationIds, params, request/response
       # schemas, components) must not move under a refactor. If an API change is

@@ -235,7 +235,12 @@ async def seed_tenant(db, tenant: str) -> bool:
     }
     comp_by_emp = {}
     for emp in employees:
-        base = round(SALARY_BY_TITLE.get(emp.job_title, 120000) * random.uniform(0.92, 1.12), -2)
+        # Decimal at the SOURCE: base_amount is NUMERIC(18,2) since 0053, and
+        # the payroll block below multiplies it by Decimal day-counts. A float
+        # here raised float*Decimal TypeError - but only on the Postgres seeded
+        # lane (this block has no SQLite unit coverage), which broke CI's
+        # e2e-mock job from 984407f onward.
+        base = Decimal(str(round(SALARY_BY_TITLE.get(emp.job_title, 120000) * random.uniform(0.92, 1.12), -2)))
         comp = Compensation(
             id=new_id(), tenant_id=tenant, employee_id=emp.id, comp_type=CompType.SALARY,
             base_amount=base, currency="USD",
@@ -448,7 +453,9 @@ async def seed_tenant(db, tenant: str) -> bool:
             open_requisitions=sum(1 for r in requisitions if r.status == ReqStatus.OPEN),
             time_to_fill_avg_days=round(random.uniform(28, 45), 1),
             offer_acceptance_rate=round(random.uniform(65, 88), 1),
-            total_payroll_run_rate=(round(sum(c.base_amount for c in comp_by_emp.values()) / 12, 2)
+            # Analytics column stays Float (the S4.6 rule: display estimates are
+            # float, stored money is Decimal) - cast the Decimal sum explicitly.
+            total_payroll_run_rate=(round(float(sum(c.base_amount for c in comp_by_emp.values())) / 12, 2)
                                     if comp_by_emp else 0.0),
             diversity_metrics={},
         ))

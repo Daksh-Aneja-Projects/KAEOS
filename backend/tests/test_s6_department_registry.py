@@ -112,19 +112,30 @@ def test_seeded_department_rows_are_exactly_the_roster():
 def test_every_department_router_is_department_gated_at_its_mount():
     """`require_department(slug)` on the router mount is the single point of
     department-scoped RBAC. A department that ships without one is an open
-    surface, so the roster and the gated mounts must match exactly."""
+    surface, so the roster and the gated mounts must match exactly.
+
+    Walks routes via tests/route_introspection.py, NEVER a bare ``app.routes``
+    loop: FastAPI 0.140 keeps included routers as lazy ``_IncludedRouter``
+    proxies, so the naive walk sees almost nothing and this assertion passed
+    only on the older flat layout (it failed in CI, which runs the pinned
+    0.140, with ``gated == set()``). The mount-level ``require_department``
+    dependency rides on the include context, surfaced by the helper as
+    ``router_dependencies``."""
     from app.main import app
 
+    from tests.route_introspection import iter_api_routes
+
     gated = set()
-    for route in app.routes:
-        dependant = getattr(route, "dependant", None)
-        for dep in getattr(dependant, "dependencies", None) or []:
-            call = getattr(dep, "call", None)
-            code = getattr(call, "__code__", None)
-            if code is None:
-                continue
-            for name, cell in zip(code.co_freevars, call.__closure__ or ()):
-                if name == "department":
-                    gated.add(cell.cell_contents)
+    for info in iter_api_routes(app):
+        dependants = list(info.router_dependencies)
+        for dep_source in dependants + [info.dependant]:
+            for dep in getattr(dep_source, "dependencies", None) or [dep_source]:
+                call = getattr(dep, "call", None) or getattr(dep, "dependency", None)
+                code = getattr(call, "__code__", None)
+                if code is None:
+                    continue
+                for name, cell in zip(code.co_freevars, call.__closure__ or ()):
+                    if name == "department":
+                        gated.add(cell.cell_contents)
 
     assert gated == TEN
