@@ -65,7 +65,7 @@ def test_correlation_id_filter_stamps_request_id():
 async def test_ws_local_delivery_when_redis_absent():
     """With Redis unavailable, broadcast falls back to delivering to this
     worker's own sockets (single-instance dev must keep working)."""
-    from app.api.routes.ws import ConnectionManager
+    from app.services.realtime import ConnectionManager
 
     class _FakeWS:
         def __init__(self):
@@ -85,7 +85,7 @@ async def test_ws_local_delivery_when_redis_absent():
 
 
 async def test_ws_all_delivery_when_redis_absent():
-    from app.api.routes.ws import ConnectionManager
+    from app.services.realtime import ConnectionManager
 
     class _FakeWS:
         def __init__(self):

@@ -174,7 +174,7 @@ class EventBus:
 
             # 4. Broadcast to all connected WebSocket clients for this tenant (real-time push)
             try:
-                from app.api.routes.ws import manager as ws_manager
+                from app.services.realtime import manager as ws_manager
                 ws_payload = {
                     "type": "event",
                     "event_type": event_type.value,

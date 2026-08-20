@@ -250,7 +250,7 @@ async def apply_transition(
     # WS message. Persistence already happened above (WorkflowEvent), so this
     # is broadcast-only and must never fail the request.
     try:
-        from app.api.routes.ws import manager as ws_manager
+        from app.services.realtime import manager as ws_manager
         await ws_manager.broadcast_to_tenant(tenant_id, {
             "type": "workflow_transition",
             "domain": spec.domain,

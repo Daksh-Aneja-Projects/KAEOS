@@ -56,7 +56,7 @@ class ActivityFeedService:
             
             # Broadcast via WebSocket
             try:
-                from app.api.routes.ws import manager
+                from app.services.realtime import manager
                 await manager.broadcast_to_tenant(tenant_id, {
                     "type": "new_event",
                     "event": self._serialize_event(event)

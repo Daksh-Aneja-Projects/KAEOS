@@ -12,8 +12,8 @@ import time
 
 import pytest
 
-from app.api.routes import ws as ws_mod
-from app.api.routes.ws import ConnectionManager
+from app.services import realtime as ws_mod
+from app.services.realtime import ConnectionManager
 
 # Shrink the per-send budget so the wall-clock test is fast but still
 # discriminating: 2 stalled sockets cost ~0.5s concurrently and >=1.0s serially,
