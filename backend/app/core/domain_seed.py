@@ -109,19 +109,30 @@ async def seed_domains_if_empty() -> None:
     for name, seed_module, sentinel_path in _DOMAINS:
         try:
             sentinel = _resolve(sentinel_path)
-            # REVIEW: this orchestrator gate counts the sentinel table across ALL
-            # tenants, while the guard inside every seeder (already_seeded above)
-            # is scoped to one tenant. On a multi-tenant database the first
-            # tenant with HR employees makes startup skip HR forever, so a later
-            # SEED_TENANT never gets its demo data - the seeder's own guard would
-            # have allowed it. Preserved as-is: adding `.where(sentinel.tenant_id
-            # == SEED_TENANT)` here would start seeding databases that skip today.
+            # Scoped to SEED_TENANT: the SAME predicate the guard inside every
+            # seeder uses (already_seeded above). This gate is therefore purely
+            # an optimisation - skip the import and the module call - and never a
+            # different policy. It used to count the sentinel table across ALL
+            # tenants, so on a multi-tenant database the first tenant with HR
+            # employees made startup skip HR forever and SEED_TENANT never got
+            # its demo data, even though the seeder's own guard would have
+            # allowed it. Widening this to databases that skip today is safe:
+            # seed_domains_if_empty() only runs under `SEED_DEMO_DATA and not
+            # is_production_like` (app/main.py), i.e. dev/demo databases, and
+            # each seeder re-checks per tenant before writing anything.
             async with AsyncSessionLocal() as db:
                 count = (
-                    await db.execute(select(sqlfunc.count()).select_from(sentinel))
+                    await db.execute(
+                        select(sqlfunc.count())
+                        .select_from(sentinel)
+                        .where(sentinel.tenant_id == SEED_TENANT)
+                    )
                 ).scalar() or 0
             if count > 0:
-                logger.info(f"[DomainSeed] {name}: already seeded ({count} rows) — skipping")
+                logger.info(
+                    f"[DomainSeed] {name}: already seeded for {SEED_TENANT} "
+                    f"({count} rows) — skipping"
+                )
                 continue
 
             mod = importlib.import_module(seed_module)
