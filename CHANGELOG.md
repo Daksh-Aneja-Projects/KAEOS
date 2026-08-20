@@ -11,6 +11,44 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S5 scale and replicas (2026-08-20)
+
+- **The gate pipeline no longer holds a pooled DB connection (M6.1, the top
+  ceiling).** A department endpoint entered the multi-LLM gate pipeline (240s
+  LLM timeout) with its request session's read transaction open, pinning one
+  pooled connection - ~15 concurrent governed runs exhausted a worker's pool.
+  The request session is now committed at pipeline entry (audited: every gated
+  caller enters read-only; expire_on_commit=False keeps loaded objects live),
+  and the mission engine releases its background session the same way.
+- **Redis outages heal (6.3, 6.4).** get_redis() re-probes a dead Redis every
+  15s (bounded ping, failed probes close their client); the polystore CacheBus
+  re-probes every 30s and upgrades from its in-memory fallback in place.
+- **HITL pending list is O(pending), not O(keyspace) (6.5).** Per-tenant index
+  set + one MGET replaces KEYS * + N GETs on a 30s poll from every open tab;
+  self-healing, with a one-time SCAN backfill for pre-index records.
+- **Job queue drains concurrently (6.6).** Bounded concurrency (semaphore, own
+  session per outcome write) inside the leader's tick; one slow LLM handler no
+  longer starves the queue or pins a connection while it waits.
+- **Startup bootstrap is serialized across workers (6.7).** All schema/seed
+  steps run under a dedicated bootstrap LeaderLock - serialized, not skipped,
+  so no worker serves against a half-built schema and check-then-act seed races
+  are gone. Also fixes a connection leak in LeaderLock.release() when the
+  advisory unlock fails.
+- **WebSocket fan-out is concurrent (6.8).** Sends gather per tenant and across
+  tenants: N stalled clients cost one timeout total instead of N x 5s serially
+  in the subscriber loop (worst case was 250s per message per tenant).
+- **Per-tenant stage-timing buffers (6.2).** One busy tenant can no longer
+  evict every other tenant's /metrics/latency entries (bounded per tenant,
+  LRU-capped across tenants).
+- **Bounded scans (3.7, 3.8).** /reports/compliance counts all five frameworks
+  in one pass (tag matching now anchored - 'EU_GDPR' no longer counts as GDPR);
+  erasure replay builds its email-hash index once per tenant per pass instead
+  of streaming ten tables per journal entry.
+- **Cheaper middleware, bounded rate-limit memory (3.9, 6.9).** RequestId,
+  BodySizeLimit and SecurityHeaders are pure ASGI (no per-request task group +
+  stream pair each), byte-identical behaviour on starlette 0.38 and 1.3.1; the
+  in-memory rate-limit windows evict idle callers and are hard-capped.
+
 ### Changed - S4 governance tail (2026-08-20)
 
 - **Healthcare's state machines are reachable over HTTP (4.4).** healthcare
