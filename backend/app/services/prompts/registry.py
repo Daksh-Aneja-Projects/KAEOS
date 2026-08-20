@@ -8,7 +8,7 @@ opt-in, never a silent behaviour change.
 
 Usage:
     from app.services.prompts import render_prompt
-    prompt = render_prompt("skill_routing", task_intent=..., candidates=...)
+    prompt = render_prompt("rag_faithfulness_judge", context=..., answer=...)
 
 Add a new revision by adding a new ``PromptTemplate`` to the version list for a
 name; the latest is served by default but callers SHOULD pin (``version=``) for
@@ -29,30 +29,8 @@ class PromptTemplate:
         return self.template.format(**kwargs)
 
 
-def _skill_candidates_block(candidates) -> str:
-    lines = []
-    for i, c in enumerate(candidates):
-        lines.append(f"{i + 1}. {c['skill_id']} (Domain: {c.get('domain')})")
-    return "\n".join(lines)
-
-
 # name -> list of versions (ascending). Latest is last.
 PROMPTS: dict[str, list[PromptTemplate]] = {
-    "skill_routing": [
-        PromptTemplate(
-            name="skill_routing",
-            version=1,
-            template=(
-                "Given the following user task intent, choose the best matching "
-                "skill from the candidates.\n"
-                'If none are a strong match, return "NONE".\n'
-                "Task Intent: {task_intent}\n\n"
-                "Candidates:\n{candidates_block}\n\n"
-                'Return ONLY valid JSON like: '
-                '{{"selected_skill_id": "skill_name", "confidence": 0.95}}'
-            ),
-        ),
-    ],
     "rag_faithfulness_judge": [
         PromptTemplate(
             name="rag_faithfulness_judge",
@@ -85,23 +63,21 @@ def get_prompt(name: str, version: int | None = None) -> PromptTemplate:
 
 
 def render_prompt(name: str, version: int | None = None, **kwargs) -> str:
-    """Render a registered prompt. ``candidates`` is auto-expanded for skill_routing."""
-    if name == "skill_routing" and "candidates" in kwargs:
-        kwargs["candidates_block"] = _skill_candidates_block(kwargs.pop("candidates"))
+    """Render a registered prompt."""
     return get_prompt(name, version).render(**kwargs)
 
 
 def _demo() -> None:
     p = render_prompt(
-        "skill_routing",
-        task_intent="reset a password",
-        candidates=[{"skill_id": "pw_reset", "domain": "it"}],
+        "rag_faithfulness_judge",
+        context="The invoice was approved on the 3rd.",
+        answer="The invoice was approved on the 3rd.",
     )
-    assert "reset a password" in p and "pw_reset" in p and "NONE" in p
+    assert "approved on the 3rd" in p and "faithful" in p
     # pinning is explicit and stable
-    assert get_prompt("skill_routing", 1).version == 1
+    assert get_prompt("rag_faithfulness_judge", 1).version == 1
     try:
-        get_prompt("skill_routing", 99)
+        get_prompt("rag_faithfulness_judge", 99)
         raise AssertionError("expected KeyError for missing version")
     except KeyError:
         pass

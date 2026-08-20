@@ -13,8 +13,6 @@ from app.core.entitlements import require_execution_allowance
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.models.execution_status import PENDING_STATUSES, AgentState, ExecutionStatus
-from app.services.knowledge import PolystoreEngine
-from app.api.dependencies import get_polystore_engine
 from app.schemas.skills import (
     SkillSummary, SkillDetail, SkillRegistryResponse,
     SkillExecutionRequest, SkillExecutionResponse,
@@ -41,7 +39,6 @@ async def list_skills(
     min_confidence: float = 0.0,
     limit: int = Query(200, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    polystore: PolystoreEngine = Depends(get_polystore_engine),
     tenant_id: str = Depends(get_tenant_id),
 ):
     """List skills in the registry with filtering (tenant-scoped).

@@ -124,7 +124,17 @@ class Rule(Base):
 
 
 class SkillEmbedding(Base):
-    """Vector storage for skills, used in L9 SkillRouter fuzzy matching"""
+    """Vector storage for skills: the semantic half of skill retrieval.
+
+    Written on every skill create (``knowledge.embed_skill``) and fillable in
+    bulk from ``POST /brain/skills/backfill-embeddings``. The only code that
+    READS it is ``PolystoreEngine.search_skills``, whose own caller - the L9
+    SkillRouter this docstring used to name - was deleted as unreachable, so
+    nothing a request can reach queries these vectors today. Retiring the lane
+    (write path, backfill route, this table and its HNSW index) or wiring
+    retrieval to a real caller is a product decision, not a cleanup; until one
+    is made, the write side is maintaining an index no one reads.
+    """
     __tablename__ = 'skill_embeddings'
     # HNSW cosine index so <=> similarity is an ANN lookup, not a seq scan.
     # Declared here (not only in migration 0038) so the schema-drift gate sees
