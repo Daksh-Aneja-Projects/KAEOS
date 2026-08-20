@@ -371,7 +371,10 @@ from app.core.middleware import (
 
 # add_middleware() PREPENDS, so the LAST call is the OUTERMOST layer. Resulting
 # request order (outer -> inner): CORS -> TrustedHost -> SecurityHeaders ->
-# BodySize -> RequestID -> Logging -> Tenant -> RateLimit -> route.
+# BodySize -> Logging -> RequestID -> Tenant -> RateLimit -> route.
+# (Logging sits OUTER of RequestID yet still logs the request id: RequestID
+# publishes it on the shared scope's state and the ambient contextvar, both of
+# which the outer logging layer reads after the inner layers have run.)
 # RateLimit is registered BEFORE Tenant on purpose so it ends up INNER of Tenant
 # and therefore runs AFTER TenantMiddleware has populated request.state.tenant.
 # Registered the other way round (the previous order), the limiter ran first and
