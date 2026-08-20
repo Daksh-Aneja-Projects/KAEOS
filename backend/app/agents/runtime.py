@@ -905,34 +905,15 @@ class AgentExecutor:
         context["_actuation_record_id"] = _actuation_record_id
         return None
 
-    async def _run_post_hitl(
-        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
-        warnings: list, *, _pre_approved: bool,
+    async def _gate_audit(
+        self, skill: Dict[str, Any], context: Dict[str, Any], warnings: list,
     ) -> Dict[str, Any]:
-        """Gates 4-6 - everything past the human gate. One body shared by the
-        normal flow and the pre-approved (mission / HITL-resume) shortcut, so
-        the two can never drift apart again (three divergent pipelines each
-        skipping different gates is the exact defect this collapses)."""
-        # ── Enterprise memory: what happened last time we faced this? ───
-        # Recalled BEFORE deliberation so the debate and the execution both
-        # reason over the organization's own history, not a blank slate.
-        await self._recall_memory(context, skill)
-
-        outcome = await self._gate_debate(
-            skill, context, skill_obj, pre_approved=_pre_approved)
-        if outcome is not None:
-            return outcome
-        outcome = await self._gate_execute(skill, context, skill_obj, warnings)
-        if outcome is not None:
-            return outcome
+        """Gate 6 - always terminal: the audit verdict or the assembled
+        SUCCESS_CLEAN result (the only gate that returns a dict on its pass
+        path, because passing it IS the pipeline's success)."""
         exec_result = context["_exec_result"]
         exec_id = context["execution_id"]
-
-        outcome = await self._gate_actuation(skill, context, skill_obj, warnings)
-        if outcome is not None:
-            return outcome
         _actuation_record_id = context["_actuation_record_id"]
-
         # ── Gate 6: Post-Execution Audit ─────────────────────────────────
         audit_passed = self.compliance.enforce_audit_requirements(
             skill.get("compliance_tags", []), context
@@ -995,3 +976,29 @@ class AgentExecutor:
         # situation starts from what this organization already did.
         await self._store_memory(context, skill, result)
         return result
+
+    async def _run_post_hitl(
+        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
+        warnings: list, *, _pre_approved: bool,
+    ) -> Dict[str, Any]:
+        """Gates 4-6 - everything past the human gate. One body shared by the
+        normal flow and the pre-approved (mission / HITL-resume) shortcut, so
+        the two can never drift apart again (three divergent pipelines each
+        skipping different gates is the exact defect this collapses)."""
+        # ── Enterprise memory: what happened last time we faced this? ───
+        # Recalled BEFORE deliberation so the debate and the execution both
+        # reason over the organization's own history, not a blank slate.
+        await self._recall_memory(context, skill)
+
+        outcome = await self._gate_debate(
+            skill, context, skill_obj, pre_approved=_pre_approved)
+        if outcome is not None:
+            return outcome
+        outcome = await self._gate_execute(skill, context, skill_obj, warnings)
+        if outcome is not None:
+            return outcome
+        outcome = await self._gate_actuation(skill, context, skill_obj, warnings)
+        if outcome is not None:
+            return outcome
+        return await self._gate_audit(skill, context, warnings)
+
