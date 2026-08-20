@@ -13,7 +13,7 @@ export interface LegalMatter {
   type: string;
   status: 'NEW' | 'IN_PROGRESS' | 'ON_HOLD' | 'RESOLVED' | 'CLOSED';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  exposure?: string;
+  exposure?: number | null;
 }
 
 export interface Contract {

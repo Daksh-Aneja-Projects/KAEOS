@@ -2,7 +2,7 @@
 KAEOS Legal Domain — Core Models
 General legal matters and legal team roster.
 """
-from sqlalchemy import Column, String, DateTime, Boolean, Enum, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, Boolean, Enum, Numeric, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import enum
 
@@ -59,7 +59,9 @@ class LegalMatter(Base):
 
     assigned_attorney_id = Column(String, ForeignKey("leg_team_members.id"), nullable=True)
     external_counsel = Column(String(256), nullable=True)
-    estimated_exposure = Column(Text, nullable=True)
+    # Money: exact NUMERIC like finance/HR, never free text — exposure has to be
+    # summable and comparable across matters, and "~$2M" is neither.
+    estimated_exposure = Column(Numeric(18, 2), nullable=True)
     resolution = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

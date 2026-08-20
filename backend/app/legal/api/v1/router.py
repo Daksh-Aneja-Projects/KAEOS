@@ -89,7 +89,8 @@ async def list_matters(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
     rows = q.all()
     return [{
         "id": m.id, "title": m.title, "description": m.description, "type": m.matter_type,
-        "status": m.status.value, "priority": m.priority.value, "exposure": m.estimated_exposure,
+        "status": m.status.value, "priority": m.priority.value,
+        "exposure": float(m.estimated_exposure) if m.estimated_exposure is not None else None,
         "assigned_attorney": attorney_name, "external_counsel": m.external_counsel,
         "resolution": m.resolution,
     } for m, attorney_name in rows]
@@ -359,6 +360,7 @@ async def transition_obligation(
 # Entity Creation
 # ═══════════════════════════════════════════════════════════════════════
 from datetime import date as _date  # noqa: E402
+from decimal import Decimal  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 
@@ -403,7 +405,8 @@ class MatterCreate(BaseModel):
     priority: Optional[str] = Field(None, max_length=16)
     assigned_attorney_id: Optional[str] = None
     external_counsel: Optional[str] = Field(None, max_length=256)
-    estimated_exposure: Optional[str] = None
+    # Money, not prose: exact Decimal so exposure can be summed and compared.
+    estimated_exposure: Optional[Decimal] = Field(None, ge=0, max_digits=18, decimal_places=2)
     # Comma-separated party names — screened against adverse_parties by the
     # CONFLICT_OF_INTEREST checker (ABA Model Rule 1.7) before the matter is
     # opened. Either/both may be omitted; an unscreenable matter is

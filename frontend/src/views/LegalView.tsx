@@ -9,7 +9,7 @@ import { api } from '../api/client';
 import type { WorkflowSpec } from '../api/client';
 import { legalApi } from '../api/endpoints/legal';
 import { useTheme } from '../context/ThemeContext';
-import { humanize } from '../lib/format';
+import { formatCurrency, humanize } from '../lib/format';
 import { toPct } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import TableCard from '../components/shared/TableCard';
@@ -236,6 +236,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
               { key: 'priority', label: 'Priority', type: 'select', options: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], defaultValue: 'MEDIUM' },
               { key: 'description', label: 'Description', type: 'textarea' },
               { key: 'external_counsel', label: 'External Counsel', type: 'text' },
+              { key: 'estimated_exposure', label: 'Estimated Exposure (USD)', type: 'number' },
               { key: 'parties', label: 'Parties (comma-separated)', type: 'text', placeholder: 'Acme Corp, Jane Roe' },
               { key: 'adverse_parties', label: 'Adverse Parties (comma-separated)', type: 'text', placeholder: 'screened for conflicts of interest' },
             ]}
@@ -307,7 +308,7 @@ const LegalView: React.FC<{ domain?: string; defaultTab?: string }> = ({ default
                         <td className="px-4 py-3">{m.type}</td>
                         <td className="px-4 py-3"><Badge status={m.status} /></td>
                         <td className="px-4 py-3"><Badge status={m.priority} /></td>
-                        <td className="px-4 py-3 max-w-[180px] truncate" style={{ color: colors.inkSubtle }}>{m.exposure || '-'}</td>
+                        <td className="px-4 py-3 max-w-[180px] truncate" style={{ color: colors.inkSubtle }}>{m.exposure == null ? '-' : formatCurrency(m.exposure)}</td>
                         <td className="px-4 py-3">{m.assigned_attorney || '-'}</td>
                         <td className="px-4 py-3">
                           <WorkflowActions domain="legal" entityPath="matters" entityId={m.id}
