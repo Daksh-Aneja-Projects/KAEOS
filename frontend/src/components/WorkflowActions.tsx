@@ -62,7 +62,7 @@ const WorkflowActions: React.FC<Props> = ({ domain, entityPath, entityId, curren
     setBusy(to);
     try {
       const res = await api.transitionEntity(domain, entityPath, entityId, to);
-      onDone(`${humanize(res.entity_type)} moved ${res.from_state} → ${res.to_state}`);
+      onDone(`${humanize(res.entity_type)} moved from ${humanize(res.from_state)} to ${humanize(res.to_state)}`);
     } catch (e: any) {
       (onError || onDone)(`Transition failed: ${e?.message || e}`);
     } finally { setBusy(null); }

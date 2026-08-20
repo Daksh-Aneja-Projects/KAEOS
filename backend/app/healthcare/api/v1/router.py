@@ -18,6 +18,7 @@ from app.core.audit import record_security_event
 from app.core.department_endpoints import get_or_404, make_department_workflow_router
 from app.core.database import get_db
 from app.core.tenant import approver_identity, get_tenant_id, require_role
+from app.core.workflow import TransitionRequest, apply_transition
 from app.healthcare.models.compliance import ComplianceReport
 from app.healthcare.models.core import (
     ClinicalTask, ConsentRecord, PatientEncounter, PHIDisclosure,
@@ -61,6 +62,7 @@ async def get_healthcare_analytics(tenant_id: str = Depends(get_tenant_id), db: 
 router.include_router(make_department_workflow_router(
     "healthcare", WORKFLOW_SPECS,
     workflows_doc='Declared state machines — the frontend renders transition actions from this.',
+    events_doc='Tenant-scoped transition audit trail for healthcare entities.',
 ))
 
 
@@ -121,6 +123,21 @@ async def create_encounter(body: EncounterCreate, tenant: dict = Depends(require
     return _enc_dict(enc)
 
 
+@router.post("/encounters/{encounter_id}/transition")
+async def transition_encounter(
+    encounter_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Move an encounter through triage, coding and closure by hand.
+
+    The same guarded state machine the triage and coding agents drive
+    internally, now reachable over HTTP for the cases a human closes or
+    corrects directly. An illegal move is refused with the states that are
+    actually allowed from here."""
+    return await apply_transition(db, WORKFLOW_SPECS["encounter"], encounter_id,
+                                  body.to_state, tenant, note=body.note)
+
+
 # ─── Encounter agent actions (the gated 7-gate pipeline, live) ────────────
 #
 # Every write here goes through app.healthcare.agents.gated_runner's
@@ -137,9 +154,10 @@ class PriorAuthRequest(BaseModel):
 # Healthcare's gated agent endpoints now match the shared contract: ValueError ->
 # 404 with detail=, and a logged, detail-free 500 for anything else (S4.5). Kept
 # hand-written rather than routed through run_agent_endpoint() because one of them
-# derives resource_id from the result. Healthcare still has no /workflow-events
-# and no bulk-transition endpoint (see the single make_department_workflow_router()
-# mount below).
+# derives resource_id from the result. Healthcare's full workflow surface is now
+# mounted like its nine siblings: /workflows and /workflow-events above, the two
+# single-entity /transition endpoints beside their sections, and
+# /workflows/{entity_type}/bulk-transition at the end of this file.
 @router.post("/encounters/{encounter_id}/triage")
 async def triage_encounter_route(encounter_id: str, tenant: dict = Depends(require_role("operator")),
                                  db: AsyncSession = Depends(get_db)):
@@ -388,3 +406,23 @@ async def create_task(body: TaskCreate, tenant: dict = Depends(require_role("ope
     await db.commit()
     await db.refresh(t)
     return {"id": t.id, "type": t.task_type, "status": t.status}
+
+
+@router.post("/tasks/{task_id}/transition")
+async def transition_clinical_task(
+    task_id: str, body: TransitionRequest,
+    tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db),
+):
+    """Start, block, unblock or finish a clinical task by hand.
+
+    The coding and prior-auth agents park their work on PENDING_HITL; this is
+    how a human reviewer moves it on, and how a blocker (a missing consent, a
+    payer query) is recorded and later cleared."""
+    return await apply_transition(db, WORKFLOW_SPECS["clinical_task"], task_id,
+                                  body.to_state, tenant, note=body.note)
+
+
+router.include_router(make_department_workflow_router(
+    "healthcare", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 healthcare entities; per-id outcomes.',
+))

@@ -73,11 +73,14 @@ def make_department_workflow_router(
     """Build the workflow endpoints a department asks for, named as it named them.
 
     Each ``*_doc`` argument both selects an endpoint and supplies its docstring;
-    omit one and that endpoint is not registered. That is deliberate — the
-    departments are NOT uniform and the gaps are real behaviour: healthcare has
-    no /workflow-events, and healthcare, lending and procurement have no
-    bulk-transition. Mount the pieces where the hand-written endpoints used to
-    sit so route order (and therefore match precedence) is unchanged.
+    omit one and that endpoint is not registered. All ten departments now expose
+    all three endpoints (S4.4 closed the last gaps: healthcare had no
+    /workflow-events and no single-entity transition route, so its two declared
+    state machines were unreachable over HTTP, and healthcare, lending and
+    procurement had no bulk-transition). The selective mounting stays, because a
+    department mounts the pieces separately — at the point in its router where
+    the hand-written endpoints used to sit — so route order, and therefore match
+    precedence, is unchanged.
 
     The generated functions carry the department's original ``__name__`` and
     ``__doc__``, so FastAPI derives exactly the same route name, operationId,

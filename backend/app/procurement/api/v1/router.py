@@ -124,7 +124,6 @@ async def create_requisition(
 
 # Procurement's gated agent endpoints now match the shared contract: ValueError
 # -> 404 with detail=, and a logged, detail-free 500 for anything else (S4.5).
-# Procurement still has no bulk-transition endpoint.
 @router.post("/requisitions/{request_id}/assess")
 async def assess_requisition(
     request_id: str,
@@ -447,3 +446,9 @@ async def transition_purchase_order(
     source-to-pay controls."""
     return await apply_transition(db, WORKFLOW_SPECS["procurement_purchase_order"],
                                   po_id, body.to_state, tenant, note=body.note)
+
+
+router.include_router(make_department_workflow_router(
+    "procurement", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 procurement entities; per-id outcomes.',
+))

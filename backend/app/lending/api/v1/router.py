@@ -405,8 +405,6 @@ from app.lending.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: E402
 # Generated from the shared factory in app/core/department_endpoints.py.
 # Endpoint names and docstrings are the hand-written originals, so the
 # operationIds and descriptions in the OpenAPI schema are unchanged.
-# REVIEW: lending has /workflows and /workflow-events but no bulk-transition
-# endpoint, unlike the six departments that do. Gap preserved.
 router.include_router(make_department_workflow_router(
     "lending", WORKFLOW_SPECS,
     workflows_doc='Declared state machines - the frontend renders transition actions from this.',
@@ -449,3 +447,9 @@ async def transition_serviced_loan(
                 case.closed_at = now
             await db.commit()
     return result
+
+
+router.include_router(make_department_workflow_router(
+    "lending", WORKFLOW_SPECS,
+    bulk_doc='Apply one transition to up to 200 lending entities; per-id outcomes.',
+))

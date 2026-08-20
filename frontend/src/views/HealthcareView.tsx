@@ -6,6 +6,7 @@ import {
   FileCheck2,
 } from 'lucide-react';
 import { api } from '../api/client';
+import type { WorkflowSpec } from '../api/client';
 import type {
   HealthcareDashboard, HealthcareEncounter, PHIDisclosureRow, ConsentRow, ClinicalTaskRow,
   ComplianceReportRow,
@@ -21,6 +22,7 @@ import TableCard from '../components/shared/TableCard';
 import EmptyState from '../components/shared/EmptyState';
 import LiveBadge from '../components/LiveBadge';
 import DomainAnalytics from '../components/DomainAnalytics';
+import WorkflowActions from '../components/WorkflowActions';
 import { humanize } from '../lib/format';
 import { formatDate } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
@@ -230,6 +232,9 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
   const [consent, setConsent] = useState<ConsentRow[]>([]);
   const [tasks, setTasks] = useState<ClinicalTaskRow[]>([]);
   const [complianceReports, setComplianceReports] = useState<ComplianceReportRow[]>([]);
+  // Declared state machines (encounter, clinical_task): WorkflowActions renders
+  // the allowed next states from these, the backend engine enforces them.
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowSpec>>({});
 
   useEffect(() => { loadData(); }, []);
   // Live: refresh on any tenant event and keep the cockpit ticking even when the
@@ -246,6 +251,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
       api.getHealthcareConsent(),
       api.getHealthcareTasks(),
       api.getHealthcareComplianceReports(),
+      api.getDomainWorkflows('healthcare'),
     ]);
     const val = (i: number, d: any) => (r[i].status === 'fulfilled' ? (r[i] as any).value ?? d : d);
     setDash(val(0, null));
@@ -255,9 +261,16 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
     setConsent(val(4, []));
     setTasks(val(5, []));
     setComplianceReports(val(6, []));
+    setWorkflows(val(7, {}));
     setLastSync(Date.now());
     setLoading(false);
   }
+
+  // WorkflowActions reports "<Verb> failed: <detail>", where the detail is the
+  // transition engine's structured JSON. Humanize it and route it through the
+  // banner's "Could not" error styling.
+  const onWorkflowError = (m: string) =>
+    setActionMsg(`Could not complete that action: ${friendlyError(m.replace(/^\w+ failed: /, ''))}`);
 
   async function revoke(id: string) {
     setRevoking(id); setActionMsg('');
@@ -558,7 +571,7 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                                 : <span style={{ color: colors.inkTertiary }}>none coded</span>}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <button onClick={() => handleTriage(e.id)} disabled={e.status !== 'OPEN' || triagingId === e.id}
                                   title="Triage this encounter (Intake Agent)"
                                   className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors disabled:opacity-40"
@@ -580,6 +593,10 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                                   <Send className="w-3 h-3" />
                                   Prior auth
                                 </button>
+                                <WorkflowActions domain="healthcare" entityPath="encounters" entityId={e.id}
+                                  currentState={e.status} transitions={workflows['encounter']?.transitions}
+                                  onDone={async (m) => { setActionMsg(m); await loadData(); }}
+                                  onError={onWorkflowError} />
                               </div>
                             </td>
                           </tr>
@@ -691,11 +708,11 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
               return rows.length === 0
                 ? <EmptyState compact icon={ClipboardList} title="No clinical tasks" sub="Coding and prior-authorization work items appear here." />
                 : (
-                  <TableCard minWidth={640}>
+                  <TableCard minWidth={820}>
                     <table className="w-full text-[12px]">
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${colors.hairline}` }}>
-                          {['Task', 'Status', 'Assignee', 'Linked encounter'].map(h => (
+                          {['Task', 'Status', 'Assignee', 'Linked encounter', 'Actions'].map(h => (
                             <th key={h} className="text-left px-4 py-3 font-semibold" style={{ color: colors.inkSubtle }}>{h}</th>
                           ))}
                         </tr>
@@ -710,6 +727,12 @@ const HealthcareView: React.FC<{ domain?: string; defaultTab?: string }> = ({ de
                               {t.encounter_id
                                 ? (encounters.find(e => e.id === t.encounter_id)?.encounter_number || 'Linked encounter')
                                 : '-'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <WorkflowActions domain="healthcare" entityPath="tasks" entityId={t.id}
+                                currentState={t.status} transitions={workflows['clinical_task']?.transitions}
+                                onDone={async (m) => { setActionMsg(m); await loadData(); }}
+                                onError={onWorkflowError} />
                             </td>
                           </tr>
                         ))}
