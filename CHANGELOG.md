@@ -11,6 +11,120 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed - the campaign tail: real-model verification, two governance defects, a pre-launch re-audit (2026-08-20)
+
+- **The e2e lane ran on a real model for the first time this campaign** -
+  439 passed / 4 skipped / 0 failed in 21m22s against local Ollama
+  (qwen2.5-coder:7b), on a freshly seeded database (one of those four skips is
+  now a pass - see below). It found two harness
+  defects, both fixed: the runner booted uvicorn on a hardcoded port that
+  belongs to another service on the maintainer's machine (the suite has already
+  been bitten once by reporting on a backend that was not the one under test -
+  358 bogus failures), and a cross-tenant enumeration test read ADMIN_SECRET
+  straight from os.environ instead of through the conftest resolver, so it
+  skipped itself on every normal local run rather than running. Everything that
+  names the e2e port now says 8011 - runner, conftest default, and CI.
+- **A debate-escalated mission step waited for a human instead of being stamped
+  FAILED.** Gate 4's ESCALATED_DEBATE means "two agents disagreed, a person must
+  rule on this", but the mission engine's pending-set did not list it, so the
+  step fell through to the failure branch. That both lied about the outcome
+  (nothing was tried) and dropped the decision on the floor: only an
+  AWAITING_HITL step can be approved, so the escalation never reached the
+  approval queue at all. The branch now reads execution_status.PENDING_STATUSES
+  so the two vocabularies cannot drift apart again.
+- **The workforce headline autonomy tile reports the same 30 days as the views
+  an operator drills into from it.** It counted the tenant's entire history
+  while /metrics/safe-autonomy, the /ops blended rate and its own module's
+  /autonomy-trend all used 30 days, so the headline lagged every sibling and
+  diluted recent improvement. It also stops re-deriving the north star locally -
+  the same drift already fixed once in /billing/roi - which removes a full-table
+  row pull, and the window now travels with the number so the UI names the
+  period instead of implying "ever". (/billing/roi is deliberately all-time; it
+  sits beside lifetime cost figures and says so.)
+- **TrustGovernance no longer tells an operator the governance record is empty
+  while it is still loading.** The component computed `loading` and never read
+  it, so during the initial fetch the page asserted "No provenance entries yet",
+  "No fairness audits recorded yet" and "No debates recorded yet".
+
+### Changed - vocabulary, dead code, and lint (2026-08-20)
+
+- **Every producer and consumer speaks the ExecutionStatus enum** (M2.6's
+  vocabulary, now adopted): 120 bare string literals across the six gate
+  functions and 42 domain agents, routers, seeders and services. Behaviour is
+  identical - a StrEnum member IS a str - and proven so by the differential gate
+  harness (36 runs, 0 mismatches) plus the full lane. Two sites that scored runs
+  with `status.startswith("SUCCESS")` and `"SUCCESS" in status` now read a named
+  SUCCEEDED_STATUSES set, so a future member merely containing the word cannot
+  silently count as a success.
+- **rag_fallback_rate is gone end to end** - a metric that could only ever read
+  0% once SkillRouter was deleted, still rendered as a Command Center tile and
+  narrated in the Evolution Timeline. Persistence was checked first, per the
+  hours-saved precedent: no table stores it and a fully seeded database holds
+  zero RAG_EXEC rows, so no migration was needed. The vacated tile now shows
+  skills_used, which the payload already carried and nothing displayed.
+- **The inert SkillRouter remnants are deleted**: the skill_routing prompt
+  template, the DI provider with no callers, and a per-request PolystoreEngine
+  the skills list route constructed and never read. PolystoreEngine.search_skills
+  was deliberately KEPT and the reasoning written at the site - it is the only
+  code that reads skill_embeddings, a table this system still writes on every
+  skill create, so deleting the reader alone would turn a live, HNSW-indexed
+  write path into a write-only subsystem.
+- **eslint warnings 1368 -> 1235, errors still 0**: no-unused-vars 129 -> 0
+  (100 dead import specifiers across 28 files, a `domain` prop 17 components
+  accepted and never read, and state stranded by earlier extractions - including
+  a hand-rolled Authorization header, which takes a stray bearer token out of a
+  component) and the three stale eslint-disable directives, one of them
+  file-wide. A stale disable does not sit idle; it hides the next real warning
+  at that site.
+
+### Security - pre-launch re-audit (2026-08-20)
+
+Re-run of the standing pre-launch gate over the 84 commits since the v2.0.0
+clearance. Scans clean: bandit 0 medium/high across 69,189 lines, pip-audit 0,
+npm audit 0, no secrets in the shipped bundle.
+
+- **A production boot may no longer adopt the demo tenant.** Booting a
+  production-configured instance against a fresh Alembic-migrated Postgres
+  proved the demo-seed gate holds - four populated tables, zero fictional rows -
+  but showed the root admin being provisioned into `tenant_acme`, the id every
+  fixture path in the tree writes to by name. Real records would then share a
+  tenant with the demo data, so one mis-set ENVIRONMENT would mix fictional
+  employees and invoices into live rows, and in a governance product you cannot
+  afterwards tell which records were invented. Refused at boot now, the same
+  fail-closed way a placeholder SECRET_KEY already was.
+- **A wildcard CORS origin is refused in production.** The app allows
+  credentials, so Starlette reflects the caller's Origin back for a wildcard -
+  any site a logged-in operator visits could read authenticated responses. The
+  shipped default was already explicit origins; this stops a deploy widening it.
+- **validate_production_security is finally tested.** The boot-time gate between
+  a careless deploy and an open one had no coverage at all, so every control in
+  it was one careless edit from silently returning [] forever.
+- **An authorization ratchet, because OpenAPI cannot see one.** Dependencies are
+  not part of the schema, so a router refactor can drop a role gate while the
+  published surface stays byte-identical - which is exactly the shape of M2.1's
+  78-route HR split (it passes: 0 ungated HR mutating routes). All 314 mutating
+  routes are now checked; the 18 with no role dependency are allowlisted one by
+  one with the authenticator that replaces it, a second test fails if an entry
+  goes stale, and a positive control blinds both detection signals to prove the
+  check can fail.
+- Verified unchanged and holding: RLS refuses to serve when policies are absent
+  or the app connects as the table owner; production refuses SQLite; migrations
+  0053-0055 upgrade AND downgrade cleanly on real Postgres; the Stripe webhook
+  verifies its signature and resolves the tenant from our own records, never the
+  payload; the single upload endpoint is role-gated, size-capped,
+  extension-allowlisted and passes uploads through prompt-injection
+  neutralisation and PII redaction before they are persisted or embedded; log
+  redaction covers passwords, tokens, API keys, emails and SSNs, and fails
+  closed.
+
+**Still open, and owner-owned** (carried from the 2026-08-15 audit; all three
+are non-code): a tested database restore drill, SPF/DKIM/DMARC records for the
+sending domain, and KAEOS's own Privacy Policy and Terms of Service. There is no
+public legal surface today - `/departments/legal/privacy` is the product's GDPR
+department, not KAEOS's own terms. These block a public launch; nothing in the
+codebase does.
+
+
 ### Changed - S6 final: the gate pipeline is one gate per function (2026-08-20)
 
 - **M2.2, the highest-risk item in the plan, done dead last as ordered.** The

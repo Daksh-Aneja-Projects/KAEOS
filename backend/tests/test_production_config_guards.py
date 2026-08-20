@@ -63,6 +63,18 @@ def test_the_demo_tenant_may_not_be_the_production_admin_tenant(tenant):
     assert any("ADMIN_TENANT" in p for p in _problems(ADMIN_TENANT=tenant))
 
 
+@pytest.mark.parametrize("origins", [["*"], ["https://app.kaeos.ai", "*"], [" * "]])
+def test_a_wildcard_cors_origin_is_refused(origins):
+    """The app mounts CORSMiddleware with allow_credentials=True. Starlette
+    reflects the caller's Origin back for a wildcard, so any site a logged-in
+    operator visits could read authenticated responses."""
+    assert any("CORS_ORIGINS" in p for p in _problems(CORS_ORIGINS=origins))
+
+
+def test_explicit_cors_origins_pass():
+    assert _problems(CORS_ORIGINS=["https://app.kaeos.ai"]) == []
+
+
 def test_sqlite_is_refused_in_a_production_environment():
     problems = _problems(ENVIRONMENT="production",
                          DATABASE_URL="sqlite+aiosqlite:///./kaeos.db")

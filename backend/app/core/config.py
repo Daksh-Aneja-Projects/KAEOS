@@ -352,6 +352,17 @@ class Settings(BaseSettings):
                 f"ADMIN_TENANT must name your real tenant, not the demo tenant "
                 f"'{_DEMO_TENANT}', when DEV_MODE is off - every seeder in the "
                 f"tree writes fixtures to that id.")
+        # A wildcard origin is only safe WITHOUT credentials, and the app mounts
+        # CORSMiddleware with allow_credentials=True. Starlette then reflects the
+        # caller's Origin back with Access-Control-Allow-Credentials: true, so any
+        # site a logged-in operator visits could read authenticated responses. The
+        # shipped default is explicit localhost origins; this stops a deploy from
+        # widening it to "*" by hand.
+        if any(o.strip() == "*" for o in self.CORS_ORIGINS):
+            problems.append(
+                "CORS_ORIGINS must list explicit origins, not '*', when DEV_MODE "
+                "is off - credentials are allowed, so a wildcard is reflected back "
+                "to any site the caller visits.")
         problems.extend(self.validate_production_database())
         return problems
 
