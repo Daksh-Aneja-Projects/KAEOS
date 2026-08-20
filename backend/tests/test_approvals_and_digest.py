@@ -137,6 +137,59 @@ async def test_reject_link_and_tampered_tokens(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_scoped_user_link_cannot_out_privilege_their_account(client, monkeypatch):
+    """Department-scope parity with the in-app approval path.
+
+    HITL notifications fan out tenant-wide, so a sales-scoped user receives
+    links for HR pauses too. In-app, check_department_scope would 403 them;
+    the emailed link must not out-privilege their own account.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from app.api.routes.approvals import approval_links
+    from app.core.database import AsyncSessionLocal
+    from app.models.auth import User, UserRole
+    from app.services.hitl_manager import hitl_manager
+
+    async def _no_redis():
+        return None
+    monkeypatch.setattr(hitl_manager, "_get_redis", _no_redis)
+    hitl_manager._memory = {}
+
+    sales_email = f"sales-{_uuid.uuid4().hex[:6]}@approvals.test"
+    org_email = f"org-{_uuid.uuid4().hex[:6]}@approvals.test"
+    async with AsyncSessionLocal() as db:
+        db.add(User(email=sales_email, display_name="Sales Approver",
+                    hashed_password="x", role=UserRole.ADMIN,
+                    tenant_id=TENANT, department="sales"))
+        db.add(User(email=org_email, display_name="Org-wide Approver",
+                    hashed_password="x", role=UserRole.ADMIN,
+                    tenant_id=TENANT, department=None))
+        await db.commit()
+
+    exec_id = "exec-approval-scope-1"
+    await hitl_manager.request_human_confirmation(
+        {"skill_id": "hr_offer_approval", "steps": [], "department": "hr"},
+        {"execution_id": exec_id, "tenant_id": TENANT})
+
+    # The sales-scoped user's link for an HR execution is refused...
+    links = approval_links(exec_id, TENANT, "http://test",
+                           recipient=sales_email, department="hr")
+    resp = await client.get(links["approve"].replace("http://test", ""))
+    assert resp.status_code == 400 and "scoped to 'sales'" in resp.text
+    status = await hitl_manager.get_hitl_status(exec_id, tenant_id=TENANT)
+    assert status["status"] == "PENDING"      # ...and the approval is untouched.
+
+    # An org-wide (unscoped) user's link decides it.
+    links = approval_links(exec_id, TENANT, "http://test",
+                           recipient=org_email, department="hr")
+    resp = await client.get(links["approve"].replace("http://test", ""))
+    assert resp.status_code == 200 and "Approved" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_expired_link_is_refused(client):
     """A token past its expiry cannot decide anything."""
     from datetime import datetime, timedelta, timezone

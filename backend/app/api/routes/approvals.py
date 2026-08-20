@@ -27,13 +27,17 @@ LINK_TTL_DAYS = 7
 
 
 def mint_approval_token(execution_id: str, tenant_id: str, approved: bool,
-                        approver: str = "email-approver") -> str:
+                        approver: str = "email-approver",
+                        department: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     return jwt.encode({
         "execution_id": execution_id,
         "tenant_id": tenant_id,
         "approved": approved,
         "approver": approver,
+        # The paused execution's department, so decide-time can apply the same
+        # department scoping the in-app approval path enforces.
+        "department": department,
         # Standard subject = the approving identity, so the audit trail and the
         # SOX four-eyes check see WHO decided, not a constant.
         "sub": approver,
@@ -44,7 +48,8 @@ def mint_approval_token(execution_id: str, tenant_id: str, approved: bool,
 
 
 def approval_links(execution_id: str, tenant_id: str, base_url: str,
-                   recipient: str | None = None) -> dict:
+                   recipient: str | None = None,
+                   department: str | None = None) -> dict:
     """One-click approve/reject links for ONE notification recipient.
 
     ``recipient`` is that human's real identity (their notification address /
@@ -63,9 +68,9 @@ def approval_links(execution_id: str, tenant_id: str, base_url: str,
     approver = recipient or "email-approver"
     return {
         "approve": f"{base}/api/v1/approvals/decide?token="
-                   f"{mint_approval_token(execution_id, tenant_id, True, approver)}",
+                   f"{mint_approval_token(execution_id, tenant_id, True, approver, department)}",
         "reject": f"{base}/api/v1/approvals/decide?token="
-                  f"{mint_approval_token(execution_id, tenant_id, False, approver)}",
+                  f"{mint_approval_token(execution_id, tenant_id, False, approver, department)}",
     }
 
 
@@ -101,6 +106,39 @@ async def decide(token: str):
     # Prefer the standard subject (the real recipient identity when the link was
     # minted per-recipient); fall back to the legacy claim, then the constant.
     approver = claims.get("sub") or claims.get("approver") or "email-approver"
+
+    # Department-scope parity with the in-app approval path (hitl.py /
+    # skills.py both run check_department_scope): a link whose subject maps to
+    # a department-scoped KAEOS user must not decide another department's
+    # execution — HITL notifications fan out tenant-wide, so without this the
+    # emailed link out-privileged the recipient's own account. Same semantics
+    # as check_department_scope: either side unscoped/unknown = allowed, so
+    # external approvers (no KAEOS account) keep working and legacy tokens
+    # (no department claim) are unaffected.
+    exec_department = claims.get("department")
+    if exec_department:
+        from sqlalchemy import select
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.auth import User
+        async with AsyncSessionLocal() as db:
+            user = (await db.execute(select(User).where(
+                User.email == approver, User.tenant_id == tenant_id,
+            ))).scalar_one_or_none()
+        user_scope = getattr(user, "department", None) if user else None
+        if user_scope and user_scope != exec_department:
+            await record_security_event(
+                tenant_id=tenant_id, event_type="HITL_DECISION", action="DENY",
+                actor=approver, actor_role="approver",
+                resource_type="hitl_execution", resource_id=execution_id,
+                details={"channel": "notification_link",
+                         "reason": "department_scope",
+                         "approver_scope": user_scope,
+                         "execution_department": exec_department})
+            return _page("Not permitted",
+                         f"Your account is scoped to '{user_scope}' and cannot "
+                         f"decide a '{exec_department}' item. Ask an approver "
+                         "for that department to decide it.", False)
 
     from app.services.hitl_manager import hitl_manager
     success = await hitl_manager.resolve_hitl(

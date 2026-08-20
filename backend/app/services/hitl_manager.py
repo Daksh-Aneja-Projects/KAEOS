@@ -244,7 +244,8 @@ class HITLManager:
             # 'email-approver' subject, which check_sox BLOCKS for financial
             # writes (fail-closed) - an anonymous link can never clear SoD.
             try:
-                return approval_links(exec_id, tenant_id, base, recipient=recipient)
+                return approval_links(exec_id, tenant_id, base, recipient=recipient,
+                                      department=skill.get("department"))
             except Exception:
                 logger.warning("HITL approval-link build failed for exec %s",
                                exec_id, exc_info=True)
