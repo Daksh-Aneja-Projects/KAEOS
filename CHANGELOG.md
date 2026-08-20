@@ -11,6 +11,38 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S6 wave 3: structure, hoisting, clarity (2026-08-20)
+
+- **The hr god router is 18 sub-routers behind a byte-identical surface
+  (M2.1 + M8.5).** 2121 lines became a 139-line assembler + one module per
+  sub-domain; the ordered 78-route list and the OpenAPI baseline are proven
+  identical (one published schema name pinned where a class move would have
+  renamed it). Route shadowing refuted for this router by regex cross-match.
+  Dashboard and metric-snapshot bodies pushed down into hr services.
+- **Core no longer imports services at top level, and the boundary is a
+  tripwire (M8.2).** The claimed 5-module cycle refuted: one top-level edge
+  existed (a 13-line DI shim in the wrong layer, now in app/api); an AST test
+  fails naming file:line on any new violation (proven red on a planted one).
+- **Hot-path in-function imports hoisted where the tripwire can see them
+  (M8.3).** 68 of 74 across runtime/skill-executor/hitl hoisted; the perf
+  premise refuted by measurement (~5 microseconds per governed run) - the real
+  win is that runtime.py's 42 dependencies are now visible to the layering
+  gate; 3 kept lazy with named reasons.
+- **Seeders log through logging (M2.5); the core-seed split refuted with an
+  executable proof (M2.3).** 62 prints replaced; an AST tripwire keeps them
+  out. Splitting core/seed.py breaks the NOW module-global contract two test
+  files depend on - pinned as a test, prerequisite recorded.
+- **Ten long functions that hid real seams, extracted (M2.4).** Map: 104
+  functions >= 80 lines (plan said 112). Ten fixed favoring pure helpers;
+  seven refuted by name as honest narratives; four tests added where a fixed
+  branch had no cover, including a documented risk-signal guard that had never
+  actually run.
+- **A keystroke no longer re-renders the route tree; one theme-token source
+  (M7.3 + M7.14).** Global search and the notification bell own their state in
+  src/components/shell/; ThemeProvider writes the 16 genuinely duplicated
+  tokens as CSS vars (the migrate-rules half refuted - rules already used
+  var()), fixing token utilities that were pinned to dark hexes in light mode.
+
 ### Changed - S6: test speed, layering, consistency, frontend hardening (2026-08-20)
 
 - **The unit suite runs in 4:15, down from 15:41 (M9.4).** The schema is built
