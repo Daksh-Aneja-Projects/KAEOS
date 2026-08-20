@@ -11,6 +11,47 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S6: test speed, layering, consistency, frontend hardening (2026-08-20)
+
+- **The unit suite runs in 4:15, down from 15:41 (M9.4).** The schema is built
+  once per pytest worker instead of created and dropped on both engines around
+  every test (four DDL passes over 256 tables each); isolation is a per-test
+  DELETE sweep in reverse FK order. The two-engine design is untouched. Also
+  fixes the known-flaky actuation approval test (the resume takes ~3s; a sparse
+  bounded poll replaces the 0.3s sleep - sparse because a tight poll measurably
+  starves the resume of the shared StaticPool connection).
+- **The realtime broadcast bus is a service (M8.1).** ConnectionManager and the
+  Redis fan-out moved verbatim to app/services/realtime.py; core, agents and
+  services no longer import upward into a route module, pinned by an AST +
+  sys.modules layering test.
+- **One department alias map (M8.4).** The 'eight hardcoded rosters' claim was
+  refuted by a full scan; the real drift was three partial copies of the
+  Skill.department normalization map whose identity fallbacks leaked phantom
+  slugs ('it ops', 'platform') into the ROI dashboard and wargame. One map now;
+  the deliberately-different lookalikes (signal canon, mission ordering) are
+  labeled and pinned as refutations so a future consolidation fails loudly.
+- **Demo fixtures never load in production; dead SkillRouter deleted (M8.6,
+  M8.7).** main.py imports the demo seed module only inside the SEED_DEMO_DATA
+  branch (pinned by a subprocess test); SkillRouter had zero callers - the
+  class, its test-of-dead-code and the dashboard's always-zero RAG_EXEC count
+  are gone (rag_fallback_rate stays in the response for the frontend).
+- **One execution-status vocabulary; the north star declared once (M2.6).**
+  StrEnum for status/outcome_type and agent_state, values pinned to the DB
+  strings; four private constant sets converged to zero. The live divergence
+  was the autonomy governor counting a status value the column cannot hold
+  (looser than the metric it governs); five safe-autonomy consumers now read
+  one SAFE_AUTONOMOUS_STATUSES set, tripwired by identity. Two real behavior
+  defects found were deliberately NOT folded in (a debate-escalated mission
+  step shows FAILED; the workforce headline tile uses an all-time window) -
+  spawned as separate tasks.
+- **Frontend (M7.10, 7.11, 7.13, 7.15, 7.16).** Theme toggle no longer remounts
+  the whole page (ThemeAdapter renders one root element in both modes);
+  CountUp animates via rAF + textContent (zero re-renders per frame);
+  rules-of-hooks and static-components are back at error and caught two real
+  shipped bugs (Sparkline's conditional useState, SkillContractViewer's
+  in-render component); http.ts got its first 16 tests, an LRU-bounded SWR
+  cache, and the admin secret is no longer stored in cache keys.
+
 ### Changed - S5 scale and replicas (2026-08-20)
 
 - **The gate pipeline no longer holds a pooled DB connection (M6.1, the top
