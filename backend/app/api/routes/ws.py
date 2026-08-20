@@ -14,6 +14,9 @@ router = APIRouter(prefix="/ws", tags=["WebSockets"])
 # reach a browser whose socket lives on worker B.
 _WS_CHANNEL = "kaeos:ws:broadcast"
 
+# Per-socket send budget for local fan-out. Module-level so tests can shrink it.
+_SEND_TIMEOUT_S = 5.0
+
 
 def _extract_ws_token(sec_protocol_header: str, query_token: str | None):
     """Pull the bearer token from the Sec-WebSocket-Protocol header if the client
@@ -82,38 +85,49 @@ class ConnectionManager:
             return False
 
     async def _deliver_local_tenant(self, tenant_id: str, message: Dict[str, Any]) -> int:
-        """Send to THIS worker's sockets for a tenant. Returns recipients."""
-        sent = 0
-        dead = []
-        for conn in self.active_connections.get(tenant_id, []):
+        """Send to THIS worker's sockets for a tenant, concurrently. Returns recipients."""
+        conns = list(self.active_connections.get(tenant_id, []))
+
+        async def _send_one(conn):
             try:
                 # Bounded send: a client that is connected but stalled (TCP
                 # backpressure, no exception) would otherwise block the single
                 # subscriber loop and head-of-line-block delivery to everyone
                 # else. Time it out and drop it.
-                await asyncio.wait_for(conn.send_json(message), timeout=5.0)
-                sent += 1
+                await asyncio.wait_for(conn.send_json(message), timeout=_SEND_TIMEOUT_S)
+                return None
             except Exception:
-                # Gone away or stalled past the timeout; queue for removal and
-                # keep fanning out to the rest.
-                dead.append(conn)
+                # Gone away or stalled past the timeout; report for removal and
+                # let the rest of the fan-out finish.
+                return conn
+
+        # Fan out concurrently: sends overlap, so N stalled clients cost ONE
+        # timeout in total rather than N x timeout serially (10 stalled tabs
+        # used to stall the subscriber loop, and therefore every other socket
+        # on this worker, for 50s per message).
+        results = await asyncio.gather(*(_send_one(c) for c in conns))
+        dead = [c for c in results if c is not None]
         # Clean dead connections. Mutate the actual tracked list (not a fresh
         # default) and guard membership — under concurrency a connection may
         # already be gone, and .remove() on a missing item raises ValueError.
-        conns = self.active_connections.get(tenant_id)
-        if conns is not None:
+        tracked = self.active_connections.get(tenant_id)
+        if tracked is not None:
             for c in dead:
-                if c in conns:
-                    conns.remove(c)
-            if not conns:
+                if c in tracked:
+                    tracked.remove(c)
+            if not tracked:
                 self.active_connections.pop(tenant_id, None)
-        return sent
+        return len(conns) - len(dead)
 
     async def _deliver_local_all(self, message: Dict[str, Any]) -> int:
-        total = 0
-        for tenant_id in list(self.active_connections.keys()):
-            total += await self._deliver_local_tenant(tenant_id, message)
-        return total
+        # Tenants fan out concurrently too: a system-wide broadcast used to pay
+        # each tenant's worst case in sequence (T x one send timeout), and each
+        # per-tenant call only ever mutates its own key, so gathering is safe.
+        counts = await asyncio.gather(*(
+            self._deliver_local_tenant(t, message)
+            for t in list(self.active_connections.keys())
+        ))
+        return sum(counts)
 
     async def broadcast_to_tenant(self, tenant_id: str, message: Dict[str, Any]) -> int:
         """Broadcast to all connections for a tenant across ALL workers.
