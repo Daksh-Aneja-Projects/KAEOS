@@ -99,14 +99,22 @@ npm audit 0, no secrets in the shipped bundle.
 - **validate_production_security is finally tested.** The boot-time gate between
   a careless deploy and an open one had no coverage at all, so every control in
   it was one careless edit from silently returning [] forever.
-- **An authorization ratchet, because OpenAPI cannot see one.** Dependencies are
-  not part of the schema, so a router refactor can drop a role gate while the
-  published surface stays byte-identical - which is exactly the shape of M2.1's
-  78-route HR split (it passes: 0 ungated HR mutating routes). All 314 mutating
-  routes are now checked; the 18 with no role dependency are allowlisted one by
-  one with the authenticator that replaces it, a second test fails if an entry
-  goes stale, and a positive control blinds both detection signals to prove the
-  check can fail.
+- **Authorization coverage re-verified; the audit's own finding REFUTED.** The
+  audit flagged "no ratchet on authorization gates" and added one. That was
+  wrong: `tests/test_default_deny.py` has enforced default-deny over every
+  mutating route all along, through the dual-layout walker in
+  `tests/route_introspection.py`, with a reviewed per-route allowlist and its own
+  anti-vacuity guard. The duplicate was deleted. It also failed on CI in a way
+  worth recording: written against the local FastAPI 0.115, it walked `app.routes`
+  directly and saw 2 routes instead of 314 on CI's pinned 0.140, where
+  `include_router` stores lazy `_IncludedRouter` proxies - the exact trap
+  `route_introspection.py` exists to absorb, and the second time it has been hit.
+  Its positive control is what caught the blindness. What survives is the
+  verification: M2.1's 78-route HR split left 0 ungated HR mutating routes, and
+  each of the 15 allowlisted paths was independently re-read and does carry
+  another authenticator (HMAC body signature, Stripe signature,
+  verify_admin_secret in the handler, a signed SAML assertion, or
+  get_current_user on the caller's own account).
 - Verified unchanged and holding: RLS refuses to serve when policies are absent
   or the app connects as the table owner; production refuses SQLite; migrations
   0053-0055 upgrade AND downgrade cleanly on real Postgres; the Stripe webhook
