@@ -31,7 +31,6 @@ class DecayAlert(BaseModel):
 class AgentMetrics(BaseModel):
     total_executions_7d: int
     success_rate: float
-    rag_fallback_rate: float
     human_overrides: int
     avg_duration_ms: int
     skills_used: int

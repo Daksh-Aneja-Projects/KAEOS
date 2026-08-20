@@ -132,14 +132,6 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
     )
     success_count = success_7d.scalar() or 0
 
-    # No execution path writes route_type="RAG_EXEC": the only producer was
-    # SkillRouter, which was never reachable from the app and has been removed.
-    # The COUNT that used to run here could therefore only ever return 0, so it
-    # is not worth a round-trip. rag_fallback_rate stays in the response because
-    # the frontend renders it (CommandCenter, EvolutionTimeline). If a RAG route
-    # is ever wired, restore the COUNT over route_type == "RAG_EXEC" here.
-    rag_count = 0
-
     override_7d = await db.execute(
         select(sqlfunc.count(SkillExecution.id)).where(
             SkillExecution.tenant_id == tenant_id,
@@ -168,7 +160,6 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
     agent_metrics = AgentMetrics(
         total_executions_7d=total_7d,
         success_rate=round(success_count / max(total_7d, 1), 3),
-        rag_fallback_rate=round(rag_count / max(total_7d, 1), 3),
         human_overrides=override_count,
         avg_duration_ms=avg_duration,
         skills_used=skills_used,

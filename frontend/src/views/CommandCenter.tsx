@@ -209,7 +209,7 @@ const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }
               <div className="space-y-2">
                 {[
                   { label: 'Executions (7d)', val: health.agent_metrics.total_executions_7d?.toLocaleString() },
-                  { label: 'RAG Fallback', val: `${Math.round((health.agent_metrics.rag_fallback_rate || 0) * 100)}%` },
+                  { label: 'Skills Used', val: health.agent_metrics.skills_used ?? 0 },
                   { label: 'Human Overrides', val: health.agent_metrics.human_overrides },
                   { label: 'Avg Duration', val: `${health.agent_metrics.avg_duration_ms || 0}ms` },
                 ].map(r => (

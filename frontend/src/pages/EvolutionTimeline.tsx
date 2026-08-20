@@ -116,7 +116,7 @@ export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?:
               id: 'exec-evolution',
               type: 'confidence_update',
               title: `${am.total_executions_7d} executions this week`,
-              description: `Success rate: ${(am.success_rate * 100).toFixed(1)}%. RAG fallback: ${(am.rag_fallback_rate * 100).toFixed(1)}%. Human overrides: ${am.human_overrides}.`,
+              description: `Success rate: ${(am.success_rate * 100).toFixed(1)}%. Human overrides: ${am.human_overrides}.`,
               delta: am.success_rate - 0.9,
               timestamp: now.toISOString(),
             });

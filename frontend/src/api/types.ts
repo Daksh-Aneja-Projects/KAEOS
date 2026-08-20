@@ -47,7 +47,6 @@ export interface DecayAlert {
 export interface AgentMetrics {
   total_executions_7d: number;
   success_rate: number;
-  rag_fallback_rate: number;
   human_overrides: number;
   avg_duration_ms: number;
   skills_used: number;
