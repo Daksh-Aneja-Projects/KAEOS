@@ -20,6 +20,7 @@ Called at the end of the Operations seeder (the data lives in ops_ tables), and
 also runnable standalone: python -m app.procurement.seed
 """
 import asyncio
+import logging
 from datetime import date, timedelta
 
 
@@ -29,6 +30,8 @@ from app.operations.models.procurement import (
     GoodsReceipt, POLineItem, ProcurementStatus, PurchaseOrder, PurchaseRequest,
 )
 from app.operations.models.vendors import VendorContract
+
+logger = logging.getLogger(__name__)
 
 
 # Sentinel for "has this seeder already run for this tenant". Operations' own
@@ -132,10 +135,10 @@ async def seed_tenant(db, tenant: str) -> bool:
     db.add_all(receipts)
 
     await db.commit()
-    print("[SUCCESS] Seeded Procurement database:")
-    print(f"   - {len(vendors)} vendors (1 sanctions-flag demo), {len(reqs)} requisitions, "
-          f"{len([po1, po2, po3, po4])} purchase orders, {len(receipts)} goods receipts "
-          f"(1 match, 1 short, 1 damaged)")
+    logger.info("[SUCCESS] Seeded Procurement database:")
+    logger.info(f"   - {len(vendors)} vendors (1 sanctions-flag demo), {len(reqs)} requisitions, "
+                f"{len([po1, po2, po3, po4])} purchase orders, {len(receipts)} goods receipts "
+                f"(1 match, 1 short, 1 damaged)")
     return True
 
 

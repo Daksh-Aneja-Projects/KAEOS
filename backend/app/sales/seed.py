@@ -3,6 +3,7 @@ KAEOS Sales Domain — Database Seed Script
 Seeds the Sales tables with realistic pipelines, reps, quota plans, and forecast targets.
 """
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 
 
@@ -16,6 +17,8 @@ from app.sales.models.leads import Lead, LeadScore, LeadSource
 from app.sales.models.accounts import Account, Contact, AccountActivity
 from app.sales.models.forecasting import SalesForecast, ForecastLine
 from app.sales.models.commission import CommissionPlan, CommissionCalculation
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_tenant(db, tenant: str) -> bool:
@@ -172,13 +175,13 @@ async def seed_tenant(db, tenant: str) -> bool:
         db.add(cc)
 
     await db.commit()
-    print(f"[SUCCESS] Seeded Sales database for {tenant}:")
-    print(f"   - {len(teams)} teams, {len(reps)} reps")
-    print(f"   - {len(accounts)} customer accounts, {len(contacts)} contacts")
-    print(f"   - {len(opps)} opportunities across every funnel stage (incl. closed won/lost)")
-    print(f"   - {len(leads)} inbound leads")
-    print(f"   - {len(scores)} lead score indexes")
-    print(f"   - {len(plans)} commission plans, {len(calcs)} commission calculations")
+    logger.info(f"[SUCCESS] Seeded Sales database for {tenant}:")
+    logger.info(f"   - {len(teams)} teams, {len(reps)} reps")
+    logger.info(f"   - {len(accounts)} customer accounts, {len(contacts)} contacts")
+    logger.info(f"   - {len(opps)} opportunities across every funnel stage (incl. closed won/lost)")
+    logger.info(f"   - {len(leads)} inbound leads")
+    logger.info(f"   - {len(scores)} lead score indexes")
+    logger.info(f"   - {len(plans)} commission plans, {len(calcs)} commission calculations")
     return True
 
 

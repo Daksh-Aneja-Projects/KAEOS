@@ -4,6 +4,7 @@ Seeds the Legal tables with realistic corporate agreements, SOX/GDPR regulations
 lawsuits, patents, and DSAR logs.
 """
 import asyncio
+import logging
 from datetime import date, timedelta
 
 
@@ -17,6 +18,8 @@ from app.legal.models.compliance import RegulatoryRequirement, ComplianceObligat
 from app.legal.models.litigation import Case, CaseEvent, CourtFiling, CaseStage
 from app.legal.models.ip import Patent, Trademark, TradeSecret, IPStatus
 from app.legal.models.privacy import DataSubjectRequest, PrivacyImpactAssessment, DataProcessingRecord, DsarType, DsarStatus
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_tenant(db, tenant: str) -> bool:
@@ -179,14 +182,14 @@ async def seed_tenant(db, tenant: str) -> bool:
         db.add(r)
 
     await db.commit()
-    print("[SUCCESS] Seeded Legal database:")
-    print(f"   - {len(lawyers)} legal staff")
-    print(f"   - {len(matters)} general matters")
-    print(f"   - {len(contracts)} contracts, {len(clauses)} clause mappings")
-    print(f"   - {len(obligations)} compliance obligations, {len(assessments)} compliance assessments")
-    print(f"   - {len(cases)} litigation files, {len(case_events)} events, {len(filings)} filings")
-    print(f"   - {len(patents)} patents, {len(trademarks)} trademarks, {len(secrets)} trade secrets")
-    print(f"   - {len(dsars)} privacy requests, {len(pias)} PIAs, {len(ropa_records)} ROPA records")
+    logger.info("[SUCCESS] Seeded Legal database:")
+    logger.info(f"   - {len(lawyers)} legal staff")
+    logger.info(f"   - {len(matters)} general matters")
+    logger.info(f"   - {len(contracts)} contracts, {len(clauses)} clause mappings")
+    logger.info(f"   - {len(obligations)} compliance obligations, {len(assessments)} compliance assessments")
+    logger.info(f"   - {len(cases)} litigation files, {len(case_events)} events, {len(filings)} filings")
+    logger.info(f"   - {len(patents)} patents, {len(trademarks)} trademarks, {len(secrets)} trade secrets")
+    logger.info(f"   - {len(dsars)} privacy requests, {len(pias)} PIAs, {len(ropa_records)} ROPA records")
     return True
 
 

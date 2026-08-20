@@ -7,6 +7,7 @@ including one incident deliberately correlated with a recent deploy so the
 incident agent has a real signal to find.
 """
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -24,6 +25,8 @@ from app.engineering.models.incidents import (
 from app.engineering.models.ops import (
     OnCallRole, OnCallRotation, PipelineRun, PipelineStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _now():
@@ -277,9 +280,9 @@ async def seed_tenant(db, tenant: str) -> bool:
     db.add_all(pipeline_runs)
 
     await db.commit()
-    print(f"[EngineeringSeed] {len(services)} services, {len(engineers)} engineers, "
-          f"{len(prs)} PRs, {len(deploys)} deployments, {len(incidents)} incidents seeded, "
-          f"{len(rotations)} on-call rotations, {len(pipeline_runs)} pipeline runs.")
+    logger.info(f"[EngineeringSeed] {len(services)} services, {len(engineers)} engineers, "
+                f"{len(prs)} PRs, {len(deploys)} deployments, {len(incidents)} incidents seeded, "
+                f"{len(rotations)} on-call rotations, {len(pipeline_runs)} pipeline runs.")
     return True
 
 

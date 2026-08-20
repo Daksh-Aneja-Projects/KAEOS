@@ -4,6 +4,7 @@ Seeds the HR tables with realistic sample data so the frontend renders live data
 Run with: python -m app.hr.seed
 """
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import random
@@ -24,6 +25,8 @@ from app.hr.models.workforce_planning import HeadcountPlan, PlanStatus
 from app.hr.models.payroll import PayrollRun, Payslip, PayrollRunStatus
 from app.hr.models.compliance import ComplianceReport, ComplianceViolation, ComplianceFramework
 from app.hr.models.analytics import HRMetricSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 FIRST_NAMES = ["Priya", "Arjun", "Maya", "Liam", "Sofia", "Ethan", "Zara", "Noah", "Aisha", "James",
@@ -498,25 +501,25 @@ async def seed_tenant(db, tenant: str) -> bool:
             ))
 
     await db.commit()
-    print("[SUCCESS] Seeded HR database:")
-    print(f"   - {len(employees)} employees")
-    print(f"   - {len(requisitions)} job requisitions")
-    print(f"   - {len(cand_names)} candidates")
-    print("   - 12 time-off requests")
-    print("   - 14 performance reviews")
-    print("   - 1 review cycle")
-    print(f"   - {len(benefit_plans_data)} benefit plans + enrollments")
-    print(f"   - {len(employees)} compensation records")
-    print(f"   - {len(onboarding_emps)} onboarding + {len(offboarding_emps)} offboarding plans")
-    print(f"   - {len(courses_data)} courses + enrollments")
-    print(f"   - {len(er_case_data)} ER cases")
-    print(f"   - {len(headcount_plan_data)} headcount plans")
-    print(f"   - {len(payroll_runs)} payroll runs + payslips")
-    print("   - 3 compliance reports + 1 violation")
-    print("   - 8 HR metric snapshots")
-    print("   - 8 interviews")
-    print(f"   - {len(employees) * len(DOC_TEMPLATES)} employee documents")
-    print(f"   - {len(employees) * 3} timesheets")
+    logger.info("[SUCCESS] Seeded HR database:")
+    logger.info(f"   - {len(employees)} employees")
+    logger.info(f"   - {len(requisitions)} job requisitions")
+    logger.info(f"   - {len(cand_names)} candidates")
+    logger.info("   - 12 time-off requests")
+    logger.info("   - 14 performance reviews")
+    logger.info("   - 1 review cycle")
+    logger.info(f"   - {len(benefit_plans_data)} benefit plans + enrollments")
+    logger.info(f"   - {len(employees)} compensation records")
+    logger.info(f"   - {len(onboarding_emps)} onboarding + {len(offboarding_emps)} offboarding plans")
+    logger.info(f"   - {len(courses_data)} courses + enrollments")
+    logger.info(f"   - {len(er_case_data)} ER cases")
+    logger.info(f"   - {len(headcount_plan_data)} headcount plans")
+    logger.info(f"   - {len(payroll_runs)} payroll runs + payslips")
+    logger.info("   - 3 compliance reports + 1 violation")
+    logger.info("   - 8 HR metric snapshots")
+    logger.info("   - 8 interviews")
+    logger.info(f"   - {len(employees) * len(DOC_TEMPLATES)} employee documents")
+    logger.info(f"   - {len(employees) * 3} timesheets")
     return True
 
 

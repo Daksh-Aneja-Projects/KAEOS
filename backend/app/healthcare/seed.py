@@ -10,6 +10,7 @@ and clinical tasks across the coding / prior-auth / referral workflow.
 Pseudonymous patient refs only - NO real protected health information.
 """
 import asyncio
+import logging
 from datetime import datetime, timezone, timedelta
 
 
@@ -19,6 +20,8 @@ from app.healthcare.models.compliance import ComplianceReport
 from app.healthcare.models.core import (
     ClinicalTask, ConsentRecord, PatientEncounter, PHIDisclosure,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _ago(days=0, hours=0) -> datetime:
@@ -193,9 +196,9 @@ async def seed_tenant(db, tenant: str) -> bool:
     db.add(report)
 
     await db.commit()
-    print("[SUCCESS] Seeded Healthcare database:")
-    print(f"   - {len(encounters)} encounters, {len(disclosures)} PHI disclosures, "
-          f"{len(consents)} consents, {len(tasks)} clinical tasks, 1 compliance report")
+    logger.info("[SUCCESS] Seeded Healthcare database:")
+    logger.info(f"   - {len(encounters)} encounters, {len(disclosures)} PHI disclosures, "
+                f"{len(consents)} consents, {len(tasks)} clinical tasks, 1 compliance report")
     return True
 
 

@@ -14,6 +14,7 @@ Protected-class attributes are stored ONLY for fair-lending analysis, never as a
 credit input - the decision below uses score / DTI / income / amount only.
 """
 import asyncio
+import logging
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 
@@ -29,6 +30,8 @@ from app.lending.models.servicing import (CollectionCase, CollectionCaseStatus,
                                           ServicedLoan, ServicingStatus)
 from app.lending.services.servicing import (build_amortization_schedule,
                                             delinquency_bucket)
+
+logger = logging.getLogger(__name__)
 
 
 def _ago(days):
@@ -234,8 +237,8 @@ async def _seed_servicing(db, tenant):
         last_contact_at=_ago(4), opened_at=_ago(65),
     ))
 
-    print(f"   - {len(loans_by_number)} serviced loans, 2 collection cases "
-          f"(FDCPA-governed contact log)")
+    logger.info(f"   - {len(loans_by_number)} serviced loans, 2 collection cases "
+                f"(FDCPA-governed contact log)")
 
 
 async def seed_tenant(db, tenant: str) -> bool:
@@ -316,10 +319,10 @@ async def seed_tenant(db, tenant: str) -> bool:
     await _seed_servicing(db, tenant)
 
     await db.commit()
-    print("[SUCCESS] Seeded Lending database:")
-    print(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
-          f"{pending} in intake), {len(_POLICIES)} credit policies, "
-          f"{denials} adverse-action notices")
+    logger.info("[SUCCESS] Seeded Lending database:")
+    logger.info(f"   - {len(_APPS)} applications ({approvals} approved, {denials} denied, "
+                f"{pending} in intake), {len(_POLICIES)} credit policies, "
+                f"{denials} adverse-action notices")
     return True
 
 

@@ -4,6 +4,7 @@ Seeds the Operations tables with projects, team allocations, purchase requests,
 facility work orders, and quality standards.
 """
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 
 
@@ -18,6 +19,8 @@ from app.operations.models.vendors import VendorContract, VendorPerformance
 from app.operations.models.procurement import PurchaseRequest, PurchaseOrder, POLineItem, GoodsReceipt, ProcurementStatus
 from app.operations.models.quality import QualityStandard, Inspection, NonConformance, QualityStatus
 from app.operations.models.facilities import WorkOrder
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_tenant(db, tenant: str) -> bool:
@@ -207,12 +210,12 @@ async def seed_tenant(db, tenant: str) -> bool:
         db.add(wo)
 
     await db.commit()
-    print(f"[SUCCESS] Seeded Operations database for {tenant}:")
-    print(f"   - {len(ops_staff)} ops staff")
-    print(f"   - {len(projects)} projects, {len(tasks)} tasks, {len(task_deps)} task dependencies")
-    print(f"   - {len(requests)} purchase requests")
-    print(f"   - {len(inspections)} inspections, {len(standards)} standards")
-    print(f"   - {len(work_orders)} facility work orders")
+    logger.info(f"[SUCCESS] Seeded Operations database for {tenant}:")
+    logger.info(f"   - {len(ops_staff)} ops staff")
+    logger.info(f"   - {len(projects)} projects, {len(tasks)} tasks, {len(task_deps)} task dependencies")
+    logger.info(f"   - {len(requests)} purchase requests")
+    logger.info(f"   - {len(inspections)} inspections, {len(standards)} standards")
+    logger.info(f"   - {len(work_orders)} facility work orders")
     return True
 
 

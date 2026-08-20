@@ -7,6 +7,7 @@ conversation threads, CSAT/NPS/feedback rows, a real escalation event, and
 both published and draft knowledge base articles.
 """
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 
 
@@ -20,6 +21,8 @@ from app.support.models.sla import SLAPolicy, SLAMetric
 from app.support.models.knowledge import ArticleFeedback, KBArticle, KBCategory
 from app.support.models.feedback import CustomerSatisfaction, FeedbackTheme, NPS_Survey
 from app.support.models.escalation import EscalationEvent, EscalationRule
+
+logger = logging.getLogger(__name__)
 
 
 # Real customers seeded by app.finance.seed (Customer.customer_code) - reused
@@ -347,13 +350,13 @@ async def seed_tenant(db, tenant: str) -> bool:
     db.add(escalation)
 
     await db.commit()
-    print("[SUCCESS] Seeded Support database:")
-    print(f"   - {len(teams)} support teams, {len(agents)} agents, {len(channels)} channels")
-    print(f"   - {len(tickets)} tickets, {len(tags)} tags, {len(comments)} comments")
-    print(f"   - {len(policies)} SLA policies")
-    print(f"   - {len(articles)} KB articles ({sum(1 for a in articles if a.is_published)} published), {len(feedback_rows)} article feedback rows")
-    print(f"   - {len(csats)} CSAT surveys, {len(nps_rows)} NPS surveys, {len(themes)} feedback themes")
-    print(f"   - {len(rules)} escalation rules, 1 escalation event")
+    logger.info("[SUCCESS] Seeded Support database:")
+    logger.info(f"   - {len(teams)} support teams, {len(agents)} agents, {len(channels)} channels")
+    logger.info(f"   - {len(tickets)} tickets, {len(tags)} tags, {len(comments)} comments")
+    logger.info(f"   - {len(policies)} SLA policies")
+    logger.info(f"   - {len(articles)} KB articles ({sum(1 for a in articles if a.is_published)} published), {len(feedback_rows)} article feedback rows")
+    logger.info(f"   - {len(csats)} CSAT surveys, {len(nps_rows)} NPS surveys, {len(themes)} feedback themes")
+    logger.info(f"   - {len(rules)} escalation rules, 1 escalation event")
     return True
 
 

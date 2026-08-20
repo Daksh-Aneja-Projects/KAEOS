@@ -13,6 +13,7 @@ balance derives the exact same figures it cross-checks against the cache and
 balance_cache_drift is empty by construction on a fresh tenant.
 """
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -55,6 +56,8 @@ from app.operations.models.procurement import (
 from app.finance.services.three_way_match import evaluate_three_way_match
 from app.finance.services.gl import post_journal_entry
 from app.finance.services.payments import accrue_invoice, record_vendor_payment
+
+logger = logging.getLogger(__name__)
 
 
 CONTROLLER = "maria.chen@acme.com"      # approves invoices, closes periods
@@ -502,13 +505,13 @@ async def seed_tenant(db, tenant: str) -> bool:
     db.add_all(audit_trail)
 
     await db.commit()
-    print(f"[SUCCESS] Seeded Finance database for {tenant}:")
-    print(f"   - {len(gl_accounts)} GL accounts, ledger-backed via posted journal entries")
-    print(f"   - {len(vendors)} vendors, {len(invoices)} bills, 1 governed payment ({payment.payment_number})")
-    print(f"   - {len(customers)} customers, {len(customer_invoices)} customer invoices, 1 receipt")
-    print(f"   - {len(tax_rules)} tax rules, {len(fx_rates)} FX rates, 3 closed fiscal periods")
-    print(f"   - {len(controls)} SOX controls, {len(control_tests)} control tests, {len(findings)} audit findings")
-    print(f"   - {len(rules)} compliance rules, {len(audit_trail)} audit trail events")
+    logger.info(f"[SUCCESS] Seeded Finance database for {tenant}:")
+    logger.info(f"   - {len(gl_accounts)} GL accounts, ledger-backed via posted journal entries")
+    logger.info(f"   - {len(vendors)} vendors, {len(invoices)} bills, 1 governed payment ({payment.payment_number})")
+    logger.info(f"   - {len(customers)} customers, {len(customer_invoices)} customer invoices, 1 receipt")
+    logger.info(f"   - {len(tax_rules)} tax rules, {len(fx_rates)} FX rates, 3 closed fiscal periods")
+    logger.info(f"   - {len(controls)} SOX controls, {len(control_tests)} control tests, {len(findings)} audit findings")
+    logger.info(f"   - {len(rules)} compliance rules, {len(audit_trail)} audit trail events")
     return True
 
 
