@@ -353,10 +353,13 @@ class SkillExecution(Base):
     skill_id_name = Column(String, index=True)
     tenant_id = Column(String, nullable=False, index=True)
 
-    # Execution metadata
-    status = Column(String(32))   # SUCCESS_CLEAN, FAILED_RULE_MISMATCH, HUMAN_OVERRIDDEN, etc.
-    route_type = Column(String(16))  # SKILL_EXEC, RAG_EXEC
-    agent_state = Column(String(32), default="IDLE")
+    # Execution metadata. status/outcome_type share the ExecutionStatus
+    # vocabulary and agent_state uses AgentState - both declared once in
+    # app/models/execution_status.py. Kept as String (not SQLAlchemy Enum) so
+    # adding a member needs no migration; the enum is the writers' contract.
+    status = Column(String(32))   # ExecutionStatus
+    route_type = Column(String(16))  # SKILL_EXEC, RAG_EXEC, GATED_AGENT
+    agent_state = Column(String(32), default="IDLE")  # AgentState
 
     # Context
     task_intent = Column(Text)
@@ -374,7 +377,7 @@ class SkillExecution(Base):
     hitl_approver = Column(String, nullable=True)
 
     # Outcome
-    outcome_type = Column(String(32))  # SUCCESS_CLEAN, SUCCESS_WITH_EDIT, HUMAN_OVERRIDDEN, etc.
+    outcome_type = Column(String(32))  # ExecutionStatus (SUCCESS_WITH_EDIT lives here)
     confidence_delta = Column(Float, default=0.0)
 
     skill = relationship("Skill", back_populates="executions")

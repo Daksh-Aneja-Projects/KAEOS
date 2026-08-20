@@ -6,12 +6,17 @@ The north-star metric, computed from REAL logged executions (never seeded):
 
 "Autonomously" = the confidence/HITL gate did not route it to a human
 (``hitl_required == False``). "Cleanly" = it succeeded without a human override,
-edit, or failure (``status == "SUCCESS_CLEAN"``). An action that needed a human,
-was overridden, was edited, or failed does NOT count toward safe autonomy - and
-the breakdown says exactly which of those it was, so the number is explainable,
-not just asserted.
+edit, or failure (``status`` in ``SAFE_AUTONOMOUS_STATUSES``). An action that
+needed a human, was overridden, was edited, or failed does NOT count toward safe
+autonomy - and the breakdown says exactly which of those it was, so the number is
+explainable, not just asserted.
 
 Everything here is derived from the ``skill_executions`` table at query time.
+
+This module owns the SQL form of the north star; the set it counts is declared
+once in ``app.models.execution_status``. Every other consumer (the operator
+console's blended rate, /billing/roi, the Time Machine, the autonomy governor,
+the workforce dashboard tile) reads that same set - do not re-derive it.
 """
 from __future__ import annotations
 
@@ -22,11 +27,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SkillExecution
-
-# Fallout reasons: why an execution did NOT count as safe-autonomous.
-_STATUS_CLEAN = "SUCCESS_CLEAN"
-_STATUS_OVERRIDDEN = "HUMAN_OVERRIDDEN"
-_OUTCOME_EDIT = "SUCCESS_WITH_EDIT"
+from app.models.execution_status import SAFE_AUTONOMOUS_STATUSES, ExecutionStatus
 
 
 def _rate(numerator: int, denominator: int) -> Optional[float]:
@@ -34,13 +35,24 @@ def _rate(numerator: int, denominator: int) -> Optional[float]:
 
 
 def _classify_counts():
-    """SQL count expressions shared by the overall and per-skill rollups."""
-    autonomous_safe = func.count(case(
-        ((SkillExecution.hitl_required.is_(False)) & (SkillExecution.status == _STATUS_CLEAN), 1)
+    """SQL count expressions shared by the overall and per-skill rollups.
+
+    The SQL mirror of ``app.models.execution_status.is_safe_autonomous``. Both
+    read ``SAFE_AUTONOMOUS_STATUSES``, so the metric cannot drift between its
+    Python and SQL forms.
+    """
+    autonomous_safe = func.count(case((
+        (SkillExecution.hitl_required.is_(False))
+        & (SkillExecution.status.in_(SAFE_AUTONOMOUS_STATUSES)), 1)
     ))
     routed_to_human = func.count(case((SkillExecution.hitl_required.is_(True), 1)))
-    overridden = func.count(case((SkillExecution.status == _STATUS_OVERRIDDEN, 1)))
-    edited = func.count(case((SkillExecution.outcome_type == _OUTCOME_EDIT, 1)))
+    overridden = func.count(case(
+        (SkillExecution.status == ExecutionStatus.HUMAN_OVERRIDDEN, 1)))
+    edited = func.count(case(
+        (SkillExecution.outcome_type == ExecutionStatus.SUCCESS_WITH_EDIT, 1)))
+    # LIKE, not IN(FAILED_STATUSES): every member of that set is FAILED-prefixed
+    # (asserted in tests/test_s6_execution_status.py), so this is the same set
+    # expressed as one index-friendly predicate.
     failed = func.count(case((SkillExecution.status.like("FAILED%"), 1)))
     return autonomous_safe, routed_to_human, overridden, edited, failed
 

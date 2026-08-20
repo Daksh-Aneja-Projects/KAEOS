@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.domain import Skill
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class FederatedEngine:
             select(func.count()).select_from(SkillExecution).where(
                 SkillExecution.tenant_id == tenant_id,
                 SkillExecution.skill_id_name == skill_id_name,
-                SkillExecution.status == "SUCCESS_CLEAN",
+                SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN,
             )
         )).scalar() or 0
         return int(good) + int(clean)

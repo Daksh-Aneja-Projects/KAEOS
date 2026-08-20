@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rls import is_postgres
 from app.models.domain import Skill
+from app.models.execution_status import ExecutionStatus
 from app.models.missions import Mission, MissionStep, MissionEvent
 from app.services import prompt_guard
 
@@ -469,18 +470,24 @@ def _apply_step_result(db, mission, step, result: dict) -> None:
     cost = _cost_of(result)
     step.cost_usd = cost
     mission.spent_usd = (mission.spent_usd or Decimal("0")) + cost
-    if status == "SUCCESS_CLEAN":
+    if status == ExecutionStatus.SUCCESS_CLEAN:
         step.status = "DONE"
         step.completed_at = datetime.now(timezone.utc)
         step.result_summary = _recommendation_of(result) or \
             f"{result.get('steps_completed', 0)} steps, {result.get('duration_ms', 0)}ms"
         _event(db, mission, "STEP_DONE",
                f"Step {step.seq} ({step.name}): {step.result_summary}", step.seq)
-    elif status in ("HITL_REQUIRED", "PENDING", "PENDING_HITL") or result.get("pending"):
+    # NOTE: deliberately NOT PENDING_STATUSES. This set carries two values the
+    # execution vocabulary does not have ("HITL_REQUIRED", "PENDING") and is
+    # missing ExecutionStatus.ESCALATED_DEBATE, so a debate-escalated step falls
+    # to the FAILED branch below. Converging the two is a behavior change to
+    # mission-step semantics, not a rename - left for a separate change.
+    elif status in ("HITL_REQUIRED", "PENDING", ExecutionStatus.PENDING_HITL) \
+            or result.get("pending"):
         step.status = "AWAITING_HITL"
         _event(db, mission, "HITL_PAUSE",
                f"Step {step.seq} routed to human by the confidence gate.", step.seq)
-    elif status == "BLOCKED_COMPLIANCE" and not step.hitl_required:
+    elif status == ExecutionStatus.BLOCKED_COMPLIANCE and not step.hitl_required:
         # An autonomous action the compliance gate blocked ESCALATES to a human;
         # on approval it re-runs carrying the human-approver flag.
         step.hitl_required = True

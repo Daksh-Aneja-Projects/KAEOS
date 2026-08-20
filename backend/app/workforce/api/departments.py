@@ -315,6 +315,7 @@ async def autonomy_trend(
     from datetime import datetime, timedelta, timezone as _tz
 
     from app.models.domain import SkillExecution
+    from app.models.execution_status import is_safe_autonomous
 
     since = datetime.now(_tz.utc) - timedelta(days=days)
     rows = (await db.execute(
@@ -329,7 +330,7 @@ async def autonomy_trend(
         day = started_at.date().isoformat()
         b = buckets.setdefault(day, {"total": 0, "autonomous": 0})
         b["total"] += 1
-        if status == "SUCCESS_CLEAN" and not hitl:
+        if is_safe_autonomous(hitl, status):
             b["autonomous"] += 1
 
     series = [
@@ -493,14 +494,21 @@ async def workforce_overview(
     # a human gate. Derived from SkillExecution rows - not a stored guess.
     # (`automation_coverage` was seeded 0.0 for every department, which is why
     # the dashboard tile read a permanent "0%".)
+    # NOTE (scope, not vocabulary): unlike every other consumer this counts the
+    # tenant's ENTIRE history, while /metrics/safe-autonomy, /billing/roi, the
+    # operator console and the Time Machine all use a 30-day window. Same rule,
+    # different denominator, so this tile can legitimately differ from them on
+    # an old tenant. Left as-is deliberately - narrowing it would move a
+    # customer-visible headline number, which is not this refactor's business.
     from app.models.domain import SkillExecution
+    from app.models.execution_status import is_safe_autonomous
     exec_q = await db.execute(
         select(SkillExecution.status, SkillExecution.hitl_required)
         .where(SkillExecution.tenant_id == tenant_id)
     )
     execs = exec_q.all()
     total_execs = len(execs)
-    autonomous = [e for e in execs if e[0] == "SUCCESS_CLEAN" and not e[1]]
+    autonomous = [e for e in execs if is_safe_autonomous(e[1], e[0])]
     safe_autonomy_rate = (
         round(len(autonomous) / total_execs * 100, 1) if total_execs else None
     )

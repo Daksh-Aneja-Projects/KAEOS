@@ -12,6 +12,7 @@ from app.core.tenant import get_tenant_id, require_role
 from app.core.entitlements import require_execution_allowance
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import PENDING_STATUSES, AgentState, ExecutionStatus
 from app.services.knowledge import PolystoreEngine
 from app.core.dependencies import get_polystore_engine
 from app.schemas.skills import (
@@ -158,7 +159,7 @@ async def execute_skill(
             if (count_res.scalar() or 0) >= 50:
                 return SkillExecutionResponse(
                     execution_id=exec_id, skill_id=skill.skill_id,
-                    status="BLOCKED_RATE_LIMIT", route_type="SKILL_EXEC",
+                    status=ExecutionStatus.BLOCKED_RATE_LIMIT, route_type="SKILL_EXEC",
                     duration_ms=0, hitl_required=False,
                 )
 
@@ -195,15 +196,15 @@ async def execute_skill(
 
     executor = AgentExecutor(compliance_engine, hitl_manager)
     result = await executor.execute_skill(skill_dict, exec_context)
-    status = result.get("status", "FAILED")
+    status = result.get("status", ExecutionStatus.FAILED)
 
     # 4. Feedback loop on terminal outcomes (a pause is not an outcome yet).
-    if status not in ("PENDING_HITL", "ESCALATED_DEBATE"):
+    hitl_required = status in PENDING_STATUSES
+    if not hitl_required:
         await feedback_engine.process_agent_outcome({
             "status": status, "rule_id": skill.skill_id
         })
 
-    hitl_required = status in ("PENDING_HITL", "ESCALATED_DEBATE")
     return SkillExecutionResponse(
         execution_id=result.get("execution_id", exec_id),
         skill_id=skill.skill_id,
@@ -276,7 +277,7 @@ async def get_pending_hitl(
         .where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.hitl_required == True,
-            SkillExecution.status == "PENDING_HITL",
+            SkillExecution.status == ExecutionStatus.PENDING_HITL,
         )
         .order_by(SkillExecution.started_at.desc())
         .limit(_PENDING_HITL_CAP)
@@ -354,8 +355,8 @@ async def approve_hitl(
     from app.services.hitl_manager import hitl_manager
     from app.core.tenant import check_department_scope
     check_department_scope(tenant, await hitl_manager.get_record_department(exec_id))
-    if execution.status != "PENDING_HITL" and execution.agent_state not in (
-        "PAUSED", "PENDING_HITL"
+    if execution.status != ExecutionStatus.PENDING_HITL and execution.agent_state not in (
+        AgentState.PAUSED, AgentState.PENDING_HITL
     ):
         raise HTTPException(409, "Execution is not awaiting approval")
 
@@ -421,8 +422,8 @@ async def reject_hitl(
     from app.core.tenant import check_department_scope
     check_department_scope(tenant, await hitl_manager.get_record_department(exec_id))
 
-    execution.status = "HUMAN_OVERRIDDEN"
-    execution.outcome_type = "HUMAN_OVERRIDDEN"
+    execution.status = ExecutionStatus.HUMAN_OVERRIDDEN
+    execution.outcome_type = ExecutionStatus.HUMAN_OVERRIDDEN
     execution.hitl_approved = False
     execution.completed_at = datetime.now(timezone.utc)
 

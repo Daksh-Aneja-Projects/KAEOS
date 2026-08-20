@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import AgentState, ExecutionStatus
 from app.services.llm_router import LLMRouter
 from app.services.confidence import ConfidenceEngine
 from app.services.provenance import ProvenanceEngine
@@ -147,10 +148,10 @@ class SkillExecutionEngine:
 
         if not steps:
             logger.warning(f"[Exec] Skill {skill_id} has no steps — trivial success.")
-            return self._result("SUCCESS_CLEAN", [], execution_id, 0, skill_id)
+            return self._result(ExecutionStatus.SUCCESS_CLEAN, [], execution_id, 0, skill_id)
 
         reasoning_chain = []
-        final_status = "SUCCESS_CLEAN"
+        final_status = ExecutionStatus.SUCCESS_CLEAN
         failed_step = None
 
         logger.info(f"[Exec] Starting {skill_id} ({len(steps)} steps) — exec_id={execution_id}")
@@ -167,11 +168,15 @@ class SkillExecutionEngine:
             )
             reasoning_chain.append(step_result)
 
+            # NB: "FAILED" here is the per-STEP vocabulary (SUCCESS/FAILED/
+            # SKIPPED, see the prompt above), NOT ExecutionStatus. The two are
+            # deliberately different alphabets; conflating them is what let a
+            # consumer count a nonexistent "SUCCESS" execution status.
             if step_result.get("status") == "FAILED":
                 logger.error(
                     f"[Exec] Step {step.get('id','?')} FAILED: {step_result.get('error')}"
                 )
-                final_status = "FAILED_RULE_MISMATCH"
+                final_status = ExecutionStatus.FAILED_RULE_MISMATCH
                 failed_step = step
                 break  # Stop on first failure — do not proceed
 
@@ -193,14 +198,14 @@ class SkillExecutionEngine:
         if skill_obj is not None:
             await self._update_skill_stats(
                 skill_obj=skill_obj,
-                succeeded=(final_status == "SUCCESS_CLEAN"),
+                succeeded=(final_status == ExecutionStatus.SUCCESS_CLEAN),
             )
 
         # ── Trigger Evolution on failure — truly fire-and-forget ───────────
         # Runs only on failure; scheduled (not awaited) so a slow KB self-heal
         # never adds latency to the execution response. Snapshot the context so
         # a caller mutating it after run() returns cannot race the background task.
-        if final_status != "SUCCESS_CLEAN" and failed_step:
+        if final_status != ExecutionStatus.SUCCESS_CLEAN and failed_step:
             _evo_task = asyncio.create_task(self._trigger_evolution(
                 execution_id=execution_id,
                 task_intent=context.get("intent", skill_id),
@@ -435,8 +440,8 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
         # An approve-with-edit rides its correction in the context: the run is
         # human-EDITED fallout in the safe-autonomy breakdown, not clean autonomy.
         outcome = status
-        if status == "SUCCESS_CLEAN" and safe_context.get("human_corrected_answer"):
-            outcome = "SUCCESS_WITH_EDIT"
+        if status == ExecutionStatus.SUCCESS_CLEAN and safe_context.get("human_corrected_answer"):
+            outcome = ExecutionStatus.SUCCESS_WITH_EDIT
         async with AsyncSessionLocal() as session:
             # Upsert: a HITL-resumed execution already has a PENDING_HITL row
             # under this id - finalize it instead of colliding on insert.
@@ -447,7 +452,10 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
                 existing.skill_db_id = skill_obj.id if skill_obj else existing.skill_db_id
                 existing.skill_id_name = skill.get("skill_id", existing.skill_id_name)
                 existing.status = status
-                existing.agent_state = "COMPLETED" if status == "SUCCESS_CLEAN" else "FAILED"
+                existing.agent_state = (
+                    AgentState.COMPLETED if status == ExecutionStatus.SUCCESS_CLEAN
+                    else AgentState.FAILED
+                )
                 existing.context = safe_context
                 existing.reasoning_chain = reasoning_chain
                 existing.completed_at = datetime.now(timezone.utc)
@@ -461,7 +469,9 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
                     tenant_id=tenant_id,
                     status=status,
                     route_type="SKILL_EXEC",
-                    agent_state="COMPLETED" if status == "SUCCESS_CLEAN" else "FAILED",
+                    agent_state=(AgentState.COMPLETED
+                                 if status == ExecutionStatus.SUCCESS_CLEAN
+                                 else AgentState.FAILED),
                     task_intent=context.get("intent", ""),
                     context=safe_context,
                     reasoning_chain=reasoning_chain,

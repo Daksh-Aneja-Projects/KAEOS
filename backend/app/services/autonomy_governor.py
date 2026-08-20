@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
+from app.models.execution_status import SAFE_AUTONOMOUS_STATUSES, ExecutionStatus
 from app.models.settings import AutonomyPolicy
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,6 @@ _GOOD_RATE = 0.90         # relax autonomy above this...
 _LOW_FALLOUT = 0.05       # ...only if bad outcomes are rare
 _BAD_FALLOUT = 0.20       # tighten autonomy when overrides+failures exceed this
 
-_STATUS_OVERRIDDEN = "HUMAN_OVERRIDDEN"
-
-
 def _clamp(v: float) -> float:
     return round(max(_FLOOR, min(_CEILING, v)), 4)
 
@@ -47,10 +45,16 @@ async def run_autonomy_governor(db: AsyncSession, tenant_id: str) -> dict:
     since = datetime.now(timezone.utc) - timedelta(days=_WINDOW_DAYS)
 
     # Per-domain execution outcomes (domain = the executed skill's department).
+    # The dial is nudged by the SAME north-star definition the dashboard shows.
+    # It previously counted `status IN ("SUCCESS_CLEAN", "SUCCESS")`; bare
+    # "SUCCESS" is the per-STEP result vocabulary and is never written to
+    # SkillExecution.status, so no count changes - but a governor measuring a
+    # looser rate than the metric it governs is how autonomy drifts open.
     safe = func.count(case((
-        (SkillExecution.hitl_required.is_(False)) &
-        (SkillExecution.status.in_(("SUCCESS_CLEAN", "SUCCESS"))), 1)))
-    overridden = func.count(case((SkillExecution.status == _STATUS_OVERRIDDEN, 1)))
+        (SkillExecution.hitl_required.is_(False))
+        & (SkillExecution.status.in_(SAFE_AUTONOMOUS_STATUSES)), 1)))
+    overridden = func.count(case(
+        (SkillExecution.status == ExecutionStatus.HUMAN_OVERRIDDEN, 1)))
     failed = func.count(case((SkillExecution.status.like("FAILED%"), 1)))
 
     rows = (await db.execute(

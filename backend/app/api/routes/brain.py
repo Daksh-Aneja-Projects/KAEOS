@@ -12,6 +12,7 @@ from app.models.domain import (
     Rule, Skill, SkillExecution, Workflow, Signal,
 )
 from app.models.agent_factory import DeployedAgent, AgentStatus
+from app.models.execution_status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
         select(sqlfunc.count(SkillExecution.id)).where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= week_ago,
-            SkillExecution.status == "SUCCESS_CLEAN",
+            SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN,
         )
     )
     success_count = success_7d.scalar() or 0

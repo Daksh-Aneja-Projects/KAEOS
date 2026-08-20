@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from app.models.agent_factory import ActivityEventType, ActivitySeverity
 from app.core.database import AsyncSessionLocal
 from app.models.domain import SkillExecution
+from app.models.execution_status import AgentState, ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -167,19 +168,19 @@ class HITLManager:
                     _select(SkillExecution).where(SkillExecution.id == exec_id)
                 )).scalar_one_or_none()
                 if existing:
-                    existing.agent_state = "PAUSED"
+                    existing.agent_state = AgentState.PAUSED
                     existing.hitl_required = True
                     if not existing.status:
-                        existing.status = "PENDING_HITL"
+                        existing.status = ExecutionStatus.PENDING_HITL
                 else:
                     session.add(SkillExecution(
                         id=exec_id,
                         skill_db_id=skill.get("skill_db_id"),
                         skill_id_name=skill.get("skill_id", "unknown"),
                         tenant_id=tenant_id,
-                        status="PENDING_HITL",
+                        status=ExecutionStatus.PENDING_HITL,
                         route_type="GATED_AGENT",
-                        agent_state="PAUSED",
+                        agent_state=AgentState.PAUSED,
                         task_intent=str(
                             context.get("intent")
                             or context.get("instruction")
@@ -526,7 +527,7 @@ class HITLManager:
             )
             execution = exec_q.scalar_one_or_none()
             if execution:
-                if execution.agent_state not in ("PENDING_HITL", "PAUSED", None):
+                if execution.agent_state not in (AgentState.PENDING_HITL, AgentState.PAUSED, None):
                     logger.warning(
                         f"[HITL] {execution_id} already resolved "
                         f"(state={execution.agent_state}) — ignoring duplicate"
@@ -538,21 +539,22 @@ class HITLManager:
                 # approval only transitions to RUNNING - the resumed executor
                 # stamps the real final status when the run completes.
                 values = dict(
-                    agent_state="RUNNING" if approved else "FAILED",
+                    agent_state=AgentState.RUNNING if approved else AgentState.FAILED,
                     hitl_approved=approved,
                     hitl_approver=approver,
                 )
                 if not approved:
                     values.update(
-                        status="HUMAN_OVERRIDDEN",
-                        outcome_type="HUMAN_OVERRIDDEN",
+                        status=ExecutionStatus.HUMAN_OVERRIDDEN,
+                        outcome_type=ExecutionStatus.HUMAN_OVERRIDDEN,
                         completed_at=datetime.now(timezone.utc),
                     )
                 result = await session.execute(
                     update(SkillExecution)
                     .where(
                         SkillExecution.id == execution_id,
-                        SkillExecution.agent_state.in_(["PENDING_HITL", "PAUSED", None]),
+                        SkillExecution.agent_state.in_(
+                            [AgentState.PENDING_HITL, AgentState.PAUSED, None]),
                     )
                     .values(**values)
                 )
@@ -619,10 +621,10 @@ class HITLManager:
             )).scalar_one_or_none()
             if row is not None and (
                 row.completed_at is not None
-                or (row.agent_state in ("COMPLETED", "FAILED")
+                or (row.agent_state in (AgentState.COMPLETED, AgentState.FAILED)
                     # FAILED_RESUME means a previous ATTEMPT died, not that the
                     # decision reached a terminal outcome - retry those.
-                    and row.status != "FAILED_RESUME")
+                    and row.status != ExecutionStatus.FAILED_RESUME)
             ):
                 logger.info(f"[HITL] {execution_id} already finalized "
                             f"({row.agent_state}/{row.status}); resume is a no-op")
@@ -732,8 +734,8 @@ class HITLManager:
             # audit) never reaches the engine's persist step - finalize the
             # row here so an approved-then-blocked execution cannot sit in
             # RUNNING forever looking alive.
-            terminal = result.get("status", "FAILED")
-            if terminal not in ("SUCCESS_CLEAN",):
+            terminal = result.get("status", ExecutionStatus.FAILED)
+            if terminal not in (ExecutionStatus.SUCCESS_CLEAN,):
                 async with AsyncSessionLocal() as session:
                     from sqlalchemy import update
                     await session.execute(
@@ -742,8 +744,9 @@ class HITLManager:
                                # "FAILED" included so a retried FAILED_RESUME
                                # that then blocks at a gate still finalizes.
                                SkillExecution.agent_state.in_(
-                                   ["RUNNING", "PAUSED", "FAILED", None]))
-                        .values(agent_state="FAILED", status=terminal,
+                                   [AgentState.RUNNING, AgentState.PAUSED,
+                                    AgentState.FAILED, None]))
+                        .values(agent_state=AgentState.FAILED, status=terminal,
                                 outcome_type=terminal,
                                 completed_at=datetime.now(timezone.utc))
                     )
@@ -772,7 +775,8 @@ class HITLManager:
                 await session.execute(
                     update(SkillExecution)
                     .where(SkillExecution.id == execution_id)
-                    .values(agent_state="FAILED", status="FAILED_RESUME")
+                    .values(agent_state=AgentState.FAILED,
+                            status=ExecutionStatus.FAILED_RESUME)
                 )
                 await session.commit()
             return False

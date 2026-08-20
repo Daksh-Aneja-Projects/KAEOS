@@ -16,8 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import Skill, SkillExecution
-
-_STATUS_CLEAN = "SUCCESS_CLEAN"
+from app.models.execution_status import ExecutionStatus, is_safe_autonomous
 
 
 def _aware(dt):
@@ -27,8 +26,9 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def _is_safe(hitl_required: bool, status: Optional[str]) -> bool:
-    return (not hitl_required) and (status == _STATUS_CLEAN)
+#: The Time Machine reconstructs the north star as-of a past moment, so it MUST
+#: use the same predicate as the live metric, not a local copy of the rule.
+_is_safe = is_safe_autonomous
 
 
 def _classify(hitl_required: bool, status: Optional[str], outcome_type: Optional[str]) -> str:
@@ -36,15 +36,15 @@ def _classify(hitl_required: bool, status: Optional[str], outcome_type: Optional
         return "safe_autonomous"
     # An edited decision is checked BEFORE the generic routed-to-human bucket: it
     # is always hitl_required (a human saw it), so testing hitl first swallowed it
-    # and "edited" could never appear. The literal is the lifecycle vocabulary the
+    # and "edited" could never appear. The value is the lifecycle vocabulary the
     # HITL route writes; the old "EDIT" matched nothing any writer produced.
-    if outcome_type == "SUCCESS_WITH_EDIT":
+    if outcome_type == ExecutionStatus.SUCCESS_WITH_EDIT:
         return "edited"
     if hitl_required:
         return "routed_to_human"
     if (status or "").startswith("FAILED"):
         return "failed"
-    if status == "HUMAN_OVERRIDDEN":
+    if status == ExecutionStatus.HUMAN_OVERRIDDEN:
         return "overridden"
     return "other"
 
