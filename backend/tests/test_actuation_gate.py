@@ -132,22 +132,31 @@ def test_approval_applies_the_paused_write():
         ok = await hitl_manager.resolve_hitl(
             exec_id, approved=True, approver="checker@acme", tenant_id=t)
         assert ok is True
-        # Drain the background resume task by POLLING for its persisted effect.
-        # A fixed sleep(0.3) flaked under -n auto: the resume takes ~3s here, so
-        # a loaded worker read the row mid-resume. The poll is SPARSE (0.25s,
-        # sleep first) on purpose: both engines are StaticPool - one shared
-        # DBAPI connection - and a tight poll starves the resume task of that
-        # connection (measured: it then never completes). Bounded at 15s so a
-        # genuine hang still fails instead of spinning forever.
-        row = None
-        for _ in range(60):
-            await asyncio.sleep(0.25)
-            async with AsyncSessionLocal() as s:
-                row = (await s.execute(select(SkillExecution).where(
-                    SkillExecution.id == exec_id))).scalar_one()
-            if row.status == "SUCCESS_CLEAN":
-                break
-        assert row is not None and row.status == "SUCCESS_CLEAN"
+        # Drain the background resume task by AWAITING it, not by polling the
+        # row. Two prior shapes both flaked: a fixed sleep(0.3) raced the ~3s
+        # resume, and a DB poll starved it of the StaticPool's single shared
+        # connection - and when the poll's cap expired on a slow CI runner, the
+        # assertion failure made asyncio.run() cancel the resume MID-DB-OP,
+        # which poisoned the pooled connection and cascaded "no such table"
+        # into every later teardown sweep on that xdist worker. Waiting on the
+        # task set is deterministic (no contention, no cap tuned to hardware),
+        # and if the resume ever genuinely hangs, the bounded wait still fails
+        # the test - after which the task has been awaited, not abandoned.
+        others = [task for task in asyncio.all_tasks()
+                  if task is not asyncio.current_task()]
+        if others:
+            _done, pending = await asyncio.wait(others, timeout=120)
+            for task in pending:
+                task.cancel()
+            if pending:
+                # Let the cancellation unwind through SQLAlchemy's finally
+                # blocks so the shared connection is released sanely.
+                await asyncio.gather(*pending, return_exceptions=True)
+            assert not pending, "the HITL resume task did not finish within 120s"
+        async with AsyncSessionLocal() as s:
+            row = (await s.execute(select(SkillExecution).where(
+                SkillExecution.id == exec_id))).scalar_one()
+        assert row.status == "SUCCESS_CLEAN"
         async with AsyncSessionLocal() as s:
             row = (await s.execute(select(SkillExecution).where(
                 SkillExecution.id == exec_id))).scalar_one()

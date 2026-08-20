@@ -120,10 +120,25 @@ async def setup_db(request):
         # harness does not enforce them, the order documents (and future-proofs)
         # the dependency the Postgres schema enforces.
         _SWEEP_TABLES = list(reversed(Base.metadata.sorted_tables))
+    from sqlalchemy.exc import OperationalError
     for eng in (test_engine, app_engine):
-        async with eng.begin() as conn:
-            for table in _SWEEP_TABLES:
-                await conn.execute(table.delete())
+        try:
+            async with eng.begin() as conn:
+                for table in _SWEEP_TABLES:
+                    await conn.execute(table.delete())
+        except OperationalError:
+            # "no such table": this engine's StaticPool connection was
+            # invalidated mid-session (e.g. a task cancelled mid-DB-op poisoned
+            # it), so the pool handed back a FRESH, EMPTY :memory: database.
+            # Without healing, every later test on this xdist worker fails the
+            # same way - one poisoned test cascaded into 31 teardown errors on
+            # CI. Rebuild the schema on the fresh connection and sweep again;
+            # a second failure is real and propagates.
+            async with eng.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with eng.begin() as conn:
+                for table in _SWEEP_TABLES:
+                    await conn.execute(table.delete())
 
 
 @pytest.fixture
