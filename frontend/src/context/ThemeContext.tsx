@@ -56,6 +56,35 @@ const lightColors = {
   inputBg: '#EFF0F3',
 };
 
+// M7.14: the theme tokens that ALSO exist as CSS custom properties in
+// index.css's @theme block. Those literals are the static dark defaults
+// (Tailwind needs literal values at build time, and they style the first
+// paint before React mounts); the provider writes the live values over them
+// on documentElement, so every var(--color-*) rule and Tailwind token
+// utility (bg-canvas, text-ink, hover:bg-surface2...) follows the JS theme.
+// One runtime source of truth: this file. JS-only tokens (sidebar, cardBg,
+// navActive, navActiveText, inputBg) have no CSS counterpart and stay JS;
+// CSS-only vars (--color-surface-4, --color-hairline-tertiary,
+// --color-primary-focus, spacing, fonts) stay CSS.
+const CSS_TOKEN_VARS: [keyof typeof darkColors, string][] = [
+  ['canvas', '--color-canvas'],
+  ['surface1', '--color-surface-1'],
+  ['surface2', '--color-surface-2'],
+  ['surface3', '--color-surface-3'],
+  ['hairline', '--color-hairline'],
+  ['hairlineStrong', '--color-hairline-strong'],
+  ['primary', '--color-primary'],
+  ['primaryHover', '--color-primary-hover'],
+  ['ink', '--color-ink'],
+  ['inkMuted', '--color-ink-muted'],
+  ['inkSubtle', '--color-ink-subtle'],
+  ['inkTertiary', '--color-ink-tertiary'],
+  ['success', '--color-success'],
+  ['warning', '--color-warning'],
+  ['error', '--color-error'],
+  ['info', '--color-info'],
+];
+
 const ThemeContext = createContext<ThemeContextType>({
   theme: 'dark',
   toggle: () => {},
@@ -82,6 +111,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    // Publish the live token values as CSS custom properties (M7.14): inline
+    // styles on the root outrank the @theme defaults in index.css, so CSS
+    // and Tailwind utilities switch with the theme instead of staying dark.
+    for (const [key, cssVar] of CSS_TOKEN_VARS) {
+      document.documentElement.style.setProperty(cssVar, colors[key]);
+    }
     document.body.style.backgroundColor = colors.canvas;
     document.body.style.color = colors.ink;
   }, [theme, colors]);

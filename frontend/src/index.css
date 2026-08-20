@@ -12,7 +12,15 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* ── Linear Color Tokens ── */
+  /* ── Linear Color Tokens ──
+     The 16 tokens from --color-canvas through --color-info are the DARK
+     defaults only: they must be literal here so Tailwind can generate the
+     utilities, and they style the first paint before React mounts.
+     ThemeProvider (src/context/ThemeContext.tsx, CSS_TOKEN_VARS) overwrites
+     them on documentElement with the live dark/light values - edit colors
+     THERE, not here, or the app and the stylesheet will disagree.
+     Vars with no JS counterpart (--color-surface-4, --color-hairline-tertiary,
+     --color-primary-focus, spacing, fonts) are owned by this file. */
   --color-canvas: #010102;
   --color-surface-1: #0f1011;
   --color-surface-2: #141516;

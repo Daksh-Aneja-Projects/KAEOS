@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router';
 import {
-  Bot, Activity, Search, Bell, Sun, Moon,
+  Bot, Activity, Sun, Moon,
   ChevronDown, Settings as SettingsIcon, Database, Shield,
-  MessageSquare, LogOut, Building2, X, Users, Rocket, Package,
+  MessageSquare, LogOut, Building2, Users, Rocket, Package,
   BarChart3, LayoutDashboard, Plug, ChevronRight, Briefcase,
   Landmark, Receipt, Wallet, Scale, ShieldAlert, FileText, ShieldCheck,
   Lock, Lightbulb, BookOpen, Clock, Heart, Compass, Target, TrendingUp,
@@ -11,12 +11,12 @@ import {
   Factory, UserPlus, Zap, FlaskConical, Menu
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { api, type PendingHITLItem, type AppNotification } from './api/client';
-import { canSeeDepartment, DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from './lib/departments';
+import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from './lib/departments';
 import { humanize } from './lib/format';
 import { PAGE_PAD_X } from './lib/layout';
-import { useVisiblePoll } from './hooks/useLiveRefresh';
 import KaeosLogo from './components/KaeosLogo';
+import GlobalSearch from './components/shell/GlobalSearch';
+import NotificationBell from './components/shell/NotificationBell';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { BrandingProvider, useBranding } from './context/BrandingContext';
 import ThemeAdapter from './components/ThemeAdapter';
@@ -195,19 +195,11 @@ function Shell() {
   const [domain, setDomain] = useState('All Domains');
   const [domainOpen, setDomainOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [notifs, setNotifs] = useState<PendingHITLItem[]>([]);
-  const [orgNotifs, setOrgNotifs] = useState<AppNotification[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
   const [platformCollapsed, setPlatformCollapsed] = useState(true);
   // Below `md` the sidebar is an off-canvas drawer; at `md`+ it is always-on
   // and this flag is inert. HITL approvals are the daily touchpoint, so the
   // shell has to survive a phone.
   const [navOpen, setNavOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const notifButtonRef = useRef<HTMLButtonElement>(null);
-  const navigate = useNavigate();
   const location = useLocation();
 
   // Navigating on mobile should dismiss the drawer, otherwise it covers the
@@ -239,104 +231,12 @@ function Shell() {
       : n,
   );
 
-  // Notifications: real pending human-in-the-loop approvals (the actionable
-  // queue), polled every 30s. The bell badge lights only when there are items.
-  // The poll pauses while the tab is hidden and re-fires on return: the badge
-  // and its panel are in-app DOM only (no title, favicon or OS notification),
-  // so a hidden tab has nothing to show, and the user always sees a fresh count.
-  const notifsAlive = useRef(true);
-  // Set on mount as well as cleared on unmount: StrictMode (and Fast Refresh)
-  // run setup/cleanup/setup on the same instance, so a cleanup-only effect
-  // would latch the ref false forever and every setter below would be skipped.
-  useEffect(() => { notifsAlive.current = true; return () => { notifsAlive.current = false; }; }, []);
-  const loadNotifs = () => {
-    api.getPendingHITL()
-      .then(d => { if (notifsAlive.current) setNotifs(Array.isArray(d) ? d : []); })
-      .catch(() => { if (notifsAlive.current) setNotifs([]); });
-    // Org notifications (SLA escalations, @mentions, automation alerts).
-    api.getNotifications(true, 10)
-      .then(d => { if (notifsAlive.current) setOrgNotifs(d.items || []); })
-      .catch(() => { if (notifsAlive.current) setOrgNotifs([]); });
-  };
-  useEffect(() => { loadNotifs(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useVisiblePoll(loadNotifs, 30000);
+  // The global search box and the notification bell each own their state in
+  // dedicated components (M7.3): when they lived inline here, every search
+  // keystroke and every 30s notification poll re-rendered the whole <Routes>
+  // tree below. Shell state now changes only on explicit chrome interactions
+  // (domain picker, drawer, copilot, platform collapse).
 
-  // Cmd/Ctrl+K to focus search
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (e.key === 'Escape') {
-        searchRef.current?.blur();
-        setSearchQuery('');
-        setSearchFocused(false);
-        setNotifOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
-  // Search results - navigable modules
-  const SEARCHABLE_MODULES = [
-    { path: '/', label: 'Workforce Dashboard', keywords: 'home dashboard departments overview' },
-    { path: '/departments', label: 'Departments', keywords: 'hr finance department workforce' },
-    { path: '/deploy', label: 'Deploy Studio', keywords: 'deploy wizard department' },
-    { path: '/marketplace', label: 'Marketplace', keywords: 'packs domain install' },
-    { path: '/integrations', label: 'Integrations', keywords: 'connectors sync schema mapper' },
-    { path: '/analytics', label: 'Analytics', keywords: 'roi metrics hours saved' },
-    { path: '/departments/hr', label: 'HR Department', keywords: 'hr employees recruiting benefits payroll' },
-    { path: '/departments/healthcare', label: 'Healthcare Department', keywords: 'healthcare clinical encounters phi disclosure consent hipaa part2 patient' },
-    { path: '/departments/lending', label: 'Lending Department', keywords: 'lending loan credit underwriting ecoa fair-lending adverse action banking' },
-    { path: '/departments/procurement', label: 'Procurement Department', keywords: 'procurement purchase order requisition vendor three-way match ofac sod spend' },
-    { path: '/platform/knowledge', label: 'Knowledge', keywords: 'rules skills topology extraction connectors' },
-    { path: '/platform/agents', label: 'Agents', keywords: 'deploy blueprint ooda llm mcp marketplace' },
-    { path: '/platform/decisions', label: 'Decisions', keywords: 'cockpit compliance provenance redteam hitl fairness debates governance trust' },
-    { path: '/platform/proving-ground', label: 'Proving Ground', keywords: 'assurance score gate catch-rate known-bad attack battery governance proof red team' },
-    { path: '/platform/settings', label: 'Settings', keywords: 'config ontology federated' },
-    { path: '/platform/users', label: 'User Management', keywords: 'admin roles users rbac' },
-    { path: '/platform/foundry', label: 'AI Foundry', keywords: 'foundry training dataset fine-tune model evolution learning v2' },
-    { path: '/platform/onboarding', label: 'Client Onboarding', keywords: 'onboard tenant client provision new customer setup' },
-    { path: '/getting-started', label: 'Getting Started', keywords: 'getting started onboarding checklist activate setup first' },
-  ];
-  // Scoped users don't get "Go to" entries for other departments' surfaces.
-  const visibleModules = SEARCHABLE_MODULES.filter(m => {
-    const deptMatch = m.path.match(/^\/departments\/([^/]+)/);
-    return !deptMatch || canSeeDepartment(userDept, deptMatch[1]);
-  });
-  const searchResults = searchQuery.length >= 2
-    ? visibleModules.filter(m =>
-        m.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.keywords.includes(searchQuery.toLowerCase())
-      )
-    : [];
-
-  // Entity search: the box only ever matched module NAMES, so searching
-  // "invoice" surfaced the Accounts Payable page but never an actual invoice.
-  // The Company Brain already exposes cross-entity search - use it.
-  const [entityResults, setEntityResults] = useState<{ label: string; sub: string; path: string }[]>([]);
-  useEffect(() => {
-    if (searchQuery.length < 2) { setEntityResults([]); return; }
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const r = await api.globalSearch(searchQuery);
-        if (cancelled) return;
-        const out: { label: string; sub: string; path: string }[] = [];
-        (r?.results?.rules || []).slice(0, 4).forEach((x: any) =>
-          out.push({ label: x.statement, sub: `Rule · ${x.domain ?? ''}`, path: '/platform/knowledge' }));
-        (r?.results?.skills || []).slice(0, 4).forEach((x: any) =>
-          out.push({ label: x.skill_id, sub: `Skill · ${x.domain ?? ''}`, path: '/platform/knowledge' }));
-        (r?.results?.signals || []).slice(0, 3).forEach((x: any) =>
-          out.push({ label: x.source, sub: `Signal · ${x.domain ?? ''}`, path: '/platform/knowledge' }));
-        setEntityResults(out);
-      } catch { if (!cancelled) setEntityResults([]); }
-    }, 220);  // debounce: this hits the API on every keystroke otherwise
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [searchQuery]);
-  
   const DOMAINS = ['All Domains', 'HR', 'Finance', 'Engineering', 'Sales', 'Support'];
 
   // Which department (if any) the current route is under — used only for a small
@@ -347,26 +247,6 @@ function Shell() {
   const activeDepartment = DEPARTMENT_CONTEXT.find(
     d => location.pathname.startsWith(`/departments/${d.slug}`),
   );
-
-  // Roving keyboard nav for the search-results and notification dropdowns:
-  // ArrowDown/Up move between [data-menuitem] buttons, Escape closes.
-  const focusMenuItem = (container: HTMLElement, dir: 1 | -1) => {
-    const items = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-menuitem]'));
-    if (!items.length) return;
-    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
-    const nextIdx = idx === -1 ? (dir === 1 ? 0 : items.length - 1) : (idx + dir + items.length) % items.length;
-    items[nextIdx].focus();
-  };
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(e.currentTarget, 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(e.currentTarget, -1); }
-    else if (e.key === 'Escape') { setSearchFocused(false); setSearchQuery(''); searchRef.current?.focus(); }
-  };
-  const handleNotifKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(e.currentTarget, 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(e.currentTarget, -1); }
-    else if (e.key === 'Escape') { setNotifOpen(false); notifButtonRef.current?.focus(); }
-  };
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: colors.surface1, color: colors.ink, fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -497,155 +377,8 @@ function Shell() {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            {/* Fixed-width search would overflow a phone; it is keyboard-driven
-                (⌘K) chrome, so it yields below md rather than shrinking. */}
-            <div className="relative hidden md:block" onKeyDown={handleSearchKeyDown}>
-              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: colors.inkSubtle }} />
-              <input
-                ref={searchRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
-                placeholder="Search… ⌘K"
-                role="combobox"
-                aria-expanded={searchFocused && (searchResults.length > 0 || entityResults.length > 0)}
-                aria-controls="global-search-results"
-                aria-autocomplete="list"
-                className="pl-8 pr-3 py-1.5 rounded border text-[12px] focus:outline-none focus:ring-1 transition-all"
-                style={{
-                  background: colors.canvas,
-                  borderColor: searchFocused ? colors.primary : colors.hairline,
-                  color: colors.ink,
-                  width: searchFocused ? '280px' : '200px',
-                }}
-              />
-              {searchQuery && (
-                <button type="button" aria-label="Clear search" onClick={() => setSearchQuery('')}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface2 transition-colors" style={{ color: colors.inkSubtle }}>
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-              {/* Search Results Dropdown */}
-              {searchFocused && (searchResults.length > 0 || entityResults.length > 0) && (
-                <div id="global-search-results" role="listbox" aria-label="Search results"
-                  className="absolute top-full left-0 mt-1 w-full rounded border shadow-lg z-50 overflow-hidden max-h-[420px] overflow-y-auto"
-                  style={{ background: colors.surface1, borderColor: colors.hairline }}>
-                  {searchResults.length > 0 && (
-                    <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider font-semibold"
-                      style={{ color: colors.inkSubtle }}>Go to</div>
-                  )}
-                  {searchResults.map(r => (
-                    <button key={r.path} type="button" role="option" data-menuitem
-                      onClick={() => { navigate(r.path); setSearchQuery(''); setSearchFocused(false); }}
-                      className="w-full text-left px-3 py-2 text-[13px] cursor-pointer hover:bg-surface2 transition-colors flex items-center gap-2 focus:outline-none focus-visible:bg-surface2"
-                      style={{ color: colors.ink }}>
-                      <Search className="w-3 h-3" style={{ color: colors.inkSubtle }} />
-                      {r.label}
-                    </button>
-                  ))}
-                  {entityResults.length > 0 && (
-                    <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider font-semibold border-t"
-                      style={{ color: colors.inkSubtle, borderColor: colors.hairline }}>In your company brain</div>
-                  )}
-                  {entityResults.map((r, i) => (
-                    <button key={`${r.path}-${i}`} type="button" role="option" data-menuitem
-                      onClick={() => { navigate(r.path); setSearchQuery(''); setSearchFocused(false); }}
-                      className="w-full text-left px-3 py-2 cursor-pointer hover:bg-surface2 transition-colors block focus:outline-none focus-visible:bg-surface2"
-                      style={{ color: colors.ink }}>
-                      <div className="text-[12px] truncate">{r.label}</div>
-                      <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{r.sub}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {searchFocused && searchQuery.length >= 2 && searchResults.length === 0 && entityResults.length === 0 && (
-                <div className="absolute top-full left-0 mt-1 w-full rounded border shadow-lg z-50 px-3 py-2 text-[12px]"
-                  style={{ background: colors.surface1, borderColor: colors.hairline, color: colors.inkSubtle }}>
-                  Nothing matches "{searchQuery}"
-                </div>
-              )}
-            </div>
-            <div className="relative" onKeyDown={handleNotifKeyDown}>
-              <button ref={notifButtonRef} aria-label="Notifications" aria-expanded={notifOpen} aria-haspopup="true"
-                onClick={() => setNotifOpen(o => !o)}
-                className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
-                style={{ color: notifOpen ? colors.primary : colors.inkSubtle }}>
-                <Bell className="w-4 h-4" />
-                {(notifs.length + orgNotifs.length) > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full text-[11px] font-bold text-white flex items-center justify-center"
-                    style={{ background: colors.error }}>{(notifs.length + orgNotifs.length) > 9 ? '9+' : (notifs.length + orgNotifs.length)}</span>
-                )}
-              </button>
-              {notifOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
-                  <div role="menu" aria-label="Notifications" className="absolute top-full right-0 mt-1 w-80 rounded-lg border shadow-xl z-50 overflow-hidden"
-                    style={{ background: colors.surface1, borderColor: colors.hairline }}>
-                    <div className="px-3 py-2.5 border-b flex items-center justify-between" style={{ borderColor: colors.hairline }}>
-                      <span className="text-[12px] font-semibold" style={{ color: colors.ink }}>Notifications</span>
-                      <span className="text-[11px] px-1.5 py-0.5 rounded-full"
-                        style={{ background: notifs.length ? colors.error + '20' : colors.surface3, color: notifs.length ? colors.error : colors.inkSubtle }}>
-                        {notifs.length} pending
-                      </span>
-                    </div>
-                    <div className="max-h-[360px] overflow-y-auto">
-                      {/* Org notifications: SLA escalations, @mentions, automation alerts */}
-                      {orgNotifs.map(n => (
-                        <button key={n.id} type="button" role="menuitem" data-menuitem
-                          onClick={() => { navigate('/pulse'); setNotifOpen(false); }}
-                          className="w-full text-left px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b block focus:outline-none focus-visible:bg-surface2"
-                          style={{ borderColor: colors.hairline }}>
-                          <div className="flex items-start gap-2">
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                              style={{ background: (n.severity === 'critical' ? colors.error : colors.warning) + '20' }}>
-                              <Activity className="w-3.5 h-3.5" style={{ color: n.severity === 'critical' ? colors.error : colors.warning }} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{n.title}</div>
-                              {n.description && <div className="text-[11px] mt-0.5 truncate" style={{ color: colors.inkSubtle }}>{n.description}</div>}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                      {notifs.length === 0 && orgNotifs.length === 0 ? (
-                        <div className="px-3 py-8 text-center">
-                          <Bell className="w-6 h-6 mx-auto mb-2" style={{ color: colors.inkTertiary }} />
-                          <div className="text-[12px]" style={{ color: colors.inkSubtle }}>You're all caught up</div>
-                          <div className="text-[11px] mt-0.5" style={{ color: colors.inkTertiary }}>No decisions or alerts awaiting you</div>
-                        </div>
-                      ) : notifs.map(n => (
-                        <button key={n.id} type="button" role="menuitem" data-menuitem
-                          onClick={() => { navigate('/platform/decisions'); setNotifOpen(false); }}
-                          className="w-full text-left px-3 py-2.5 cursor-pointer hover:bg-surface2 transition-colors border-b block focus:outline-none focus-visible:bg-surface2"
-                          style={{ borderColor: colors.hairline }}>
-                          <div className="flex items-start gap-2">
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5" style={{ background: colors.warning + '20' }}>
-                              <Shield className="w-3.5 h-3.5" style={{ color: colors.warning }} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[12px] font-medium truncate" style={{ color: colors.ink }}>{n.task_intent || n.skill_id_name}</div>
-                              <div className="text-[11px] mt-0.5" style={{ color: colors.inkSubtle }}>
-                                Approval required{n.route_type ? ` · ${n.route_type === 'GATED_AGENT' ? 'Pipeline gate' : humanize(n.route_type)}` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    {notifs.length > 0 && (
-                      <button type="button" role="menuitem" data-menuitem
-                        onClick={() => { navigate('/platform/decisions'); setNotifOpen(false); }}
-                        className="w-full px-3 py-2 text-center text-[12px] cursor-pointer hover:bg-surface2 transition-colors font-medium focus:outline-none focus-visible:bg-surface2"
-                        style={{ color: colors.primary }}>
-                        Review all in Decisions
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            <GlobalSearch userDept={userDept} />
+            <NotificationBell />
             {/* Chat Copilot Toggle */}
             <button aria-label="Toggle KAEOS Copilot" onClick={() => setChatOpen(!chatOpen)}
               className="p-1.5 rounded hover:bg-surface2 transition-colors relative"
