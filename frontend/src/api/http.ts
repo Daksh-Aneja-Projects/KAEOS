@@ -157,6 +157,39 @@ const _inflightGets = new Map<string, Promise<any>>();
 const _getCache = new Map<string, { t: number; data: any }>();
 const _SWR_TTL_MS = 15_000;
 
+// LRU bound: expired entries are never swept, so without a cap a long-lived
+// tab grows the map for every distinct GET it ever made. 300 entries covers
+// every screen's reads many times over; beyond it the least recently used
+// entry is dropped (a Map iterates in insertion order, so delete+set on touch
+// keeps the head the LRU victim).
+const _GET_CACHE_MAX = 300;
+
+function _cachePut(key: string, data: any): void {
+  _getCache.delete(key); // re-insert at the tail so eviction order stays LRU
+  _getCache.set(key, { t: Date.now(), data });
+  if (_getCache.size > _GET_CACHE_MAX) {
+    _getCache.delete(_getCache.keys().next().value as string);
+  }
+}
+
+/**
+ * Caller headers split the cache key because they change SCOPE (an
+ * X-Admin-Secret call must never share an entry with a tenant call). But
+ * credential VALUES must never be stored: the key sits in a plain Map that
+ * any XSS or devtools heap snapshot can read alongside the URL. So
+ * credential-shaped header names key on presence ('1'), not value - two admin
+ * callers with different secrets share one entry (same scope; a response
+ * fetched with a wrong secret can linger at most _SWR_TTL_MS, and mutations
+ * still flush everything), while admin vs tenant never collide.
+ */
+function _headersKeyPart(headers: NonNullable<RequestInit['headers']>): string {
+  const pairs: Array<[string, string]> =
+    headers instanceof Headers ? [...headers.entries()]
+      : Array.isArray(headers) ? headers.map(([k, v]) => [k, v] as [string, string])
+        : Object.entries(headers);
+  return JSON.stringify(pairs.map(([k, v]) => [k, /secret|token|key|auth/i.test(k) ? '1' : v]));
+}
+
 export function request<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase();
   if (method !== 'GET') {
@@ -165,13 +198,13 @@ export function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   // The dev tenant override changes what a path returns - key by it.
   const key = (localStorage.getItem('kaeos-dev-tenant') || '') + '|' + path
-    + (options?.headers ? '|' + JSON.stringify(options.headers) : '');
+    + (options?.headers ? '|' + _headersKeyPart(options.headers) : '');
 
   const fetchFresh = (): Promise<T> => {
     const existing = _inflightGets.get(key);
     if (existing) return existing as Promise<T>;
     const p = _exec<T>(path, options)
-      .then((data) => { _getCache.set(key, { t: Date.now(), data }); return data; })
+      .then((data) => { _cachePut(key, data); return data; })
       .finally(() => _inflightGets.delete(key));
     _inflightGets.set(key, p);
     return p;
@@ -179,6 +212,7 @@ export function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   const cached = _getCache.get(key);
   if (cached && Date.now() - cached.t < _SWR_TTL_MS) {
+    _getCache.delete(key); _getCache.set(key, cached); // LRU touch
     void fetchFresh().catch(() => {}); // revalidate in the background
     return Promise.resolve(cached.data as T);
   }
