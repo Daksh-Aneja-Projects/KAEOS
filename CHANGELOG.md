@@ -11,6 +11,40 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - S4 governance tail (2026-08-20)
+
+- **Healthcare's state machines are reachable over HTTP (4.4).** healthcare
+  declared two WorkflowSpecs (encounter, clinical_task) but shipped no
+  single-entity transition endpoint and no `/workflow-events`, so the only way
+  through them was the gated agents. Added `POST /healthcare/encounters/{id}/transition`,
+  `POST /healthcare/tasks/{id}/transition`, `GET /healthcare/workflow-events` and
+  `POST /healthcare/workflows/{entity_type}/bulk-transition`; lending and
+  procurement gained the bulk-transition endpoint they lacked. All ten
+  departments now expose the same workflow surface. HealthcareView renders the
+  shared WorkflowActions on encounters and clinical tasks; the transition toast
+  now reads "moved from Open to Triaged" instead of raw enum names. OpenAPI
+  baseline refreshed (671 -> 677 operations).
+- **Legal exposure is money, not prose (4.7).** `leg_matters.estimated_exposure`
+  was `Text`; it is now `NUMERIC(18,2)` end to end: the API takes a non-negative
+  Decimal (prose is a 422) and returns a JSON number; migration `0054` converts
+  salvageable legacy strings ("$1,250,000.00") and NULLs the rest rather than
+  failing. LegalView shows it as currency and the New Matter form exposes it.
+- **Five genuine foreign keys (4.8).** `mission_steps.mission_id`,
+  `action_records.execution_id`, `department_agents.blueprint_id` /
+  `.deployed_agent_id` and `eng_engineers.hr_employee_id` always name a sibling
+  row, so the database now says so (migration `0055`, after an orphan sweep:
+  dangling nullable pointers are NULLed, orphan mission steps are deleted, both
+  logged). `POST /actuation/execute` now verifies a client-supplied
+  `execution_id` tenant-scoped (404, never a 500 IntegrityError).
+- **Startup seed guard is tenant-scoped (4.12).** `seed_domains_if_empty` counted
+  the sentinel table across all tenants while every seeder's own guard is scoped
+  to `tenant_acme`, so on a multi-tenant dev database the first tenant with HR
+  rows suppressed the demo seed forever. The orchestrator now uses the same
+  predicate as the seeders (dev/demo only: it runs under `SEED_DEMO_DATA` and
+  not production-like).
+- **Frontend (4.13, 4.14).** LendingView accepts the `analytics` tab it already
+  renders; SupportView's tab bar has the roving `tabIndex` its nine siblings have.
+
 ### Changed - S4 governance, behaviour-changing (2026-08-19)
 
 - **HR transactional money is exact Decimal, not binary Float (4.6).** Payroll
