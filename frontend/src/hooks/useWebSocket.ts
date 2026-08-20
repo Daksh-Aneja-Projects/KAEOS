@@ -48,7 +48,7 @@ export function useWebSocket(tenantIdOverride?: string) {
         try {
           const data = JSON.parse(event.data);
           setLastMessage(data);
-        } catch (e) {
+        } catch {
           console.warn('Failed to parse WebSocket message', event.data);
         }
       };

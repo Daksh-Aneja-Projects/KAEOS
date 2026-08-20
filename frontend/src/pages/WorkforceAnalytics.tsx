@@ -10,7 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import {
-  BarChart3, Clock, DollarSign, TrendingUp, Building2,
+  Clock, DollarSign, Building2,
   Users, Zap, Heart, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
@@ -20,7 +20,7 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { measured, NOT_MEASURED } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
-export default function WorkforceAnalytics({ domain }: { domain?: string }) {
+export default function WorkforceAnalytics(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [data, setData] = useState<any>(null);
   const [trend, setTrend] = useState<any>(null);

@@ -8,8 +8,8 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
-  Scale, FileText, ShieldAlert, ShieldCheck, Lock, Lightbulb,
-  ArrowRight, Zap, Bot, Landmark, AlertTriangle
+  Scale, FileText, ShieldCheck, Lock, Lightbulb,
+  ArrowRight, Zap, Bot, Landmark
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';

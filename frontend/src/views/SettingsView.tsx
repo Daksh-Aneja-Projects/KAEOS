@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, Cpu, Plug, Calendar, Globe2, Shield, RefreshCw, Save, Check, ExternalLink, Moon, Sun, Bell, Palette, CreditCard } from 'lucide-react';
+import { Settings as Cpu, Plug, Calendar, Globe2, Shield, Moon, Sun, Bell, Palette, CreditCard } from 'lucide-react';
 import SecuritySettings from './SecuritySettings';
 import BillingSettings from './BillingSettings';
 import DataGovernanceSettings from './DataGovernanceSettings';
@@ -26,7 +26,7 @@ const SETTINGS_TABS = [
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
-const SettingsView: React.FC<{ domain?: string }> = ({ domain }) => {
+const SettingsView: React.FC<{ domain?: string }> = () => {
   const { colors, theme, toggle } = useTheme();
   // Stripe checkout/portal redirects back with ?tab=billing so the user lands
   // on the tab they left from, not the default.

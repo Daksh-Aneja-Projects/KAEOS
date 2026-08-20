@@ -13,7 +13,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { BrainLoading, BrainEmpty } from '../components/BrainStates';
 import DomainIcon from '../components/DomainIcon';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
@@ -24,7 +24,7 @@ import {
 
 type Step = 1 | 2 | 3 | 4;
 
-export default function DeploymentStudio({ domain }: { domain?: string }) {
+export default function DeploymentStudio(_props: { domain?: string }) {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -37,7 +37,6 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
   const [selectedPack, setSelectedPack] = useState<any>(null);
   const [connectors, setConnectors] = useState<any[]>([]);
   const [employeeCount, setEmployeeCount] = useState(0);
-  const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
@@ -74,7 +73,6 @@ export default function DeploymentStudio({ domain }: { domain?: string }) {
         connected_systems: connectors.filter(c => c.status === 'CONNECTED').map(c => c.id),
         employee_count: employeeCount,
       });
-      setDeploymentId(result.id);
       setStep(4);
       // The backend DeploymentStudio pipeline is the SINGLE OWNER of the FSM and
       // auto-advances through all states in the background (see Task 7). The UI

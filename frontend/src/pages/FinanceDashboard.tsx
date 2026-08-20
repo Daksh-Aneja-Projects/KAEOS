@@ -9,8 +9,7 @@ import { api } from '../api/client';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   DollarSign, Briefcase, Landmark, ShieldAlert, Scale,
-  BarChart3, Bot, Zap, ArrowRight, TrendingUp, CheckCircle,
-  FileSpreadsheet, ClipboardList, Wallet, Receipt, BookOpen
+  BarChart3, Bot, Zap, ArrowRight, FileSpreadsheet, Wallet, Receipt, BookOpen
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';

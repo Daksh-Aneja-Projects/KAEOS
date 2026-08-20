@@ -17,7 +17,7 @@ import DomainIcon from '../components/DomainIcon';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 
-export default function DomainPackMarketplace({ domain }: { domain?: string }) {
+export default function DomainPackMarketplace(_props: { domain?: string }) {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [packs, setPacks] = useState<any[]>([]);

@@ -8,8 +8,8 @@ import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import TableCard from '../components/shared/TableCard';
 import {
-  Cpu, DollarSign, Radio, BarChart3, AlertTriangle, CheckCircle,
-  Loader2, RefreshCw, Zap, Shield, Activity, Server, CircuitBoard, Heart,
+  Cpu, DollarSign, Radio, CheckCircle,
+  Loader2, Heart,
   Route, XCircle, RotateCcw
 } from 'lucide-react';
 
@@ -37,7 +37,7 @@ const BUDGET_COPY: Record<string, { text: string; tone: 'ok' | 'warn' | 'bad' }>
   BLOCK: { text: 'Over the hard limit - this would be refused.', tone: 'bad' },
 };
 
-export default function InfrastructureDashboard({ domain }: { domain?: string }) {
+export default function InfrastructureDashboard(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [tab, setTab] = useState<Tab>('models');
   const [models, setModels] = useState<any[]>([]);
@@ -308,7 +308,7 @@ export default function InfrastructureDashboard({ domain }: { domain?: string })
                 <div className="px-4 py-10 text-center text-[12px]" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
                   No models registered yet
                 </div>
-              ) : models.map((m, i) => (
+              ) : models.map((m) => (
                 <div key={m.id} className="grid grid-cols-9 items-center px-4 py-2.5 text-[12px]"
                   style={{ borderTop: `1px solid ${colors.hairline}` }}>
                   <div className="col-span-2 font-mono text-[11px] truncate pr-2" title={m.model_name}>{m.model_name}</div>

@@ -5,7 +5,7 @@ import { BrainError } from '../components/BrainStates';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import {
-  RefreshCw, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
+  RefreshCw, TrendingUp, AlertTriangle, CheckCircle2,
   MessageSquare, Brain, Zap, ChevronRight, ArrowUpRight, ArrowDownRight,
   Clock, BarChart3
 } from 'lucide-react';
@@ -20,7 +20,7 @@ interface EvolutionEvent {
   source?: string;
 }
 
-export default function EvolutionTimeline({ domain = 'All Domains' }: { domain?: string }) {
+export default function EvolutionTimeline(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [health, setHealth] = useState<any>(null);
   const [executions, setExecCount] = useState(0);

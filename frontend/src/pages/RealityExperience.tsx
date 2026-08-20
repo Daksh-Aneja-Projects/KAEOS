@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import {
-  Activity, Zap, Database, Eye, Crosshair, Brain, GitPullRequest, X,
+  Activity, Zap, Database, Eye, Crosshair, GitPullRequest, X,
   Users, Building2, Boxes, Bot, Package, FolderOpen,
   Sparkles, ShieldCheck, AlertTriangle, Ban, RotateCcw, Lightbulb, Loader2, History, Swords,
 } from 'lucide-react';

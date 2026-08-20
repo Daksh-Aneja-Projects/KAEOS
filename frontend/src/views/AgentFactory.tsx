@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Plus, Play, Square, Pause, CheckCircle2, Clock, AlertTriangle, Sparkles, Send, ChevronRight, Loader2, Workflow, RefreshCw } from 'lucide-react';
+import { Bot, Play, Square, CheckCircle2, AlertTriangle, Sparkles, Send, Loader2, Workflow, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import DeployConfigModal from '../components/DeployConfigModal';
@@ -30,7 +30,7 @@ interface DeployedAgent {
   [k: string]: any;
 }
 
-const AgentFactory: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }) => {
+const AgentFactory: React.FC<{ domain?: string }> = () => {
   const { colors } = useTheme();
   const [tab, setTab] = useState<'create' | 'blueprints' | 'deployed'>('create');
   const [prompt, setPrompt] = useState('');

@@ -4,8 +4,7 @@ import { api } from '../api/client';
 import { usePolling } from '../hooks/usePolling';
 import { BrainLoading, BrainEmpty, BrainError, LiveIndicator } from '../components/BrainStates';
 import {
-  Eye, Compass, Brain, Zap, ArrowRight, CheckCircle, Clock, AlertTriangle,
-  Activity, Shield, Users, ChevronRight
+  Eye, Compass, Brain, Zap, ArrowRight, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import { STREAM_INTERVALS } from '../services/realtime';
 import { humanize } from '../lib/format';
@@ -22,7 +21,7 @@ interface OODAEvent {
   timestamp: string;
 }
 
-export default function OODAMonitor({ domain }: { domain?: string }) {
+export default function OODAMonitor(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 

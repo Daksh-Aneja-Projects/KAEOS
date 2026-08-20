@@ -3,8 +3,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { api, downloadFile } from '../api/client';
 import {
-  UserPlus, Shield, Eye, Pencil, Trash2, CheckCircle, XCircle,
-  Loader2, Users, Crown, BarChart3, ChevronDown, Info, Download
+  UserPlus, Shield, Eye, Trash2, XCircle,
+  Loader2, Crown, BarChart3, Info, Download
 } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from '../lib/departments';
 import { humanize } from '../lib/format';
@@ -27,7 +27,7 @@ interface UserRecord {
 
 export default function UserManagement() {
   const { colors } = useTheme();
-  const { token, isAdmin, user: currentUser } = useAuth();
+  const { isAdmin, user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -61,8 +61,6 @@ export default function UserManagement() {
       setExporting(false);
     }
   };
-
-  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   const fetchUsers = async () => {
     try {

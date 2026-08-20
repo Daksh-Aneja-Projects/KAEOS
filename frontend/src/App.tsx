@@ -3,12 +3,10 @@ import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router';
 import {
   Bot, Activity, Sun, Moon,
   ChevronDown, Settings as SettingsIcon, Database, Shield,
-  MessageSquare, LogOut, Building2, Users, Rocket, Package,
+  MessageSquare, LogOut, Building2, Rocket, Package,
   BarChart3, LayoutDashboard, Plug, ChevronRight, Briefcase,
-  Landmark, Receipt, Wallet, Scale, ShieldAlert, FileText, ShieldCheck,
-  Lock, Lightbulb, BookOpen, Clock, Heart, Compass, Target, TrendingUp,
-  CheckSquare, Clipboard, Wrench, Server, GitPullRequest, Siren,
-  Factory, UserPlus, Zap, FlaskConical, Menu
+  Scale, ShieldCheck,
+  Compass, Server, Factory, UserPlus, Zap, FlaskConical, Menu
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from './lib/departments';
@@ -97,7 +95,6 @@ const ChatCopilot = lazy(() => import('./components/ChatCopilot'));
 
 // ─── Navigation Structure ──────────────────────────────────────────
 
-type NavSection = { title: string; items: NavItem[]; collapsed?: boolean };
 type NavItem = { path: string; label: string; icon: React.ElementType; badge?: string; adminOnly?: boolean };
 
 const WORKFORCE_NAV: NavItem[] = [

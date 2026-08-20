@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Building2, Users, Landmark, Scale, Settings, TrendingUp, Headphones,
-  Package, Boxes, Rocket, Target, HeartPulse, Zap, Briefcase, ShoppingCart,
+  Package, Rocket, Target, HeartPulse, Zap, Briefcase, ShoppingCart,
   ShieldCheck, FileText, GraduationCap, Wallet, Clock, BarChart3, Bot,
   ClipboardCheck, Wrench, Globe, Database, MessageSquare, Banknote, type LucideIcon,
 } from 'lucide-react';

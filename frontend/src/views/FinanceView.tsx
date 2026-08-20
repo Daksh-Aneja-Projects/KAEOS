@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Receipt, Landmark, BarChart3, Wallet, Scale, ShieldAlert,
-  Search, Filter, RefreshCw, Loader2, Bot, ArrowUpRight,
+  Search, RefreshCw, Loader2, Bot, ArrowUpRight,
   CheckCircle2, XCircle, AlertCircle, Clock, DollarSign,
   FileText, TrendingUp, ShieldCheck, PiggyBank, ChevronDown,
   ChevronRight, FileBarChart2, FileCheck2, Gavel, ArrowDownCircle, ArrowUpCircle,
@@ -80,7 +80,7 @@ const TreasuryBars = ({ items }: { items: DonutItem[] }) => {
   );
 };
 
-const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ domain, defaultTab }) => {
+const FinanceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ defaultTab }) => {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [tab, setTab] = useTabParam<FinanceTab>(

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainError, BrainEmpty, BrainLoading } from '../components/BrainStates';
+import { BrainError, BrainEmpty } from '../components/BrainStates';
 import {
-  Database, Search, Filter, CheckCircle, AlertCircle, XCircle, Loader2,
-  ArrowRight, Lock, Eye, RefreshCw, Zap, Clock, ChevronRight, Upload,
-  Settings, Activity, MapPin, Shield, BarChart3, Layers, Plug,
-  KeyRound, Send, Inbox, ArrowUpFromLine, Copy
+  Database, Search, CheckCircle, AlertCircle, XCircle, Loader2,
+  ArrowRight, Lock, RefreshCw, Zap, Clock, ChevronRight, Upload,
+  Activity, MapPin, Shield, Layers, Plug
 } from 'lucide-react';
 import { humanize } from '../lib/format';
 import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
@@ -14,7 +13,7 @@ import { SyncOperations, ConnectorHealthCards, ConnectorFeedPanel } from './Conn
 
 type Screen = 'library' | 'mapper' | 'sync' | 'monitor';
 
-export default function ConnectorStudio({ domain }: { domain?: string }) {
+export default function ConnectorStudio(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [screen, setScreen] = useState<Screen>('library');
   const [connectors, setConnectors] = useState<any[]>([]);
@@ -24,8 +23,6 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
   const [searchQ, setSearchQ] = useState('');
   const [filterCat, setFilterCat] = useState('all');
   const [healthData, setHealthData] = useState<Record<string, any>>({});
-  const [feedData, setFeedData] = useState<any[]>([]);
-  const [feedLoading, setFeedLoading] = useState(false);
   const [mappingError, setMappingError] = useState(false);
   const [schemaUnavailable, setSchemaUnavailable] = useState(false);
   const [catalog, setCatalog] = useState<any>(null);
@@ -42,13 +39,6 @@ export default function ConnectorStudio({ domain }: { domain?: string }) {
   });
 
   const categories = ['all', ...new Set(connectors.map(c => c.category))];
-
-  const statusColor = (s: string) => {
-    if (s === 'CONNECTED') return '#22c55e';
-    if (s === 'SYNCING') return '#f59e0b';
-    if (s === 'ERROR') return '#ef4444';
-    return colors.inkSubtle;
-  };
 
   const statusIcon = (s: string) => {
     if (s === 'CONNECTED') return <CheckCircle className="w-4 h-4" style={{ color: '#22c55e' }} />;

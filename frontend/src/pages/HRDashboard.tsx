@@ -9,10 +9,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
-import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   Users, Briefcase, Clock, TrendingUp, Heart, Shield,
-  BarChart3, Building2, Bot, Zap, ArrowRight, UserPlus,
+  BarChart3, Bot, Zap, ArrowRight, UserPlus,
   Award, CheckCircle
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
@@ -77,7 +77,7 @@ function MiniDonut({ items, colors }: { items: { label: string; value: number }[
   );
 }
 
-export default function HRDashboard({ domain }: { domain?: string }) {
+export default function HRDashboard(_props: { domain?: string }) {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [dept, setDept] = useState<any>(null);

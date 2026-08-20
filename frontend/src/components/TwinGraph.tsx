@@ -29,7 +29,7 @@ export interface ShockPulse {
   ts: number;
 }
 
-import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, TWIN_W, TWIN_H, W, H, fitDeptLabel, deptGraphLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_LETTER_SPACING } from './TwinGraph.layout';
+import { TYPE_COLORS, DEPT_PALETTE, TYPE_RADIUS, LINK_STYLE, DEFAULT_LINK, CX, CY, seedLayout, W, H, fitDeptLabel, deptGraphLabel, DEPT_LABEL_BASE_FONT, DEPT_LABEL_LETTER_SPACING } from './TwinGraph.layout';
 import type { GraphNode, GraphData, SimNode } from './TwinGraph.layout';
 export { TWIN_W, TWIN_H } from './TwinGraph.layout';
 

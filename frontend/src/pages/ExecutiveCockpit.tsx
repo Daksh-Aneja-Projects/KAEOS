@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, {  } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { metricsApi } from '../api/endpoints/metrics';
@@ -14,7 +14,7 @@ import { STREAM_INTERVALS } from '../services/realtime';
 import {
   Activity, TrendingUp, TrendingDown, Minus, Shield, Users, Zap, DollarSign,
   BarChart3, MessageSquare, Globe, Target,
-  ArrowUpRight, ArrowDownRight, Brain, Hourglass, HelpCircle, Ghost
+  Hourglass, HelpCircle, Ghost
 } from 'lucide-react';
 
 // Shape of the aggregated /dashboard/cockpit payload (only the fields the
@@ -28,7 +28,7 @@ interface CockpitData {
   org_readiness?: OrgReadinessItem[];
 }
 
-export default function ExecutiveCockpit({ domain }: { domain?: string }) {
+export default function ExecutiveCockpit(_props: { domain?: string }) {
   const { colors } = useTheme();
 
   // ── LIVE DATA - ALL FROM BACKEND, ZERO MOCK ──

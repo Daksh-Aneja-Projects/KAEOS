@@ -105,7 +105,7 @@ export default function GeneralLedger() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  useEffect(() => { setLoading(!data[tab]); load(); /* eslint-disable-next-line */ }, [tab]);
+  useEffect(() => { setLoading(!data[tab]); load(); }, [tab]);
   useLiveRefresh(load, { intervalMs: 20000 });
 
   const setPeriod = async (year: number, period: number, close: boolean) => {

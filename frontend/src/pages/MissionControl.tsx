@@ -29,7 +29,7 @@ const STEP_ICON: Record<string, any> = {
   DONE: CheckCircle2, FAILED: XCircle, SKIPPED: X,
 };
 
-export default function MissionControl({ domain = 'All Domains' }: { domain?: string }) {
+export default function MissionControl(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [missions, setMissions] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);

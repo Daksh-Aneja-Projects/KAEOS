@@ -9,7 +9,7 @@ import { api } from '../api/client';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   TrendingUp, Compass, Target, DollarSign, Award,
-  ArrowRight, Bot, Zap, Shield, Sparkles, BarChart3, Briefcase
+  ArrowRight, Bot, Zap, BarChart3, Briefcase
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';

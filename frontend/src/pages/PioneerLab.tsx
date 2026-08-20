@@ -24,8 +24,7 @@ import { BrainEmpty, BrainError, BrainLoading } from '../components/BrainStates'
  */
 
 import {
-  SIGNAL_TYPES, SEVERITIES, SHOCKS, LANES, riskColor, cleanReason,
-  SectionTitle, ErrorBanner, ActionButton, Badge, LedgersLane,
+  SIGNAL_TYPES, SEVERITIES, SHOCKS, LANES, riskColor, SectionTitle, ErrorBanner, ActionButton, Badge, LedgersLane,
 } from './PioneerLab.parts';
 import type { Lane } from './PioneerLab.parts';
 

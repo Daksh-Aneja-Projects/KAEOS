@@ -1,4 +1,4 @@
-import { request, uploadForm, downloadFile, API_BASE } from '../http';
+import { request, uploadForm, API_BASE } from '../http';
 import type { AppNotification, AutomationRule, BulkTransitionResult, DomainAnalytics, EntityComment, FoundryBuildResult, FoundryExample, FoundryFeedbackInput, FoundryStats, MyWorkItem, OrgPulse, RuleItem, SLABreach, SavedSegment, TransitionResult, WorkflowEvent, WorkflowSpec } from '../types';
 
 /** The full outbound write-back status set (models/sync.py OutboundWrite.status). */

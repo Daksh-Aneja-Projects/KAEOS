@@ -29,7 +29,7 @@ const HITL_MODES = [
   { id: 'NEVER' as const, label: 'Never', desc: 'Fully autonomous - no human review' },
 ];
 
-export default function DeployConfigModal({ blueprintId, blueprintName, colors, onDeploy, onCancel }: Props) {
+export default function DeployConfigModal({ blueprintName, colors, onDeploy, onCancel }: Props) {
   const [config, setConfig] = useState<DeployConfig>({
     risk_level: 'MEDIUM',
     confidence_threshold: 0.85,

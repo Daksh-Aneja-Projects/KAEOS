@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Brain, Database, FileUp, Mic, Search, Send, Sparkles, Waypoints, X,

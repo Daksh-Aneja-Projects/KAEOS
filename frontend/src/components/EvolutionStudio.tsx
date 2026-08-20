@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Target, Zap, ArrowRight, ArrowUpRight, ArrowDownRight, Layers, Box, Cpu, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
+import { Zap, ArrowUpRight, Cpu, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
 import { request } from '../api/client';
 import { PAGE_PAD } from '../lib/layout';
 import { Ring } from './shared/Ring';

@@ -9,7 +9,7 @@ import { api } from '../api/client';
 import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
   LifeBuoy, MessageSquare, BookOpen, Clock, Heart,
-  ArrowRight, Bot, Zap, Shield, Users
+  ArrowRight, Bot, Zap
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import { CountUp } from '../components/CountUp';

@@ -10,7 +10,7 @@ import { PAGE_PAD } from '../lib/layout';
 
 interface ReasoningStep { step: number | string; action: string; confidence?: number }
 
-export default function HITLQueue({ domain = 'All Domains' }: { domain?: string }) {
+export default function HITLQueue(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [items, setItems] = useState<PendingHITLItem[]>([]);
   const [loading, setLoading] = useState(true);

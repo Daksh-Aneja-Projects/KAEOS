@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Zap, ShieldCheck, Clock, AlertTriangle, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, TrendingUp, RefreshCw, Eye } from 'lucide-react';
+import { Activity, Zap, ShieldCheck, AlertTriangle, CheckCircle2, ArrowUpRight, ArrowDownRight, TrendingUp, RefreshCw, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { KBHealth } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -15,7 +15,7 @@ interface FeedEvent {
 const FEED_LIMIT_DEFAULT = 30;
 const FEED_LIMIT_ALL = 100;
 
-const CommandCenter: React.FC<{ domain?: string }> = ({ domain = 'All Domains' }) => {
+const CommandCenter: React.FC<{ domain?: string }> = () => {
   const { colors } = useTheme();
   const [health, setHealth] = useState<KBHealth | null>(null);
   const [feed, setFeed] = useState<FeedEvent[]>([]);

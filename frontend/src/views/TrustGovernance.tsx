@@ -136,7 +136,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
             <span className="text-[12px]" style={{ color: colors.inkTertiary }}>{ledger.length} entries</span>
           </div>
           <div className="max-h-[500px] overflow-y-auto">
-            {ledger.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No provenance entries yet</div>}
+            {loading ? <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>Loading the provenance ledger…</div> : ledger.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No provenance entries yet</div>}
             { }
             {ledger.map((entry: any, i: number) => (
               <div key={i} className="px-5 py-3 border-b flex gap-3" style={{ borderColor: colors.hairline }}>
@@ -162,7 +162,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
           <div className="px-5 py-3 border-b" style={{ borderColor: colors.hairline }}>
             <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Fairness Audit Log</span>
           </div>
-          {fairnessLog.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No fairness audits recorded yet</div>}
+          {loading ? <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>Loading fairness audits…</div> : fairnessLog.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No fairness audits recorded yet</div>}
           { }
           {fairnessLog.map((log: any, i: number) => (
             <div key={i} className="px-5 py-3 border-b" style={{ borderColor: colors.hairline }}>
@@ -206,7 +206,7 @@ const TrustGovernance: React.FC<{ defaultTab?: string; only?: string[] }> = ({ d
           <div className="px-5 py-3 border-b" style={{ borderColor: colors.hairline }}>
             <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Debate Transcripts</span>
           </div>
-          {debates.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No debates recorded yet. Debates trigger on Tier-1 actions.</div>}
+          {loading ? <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>Loading debate transcripts…</div> : debates.length === 0 && <div className="p-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>No debates recorded yet. Debates trigger on Tier-1 actions.</div>}
           { }
           {debates.map((d: any, i: number) => (
             <div key={i} className="px-5 py-4 border-b" style={{ borderColor: colors.hairline }}>

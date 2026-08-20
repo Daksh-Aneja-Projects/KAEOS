@@ -14,17 +14,17 @@ import { api } from '../api/client';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
-import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
+import { BrainLoading, BrainError } from '../components/BrainStates';
 import {
-  Building2, Users, Clock, Zap, BarChart3, ArrowRight, Rocket,
-  Activity, CheckCircle, AlertTriangle, Heart, TrendingUp, ShieldAlert
+  Building2, Users, Clock, Zap, ArrowRight, Rocket,
+  Activity, CheckCircle, Heart, TrendingUp, ShieldAlert
 } from 'lucide-react';
 import DomainIcon from '../components/DomainIcon';
 import LiveValue from '../components/LiveValue';
 import LiveBadge from '../components/LiveBadge';
 import Sparkline from '../components/Sparkline';
 
-export default function WorkforceDashboard({ domain }: { domain?: string }) {
+export default function WorkforceDashboard(_props: { domain?: string }) {
   const { colors } = useTheme();
   const navigate = useNavigate();
   const [overview, setOverview] = useState<any>(null);

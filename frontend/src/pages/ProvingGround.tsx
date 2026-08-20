@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ShieldCheck, Crosshair, AlertTriangle, Activity, RefreshCw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { request } from '../api/client';
@@ -45,7 +45,7 @@ export default function ProvingGround() {
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
   useVisiblePoll(load, 20000); // live-refresh convention
 
   const scorePct = run?.assurance_score != null ? Math.round(run.assurance_score * 100) : null;

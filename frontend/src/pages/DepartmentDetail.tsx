@@ -14,15 +14,14 @@ import { api } from '../api/client';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
 import DomainIcon from '../components/DomainIcon';
 import {
-  ArrowLeft, Bot, Zap, BarChart3, Heart, CheckCircle,
-  Clock, Activity, Shield, AlertTriangle, Cpu, TrendingUp, Waypoints
+  ArrowLeft, Bot, Zap, Heart, Activity, Shield, Waypoints
 } from 'lucide-react';
 import { DeptNetworkGraph } from '../components/neural/NeuralMap';
 import { humanize, measured, NOT_MEASURED } from '../lib/format';
 import { PAGE_PAD } from '../lib/layout';
 import TableCard from '../components/shared/TableCard';
 
-export default function DepartmentDetail({ domain }: { domain?: string }) {
+export default function DepartmentDetail(_props: { domain?: string }) {
   const { colors } = useTheme();
   const { deptId } = useParams<{ deptId: string }>();
   const navigate = useNavigate();
