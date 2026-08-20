@@ -44,6 +44,47 @@ def _classify(payload: Dict[str, Any]) -> Dict[str, str]:
     return {"event_type": event_type, "severity": severity}
 
 
+async def _disable_affected_user(
+    db, tenant_id: str, affected_email: str, severity: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """Containment step 3: deactivate the named user when the event is CRITICAL.
+
+    Returns (action_taken, recommendation) - exactly one is set. Destructive to a
+    person, so everything below CRITICAL is only ever a recommendation.
+    """
+    from app.models.auth import User
+    target = (await db.execute(select(User).where(
+        User.email == affected_email, User.tenant_id == tenant_id
+    ))).scalar_one_or_none()
+    if target is None:
+        return None, (f"affected user {affected_email} is not a KAEOS account; "
+                      f"disable it in the source system")
+    if severity != "CRITICAL":
+        return None, f"disable_user {affected_email} (needs a human below CRITICAL)"
+
+    # Mirror AuthService.deactivate_user's last-admin guard:
+    # auto-disabling the tenant's last active admin would lock
+    # everyone out (reactivation itself needs an admin session).
+    from app.models.auth import UserRole
+    from sqlalchemy import func as _func
+    last_admin = False
+    if target.role == UserRole.ADMIN and target.is_active:
+        active_admins = (await db.execute(
+            select(_func.count()).select_from(User).where(
+                User.tenant_id == tenant_id,
+                User.role == UserRole.ADMIN,
+                User.is_active == True,  # noqa: E712
+            )
+        )).scalar_one()
+        last_admin = active_admins <= 1
+    if last_admin:
+        return None, (f"disable_user {affected_email} held: last active admin, "
+                      f"auto-disable would lock the tenant out. Reassign admin first, "
+                      f"then disable.")
+    target.is_active = False
+    return f"disable_user: {affected_email} deactivated", None
+
+
 async def respond_to_security_event(connector_id: str, signature: Optional[str],
                                     raw_body: bytes) -> Dict[str, Any]:
     """Verify, record an Incident, run the containment playbook, notify.
@@ -132,42 +173,12 @@ async def respond_to_security_event(connector_id: str, signature: Optional[str],
 
             # 3. disable_user: destructive to a person - CRITICAL only.
             if affected_email:
-                from app.models.auth import User
-                target = (await db.execute(select(User).where(
-                    User.email == affected_email, User.tenant_id == tenant_id
-                ))).scalar_one_or_none()
-                if target is not None:
-                    if meta["severity"] == "CRITICAL":
-                        # Mirror AuthService.deactivate_user's last-admin guard:
-                        # auto-disabling the tenant's last active admin would lock
-                        # everyone out (reactivation itself needs an admin session).
-                        from app.models.auth import UserRole
-                        from sqlalchemy import func as _func
-                        last_admin = False
-                        if target.role == UserRole.ADMIN and target.is_active:
-                            active_admins = (await db.execute(
-                                select(_func.count()).select_from(User).where(
-                                    User.tenant_id == tenant_id,
-                                    User.role == UserRole.ADMIN,
-                                    User.is_active == True,  # noqa: E712
-                                )
-                            )).scalar_one()
-                            last_admin = active_admins <= 1
-                        if last_admin:
-                            recommended.append(
-                                f"disable_user {affected_email} held: last active admin, "
-                                f"auto-disable would lock the tenant out. Reassign admin first, "
-                                f"then disable.")
-                        else:
-                            target.is_active = False
-                            actions_taken.append(f"disable_user: {affected_email} deactivated")
-                    else:
-                        recommended.append(
-                            f"disable_user {affected_email} (needs a human below CRITICAL)")
-                else:
-                    recommended.append(
-                        f"affected user {affected_email} is not a KAEOS account; "
-                        f"disable it in the source system")
+                action, recommendation = await _disable_affected_user(
+                    db, tenant_id, affected_email, meta["severity"])
+                if action:
+                    actions_taken.append(action)
+                if recommendation:
+                    recommended.append(recommendation)
 
             # 4. Audit spine: the response itself lands in the sync ledger.
             from app.models.sync import SyncLedger

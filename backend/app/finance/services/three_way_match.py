@@ -120,6 +120,60 @@ async def _billed_to_date(
     return by_line, header
 
 
+def _evaluate_po_line(
+    pol: POLineItem, idx: int, inv_lines: list,
+    rcv: Optional[int], prior_qty: Decimal,
+) -> tuple[dict, list[str], CheckStatus]:
+    """Reconcile ONE PO line against the invoice line billing it.
+
+    Pure: `rcv` (received qty, None = unverifiable) and `prior_qty` (already
+    billed by earlier invoices) are supplied by the caller, which owns the DB.
+    Returns (line row for the result, reasons, checker status).
+    """
+    po_qty = int(pol.quantity or 0)
+    po_price = _money(pol.unit_price)
+
+    il = _find_invoice_line(inv_lines, pol, idx)
+    if il is not None:
+        # Decimal, not int(): a services invoice billing a fractional qty
+        # (e.g. 10.9h against 10 received) must NOT truncate down into
+        # tolerance - that is a fail-open on the exact control this enforces.
+        try:
+            inv_qty = Decimal(str(il.get("qty") if il.get("qty") is not None else po_qty))
+        except (InvalidOperation, TypeError, ValueError):
+            # Unparseable qty is not a pass: bill "more than ordered" so the
+            # line fails closed as an EXCEPTION rather than truncating or 500-ing.
+            inv_qty = Decimal(po_qty) + Decimal("1")
+        inv_price = _money(il.get("unit_price") if il.get("unit_price") is not None else po_price)
+    else:
+        # No invoice line for this PO line: bill nothing (honest under-bill).
+        inv_qty, inv_price = Decimal(0), po_price
+
+    line_tol = max(PRICE_ABS_TOL, po_price * PRICE_PCT_TOL)
+    # Fold in qty already billed on this line by prior invoices so the Nth
+    # invoice fails closed once cumulative billing exceeds received/ordered.
+    cumulative_qty = inv_qty + prior_qty
+    tag = f"line {pol.line_number}"
+    if prior_qty:
+        tag = (f"line {pol.line_number} (this invoice {inv_qty} + {prior_qty} "
+               "already billed on prior invoices)")
+    ctx = {"three_way_match": {
+        "line_id": tag,
+        "po": {"qty": po_qty, "unit_price": po_price},
+        "receipt": {"qty": rcv},
+        "invoice": {"qty": cumulative_qty, "unit_price": inv_price},
+    }, "qty_tolerance": QTY_TOL, "price_tolerance": line_tol}
+    res = check_three_way_match(ctx)
+    return {
+        "line_number": pol.line_number,
+        "description": pol.description,
+        "po_qty": po_qty, "po_unit_price": str(po_price),
+        "received_qty": rcv,
+        "invoice_qty": inv_qty, "invoice_unit_price": str(inv_price),
+        "status": res.status.value,
+    }, [f.message for f in res.findings], res.status
+
+
 async def evaluate_three_way_match(
     db: AsyncSession, tenant_id: str, invoice
 ) -> dict[str, Any]:
@@ -214,8 +268,6 @@ async def evaluate_three_way_match(
     any_unverifiable = False
 
     for idx, pol in enumerate(po_lines):
-        po_qty = int(pol.quantity or 0)
-        po_price = _money(pol.unit_price)
         # Per-line received: attributed receipts, or spread a single header
         # receipt onto a single-line PO.
         if pol.id in line_received:
@@ -225,53 +277,14 @@ async def evaluate_three_way_match(
         else:
             rcv = None
 
-        il = _find_invoice_line(inv_lines, pol, idx)
-        if il is not None:
-            # Decimal, not int(): a services invoice billing a fractional qty
-            # (e.g. 10.9h against 10 received) must NOT truncate down into
-            # tolerance - that is a fail-open on the exact control this enforces.
-            try:
-                inv_qty = Decimal(str(il.get("qty") if il.get("qty") is not None else po_qty))
-            except (InvalidOperation, TypeError, ValueError):
-                # Unparseable qty is not a pass: bill "more than ordered" so the
-                # line fails closed as an EXCEPTION rather than truncating or 500-ing.
-                inv_qty = Decimal(po_qty) + Decimal("1")
-            inv_price = _money(il.get("unit_price") if il.get("unit_price") is not None else po_price)
-        else:
-            # No invoice line for this PO line: bill nothing (honest under-bill).
-            inv_qty, inv_price = Decimal(0), po_price
-
-        line_tol = max(PRICE_ABS_TOL, po_price * PRICE_PCT_TOL)
-        # Fold in qty already billed on this line by prior invoices so the Nth
-        # invoice fails closed once cumulative billing exceeds received/ordered.
-        prior_qty = billed_by_line.get(pol.id or "", Decimal(0))
-        cumulative_qty = inv_qty + prior_qty
-        tag = f"line {pol.line_number}"
-        if prior_qty:
-            tag = (f"line {pol.line_number} (this invoice {inv_qty} + {prior_qty} "
-                   "already billed on prior invoices)")
-        ctx = {"three_way_match": {
-            "line_id": tag,
-            "po": {"qty": po_qty, "unit_price": po_price},
-            "receipt": {"qty": rcv},
-            "invoice": {"qty": cumulative_qty, "unit_price": inv_price},
-        }, "qty_tolerance": QTY_TOL, "price_tolerance": line_tol}
-        res = check_three_way_match(ctx)
-        line_reasons = [f.message for f in res.findings]
+        line_out, line_reasons, status = _evaluate_po_line(
+            pol, idx, inv_lines, rcv, billed_by_line.get(pol.id or "", Decimal(0)))
         reasons.extend(line_reasons)
-        if res.status == CheckStatus.BLOCK:
+        if status == CheckStatus.BLOCK:
             any_block = True
-        elif res.status == CheckStatus.ADVISORY:
+        elif status == CheckStatus.ADVISORY:
             any_unverifiable = True
-
-        lines_out.append({
-            "line_number": pol.line_number,
-            "description": pol.description,
-            "po_qty": po_qty, "po_unit_price": str(po_price),
-            "received_qty": rcv,
-            "invoice_qty": inv_qty, "invoice_unit_price": str(inv_price),
-            "status": res.status.value,
-        })
+        lines_out.append(line_out)
 
     if any_block or any_unverifiable:
         # Fail closed: a real overcharge/over-bill blocks; an unverifiable leg

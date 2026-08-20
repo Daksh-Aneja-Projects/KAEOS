@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from app.finance.agents.ap_agent import APAgent
+from app.finance.agents.ap_agent import APAgent, _apply_decision
 from app.finance.models.accounts_payable import Invoice, InvoiceStatus, Vendor
 from app.models.domain import ProvenanceLedger
 from app.operations.models.procurement import (
@@ -22,6 +22,17 @@ from app.operations.models.procurement import (
 
 def _t():
     return f"tenant_ap_{uuid.uuid4().hex[:6]}"
+
+
+def test_missing_duplicate_risk_never_clears_the_flag():
+    """An absent duplicate_risk is 'unknown', not 'clean' - the prior flag stands."""
+    inv = Invoice(three_way_match_status="MATCHED", ai_duplicate_flag=True)
+    _apply_decision(inv, {"recommendation": "APPROVE", "confidence": 0.9})
+    assert inv.ai_duplicate_flag is True
+    assert inv.status == InvoiceStatus.PENDING_APPROVAL   # still never auto-approved
+
+    _apply_decision(inv, {"recommendation": "APPROVE", "duplicate_risk": "LOW"})
+    assert inv.ai_duplicate_flag is False
 
 
 async def _chain(db, tenant, *, inv_price="3545.00"):

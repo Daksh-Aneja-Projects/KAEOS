@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from app.transforms.pii_scrubber import redact_structured_pii
+from app.transforms.pii_scrubber import _splice_anonymize, redact_structured_pii
 from app.services.llm_router import LLMRouter
 
 PII_TEXT = (
@@ -110,3 +110,19 @@ async def test_local_call_does_not_scrub(monkeypatch):
     blob = " ".join(m["content"] for m in captured["messages"])
     # The raw identifiers are still present — local inference stays in-region.
     assert "jane.roe@corp.com" in blob and "123-45-6789" in blob
+
+
+def test_splice_anonymize_rewrites_later_spans_first():
+    """The no-Presidio fallback must not corrupt offsets, and per-entity
+    actions must beat the run-wide default."""
+    def span(entity_type, start, end):
+        return types.SimpleNamespace(entity_type=entity_type, start=start, end=end)
+
+    text = "call 415-555-2671 or mail jane.roe@corp.com"
+    spans = [span("PHONE_NUMBER", 5, 17), span("EMAIL_ADDRESS", 26, 43)]
+    assert _splice_anonymize(text, spans, "redact", {}) == (
+        "call [PHONE_NUMBER] or mail [EMAIL_ADDRESS]")
+    assert _splice_anonymize(text, spans, "redact", {"PHONE_NUMBER": "mask"}) == (
+        "call *** or mail [EMAIL_ADDRESS]")
+    # Spans are not reordered in place for the caller (it still counts them).
+    assert [s.entity_type for s in spans] == ["PHONE_NUMBER", "EMAIL_ADDRESS"]

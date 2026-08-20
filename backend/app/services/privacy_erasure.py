@@ -183,51 +183,23 @@ async def _collect_tenant_blob_paths(db: AsyncSession, tenant_id: str) -> list[s
     return paths
 
 
-async def erase_subject(
-    db: AsyncSession,
-    tenant_id: str,
-    *,
-    employee_id: Optional[str] = None,
-    email: Optional[str] = None,
-    subject_ref: Optional[str] = None,
-    _journal: bool = True,
-) -> dict:
-    """Irreversibly anonymise a single data subject across DB, blobs and vectors.
+async def _collect_subject_identity(
+    db: AsyncSession, tables, tenant_id: str,
+    employee_id: Optional[str], email: Optional[str],
+) -> tuple[set[str], list[str], list[str]]:
+    """Read the subject's identity BEFORE any tombstone overwrites its keys.
 
-    Matches on employee/candidate id, email, and/or external subject ref (the
-    lending applicant/borrower id or the healthcare patient ref) - at least one
-    required. For every matching
-    row, overwrites direct identifiers with a tombstone, nulls free-text PII,
-    DELETES the subject's stored files, and purges the subject's vector
-    embeddings. Rows are kept (not deleted) so FK-linked history stays consistent
-    while the PII is gone.
+    Returns (subject_names, customer_ids, vendor_ids):
+     - subject_names: the subject's human name(s), to reach free-text PERSON fields
+       that carry a NAME rather than an id/email (procurement receiver, legal
+       counterparty). No id/email key exists on those columns.
+     - customer_ids / vendor_ids: the subject's finance-master ids, to reach rows
+       keyed by those ids (support tickets by fin_customers.id, purchase orders by
+       fin_vendors.id) AFTER the email key on the master has been tombstoned.
+
+    Read-only: it must run before erase_subject writes anything, or the keys it
+    matches on are already gone.
     """
-    if not tenant_id:
-        raise ValueError("erase_subject requires a tenant_id")
-    if not (employee_id or email or subject_ref):
-        raise ValueError(
-            "erase_subject requires at least one of employee_id / email / subject_ref")
-
-    from app.models.domain import Base
-    import app.core.database  # noqa: F401 — ensure HR tables are registered
-
-    tables = Base.metadata.tables
-    affected: dict[str, int] = {}
-    blob_paths: list[str] = []
-    # Per-subject unique tombstone: some target tables have UNIQUE(tenant_id, email)
-    # (sup_agents, ops_team_members, sls_reps). A shared literal would collide when a
-    # second subject in the same tenant is erased. Key on employee_id, else a stable
-    # hash of the email, so re-runs stay idempotent but distinct subjects differ.
-    tomb_email = _TOMBSTONE_EMAIL_FMT.format(
-        employee_id or (_email_hash(email)[:16] if email else "subject"))
-
-    # Collected UP FRONT — before the tombstones below overwrite the matching keys:
-    #  - subject_names: the subject's human name(s), to reach free-text PERSON fields
-    #    that carry a NAME rather than an id/email (procurement receiver, legal
-    #    counterparty). No id/email key exists on those columns.
-    #  - customer_ids / vendor_ids: the subject's finance-master ids, to reach rows
-    #    keyed by those ids (support tickets by fin_customers.id, purchase orders by
-    #    fin_vendors.id) AFTER the email key on the master has been tombstoned.
     subject_names: set[str] = set()
     customer_ids: list[str] = []
     vendor_ids: list[str] = []
@@ -274,6 +246,50 @@ async def erase_subject(
                 _bucket.append(_row[0])
                 for _v in _row[1:]:
                     _add_name(_v)
+
+    return subject_names, customer_ids, vendor_ids
+
+
+async def erase_subject(
+    db: AsyncSession,
+    tenant_id: str,
+    *,
+    employee_id: Optional[str] = None,
+    email: Optional[str] = None,
+    subject_ref: Optional[str] = None,
+    _journal: bool = True,
+) -> dict:
+    """Irreversibly anonymise a single data subject across DB, blobs and vectors.
+
+    Matches on employee/candidate id, email, and/or external subject ref (the
+    lending applicant/borrower id or the healthcare patient ref) - at least one
+    required. For every matching
+    row, overwrites direct identifiers with a tombstone, nulls free-text PII,
+    DELETES the subject's stored files, and purges the subject's vector
+    embeddings. Rows are kept (not deleted) so FK-linked history stays consistent
+    while the PII is gone.
+    """
+    if not tenant_id:
+        raise ValueError("erase_subject requires a tenant_id")
+    if not (employee_id or email or subject_ref):
+        raise ValueError(
+            "erase_subject requires at least one of employee_id / email / subject_ref")
+
+    from app.models.domain import Base
+    import app.core.database  # noqa: F401 — ensure HR tables are registered
+
+    tables = Base.metadata.tables
+    affected: dict[str, int] = {}
+    blob_paths: list[str] = []
+    # Per-subject unique tombstone: some target tables have UNIQUE(tenant_id, email)
+    # (sup_agents, ops_team_members, sls_reps). A shared literal would collide when a
+    # second subject in the same tenant is erased. Key on employee_id, else a stable
+    # hash of the email, so re-runs stay idempotent but distinct subjects differ.
+    tomb_email = _TOMBSTONE_EMAIL_FMT.format(
+        employee_id or (_email_hash(email)[:16] if email else "subject"))
+
+    subject_names, customer_ids, vendor_ids = await _collect_subject_identity(
+        db, tables, tenant_id, employee_id, email)
 
     # ── hr_employees ──────────────────────────────────────────────────────
     emp = tables.get("hr_employees")

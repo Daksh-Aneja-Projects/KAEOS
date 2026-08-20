@@ -57,6 +57,40 @@ def redact_structured_pii(text: str) -> tuple[str, int]:
         out = out[:start] + f"[{ent}]" + out[end:]
     return out, len(kept)
 
+def _presidio_operators(action: str, entity_types: list, per_entity_actions: dict) -> dict:
+    """Per-entity Presidio replacement operators for a mask/redact run."""
+    from presidio_anonymizer.entities import OperatorConfig
+    if action == "mask":
+        return {"DEFAULT": OperatorConfig("replace", {"new_value": "***"})}
+    operators = {"DEFAULT": OperatorConfig("replace", {"new_value": ""})}
+    for entity in entity_types:
+        ea = per_entity_actions.get(entity, action)
+        if ea == "redact":
+            operators[entity] = OperatorConfig("replace", {"new_value": f"[{entity}]"})
+        elif ea == "mask":
+            operators[entity] = OperatorConfig("replace", {"new_value": "***"})
+    return operators
+
+
+def _splice_anonymize(text: str, results: list, action: str,
+                      per_entity_actions: dict) -> str:
+    """No-Presidio anonymization: splice each detected span out of the text.
+
+    Reverse order (last span first) so earlier spans' offsets stay valid. The
+    caller has already de-overlapped the spans.
+    """
+    out = text
+    for r in sorted(results, key=lambda r: r.start, reverse=True):
+        ent_action = per_entity_actions.get(r.entity_type, action)
+        val = ""
+        if ent_action == "mask":
+            val = "***"
+        elif ent_action == "redact":
+            val = f"[{r.entity_type}]"
+        out = out[:r.start] + val + out[r.end:]
+    return out
+
+
 # Lazy load Presidio
 _presidio_loaded = False
 _analyzer_engine = None
@@ -202,18 +236,7 @@ class PIIScrubberNode(BaseTransformNode):
                 record.metadata["pii_count"] = len(results)
             elif action in ("mask", "redact"):
                 if _anonymizer_engine is not None:
-                    from presidio_anonymizer.entities import OperatorConfig
-                    if action == "mask":
-                        operators = {"DEFAULT": OperatorConfig("replace", {"new_value": "***"})}
-                    else:
-                        operators = {"DEFAULT": OperatorConfig("replace", {"new_value": ""})}
-                        for entity in entity_types:
-                            ea = per_entity_actions.get(entity, action)
-                            if ea == "redact":
-                                operators[entity] = OperatorConfig("replace", {"new_value": f"[{entity}]"})
-                            elif ea == "mask":
-                                operators[entity] = OperatorConfig("replace", {"new_value": "***"})
-
+                    operators = _presidio_operators(action, entity_types, per_entity_actions)
                     anonymized = await loop.run_in_executor(
                         None,
                         lambda text=text, results=results, operators=operators:
@@ -222,21 +245,11 @@ class PIIScrubberNode(BaseTransformNode):
                             )
                     )
                     record.text_content = anonymized.text
-                    total_scrubbed += len(results)
                 else:
                     # Fallback basic anonymization
-                    results.sort(key=lambda r: r.start, reverse=True)
-                    new_text = text
-                    for r in results:
-                        ent_action = per_entity_actions.get(r.entity_type, action)
-                        val = ""
-                        if ent_action == "mask":
-                            val = "***"
-                        elif ent_action == "redact":
-                            val = f"[{r.entity_type}]"
-                        new_text = new_text[:r.start] + val + new_text[r.end:]
-                    record.text_content = new_text
-                    total_scrubbed += len(results)
+                    record.text_content = _splice_anonymize(
+                        text, results, action, per_entity_actions)
+                total_scrubbed += len(results)
 
             self.add_lineage(record, f"pii_scrubbed:{action}:{len(results)}_entities")
             processed.append(record)

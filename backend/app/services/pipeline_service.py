@@ -14,6 +14,35 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+def _to_output_records(transform_records: list, tenant_id: str) -> list:
+    """Flatten transformed records into the rows the destination writes.
+
+    Every row carries the tenant: this is the last point before external data
+    leaves the pipeline, so nothing untenanted may get past here.
+    """
+    output_records = []
+    for record in transform_records:
+        if record.chunks:
+            for ch in record.chunks:
+                # Chunks are dicts/objects produced by transforms — ensure
+                # each carries the tenant so nothing untenanted is loaded.
+                if isinstance(ch, dict):
+                    ch.setdefault("tenant_id", tenant_id)
+                    meta = ch.get("metadata")
+                    if isinstance(meta, dict):
+                        meta.setdefault("tenant_id", tenant_id)
+                output_records.append(ch)
+        else:
+            output_records.append({
+                "record_id": record.id,
+                "tenant_id": tenant_id,
+                "data": record.data,
+                "text_content": record.text_content,
+                "metadata": {**(record.metadata or {}), "tenant_id": tenant_id},
+            })
+    return output_records
+
+
 class PipelineService:
     """
     Core pipeline orchestration — KAEOS Data Fabric ETL engine.
@@ -131,26 +160,7 @@ class PipelineService:
             dest = get_destination(destination_type, destination_config or {})
             await dest.connect()
 
-            output_records = []
-            for record in transform_records:
-                if record.chunks:
-                    for ch in record.chunks:
-                        # Chunks are dicts/objects produced by transforms — ensure
-                        # each carries the tenant so nothing untenanted is loaded.
-                        if isinstance(ch, dict):
-                            ch.setdefault("tenant_id", tenant_id)
-                            meta = ch.get("metadata")
-                            if isinstance(meta, dict):
-                                meta.setdefault("tenant_id", tenant_id)
-                        output_records.append(ch)
-                else:
-                    output_records.append({
-                        "record_id": record.id,
-                        "tenant_id": tenant_id,
-                        "data": record.data,
-                        "text_content": record.text_content,
-                        "metadata": {**(record.metadata or {}), "tenant_id": tenant_id},
-                    })
+            output_records = _to_output_records(transform_records, tenant_id)
 
             write_result = await dest.write(
                 output_records, metadata={"run_id": run_id, "tenant_id": tenant_id}

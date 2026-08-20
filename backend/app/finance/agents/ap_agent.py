@@ -22,6 +22,44 @@ from app.services.provenance import append_ledger_event
 logger = logging.getLogger(__name__)
 
 
+def _apply_decision(invoice: Invoice, decision: Dict[str, Any]) -> None:
+    """Fold the LLM triage decision onto the invoice row (no IO, no commit).
+
+    The deterministic three-way match has already been persisted by the caller;
+    nothing here may overwrite it.
+    """
+    # Update invoice based on decision
+    invoice.ai_categorized = True
+    invoice.ai_confidence = decision.get("confidence", 0.5)
+    # A MISSING duplicate_risk must not silently clear the flag — an absent
+    # answer is "unknown", not "not a duplicate". When the model doesn't
+    # say, keep any existing flag and mark it for review rather than
+    # asserting the invoice is clean. (Same class as the incident-severity
+    # downgrade: a missing field must never weaken a risk signal.)
+    dup_risk = decision.get("duplicate_risk")
+    if dup_risk is None:
+        # unknown — preserve prior flag, do not clear it
+        pass
+    else:
+        invoice.ai_duplicate_flag = str(dup_risk).upper() != "LOW"
+    # NOTE: three_way_match_status is NOT taken from the LLM. It was set
+    # by the deterministic matcher above and must not be overwritten.
+
+    # SOX four-eyes forbids a humanless financial approval, so this agent
+    # NEVER auto-approves: the gated pipeline's SOX gate blocks any
+    # financial action without a distinct human approver (BLOCKED_COMPLIANCE,
+    # handled by the caller), which is why an auto-approve+accrue branch here was
+    # unreachable dead code. The agent only ever routes an invoice to a
+    # human-review state; approval + accrual happen on the operator-driven
+    # /invoices/{id}/transition path, which records the approver identity.
+    if (invoice.three_way_match_status == "EXCEPTION"
+            or decision.get("recommendation") == "REJECT"):
+        invoice.status = InvoiceStatus.DISPUTED
+    else:
+        # Clean or unconfirmed match → hold for human approval.
+        invoice.status = InvoiceStatus.PENDING_APPROVAL
+
+
 class APAgent:
     """Accounts Payable automation agent."""
 
@@ -143,39 +181,7 @@ Check if math is correct.""",
         # If successful, extract decision and update invoice
         if result.get("status") == "SUCCESS_CLEAN":
             decision = extract_decision(result)
-            confidence_score = decision.get("confidence", 0.5)
-
-            # Update invoice based on decision
-            invoice.ai_categorized = True
-            invoice.ai_confidence = confidence_score
-            # A MISSING duplicate_risk must not silently clear the flag — an absent
-            # answer is "unknown", not "not a duplicate". When the model doesn't
-            # say, keep any existing flag and mark it for review rather than
-            # asserting the invoice is clean. (Same class as the incident-severity
-            # downgrade: a missing field must never weaken a risk signal.)
-            dup_risk = decision.get("duplicate_risk")
-            if dup_risk is None:
-                # unknown — preserve prior flag, do not clear it
-                pass
-            else:
-                invoice.ai_duplicate_flag = str(dup_risk).upper() != "LOW"
-            # NOTE: three_way_match_status is NOT taken from the LLM. It was set
-            # by the deterministic matcher above and must not be overwritten.
-
-            # SOX four-eyes forbids a humanless financial approval, so this agent
-            # NEVER auto-approves: the gated pipeline's SOX gate blocks any
-            # financial action without a distinct human approver (BLOCKED_COMPLIANCE,
-            # handled above), which is why an auto-approve+accrue branch here was
-            # unreachable dead code. The agent only ever routes an invoice to a
-            # human-review state; approval + accrual happen on the operator-driven
-            # /invoices/{id}/transition path, which records the approver identity.
-            if (invoice.three_way_match_status == "EXCEPTION"
-                    or decision.get("recommendation") == "REJECT"):
-                invoice.status = InvoiceStatus.DISPUTED
-            else:
-                # Clean or unconfirmed match → hold for human approval.
-                invoice.status = InvoiceStatus.PENDING_APPROVAL
-
+            _apply_decision(invoice, decision)
             db.add(invoice)
             await db.commit()
 

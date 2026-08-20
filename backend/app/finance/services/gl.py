@@ -142,6 +142,71 @@ def _base_credits_sum():
     )
 
 
+_ResolvedLine = tuple[ChartOfAccount, Decimal, Decimal, Decimal, Decimal, Decimal, dict]
+
+
+async def _resolve_lines(
+    db: AsyncSession, tenant_id: str, lines: list[dict], entry_date: date, base: str,
+) -> tuple[list[_ResolvedLine], Decimal, Decimal]:
+    """Resolve every posting line to a live account and its base-currency amounts.
+
+    Returns (resolved lines, total base debit, total base credit). Raises
+    GLPostingError on any unusable line - nothing has been written yet, so the
+    caller's fail-closed contract holds by construction.
+    """
+    # Resolve accounts (id or code), tenant-scoped, active only.
+    ids = {str(l["account_id"]) for l in lines if l.get("account_id")}
+    codes = {str(l["account_code"]) for l in lines if not l.get("account_id") and l.get("account_code")}
+    if any(not l.get("account_id") and not l.get("account_code") for l in lines):
+        raise GLPostingError("every line needs an account_id or account_code")
+
+    accounts: dict[str, ChartOfAccount] = {}
+    if ids:
+        for acc in (await db.execute(select(ChartOfAccount).where(
+                ChartOfAccount.tenant_id == tenant_id,
+                ChartOfAccount.id.in_(ids)))).scalars().all():
+            accounts[acc.id] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+    if codes:
+        for acc in (await db.execute(select(ChartOfAccount).where(
+                ChartOfAccount.tenant_id == tenant_id,
+                ChartOfAccount.account_code.in_(codes)))).scalars().all():
+            accounts[acc.account_code] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+
+    total_debit = Decimal("0")   # in tenant base currency, after FX
+    total_credit = Decimal("0")
+    resolved: list[_ResolvedLine] = []
+    for l in lines:
+        key = str(l.get("account_id") or l.get("account_code"))
+        acc = accounts.get(key)  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
+        if acc is None:
+            raise GLPostingError(f"account {key!r} not found for this tenant")
+        if not acc.is_active:
+            raise GLPostingError(f"account {acc.account_code} is inactive")
+        debit, credit = _money(l.get("debit")), _money(l.get("credit"))
+        if (debit > 0) == (credit > 0):
+            raise GLPostingError(
+                f"line on {acc.account_code}: exactly one of debit/credit "
+                f"must be positive (got debit={debit}, credit={credit})"
+            )
+        # Convert to base for balancing and amount_in_base. A foreign line with
+        # no rate on/before entry_date is refused (fail-closed): the ledger never
+        # holds an unconverted amount masquerading as base.
+        acc_ccy = (acc.currency or base).upper()
+        rate = await _fx_rate(db, tenant_id, acc_ccy, entry_date, base)
+        if rate is None:
+            raise GLPostingError(
+                f"no FX rate for {acc_ccy}->{base} on/before {entry_date.isoformat()} "
+                f"(account {acc.account_code}); load a fin_fx_rates row or post in {base}"
+            )
+        base_debit = (debit * rate).quantize(_CENT)
+        base_credit = (credit * rate).quantize(_CENT)
+        total_debit += base_debit
+        total_credit += base_credit
+        resolved.append((acc, debit, credit, base_debit, base_credit, rate, l))
+
+    return resolved, total_debit, total_credit
+
+
 async def post_journal_entry(
     db: AsyncSession,
     tenant_id: str,
@@ -176,56 +241,9 @@ async def post_journal_entry(
             "post to an open period or reopen it before back-dating an entry"
         )
 
-    # Resolve accounts (id or code), tenant-scoped, active only.
-    ids = {str(l["account_id"]) for l in lines if l.get("account_id")}
-    codes = {str(l["account_code"]) for l in lines if not l.get("account_id") and l.get("account_code")}
-    if any(not l.get("account_id") and not l.get("account_code") for l in lines):
-        raise GLPostingError("every line needs an account_id or account_code")
-
-    accounts: dict[str, ChartOfAccount] = {}
-    if ids:
-        for acc in (await db.execute(select(ChartOfAccount).where(
-                ChartOfAccount.tenant_id == tenant_id,
-                ChartOfAccount.id.in_(ids)))).scalars().all():
-            accounts[acc.id] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
-    if codes:
-        for acc in (await db.execute(select(ChartOfAccount).where(
-                ChartOfAccount.tenant_id == tenant_id,
-                ChartOfAccount.account_code.in_(codes)))).scalars().all():
-            accounts[acc.account_code] = acc  # type: ignore[index]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
-
     base = base_currency()
-    total_debit = Decimal("0")   # in tenant base currency, after FX
-    total_credit = Decimal("0")
-    resolved: list[tuple[ChartOfAccount, Decimal, Decimal, Decimal, Decimal, Decimal, dict]] = []
-    for l in lines:
-        key = str(l.get("account_id") or l.get("account_code"))
-        acc = accounts.get(key)  # type: ignore[assignment]  # sa-plugin: Numeric/PK column typed as unresolved _N | None
-        if acc is None:
-            raise GLPostingError(f"account {key!r} not found for this tenant")
-        if not acc.is_active:
-            raise GLPostingError(f"account {acc.account_code} is inactive")
-        debit, credit = _money(l.get("debit")), _money(l.get("credit"))
-        if (debit > 0) == (credit > 0):
-            raise GLPostingError(
-                f"line on {acc.account_code}: exactly one of debit/credit "
-                f"must be positive (got debit={debit}, credit={credit})"
-            )
-        # Convert to base for balancing and amount_in_base. A foreign line with
-        # no rate on/before entry_date is refused (fail-closed): the ledger never
-        # holds an unconverted amount masquerading as base.
-        acc_ccy = (acc.currency or base).upper()
-        rate = await _fx_rate(db, tenant_id, acc_ccy, entry_date, base)
-        if rate is None:
-            raise GLPostingError(
-                f"no FX rate for {acc_ccy}->{base} on/before {entry_date.isoformat()} "
-                f"(account {acc.account_code}); load a fin_fx_rates row or post in {base}"
-            )
-        base_debit = (debit * rate).quantize(_CENT)
-        base_credit = (credit * rate).quantize(_CENT)
-        total_debit += base_debit
-        total_credit += base_credit
-        resolved.append((acc, debit, credit, base_debit, base_credit, rate, l))
+    resolved, total_debit, total_credit = await _resolve_lines(
+        db, tenant_id, lines, entry_date, base)
 
     if total_debit != total_credit:
         raise GLPostingError(

@@ -19,6 +19,34 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROTECTED_ATTRIBUTES = ["gender", "ethnicity", "age", "disability", "nationality"]
 DEFAULT_THRESHOLD = 0.85
 
+def _statistical_assessment(cohorts: dict) -> tuple[dict, bool]:
+    """EEOC four-fifths test over measured cohort outcomes. Returns
+    (assessment, passed). Pure: no LLM, no IO, no tenant config."""
+    from app.services.disparate_impact import four_fifths_test
+    stat = four_fifths_test(cohorts)
+    # Ratio of clean attributes as the score surface (UI continuity);
+    # the verdict itself is the 4/5ths + significance outcome.
+    assessed = [a for a, r in stat["attributes"].items()
+                if r.get("status") != "INSUFFICIENT_GROUPS"]
+    flagged = stat["flagged"]
+    score = (1.0 if not assessed else
+             (len(assessed) - len(flagged)) / len(assessed))
+    return {
+        "overall_score": score,
+        "attribute_scores": stat["attributes"],
+        "flagged_attributes": flagged,
+        "rationale": (
+            "Statistical four-fifths selection-rate test over the "
+            "provided cohort outcomes"
+            + (f": adverse impact on {', '.join(flagged)} "
+               "(impact ratio below 0.8 with statistical significance)."
+               if flagged else ": no statistically supported adverse "
+               "impact found.")
+        ),
+        "method": stat["method"],
+    }, stat["passed"]
+
+
 class FairnessEngine:
     """Scores agent actions for demographic fairness before execution.
     
@@ -106,30 +134,9 @@ class FairnessEngine:
 
         cohorts = context.get("cohort_outcomes")
         if isinstance(cohorts, dict) and cohorts:
-            from app.services.disparate_impact import four_fifths_test
-            stat = four_fifths_test(cohorts)
-            # Ratio of clean attributes as the score surface (UI continuity);
-            # the verdict itself is the 4/5ths + significance outcome.
-            assessed = [a for a, r in stat["attributes"].items()
-                        if r.get("status") != "INSUFFICIENT_GROUPS"]
-            score = (1.0 if not assessed else
-                     (len(assessed) - len(stat["flagged"])) / len(assessed))
-            passed = stat["passed"]
-            flagged = stat["flagged"]
-            assessment = {
-                "overall_score": score,
-                "attribute_scores": stat["attributes"],
-                "flagged_attributes": flagged,
-                "rationale": (
-                    "Statistical four-fifths selection-rate test over the "
-                    "provided cohort outcomes"
-                    + (f": adverse impact on {', '.join(flagged)} "
-                       "(impact ratio below 0.8 with statistical significance)."
-                       if flagged else ": no statistically supported adverse "
-                       "impact found.")
-                ),
-                "method": stat["method"],
-            }
+            assessment, passed = _statistical_assessment(cohorts)
+            score = assessment["overall_score"]
+            flagged = assessment["flagged_attributes"]
         else:
             # action_desc carries UNTRUSTED intent + affected-entity metadata
             # (connector / org-graph data). A prompt injection in it could steer

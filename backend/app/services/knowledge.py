@@ -77,15 +77,19 @@ class PolystoreEngine:
             matched.sort(key=lambda x: x["lexical_score"], reverse=True)
             return matched
 
+        def lexical_only() -> list[dict]:
+            """Honest lexical-only results: a keyword hit is NEVER a cosine."""
+            for m in lexical:
+                m["similarity"] = None
+                m["retrieval_mode"] = "lexical"
+            return lexical[:top_k]
+
         query_embedding = await self._generate_embedding_for_text(query_text, tenant_id)
         lexical = await lexical_matches()
 
         # No usable semantic vector -> honest lexical-only results.
         if not query_embedding or self._last_query_simulated:
-            for m in lexical:
-                m["similarity"] = None
-                m["retrieval_mode"] = "lexical"
-            return lexical[:top_k]
+            return lexical_only()
 
         domain_clause = "AND s.domain = :domain" if domain_filter else ""
         params = {"tenant_id": tenant_id, "embedding": query_embedding, "top_k": max(top_k * 4, 20)}
@@ -110,18 +114,12 @@ class PolystoreEngine:
                 ]
         except Exception as e:
             logger.warning(f"Vector search failed (likely sqlite), falling back to lexical: {e}")
-            for m in lexical:
-                m["similarity"] = None
-                m["retrieval_mode"] = "lexical"
-            return lexical[:top_k]
+            return lexical_only()
 
         # Vector store had nothing to say: RRF over a single (lexical) list is
         # just the lexical ranking - label it honestly instead of "hybrid".
         if not vector_hits:
-            for m in lexical:
-                m["similarity"] = None
-                m["retrieval_mode"] = "lexical"
-            return lexical[:top_k]
+            return lexical_only()
 
         # Hybrid: fuse the two rankings by RRF over skill_db_id.
         by_id: dict[str, dict] = {}

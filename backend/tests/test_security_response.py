@@ -148,3 +148,38 @@ async def test_bad_signature_rejected(client):
     resp = await client.post(f"/api/v1/integrations/ingest/{connector_id}/security",
                              content=body, headers={"X-KAEOS-Signature": "nope"})
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_disable_user_holds_on_the_last_active_admin(client):
+    """Containment must not lock the tenant out: auto-disabling the only
+    active ADMIN is held back as a recommendation, even at CRITICAL."""
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.auth import User, UserRole
+    from app.services.security_response import _disable_affected_user
+
+    async with AsyncSessionLocal() as db:
+        db.add(User(id="u-sole-admin", email="sole.admin@corp.com", display_name="A",
+                    hashed_password="x", role=UserRole.ADMIN,
+                    tenant_id=TENANT, is_active=True))
+        await db.commit()
+
+        action, recommendation = await _disable_affected_user(
+            db, TENANT, "sole.admin@corp.com", "CRITICAL")
+        assert action is None
+        assert "last active admin" in recommendation
+
+        # A second admin removes the lockout risk, so containment proceeds.
+        db.add(User(id="u-backup-admin", email="backup.admin@corp.com", display_name="B",
+                    hashed_password="x", role=UserRole.ADMIN,
+                    tenant_id=TENANT, is_active=True))
+        await db.commit()
+        action, recommendation = await _disable_affected_user(
+            db, TENANT, "sole.admin@corp.com", "CRITICAL")
+        await db.commit()
+        assert recommendation is None
+        assert "deactivated" in action
+        sole = (await db.execute(select(User).where(
+            User.id == "u-sole-admin"))).scalar_one()
+        assert sole.is_active is False
