@@ -15,7 +15,7 @@ Proves two things deterministically (no live LLM, no live DB rows required):
 import pytest
 
 from app.core.context import current_tenant_id
-from app.core.dependencies import get_llm_router
+from app.api.dependencies import get_llm_router
 from app.services.llm_router import LLMRouter, get_tenant_router
 
 

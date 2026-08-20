@@ -14,7 +14,7 @@ from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
 from app.models.execution_status import PENDING_STATUSES, AgentState, ExecutionStatus
 from app.services.knowledge import PolystoreEngine
-from app.core.dependencies import get_polystore_engine
+from app.api.dependencies import get_polystore_engine
 from app.schemas.skills import (
     SkillSummary, SkillDetail, SkillRegistryResponse,
     SkillExecutionRequest, SkillExecutionResponse,
