@@ -7,7 +7,7 @@ import time
 import uuid
 from collections import OrderedDict, deque
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from opentelemetry import trace as _otel_trace
 from sqlalchemy import func as sqlfunc, select
@@ -48,6 +48,14 @@ from app.services.realtime import manager
 from app.services import skill_executor
 
 logger = logging.getLogger(__name__)
+
+# The explicit contract every per-gate function returns (M2.2): ``None`` means
+# the gate PASSED - the pipeline proceeds to the next gate; a dict is the
+# pipeline's TERMINAL result and is returned to the caller unchanged. A gate
+# never mutates the result of an earlier gate, and everything a later gate
+# needs travels on the context's underscore keys (the established runtime-only
+# channel that _json_safe strips before persistence).
+GateOutcome = Optional[Dict[str, Any]]
 
 # Per-tenant recent gate timings (per-process, best-effort telemetry). Keyed by
 # tenant so one busy tenant cannot evict every other tenant's entries; bounded
@@ -394,24 +402,10 @@ class AgentExecutor:
             )
         return result
 
-    async def _run_gates(
-        self, skill: Dict[str, Any], context: Dict[str, Any],
-        *, hitl_pre_approved: bool = False,
-    ) -> Dict[str, Any]:
-        # Defense in depth: strip trust-bearing keys a caller (or a request
-        # body flowing into context) may have planted. They are server-set only.
-        context.pop("hitl_pre_approved", None)
-
-        # Publish identity BEFORE gate 1. The gates themselves make model calls
-        # (fairness scoring, debate), so setting this only in the executor
-        # (gate 5) left every pre-execution call unattributed - and a decision
-        # stopped at a gate looked free when it was not.
-        context.setdefault("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
-        current_tenant_id.set(context.get("tenant_id", "default"))
-        current_skill_id.set(skill.get("skill_id", "unknown"))
-        current_execution_id.set(context["execution_id"])
-        context["_skill_id_name"] = skill.get("skill_id", "unknown")
-
+    async def _gate_compliance_and_fairness(
+        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
+        *, hitl_pre_approved: bool,
+    ) -> GateOutcome:
         # ── Gates 1+2: Compliance Pre-Check (L13) + Fairness (AEOS P3) ──
         # The two gates are independent (neither reads the other's output), and
         # each can make a real model call - so when both apply they run
@@ -420,7 +414,6 @@ class AgentExecutor:
         # NOTE: check_before_execution is async — it MUST be awaited. A prior
         # bug called it without await, yielding a truthy coroutine that blocked
         # every execution as BLOCKED_COMPLIANCE.
-        skill_obj = context.get("_skill_obj")
         fairness_result = None
         if skill_obj and self.fairness_engine.requires_fairness_check(skill_obj, context):
             violations, fairness_result = await asyncio.gather(
@@ -519,6 +512,34 @@ class AgentExecutor:
                 }
         else:
             await self._emit_gate(context, "fairness", "passed")
+        return None
+
+    async def _run_gates(
+        self, skill: Dict[str, Any], context: Dict[str, Any],
+        *, hitl_pre_approved: bool = False,
+    ) -> Dict[str, Any]:
+        # Defense in depth: strip trust-bearing keys a caller (or a request
+        # body flowing into context) may have planted. They are server-set only.
+        context.pop("hitl_pre_approved", None)
+
+        # Publish identity BEFORE gate 1. The gates themselves make model calls
+        # (fairness scoring, debate), so setting this only in the executor
+        # (gate 5) left every pre-execution call unattributed - and a decision
+        # stopped at a gate looked free when it was not.
+        context.setdefault("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
+        current_tenant_id.set(context.get("tenant_id", "default"))
+        current_skill_id.set(skill.get("skill_id", "unknown"))
+        current_execution_id.set(context["execution_id"])
+        context["_skill_id_name"] = skill.get("skill_id", "unknown")
+
+        skill_obj = context.get("_skill_obj")
+        outcome = await self._gate_compliance_and_fairness(
+            skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
+        if outcome is not None:
+            return outcome
+        # The pass path published the non-blocking WARNINGs on the context;
+        # downstream gates carry them into the executor and the result.
+        warnings = context.get("_compliance_warnings", [])
 
         # ── Gate 3: Confidence → HITL Check ─────────────────────────────
         # A mission step or HITL-resume that carries a persisted human approval
