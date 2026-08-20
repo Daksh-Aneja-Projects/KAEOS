@@ -514,33 +514,10 @@ class AgentExecutor:
             await self._emit_gate(context, "fairness", "passed")
         return None
 
-    async def _run_gates(
-        self, skill: Dict[str, Any], context: Dict[str, Any],
-        *, hitl_pre_approved: bool = False,
-    ) -> Dict[str, Any]:
-        # Defense in depth: strip trust-bearing keys a caller (or a request
-        # body flowing into context) may have planted. They are server-set only.
-        context.pop("hitl_pre_approved", None)
-
-        # Publish identity BEFORE gate 1. The gates themselves make model calls
-        # (fairness scoring, debate), so setting this only in the executor
-        # (gate 5) left every pre-execution call unattributed - and a decision
-        # stopped at a gate looked free when it was not.
-        context.setdefault("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
-        current_tenant_id.set(context.get("tenant_id", "default"))
-        current_skill_id.set(skill.get("skill_id", "unknown"))
-        current_execution_id.set(context["execution_id"])
-        context["_skill_id_name"] = skill.get("skill_id", "unknown")
-
-        skill_obj = context.get("_skill_obj")
-        outcome = await self._gate_compliance_and_fairness(
-            skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
-        if outcome is not None:
-            return outcome
-        # The pass path published the non-blocking WARNINGs on the context;
-        # downstream gates carry them into the executor and the result.
-        warnings = context.get("_compliance_warnings", [])
-
+    async def _gate_confidence_hitl(
+        self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
+        *, hitl_pre_approved: bool,
+    ) -> GateOutcome:
         # ── Gate 3: Confidence → HITL Check ─────────────────────────────
         # A mission step or HITL-resume that carries a persisted human approval
         # has already satisfied this gate - that approval is exactly what the
@@ -553,8 +530,8 @@ class AgentExecutor:
         if _pre_approved:
             await self._emit_gate(context, "confidence", "passed")
             await self._emit_gate(context, "hitl", "pre-approved")
-            return await self._run_post_hitl(skill, context, skill_obj, warnings,
-                                             _pre_approved=True)
+            # Pass (pre-approved): the caller proceeds straight to Gates 4-6.
+            return None
 
         # BYOK: the tenant's probed model ceiling caps every skill's
         # confidence. A weak model mechanically routes more decisions to
@@ -639,8 +616,42 @@ class AgentExecutor:
 
         await self._emit_gate(context, "confidence", "passed")
         await self._emit_gate(context, "hitl", "passed")
+        # Pass: the caller proceeds to Gates 4-6.
+        return None
+
+    async def _run_gates(
+        self, skill: Dict[str, Any], context: Dict[str, Any],
+        *, hitl_pre_approved: bool = False,
+    ) -> Dict[str, Any]:
+        # Defense in depth: strip trust-bearing keys a caller (or a request
+        # body flowing into context) may have planted. They are server-set only.
+        context.pop("hitl_pre_approved", None)
+
+        # Publish identity BEFORE gate 1. The gates themselves make model calls
+        # (fairness scoring, debate), so setting this only in the executor
+        # (gate 5) left every pre-execution call unattributed - and a decision
+        # stopped at a gate looked free when it was not.
+        context.setdefault("execution_id", f"exec-{uuid.uuid4().hex[:8]}")
+        current_tenant_id.set(context.get("tenant_id", "default"))
+        current_skill_id.set(skill.get("skill_id", "unknown"))
+        current_execution_id.set(context["execution_id"])
+        context["_skill_id_name"] = skill.get("skill_id", "unknown")
+
+        skill_obj = context.get("_skill_obj")
+        outcome = await self._gate_compliance_and_fairness(
+            skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
+        if outcome is not None:
+            return outcome
+        # The pass path published the non-blocking WARNINGs on the context;
+        # downstream gates carry them into the executor and the result.
+        warnings = context.get("_compliance_warnings", [])
+
+        outcome = await self._gate_confidence_hitl(
+            skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
+        if outcome is not None:
+            return outcome
         return await self._run_post_hitl(skill, context, skill_obj, warnings,
-                                         _pre_approved=False)
+                                         _pre_approved=bool(hitl_pre_approved))
 
     async def _run_post_hitl(
         self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,
