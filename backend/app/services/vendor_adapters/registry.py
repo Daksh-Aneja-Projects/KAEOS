@@ -4,6 +4,7 @@ from .devops import GitHubAdapter, GitLabAdapter, PagerDutyAdapter, DatadogAdapt
 from .itsm import ServiceNowAdapter, ZendeskAdapter, IntercomAdapter, HubSpotAdapter
 from .hr_finance import BambooHRAdapter, GreenhouseAdapter, StripeAdapter, DocuSignAdapter
 from .collaboration import SlackAdapter, ConfluenceAdapter, NotionAdapter, MicrosoftGraphAdapter
+from .bespoke_bridge import BESPOKE_ADAPTERS
 
 
 VENDOR_ADAPTERS = {
@@ -31,6 +32,11 @@ VENDOR_ADAPTERS = {
     "confluence": ConfluenceAdapter(),
     "notion": NotionAdapter(),
     "microsoft_graph": MicrosoftGraphAdapter(),
+    # Per-department bespoke connectors bridged into the pull catalog (M8/M15):
+    # finance accounting (QuickBooks/Xero/NetSuite), engineering issue tracker,
+    # healthcare EHR. Pull-ready + credential-gated; validate against the vendor
+    # sandbox before trusting the data (see KNOWN_LIMITATIONS).
+    **BESPOKE_ADAPTERS,
 }
 
 VENDOR_REQUIRED_CONFIG = {
@@ -51,6 +57,16 @@ VENDOR_REQUIRED_CONFIG = {
     "confluence": ["base_url"],
     "notion": [],
     "microsoft_graph": [],
+    # Bridged bespoke connectors validate their own credentials at construction
+    # (the bridge catches and fails gracefully), so no pre-store required_config.
+    "quickbooks": [],
+    "xero": [],
+    "netsuite_accounting": [],
+    "issue_tracker": [],
+    "ehr": [],
+    "coupa": [],
+    "ariba": [],
+    "netsuite_procurement": [],
 }
 
 # Name fragments → provider, for inference from a connector's display name.

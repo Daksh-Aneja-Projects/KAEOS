@@ -409,7 +409,7 @@ async def run_connector_pull_sync():
             async with AsyncSessionLocal() as db:
                 secrets = decrypt_secrets(enc)
                 records = await LiveConnectorService.fetch_records(
-                    provider, {**config, "_cursor": cursor}, secrets)
+                    provider, {**config, "_cursor": cursor, "tenant_id": tid}, secrets)
                 # Advance the delta cursor from the DATA, not KAEOS's wall clock:
                 # the watermark is the newest source-reported update timestamp we
                 # actually saw, so skew / timezone drift between KAEOS and the

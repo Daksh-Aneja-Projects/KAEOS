@@ -132,17 +132,51 @@ async def get_application(application_id: str,
     return _app_out(a, include_protected=tenant.get("role") in _ADMIN_ROLES)
 
 
+_CREDIT_BUREAUS = ("equifax", "experian", "transunion")
+
+
+async def _pull_bureau_score(db, tenant_id: str, applicant_ref):
+    """Pull a real credit score from a configured bureau (wires the credit_bureau
+    connector). HONESTY CONTRACT: returns None — never a fabricated score — when
+    no bureau credential is on file or the pull fails, so the caller falls back to
+    the manually entered score rather than inventing one."""
+    if not applicant_ref:
+        return None
+    try:
+        from app.models.domain import ConnectorCredential
+        from app.services.live_connectors import decrypt_secrets
+        from app.lending.connectors.credit_bureau import CreditBureauConnector
+        cred = (await db.execute(select(ConnectorCredential).where(
+            ConnectorCredential.tenant_id == tenant_id,
+            ConnectorCredential.provider.in_(_CREDIT_BUREAUS)))).scalars().first()
+        if cred is None:
+            return None
+        report = await CreditBureauConnector(
+            tenant_id, cred.provider, decrypt_secrets(cred.secrets_encrypted)
+        ).pull_report(str(applicant_ref))
+        if report.get("status") == "ok" and report.get("score"):
+            return int(report["score"])
+    except Exception as e:
+        logger.warning("[lending] bureau credit-score pull failed for %s: %s", tenant_id, e)
+    return None
+
+
 @router.post("/applications")
 async def create_application(body: ApplicationIn,
                              tenant: dict = Depends(require_role("operator")),
                              db: AsyncSession = Depends(get_db)):
     tenant_id = tenant["tenant_id"]
+    # No score supplied -> pull one from the tenant's configured bureau if any
+    # (honest fallback to None when unconfigured/unavailable).
+    credit_score = body.credit_score
+    if credit_score is None:
+        credit_score = await _pull_bureau_score(db, tenant_id, body.applicant_ref)
     app = LoanApplication(
         tenant_id=tenant_id, application_number=body.application_number,
         applicant_name=body.applicant_name, applicant_ref=body.applicant_ref,
         product=body.product, credit_purpose=body.credit_purpose,
         amount=body.amount, term_months=body.term_months,
-        credit_score=body.credit_score, annual_income=body.annual_income,
+        credit_score=credit_score, annual_income=body.annual_income,
         monthly_debt=body.monthly_debt, dti_ratio=body.dti_ratio,
         protected_class=body.protected_class or {},
         status=LoanStatus.RECEIVED.value,

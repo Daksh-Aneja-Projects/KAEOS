@@ -176,10 +176,18 @@ codebase itself carries no open critical or high finding from the standing pre-l
   most of Phase 2 shipped; four items are deliberately deferred, none of them correctness-open:
   a background **re-embed job** for after an embedding-model change (the per-vector model
   provenance stamp already exists; a model change is a deliberate ops action that also needs a
-  coordinated pgvector dim migration); the **per-adapter incremental cursor** above; **OperatorConsole
-  remediation actions** (requeue / circuit-reset — the `/ops/*` endpoints exist, the UI wiring is
-  ahead); and a **dead-frontend-export sweep** (≈20% of client exports are unused; a proper pass
-  wants `ts-prune`). The audit's closed loop is now fed end to end: connector pulls bridge into the
+  coordinated pgvector dim migration); **OperatorConsole remediation actions** (requeue /
+  circuit-reset — the `/ops/*` endpoints exist, the UI wiring is ahead); and a
+  **dead-frontend-export sweep** (≈20% of client exports are unused; a proper pass wants `ts-prune`).
+- **Six per-department connectors are now wired, but unvalidated against the real vendor APIs.**
+  The finance accounting (QuickBooks/Xero/NetSuite), engineering issue-tracker, healthcare EHR and
+  procurement PO connectors are bridged into the pull catalog (they inherit the scheduler,
+  ConnectorCredential and the incremental cursor, and fail gracefully); the credit-bureau connector
+  is wired into loan-application intake with an honest "no score, enter manually" fallback; DocuSign
+  was already wired, so its duplicate connector was not re-registered. **Boundary:** these talk to
+  real external APIs (Intuit, Epic, Coupa, Equifax, …) that cannot be exercised here — the plumbing
+  is live and credential-gated, but each should be validated against that vendor's sandbox before a
+  tenant trusts the data. The audit's closed loop is now fed end to end: connector pulls bridge into the
   event mesh and embed into the copilot's grounding namespace, BYOK ingests through the real
   scrub+vectorize pipeline, elicitation answers become candidate rules, and the internal event bus
   drives the first cross-department automations (offboarding → IT deprovision, adverse-action →

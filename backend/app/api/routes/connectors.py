@@ -465,7 +465,7 @@ async def sync_connector(
         try:
             secrets = decrypt_secrets(cred.secrets_encrypted)
             records = await LiveConnectorService.fetch_records(
-                cred.provider, cred.config or {}, secrets)
+                cred.provider, {**(cred.config or {}), "tenant_id": conn.tenant_id}, secrets)
         except Exception as e:
             conn.error_count += 1
             await db.commit()
