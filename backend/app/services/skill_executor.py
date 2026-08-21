@@ -255,6 +255,34 @@ class SkillExecutionEngine:
 
     # ── Private: step execution ───────────────────────────────────────────
 
+    async def _tenant_tool_allowlist(self, tenant_id: str) -> "set[str] | None":
+        """Per-tenant MCP allowlist from MCPToolConfig (M3): the tenant's ACTIVE
+        tool_ids. Returns None when the tenant has configured NO tools at all -
+        backward-compatible (no config means no restriction, not a hard deny);
+        an all-inactive config yields an empty set (every tool refused). Cached
+        per tenant for the life of this executor."""
+        cache = getattr(self, "_tool_allowlist_cache", None)
+        if cache is None:
+            cache = self._tool_allowlist_cache = {}
+        if tenant_id in cache:
+            return cache[tenant_id]
+        allow: set[str] | None = None
+        try:
+            from app.models.settings import MCPToolConfig
+            async with AsyncSessionLocal() as session:
+                rows = (await session.execute(
+                    select(MCPToolConfig.tool_id, MCPToolConfig.is_active).where(
+                        MCPToolConfig.tenant_id == tenant_id))).all()
+            if rows:
+                allow = {tid for tid, active in rows if active}
+        except Exception as e:
+            # Fail-closed on a real error path would break every tool call; a
+            # config read failure falls back to the prior (unrestricted) behavior
+            # but is logged loudly so it is not silent.
+            logger.error("[Exec] tool allowlist read failed for %s: %s", tenant_id, e)
+        cache[tenant_id] = allow
+        return allow
+
     async def _execute_step(
         self,
         step: dict,
@@ -341,11 +369,15 @@ Return ONLY valid JSON representing the parameters. No markdown formatting, just
                     else:
                         tool_args_str = str(params_json)
                         logger.info(f"[Exec] Step {step_num} executing tool '{target_tool}' with params {tool_args_str}")
-                        # Thread tenant_id for attribution/scoping. allowed_tools
-                        # left as None here preserves existing behavior; a caller
-                        # can pass a per-tenant allowlist to restrict further.
+                        # M3: enforce the per-tenant MCP allowlist. Previously
+                        # allowed_tools was left None, so every tenant agent could
+                        # call every registered tool. Now a tenant that configures
+                        # tools restricts execution to its ACTIVE ones (a tenant
+                        # with no config keeps unrestricted behavior).
+                        _allow = await self._tenant_tool_allowlist(tenant_id)
                         tool_result = await self.tool_registry.execute_tool(
-                            target_tool, params_json, tenant_id=tenant_id
+                            target_tool, params_json, tenant_id=tenant_id,
+                            allowed_tools=_allow,
                         )
                         logger.info(f"[Exec] Step {step_num} tool result: {tool_result}")
                 except Exception as e:
