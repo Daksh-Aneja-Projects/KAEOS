@@ -637,6 +637,42 @@ class HITLManager:
 
         return True
 
+    async def discard_pending(self, execution_id: str, tenant_id: str | None = None,
+                              reason: str = "resolved via mission") -> bool:
+        """Retire a pending HITL record WITHOUT resuming it (H11).
+
+        A mission step's Gate-3 pause creates a HITL record keyed by that run's
+        execution id, but the mission re-runs the approved step under a FRESH
+        execution id (engine mints a new one each advance). So the paused run's
+        record would otherwise linger in both the /hitl list and the DB-backed
+        /skills/hitl queue as an orphaned, still-approvable entry. This retires it
+        in lockstep with the mission-side resolution. Tenant-scoped; no resume.
+        """
+        record = await self._get_record(execution_id)
+        if (tenant_id is not None and record
+                and record.get("tenant_id") not in (None, tenant_id)):
+            return False
+        if record:
+            record["status"] = "RESOLVED"
+            record["reason"] = reason
+            record["resolved_at"] = datetime.now(timezone.utc).isoformat()
+            # status != PENDING -> list_pending self-heals it out of the index.
+            await self._put_record(execution_id, record, ttl=60)
+        # Finalize the DB PENDING_HITL row so it also leaves the /skills/hitl queue.
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(SkillExecution)
+                .where(SkillExecution.id == execution_id,
+                       SkillExecution.agent_state.in_(
+                           [AgentState.PENDING_HITL, AgentState.PAUSED, None]))
+                .values(agent_state=AgentState.FAILED,
+                        status=ExecutionStatus.HUMAN_OVERRIDDEN,
+                        outcome_type=ExecutionStatus.HUMAN_OVERRIDDEN,
+                        completed_at=datetime.now(timezone.utc))
+            )
+            await session.commit()
+        return True
+
     async def _resume_from_hitl(self, execution_id: str, fallback_record: Dict[str, Any] | None = None) -> bool:
         """Resume an approved execution through the full gate pipeline.
 

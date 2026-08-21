@@ -253,6 +253,57 @@ class AgentExecutor:
         except Exception as e:
             logger.error(f"[Memory] store failed for {context.get('execution_id')}: {e}")
 
+    #: Gates 1-4 stop the pipeline BEFORE the executor (skill_executor) runs, so
+    #: its Gate-5 ledger write never fires for these — H9 hash-chains them here
+    #: instead. BLOCKED_ACTUATION is deliberately excluded: it is Gate 5b, AFTER
+    #: the executor already ledgered the run, so logging it here would double-count.
+    _PRE_EXECUTOR_REFUSALS = frozenset({
+        ExecutionStatus.BLOCKED_COMPLIANCE,
+        ExecutionStatus.PENDING_HITL,
+        ExecutionStatus.BLOCKED_DEBATE,
+        ExecutionStatus.ESCALATED_DEBATE,
+    })
+
+    async def _ledger_gate_stop(self, skill_obj, context: dict, outcome: dict) -> None:
+        """H9: hash-chain a ledger event for a decision refused or paused at a
+        pre-execution gate (compliance / fairness / HITL / debate).
+
+        skill_executor balances the Gate-5 path — it ledgers both success and
+        executor-failure. Gates 1-4 return before the executor, so those refusals
+        left a SkillExecution row but no ledger proof, and the product's whole
+        compliance claim is 'we prove what we refused'. Best-effort and loud on
+        failure: the refusal is already authoritative, so a ledger hiccup must
+        never turn a governed refusal into a crash. Mirrors skill_executor's use
+        of skill_obj (synthetic skills with no skill_obj are unledgered on both
+        paths — one gap, consistently)."""
+        if skill_obj is None or not isinstance(outcome, dict):
+            return
+        status = outcome.get("status")
+        if status not in self._PRE_EXECUTOR_REFUSALS:
+            return  # executor outcomes are already ledgered by skill_executor
+        reason = (outcome.get("reason")
+                  or "; ".join(v.get("reason", "") for v in outcome.get("violations", []))
+                  or str(status))
+        try:
+            from app.services.provenance import ProvenanceEngine
+            from app.services.skill_executor import _hash_actor
+            async with AsyncSessionLocal() as session:
+                await ProvenanceEngine().log_event(
+                    db_session=session,
+                    rule_id=skill_obj.id,
+                    event_type="GATE_REFUSAL",
+                    actor_hash=_hash_actor(f"aeos_gate_{context.get('execution_id')}"),
+                    actor_role="AEOS_RUNTIME",
+                    evidence_ids=[],
+                    confidence_at=float(context.get("confidence", 0.0) or 0.0),
+                    reasoning=f"Gate stop {status}: {reason}"[:1000],
+                    tenant_id=context.get("tenant_id", "default"),
+                )
+        except Exception as e:
+            logger.error(
+                f"[Gate] LEDGER FAILED for refusal {context.get('execution_id')} "
+                f"({status}): {e}")
+
     @staticmethod
     async def _mark_execution_failed(execution_id: str, status: str) -> None:
         """Rewrite the persisted execution row to a failure status.
@@ -272,6 +323,27 @@ class AgentExecutor:
                     row.outcome_type = status
                     row.agent_state = AgentState.FAILED
                     await session.commit()
+                    _skill_ref, _tenant = row.skill_db_id, row.tenant_id
+                else:
+                    _skill_ref = _tenant = None
+            # H9: the ledger recorded SUCCESS_CLEAN at Gate 5; hash-chain the
+            # post-execution override so the chain reflects the write's true final
+            # status (a reversed/failed governed write, not a clean success).
+            if _skill_ref and _tenant:
+                try:
+                    from app.services.provenance import ProvenanceEngine
+                    from app.services.skill_executor import _hash_actor
+                    async with AsyncSessionLocal() as s2:
+                        await ProvenanceEngine().log_event(
+                            db_session=s2, rule_id=_skill_ref,
+                            event_type="GATE_OVERRIDE",
+                            actor_hash=_hash_actor(f"aeos_gate5b_{execution_id}"),
+                            actor_role="AEOS_RUNTIME", evidence_ids=[],
+                            confidence_at=0.0,
+                            reasoning=f"Post-execution gate override: {status}",
+                            tenant_id=_tenant)
+                except Exception as le:
+                    logger.error(f"[Gate 5b] LEDGER override failed for {execution_id}: {le}")
         except Exception as e:
             logger.error(f"[Gate 5b] could not mark execution {execution_id} {status}: {e}")
 
@@ -642,6 +714,7 @@ class AgentExecutor:
         outcome = await self._gate_compliance_and_fairness(
             skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
         if outcome is not None:
+            await self._ledger_gate_stop(skill_obj, context, outcome)
             return outcome
         # The pass path published the non-blocking WARNINGs on the context;
         # downstream gates carry them into the executor and the result.
@@ -650,9 +723,14 @@ class AgentExecutor:
         outcome = await self._gate_confidence_hitl(
             skill, context, skill_obj, hitl_pre_approved=hitl_pre_approved)
         if outcome is not None:
+            await self._ledger_gate_stop(skill_obj, context, outcome)
             return outcome
-        return await self._run_post_hitl(skill, context, skill_obj, warnings,
+        post = await self._run_post_hitl(skill, context, skill_obj, warnings,
                                          _pre_approved=bool(hitl_pre_approved))
+        # Gate 4 (debate) refusals return through here; the helper self-filters so
+        # executor outcomes — already ledgered by skill_executor — are skipped.
+        await self._ledger_gate_stop(skill_obj, context, post)
+        return post
 
     async def _gate_debate(
         self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,

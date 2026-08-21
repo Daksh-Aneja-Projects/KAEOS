@@ -554,6 +554,19 @@ async def resolve_hitl_step(
     if step.status != "AWAITING_HITL":
         return {"error": f"step {seq} is {step.status}, not awaiting approval"}
 
+    # H11: this step's paused run created a HITL record keyed by its execution id.
+    # We resolve the step here and re-run it under a fresh id, so retire that
+    # record in lockstep - otherwise it lingers as an orphaned, still-approvable
+    # entry in /hitl and /skills/hitl (the two stores never reconciled).
+    if step.execution_id:
+        try:
+            from app.services.hitl_manager import hitl_manager
+            await hitl_manager.discard_pending(
+                step.execution_id, tenant_id,
+                reason=f"resolved via mission {mission_id} step {seq}")
+        except Exception as e:
+            logger.warning(f"[mission] could not retire HITL record for step {seq}: {e}")
+
     if approved:
         step.status = "READY"  # cleared checkpoint; the runner will execute it
         # The persisted approval record: the ONLY thing that lets a HITL-gated
