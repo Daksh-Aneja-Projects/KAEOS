@@ -211,6 +211,23 @@ class Actuator:
             import logging
             logging.getLogger(__name__).warning(
                 "[Actuator] outbound sync queue failed: %s", sync_err)
+
+        # H8: publish the governed write onto the internal event bus (SystemEvent
+        # + webhooks + WS + internal automations). Non-fatal — the write is
+        # already durable; a bus hiccup never rolls it back.
+        try:
+            from app.services.event_bus import event_bus, EventType
+            await event_bus.emit(
+                EventType.ACTUATION_APPLIED,
+                {"action_id": record.id, "system": system, "object_type": object_type,
+                 "external_id": external_id, "operation": operation,
+                 "execution_id": execution_id, "actor": actor},
+                tenant_id=tenant_id,
+            )
+        except Exception as ev_err:
+            import logging
+            logging.getLogger(__name__).debug(
+                "[Actuator] event-bus emit skipped: %s", ev_err)
         return record
 
     @staticmethod
@@ -266,6 +283,21 @@ class Actuator:
             record.provenance_id = record.provenance_id or prov_id
         await db.commit()
         await db.refresh(record)
+
+        # H8: publish the reversal onto the internal event bus. Non-fatal.
+        try:
+            from app.services.event_bus import event_bus, EventType
+            await event_bus.emit(
+                EventType.ACTUATION_REVERSED,
+                {"action_id": record.id, "system": record.system,
+                 "object_type": record.object_type, "external_id": record.external_id,
+                 "actor": actor},
+                tenant_id=tenant_id,
+            )
+        except Exception as ev_err:
+            import logging
+            logging.getLogger(__name__).debug(
+                "[Actuator] event-bus emit skipped: %s", ev_err)
         return record
 
     @staticmethod

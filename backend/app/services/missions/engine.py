@@ -354,6 +354,28 @@ async def _writeback_signal_on_finish(db: AsyncSession, mission) -> None:
         )
 
 
+async def _emit_mission_lifecycle(mission, prev_status: str) -> None:
+    """H8: publish a mission's terminal transition onto the internal event bus
+    (SystemEvent + webhooks + WS + internal automations). Fires exactly once —
+    advance_mission early-returns on an already-terminal mission, so prev_status
+    is non-terminal only on the call that closes it. Non-fatal."""
+    if mission.status not in _TERMINAL_MISSION or prev_status in _TERMINAL_MISSION:
+        return
+    try:
+        from app.services.event_bus import event_bus, EventType
+        good = mission.status in ("COMPLETED", "COMPLETED_WITH_EXCEPTIONS")
+        await event_bus.emit(
+            EventType.PROCESS_COMPLETED if good else EventType.PROCESS_FAILED,
+            {"mission_id": mission.id, "status": mission.status,
+             "goal": getattr(mission, "goal", None),
+             "departments": getattr(mission, "departments", None),
+             "created_by": mission.created_by},
+            tenant_id=mission.tenant_id,
+        )
+    except Exception as e:
+        logger.debug(f"[mission] event-bus emit skipped: {e}")
+
+
 async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) -> dict:
     """Advance the mission by ONE executable step, then return.
 
@@ -368,6 +390,8 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
         return {"error": "mission not found"}
     if mission.status in ("COMPLETED", "COMPLETED_WITH_EXCEPTIONS", "FAILED", "ABORTED"):
         return _summary(mission, steps)
+
+    _entry_status = mission.status  # non-terminal here; used to detect the close
 
     # Crash recovery: a step left RUNNING by a worker that died (its background task
     # never finished) would wedge the mission. Reset a stale RUNNING step so it can
@@ -449,6 +473,7 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
         await _writeback_signal_on_finish(db, mission)
         await db.commit()
         await db.refresh(mission)
+        await _emit_mission_lifecycle(mission, _entry_status)
         return _summary(mission, steps)
 
     # Nothing executable right now: surface any pending-HITL checkpoints.
@@ -461,6 +486,7 @@ async def advance_mission(db: AsyncSession, *, tenant_id: str, mission_id: str) 
     await _writeback_signal_on_finish(db, mission)
     await db.commit()
     await db.refresh(mission)
+    await _emit_mission_lifecycle(mission, _entry_status)
     return _summary(mission, steps)
 
 
@@ -574,6 +600,7 @@ async def abort_mission(db: AsyncSession, *, tenant_id: str, mission_id: str,
         return {"error": "mission not found"}
     if mission.status in ("COMPLETED", "FAILED", "ABORTED"):
         return _summary(mission, steps)
+    _entry_status = mission.status
 
     reversed_count = await _reverse_mission_actions(db, mission, steps)
     for s in steps:
@@ -587,6 +614,7 @@ async def abort_mission(db: AsyncSession, *, tenant_id: str, mission_id: str,
            + (f" Reversed {reversed_count} actuation(s)." if reversed_count else ""))
     await db.commit()
     await db.refresh(mission)
+    await _emit_mission_lifecycle(mission, _entry_status)
     return _summary(mission, steps)
 
 

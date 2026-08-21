@@ -34,7 +34,11 @@ class EventType(str, Enum):
     REGULATORY_PATCH = "regulatory.patch"
     FEDERATED_EXPORT = "federated.export"
     SYSTEM_HEALTH = "system.health"
-    
+    ACTUATION_APPLIED = "actuation.applied"
+    ACTUATION_REVERSED = "actuation.reversed"
+    SUPPORT_TICKET_RESOLVED = "support.ticket.resolved"
+    LENDING_ADVERSE_ACTION = "lending.adverse_action"
+
     # Workforce Layer (New)
     DEPARTMENT_DEPLOYED = "department.deployed"
     DEPARTMENT_PAUSED = "department.paused"
@@ -56,9 +60,17 @@ class EventType(str, Enum):
 
 
 class EventBus:
-    """Production event bus — writes to DB and dispatches to webhook subscribers."""
+    """Production event bus — writes to DB and dispatches to webhook subscribers.
+
+    Also the *internal* event fabric: departments register in-process handlers
+    via ``on(event_type, handler)`` to react to another department's lifecycle
+    events (e.g. HR offboarding → IT deprovision). Handlers run fire-and-forget
+    inside ``emit`` after the event is persisted; one raising never blocks
+    persistence, webhook delivery, or the other handlers.
+    """
 
     _instance = None
+    _handlers: Dict[str, List[Any]] = {}  # event_type value → [async handler(event_data)]
 
     def __new__(cls):
         if cls._instance is None:
@@ -66,6 +78,16 @@ class EventBus:
             cls._instance.webhook_queue = asyncio.Queue(maxsize=1000)
             cls._instance.worker_task = None
         return cls._instance
+
+    @classmethod
+    def on(cls, event_type: EventType, handler: Any) -> None:
+        """Register an in-process automation for an internal event type.
+        Idempotent per (event_type, handler) so re-running startup wiring does
+        not double-fire — matters because main.py's lifespan can re-acquire
+        leadership and re-register."""
+        bucket = cls._handlers.setdefault(event_type.value, [])
+        if handler not in bucket:
+            bucket.append(handler)
 
     async def subscribe(self, db: AsyncSession, endpoint: str, events: List[EventType],
                   secret: str = None, tenant_id: str = None, name: str = "default") -> WebhookSubscriptionModel:
@@ -141,16 +163,26 @@ class EventBus:
             
             # Save DB
             await db.commit()
-            
+
+            event_data = {
+                "id": event_id,
+                "type": event_type.value,
+                "tenant_id": tenant_id,
+                "payload": payload,
+                "timestamp": timestamp.isoformat(),
+            }
+
+            # 2b. Internal automations (cross-department reactions). Fire-and-
+            # forget on the running loop: each handler owns its own DB session,
+            # and one failing must never block persistence or the others.
+            for handler in self._handlers.get(event_type.value, []):
+                try:
+                    asyncio.create_task(handler(event_data))
+                except Exception as e:
+                    logger.error(f"[EventBus] internal handler dispatch failed: {e}")
+
             # 3. Publish to Redis for background processing
             if matching_subs:
-                event_data = {
-                    "id": event_id,
-                    "type": event_type.value,
-                    "tenant_id": tenant_id,
-                    "payload": payload,
-                    "timestamp": timestamp.isoformat()
-                }
                 try:
                     from app.core.redis import get_redis
                     redis = await get_redis()

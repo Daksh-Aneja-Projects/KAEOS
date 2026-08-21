@@ -543,6 +543,10 @@ class HITLManager:
                 select(SkillExecution).where(SkillExecution.id == execution_id)
             )
             execution = exec_q.scalar_one_or_none()
+            # Capture the owning tenant as a plain string while the row is still
+            # attached — used by the event-bus emit after the session closes.
+            _ev_tenant = (execution.tenant_id if execution
+                          else (record or {}).get("tenant_id")) or tenant_id
             if execution:
                 if execution.agent_state not in (AgentState.PENDING_HITL, AgentState.PAUSED, None):
                     logger.warning(
@@ -615,6 +619,21 @@ class HITLManager:
         # the crash-safety net, not the primary path.
         if approved:
             asyncio.create_task(self._resume_from_hitl(execution_id, fallback_record=record))
+
+        # H8: publish the human decision onto the internal event bus (SystemEvent
+        # + webhooks + WS + internal automations). Non-fatal — a bus hiccup must
+        # never unwind a resolution that already committed above.
+        if _ev_tenant:
+            try:
+                from app.services.event_bus import event_bus, EventType
+                await event_bus.emit(
+                    EventType.HITL_APPROVED if approved else EventType.HITL_REJECTED,
+                    {"execution_id": execution_id, "approver": approver,
+                     "reason": reason, "approved": approved},
+                    tenant_id=_ev_tenant,
+                )
+            except Exception as e:
+                logger.debug(f"[HITL] event-bus emit skipped: {e}")
 
         return True
 
