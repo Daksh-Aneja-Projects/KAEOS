@@ -308,26 +308,34 @@ async def export_rules(
     product's core IP - to any caller, in one download.
     """
     r = await db.execute(
-        select(Rule)
+        select(Rule.id, Rule.statement, Rule.domain, Rule.confidence_scalar,
+               Rule.confidence_tier, Rule.workflow_id, Rule.is_executable,
+               Rule.compliance_tags, Rule.half_life_days, Rule.created_at)
         .where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
         .order_by(Rule.confidence_scalar.desc())
+        .limit(50_000)   # same ceiling as the provenance export
     )
-    rules = r.scalars().all()
-    data = [{"id": x.id, "statement": x.statement, "domain": x.domain,
-             "confidence_scalar": x.confidence_scalar, "confidence_tier": x.confidence_tier.value if x.confidence_tier else "",
-             "workflow_id": x.workflow_id, "is_executable": x.is_executable,
-             "compliance_tags": json.dumps(x.compliance_tags or []),
-             "half_life_days": x.half_life_days, "created_at": x.created_at.isoformat() if x.created_at else ""}
-            for x in rules]
+    rows = r.all()
 
-    if format == "csv":
-        output = io.StringIO()
-        if data:
-            writer = csv.DictWriter(output, fieldnames=data[0].keys())
-            writer.writeheader()
-            writer.writerows(data)
-        return {"format": "csv", "count": len(data), "csv": output.getvalue()}
-    return {"format": "json", "count": len(data), "rules": data}
+    # Serializing tens of thousands of rows is blocking work — off the loop.
+    def _serialize() -> dict:
+        data = [{"id": rid, "statement": statement, "domain": domain,
+                 "confidence_scalar": conf, "confidence_tier": tier.value if tier else "",
+                 "workflow_id": wf, "is_executable": is_exec,
+                 "compliance_tags": json.dumps(tags or []),
+                 "half_life_days": hl, "created_at": created.isoformat() if created else ""}
+                for rid, statement, domain, conf, tier, wf, is_exec, tags, hl, created in rows]
+        if format == "csv":
+            output = io.StringIO()
+            if data:
+                writer = csv.DictWriter(output, fieldnames=data[0].keys())
+                writer.writeheader()
+                writer.writerows(data)
+            return {"format": "csv", "count": len(data), "csv": output.getvalue()}
+        return {"format": "json", "count": len(data), "rules": data}
+
+    import asyncio
+    return await asyncio.to_thread(_serialize)
 
 @router.get("/export/skills")
 async def export_skills(

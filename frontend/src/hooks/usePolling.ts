@@ -102,13 +102,19 @@ export function usePolling<T>(
     };
   }, [isLive, intervalMs, execute]);
 
-  // Staleness tracker
+  // Staleness tracker. Reads lastSuccess through a ref so the 1s interval is
+  // created once, instead of being torn down and rebuilt on every successful
+  // poll; skips the re-render while the tab is hidden.
+  const lastSuccessRef = useRef(lastSuccess);
+  lastSuccessRef.current = lastSuccess;
   useEffect(() => {
     const timer = setInterval(() => {
-      setStaleness(Math.floor((Date.now() - lastSuccess) / 1000));
+      if (!document.hidden) {
+        setStaleness(Math.floor((Date.now() - lastSuccessRef.current) / 1000));
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, [lastSuccess]);
+  }, []);
 
   // Pause on tab hidden
   useEffect(() => {

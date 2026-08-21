@@ -321,6 +321,16 @@ async def verify_chain(db: AsyncSession, tenant_id: str, scope: str) -> dict:
     v2_rows = [r for r in rows if r.schema_version == LEDGER_SCHEMA_VERSION]
     legacy_count = len(rows) - len(v2_rows)
 
+    # Parents outside this scope's row set (routine for a rule-scoped verify on
+    # an append-only ledger) are fetched in ONE batch, not one db.get per row.
+    missing_parents = {row.parent_id for row in v2_rows
+                       if row.parent_id is not None and row.parent_id not in by_id}
+    if missing_parents:
+        fetched = (await db.execute(
+            select(ProvenanceLedger).where(ProvenanceLedger.id.in_(missing_parents))
+        )).scalars().all()
+        by_id.update({p.id: p for p in fetched})
+
     invalid, broken_links = [], []
     children: dict = {}
     for row in v2_rows:
@@ -329,11 +339,9 @@ async def verify_chain(db: AsyncSession, tenant_id: str, scope: str) -> dict:
             parent_hash = _GENESIS
         else:
             parent = by_id.get(row.parent_id)
-            if parent is None:
-                # Parent may be outside this scope's row set only if data was
-                # deleted or rewired - a real integrity failure.
-                parent = await db.get(ProvenanceLedger, row.parent_id)
             if parent is None or not parent.chain_hash:
+                # Parent truly absent (deleted or rewired) - a real integrity
+                # failure.
                 broken_links.append(row.id)
                 continue
             parent_hash = parent.chain_hash

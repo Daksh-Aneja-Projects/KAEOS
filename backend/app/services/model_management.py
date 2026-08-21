@@ -98,33 +98,28 @@ class ModelManagementService:
             if not target_tier:
                 target_tier = ModelTier.STANDARD
 
-        # Find best available model for tier
+        # One query for every active entry (the registry is a handful of rows per
+        # tenant), then pick target tier -> fallback order in Python. This is on
+        # the LLM-routing path, so the old 1-4 sequential queries added latency
+        # exactly where it hurts. Global success_rate DESC sort means each
+        # tier-filtered sublist keeps the same order the per-tier queries had.
         result = await db.execute(
             select(ModelRegistryEntry)
             .where(
                 ModelRegistryEntry.tenant_id == tenant_id,
-                ModelRegistryEntry.tier == target_tier,
                 ModelRegistryEntry.is_active == True
             )
             .order_by(ModelRegistryEntry.success_rate.desc())
         )
-        models = result.scalars().all()
+        all_models = result.scalars().all()
+        models = [m for m in all_models if m.tier == target_tier]
 
         if not models:
             # Fallback: try one tier down
             fallback_order = [ModelTier.STANDARD, ModelTier.FAST, ModelTier.DEEP]
             for fb_tier in fallback_order:
                 if fb_tier != target_tier:
-                    result = await db.execute(
-                        select(ModelRegistryEntry)
-                        .where(
-                            ModelRegistryEntry.tenant_id == tenant_id,
-                            ModelRegistryEntry.tier == fb_tier,
-                            ModelRegistryEntry.is_active == True
-                        )
-                        .order_by(ModelRegistryEntry.success_rate.desc())
-                    )
-                    models = result.scalars().all()
+                    models = [m for m in all_models if m.tier == fb_tier]
                     if models:
                         break
 

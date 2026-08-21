@@ -72,6 +72,9 @@ def _delete_local(path: str) -> dict:
         return _result(path, False, "local", str(e))
 
 
+_S3_CLIENT = None   # lazily built in the executor; reused across deletes
+
+
 async def _delete_s3(uri: str) -> dict:
     try:
         import boto3  # optional dependency
@@ -81,10 +84,16 @@ async def _delete_s3(uri: str) -> dict:
         parsed = urlparse(uri)
         bucket, key = parsed.netloc, parsed.path.lstrip("/")
         import asyncio
-        client = boto3.client("s3")
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: client.delete_object(Bucket=bucket, Key=key)
-        )
+
+        # Client construction loads botocore's service model off disk (~100ms) —
+        # keep it off the loop too, and reuse it (boto3 clients are thread-safe).
+        def _do():
+            global _S3_CLIENT
+            if _S3_CLIENT is None:
+                _S3_CLIENT = boto3.client("s3")
+            _S3_CLIENT.delete_object(Bucket=bucket, Key=key)
+
+        await asyncio.get_running_loop().run_in_executor(None, _do)
         return _result(uri, True, "s3")
     except Exception as e:  # credentials / network / permissions
         logger.warning("[BlobStore] s3 delete failed for %s: %s", uri, e)

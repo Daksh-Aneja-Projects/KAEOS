@@ -215,15 +215,6 @@ class CostGovernorService:
                 "calls": int(calls or 0),
             }
 
-        # Totals
-        totals_result = await db.execute(
-            select(tokens_sum, cost_sum, calls_count).where(*base_filter)
-        )
-        t_tokens, t_cost, t_calls = totals_result.one()
-        total_tokens = int(t_tokens or 0)
-        total_cost = float(t_cost or 0.0)
-        total_events = int(t_calls or 0)
-
         # By model tier (includes a NULL-tier group, matching prior behaviour).
         # avg_latency_ms surfaces where the LLM wall-time goes (Phase-0 perf metric).
         tier_result = await db.execute(
@@ -235,6 +226,12 @@ class CostGovernorService:
             tier: {**_row(tk, cs, ca), "avg_latency_ms": int(la or 0)}
             for tier, tk, cs, ca, la in tier_result.all()
         }
+
+        # Totals derived from the tier groups (the NULL-tier group makes them
+        # complete), so the separate totals scan is gone.
+        total_tokens = sum(v["tokens"] for v in tier_agg.values())
+        total_cost = float(sum(v["cost"] for v in tier_agg.values()))
+        total_events = sum(v["calls"] for v in tier_agg.values())
 
         # By agent (only rows with a real agent_id, matching `if e.agent_id`)
         agent_result = await db.execute(

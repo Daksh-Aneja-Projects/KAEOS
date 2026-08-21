@@ -38,8 +38,11 @@ logger = logging.getLogger(__name__)
 _STATE_AUD = "kaeos-sso-state"
 _STATE_TTL_MINUTES = 10
 _HTTP_TIMEOUT = 10.0
-# Small in-process cache of discovery docs (endpoints are stable); keyed by issuer.
-_DISCOVERY_CACHE: dict[str, dict] = {}
+# Small in-process cache of discovery docs keyed by issuer. TTL'd: endpoints are
+# stable but not immortal — an IdP that rotates its jwks_uri used to stay wedged
+# (auth broken) until a process restart.
+_DISCOVERY_CACHE: dict[str, tuple[float, dict]] = {}   # issuer -> (fetched_at, doc)
+_DISCOVERY_TTL_SECONDS = 3600
 
 
 class SSOError(Exception):
@@ -87,19 +90,26 @@ def verify_state(state: str) -> dict:
 
 async def discover(issuer: str) -> dict:
     """Fetch (and cache) the IdP's OpenID discovery document."""
+    import time
     issuer = issuer.rstrip("/")
-    if issuer in _DISCOVERY_CACHE:
-        return _DISCOVERY_CACHE[issuer]
+    cached = _DISCOVERY_CACHE.get(issuer)
+    if cached and time.time() - cached[0] < _DISCOVERY_TTL_SECONDS:
+        return cached[1]
     url = f"{issuer}/.well-known/openid-configuration"
     async with guarded_async_client(timeout=_HTTP_TIMEOUT) as client:
         resp = await client.get(url)
     if resp.status_code != 200:
+        # A stale doc beats a hard failure while the IdP hiccups: serve the
+        # expired entry if one exists, so a transient discovery outage does not
+        # take logins down with it.
+        if cached:
+            return cached[1]
         raise SSOError(f"OIDC discovery failed ({resp.status_code}) for {issuer}")
     doc = resp.json()
     for required in ("authorization_endpoint", "token_endpoint", "jwks_uri", "issuer"):
         if required not in doc:
             raise SSOError(f"OIDC discovery document missing '{required}'")
-    _DISCOVERY_CACHE[issuer] = doc
+    _DISCOVERY_CACHE[issuer] = (time.time(), doc)
     return doc
 
 

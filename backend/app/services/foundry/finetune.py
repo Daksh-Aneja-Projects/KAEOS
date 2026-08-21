@@ -84,9 +84,11 @@ class OpenAIFineTuneProvider(FineTuneProvider):
         return ("\n".join(lines)).encode("utf-8")
 
     async def submit(self, *, base_model, examples) -> str:
-        import httpx
+        # guarded_async_client: SSRF-pinned like every other outbound path, and
+        # it reuses the shared connection pool instead of a fresh handshake.
+        from app.core.outbound import guarded_async_client
         headers = {"Authorization": f"Bearer {self._key}"}
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with guarded_async_client(timeout=60.0) as client:
             files = {"file": ("kaeos_ft.jsonl", self._to_jsonl(examples), "application/jsonl")}
             up = await client.post("https://api.openai.com/v1/files", headers=headers,
                                    data={"purpose": "fine-tune"}, files=files)
@@ -101,9 +103,9 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             return job.json()["id"]
 
     async def poll(self, external_job_id: str) -> dict:
-        import httpx
+        from app.core.outbound import guarded_async_client
         headers = {"Authorization": f"Bearer {self._key}"}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with guarded_async_client(timeout=30.0) as client:
             r = await client.get(
                 f"https://api.openai.com/v1/fine_tuning/jobs/{external_job_id}", headers=headers)
         if r.status_code >= 300:

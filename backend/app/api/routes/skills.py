@@ -167,21 +167,22 @@ async def execute_skill(
     # 2. Pre-execution guardrails (route-level throttle; runs before the
     # pipeline so a rate-limited caller never burns gate model calls).
     pre_guards = skill.guardrails.get("pre_execution", []) if skill.guardrails else []
-    for guard in pre_guards:
-        if isinstance(guard, str) and "rate_limit" in guard:
-            recent_q = select(sqlfunc.count(SkillExecution.id)).where(
-                SkillExecution.skill_db_id == skill.id,
-                SkillExecution.started_at >= datetime(
-                    start.year, start.month, start.day, start.hour, tzinfo=timezone.utc
-                ),
+    # The window count is identical for every rate_limit guard string, so it
+    # runs at most once per request (this is the hot execute path).
+    if any(isinstance(g, str) and "rate_limit" in g for g in pre_guards):
+        recent_q = select(sqlfunc.count(SkillExecution.id)).where(
+            SkillExecution.skill_db_id == skill.id,
+            SkillExecution.started_at >= datetime(
+                start.year, start.month, start.day, start.hour, tzinfo=timezone.utc
+            ),
+        )
+        count_res = await db.execute(recent_q)
+        if (count_res.scalar() or 0) >= 50:
+            return SkillExecutionResponse(
+                execution_id=exec_id, skill_id=skill.skill_id,
+                status=ExecutionStatus.BLOCKED_RATE_LIMIT, route_type="SKILL_EXEC",
+                duration_ms=0, hitl_required=False,
             )
-            count_res = await db.execute(recent_q)
-            if (count_res.scalar() or 0) >= 50:
-                return SkillExecutionResponse(
-                    execution_id=exec_id, skill_id=skill.skill_id,
-                    status=ExecutionStatus.BLOCKED_RATE_LIMIT, route_type="SKILL_EXEC",
-                    duration_ms=0, hitl_required=False,
-                )
 
     # 3. The ONE gate pipeline. This route used to re-implement a partial
     # inline pipeline (compliance + confidence only), silently skipping

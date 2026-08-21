@@ -49,6 +49,35 @@ and frontend rendering; every finding re-verified at source before fixing).
   in one memoized pass; theme/auth/branding context values are referentially
   stable so a provider render no longer cascades through every consumer.
 
+Second wave (the deferred list, executed):
+
+- **More round trips gone.** KB-health dashboard 17 -> 11 queries; AI-inventory
+  execution counts 3 -> 1; cost telemetry derives totals from its tier groups;
+  model routing picks target + fallback tiers from ONE registry query instead
+  of up to four sequential ones (this sits on the LLM-call path); /my-work
+  hydrates assignments with one IN query per entity type instead of one query
+  per row; scoped provenance verification batch-fetches out-of-scope parents
+  instead of a lookup per row.
+- **Bounded reads.** The reality twin samples employees and vendors like every
+  other headline entity (it is a balanced constellation by design, not an
+  HR-employee cloud); mission detail returns the newest 200 ledger events as
+  thin columns; the foresight coverage corpus caps at the newest 1000 missions;
+  the stuck-job reaper sweeps at most 500 per tick. The fair-lending cohort scan
+  stays all-time by design (the JSON protected-class bucketing must remain
+  portable Python), but now transfers only the two consumed columns.
+- **Exports off the loop.** Rule export selects thin columns with a 50k ceiling
+  and serializes in a worker thread; workspace CSV export serializes its 10k
+  rows off the loop too.
+- **Auth/SSO resilience.** The OIDC discovery cache gained a 1h TTL (a rotated
+  jwks_uri used to wedge logins until restart) and serves the stale document
+  through transient IdP outages; the fine-tune bridge now uses the SSRF-pinned
+  pooled outbound client like every other external call.
+- **Small fixes.** S3 delete builds and caches its client off the event loop;
+  the MCP agent interface caches its in-process forwarding client; a WebSocket
+  whose client vanished mid-handshake is unregistered immediately; the skill
+  rate-limit guard counts once per request; the deployment poll and the polling
+  hook's staleness ticker hold while the tab is hidden.
+
 ### Added - The Company Brain: self-proposed, human-governed missions (2026-08-21)
 
 KAEOS reacted to signals; now it also reflects. The Company Brain observes a

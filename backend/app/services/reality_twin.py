@@ -136,8 +136,12 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
             else:
                 add_edge(p.department_id, p.id, "RUNS")
 
+        # Sampled like every other headline entity (see _ENTITY_SAMPLE): the twin
+        # is a balanced constellation, not an HR-employee cloud — an enterprise
+        # tenant's full headcount would drown the graph and the physics.
         emps = (
-            await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id))
+            await db.execute(select(HREmployee).where(HREmployee.tenant_id == tenant_id)
+                             .limit(_ENTITY_SAMPLE))
         ).scalars().all()
         hr_dept = dept_by_slug.get("hr")
         for e in emps:
@@ -146,7 +150,8 @@ async def build_live_twin(tenant_id: str) -> Tuple[Dict[str, dict], List[dict]]:
             add_edge(e.department_id or hr_dept, e.id, "STAFFS")
 
         vendors = (
-            await db.execute(select(Vendor).where(Vendor.tenant_id == tenant_id))
+            await db.execute(select(Vendor).where(Vendor.tenant_id == tenant_id)
+                             .limit(_ENTITY_SAMPLE))
         ).scalars().all()
         fin_dept = dept_by_slug.get("finance")
         for v in vendors:

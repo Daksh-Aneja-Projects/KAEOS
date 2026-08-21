@@ -78,6 +78,7 @@ export default function DeploymentStudio(_props: { domain?: string }) {
       // auto-advances through all states in the background (see Task 7). The UI
       // only polls for live step progress - it does NOT drive the state machine.
       pollRef.current = setInterval(async () => {
+        if (document.hidden) return;   // hold the 2s poll while backgrounded; next visible tick catches up
         try {
           const status = await api.getDeployment(result.id);
           setDeployStatus(status);

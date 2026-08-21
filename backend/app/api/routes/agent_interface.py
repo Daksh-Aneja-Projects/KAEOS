@@ -142,13 +142,19 @@ def _rpc_result(req_id, result: dict) -> JSONResponse:
 
 async def _forward(request: Request, method: str, path: str,
                    params: dict | None = None, json_body: dict | None = None) -> httpx.Response:
-    """Call one of our own governed routes in-process, as the caller."""
+    """Call one of our own governed routes in-process, as the caller.
+
+    The in-process client is cached on app.state: _call_tool issues several
+    forwards per MCP request, and per-call client construction was pure churn.
+    (ASGITransport holds no sockets, so it needs no explicit shutdown.)"""
     headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_HEADERS}
-    transport = httpx.ASGITransport(app=request.app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://kaeos-internal", timeout=_INTERNAL_TIMEOUT
-    ) as client:
-        return await client.request(method, path, params=params, json=json_body, headers=headers)
+    client = getattr(request.app.state, "_mcp_internal_client", None)
+    if client is None:
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=request.app),
+            base_url="http://kaeos-internal", timeout=_INTERNAL_TIMEOUT)
+        request.app.state._mcp_internal_client = client
+    return await client.request(method, path, params=params, json=json_body, headers=headers)
 
 
 async def _call_tool(request: Request, name: str, args: dict) -> dict:

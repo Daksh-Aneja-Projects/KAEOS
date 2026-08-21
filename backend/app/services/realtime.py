@@ -49,13 +49,19 @@ class ConnectionManager:
         self.active_connections[tenant_id].append(websocket)
         logger.info(f"WebSocket connected for tenant {tenant_id}. Active: {len(self.active_connections[tenant_id])}")
 
-        # Send connection confirmation
-        await websocket.send_json({
-            "type": "connected",
-            "tenant_id": tenant_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "message": "KAEOS Live Feed connected",
-        })
+        # Send connection confirmation. If the client vanished during the
+        # handshake this raises OUTSIDE the route's try block — unregister here
+        # so the dead socket does not linger in the list until the next fan-out.
+        try:
+            await websocket.send_json({
+                "type": "connected",
+                "tenant_id": tenant_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": "KAEOS Live Feed connected",
+            })
+        except Exception:
+            self.disconnect(websocket, tenant_id)
+            return False
 
     def disconnect(self, websocket: WebSocket, tenant_id: str):
         if tenant_id in self.active_connections:

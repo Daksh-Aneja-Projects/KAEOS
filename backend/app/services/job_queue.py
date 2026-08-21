@@ -254,6 +254,7 @@ async def requeue_stuck_jobs(stuck_after_minutes: int = 30) -> list:
     async with MaintenanceSessionLocal() as db:
         rows = (await db.execute(
             select(Job).where(Job.status == "RUNNING", Job.locked_at < cutoff)
+            .limit(500)   # bound one sweep; anything beyond is picked up next tick
         )).scalars().all()
         now = datetime.now(timezone.utc)
         for job in rows:

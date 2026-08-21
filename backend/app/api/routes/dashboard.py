@@ -31,12 +31,8 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
 
-    # Total counts
-    rules_result = await db.execute(
-        select(sqlfunc.count(Rule.id)).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
-    )
-    total_rules = rules_result.scalar() or 0
-
+    # Total counts (total_rules is derived from the tier GROUP BY below — same
+    # filter, so the sum over tier groups IS the total; one query fewer).
     skills_result = await db.execute(select(sqlfunc.count(Skill.id)).where(Skill.tenant_id == tenant_id))
     total_skills = skills_result.scalar() or 0
 
@@ -76,7 +72,8 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         .group_by(Rule.confidence_tier)
     )
     tier_counts = {tier: count for tier, count in tier_rows.all()}
-    tier_total = max(sum(tier_counts.values()), 1)
+    total_rules = sum(tier_counts.values())
+    tier_total = max(total_rules, 1)
 
     def _tier_share(*wanted) -> float:
         return round(sum(tier_counts.get(t, 0) for t in wanted) / tier_total, 3)
@@ -115,48 +112,27 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
             urgency=urgency,
         ))
 
-    # Agent metrics (last 7 days)
-    exec_7d = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago
-        )
-    )
-    total_7d = exec_7d.scalar() or 0
-
-    success_7d = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago,
-            SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN,
-        )
-    )
-    success_count = success_7d.scalar() or 0
-
-    override_7d = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(
+    # Agent metrics (last 7 days) — five aggregates share one WHERE, so they
+    # ride one scan instead of five.
+    total_7d, success_count, override_count, raw_avg_dur, skills_used = (await db.execute(
+        select(
+            sqlfunc.count(SkillExecution.id),
+            sqlfunc.count(SkillExecution.id).filter(
+                SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN),
+            sqlfunc.count(SkillExecution.id).filter(
+                SkillExecution.outcome_type == ExecutionStatus.HUMAN_OVERRIDDEN),
+            sqlfunc.avg(SkillExecution.duration_ms),
+            sqlfunc.count(sqlfunc.distinct(SkillExecution.skill_id_name)),
+        ).where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= week_ago,
-            SkillExecution.outcome_type == ExecutionStatus.HUMAN_OVERRIDDEN,
         )
-    )
-    override_count = override_7d.scalar() or 0
-
-    avg_dur = await db.execute(
-        select(sqlfunc.avg(SkillExecution.duration_ms)).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago
-        )
-    )
-    avg_duration = int(avg_dur.scalar() or 0)
-
-    distinct_skills = await db.execute(
-        select(sqlfunc.count(sqlfunc.distinct(SkillExecution.skill_id_name))).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago
-        )
-    )
-    skills_used = distinct_skills.scalar() or 0
+    )).one()
+    total_7d = total_7d or 0
+    success_count = success_count or 0
+    override_count = override_count or 0
+    avg_duration = int(raw_avg_dur or 0)
+    skills_used = skills_used or 0
 
     agent_metrics = AgentMetrics(
         total_executions_7d=total_7d,
@@ -166,22 +142,19 @@ async def kb_health(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = 
         skills_used=skills_used,
     )
 
-    # Elicitation metrics
-    q_sent = await db.execute(
-        select(sqlfunc.count(ElicitationQuestion.id)).where(
-            ElicitationQuestion.tenant_id == tenant_id,
-            ElicitationQuestion.created_at >= week_ago
-        )
-    )
-    q_answered = await db.execute(
-        select(sqlfunc.count(ElicitationQuestion.id)).where(
+    # Elicitation metrics — sent + answered in one scan.
+    sent, answered = (await db.execute(
+        select(
+            sqlfunc.count(ElicitationQuestion.id),
+            sqlfunc.count(ElicitationQuestion.id).filter(
+                ElicitationQuestion.status == "ANSWERED"),
+        ).where(
             ElicitationQuestion.tenant_id == tenant_id,
             ElicitationQuestion.created_at >= week_ago,
-            ElicitationQuestion.status == "ANSWERED",
         )
-    )
-    sent = q_sent.scalar() or 0
-    answered = q_answered.scalar() or 0
+    )).one()
+    sent = sent or 0
+    answered = answered or 0
 
     top_contribs = await db.execute(
         select(Employee)

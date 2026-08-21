@@ -77,22 +77,35 @@ async def unassign(entity_type: str, entity_id: str,
 
 
 async def _hydrate_assignments(db: AsyncSession, tenant_id: str, items: list) -> list:
-    """Attach each entity's current title + state so the UI renders a real row."""
+    """Attach each entity's current title + state so the UI renders a real row.
+
+    One IN query per entity TYPE instead of one query per assignment row — a
+    busy operator's landing page was an N+1."""
     from app.core.workflow import _current_state
+    by_type: dict[str, list[str]] = {}
+    for it in items:
+        by_type.setdefault(it["entity_type"], []).append(it["entity_id"])
+    loaded: dict[tuple[str, str], object] = {}
+    for etype, ids in by_type.items():
+        spec = get_spec(etype)
+        if spec is None:
+            continue
+        rows = (await db.execute(
+            select(spec.model).where(spec.model.id.in_(ids),
+                                     spec.model.tenant_id == tenant_id))).scalars().all()
+        for obj in rows:
+            loaded[(etype, obj.id)] = obj
+
     out = []
     for it in items:
         spec = get_spec(it["entity_type"])
+        obj = loaded.get((it["entity_type"], it["entity_id"]))
         title, state = None, None
-        if spec is not None:
-            q = await db.execute(
-                select(spec.model).where(spec.model.id == it["entity_id"],
-                                         spec.model.tenant_id == tenant_id))
-            obj = q.scalar_one_or_none()
-            if obj is not None:
-                title = (getattr(obj, "title", None) or getattr(obj, "subject", None)
-                         or getattr(obj, "name", None) or getattr(obj, "invoice_number", None)
-                         or getattr(obj, "incident_number", None) or obj.id)
-                state = _current_state(obj, spec)
+        if spec is not None and obj is not None:
+            title = (getattr(obj, "title", None) or getattr(obj, "subject", None)
+                     or getattr(obj, "name", None) or getattr(obj, "invoice_number", None)
+                     or getattr(obj, "incident_number", None) or obj.id)
+            state = _current_state(obj, spec)
         out.append({**it, "title": title, "state": state})
     return out
 
@@ -338,17 +351,21 @@ async def export_csv(entity_type: str, tenant_id: str = Depends(get_tenant_id),
     cols = [c.name for c in spec.model.__table__.columns
             if c.name not in ("tenant_id",)]
 
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(cols)
-    for obj in rows:
-        out = []
-        for c in cols:
-            v = getattr(obj, c, None)
-            out.append(v.value if hasattr(v, "value") else ("" if v is None else str(v)))
-        writer.writerow(out)
-    buf.seek(0)
+    # 10k rows of getattr + str is blocking work — serialize off the loop.
+    def _serialize() -> str:
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(cols)
+        for obj in rows:
+            out = []
+            for c in cols:
+                v = getattr(obj, c, None)
+                out.append(v.value if hasattr(v, "value") else ("" if v is None else str(v)))
+            writer.writerow(out)
+        return buf.getvalue()
 
+    import asyncio
+    payload = await asyncio.to_thread(_serialize)
     return StreamingResponse(
-        iter([buf.getvalue()]), media_type="text/csv",
+        iter([payload]), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{entity_type}.csv"'})

@@ -100,9 +100,13 @@ async def lending_analytics(db: AsyncSession, tenant_id: str,
 async def fair_lending_ratios(db: AsyncSession, tenant_id: str):
     """Build four-fifths cohorts from real decided applications. Returns None
     when there is nothing to analyse (no protected-class data on decided apps)."""
+    # Full-history scan is the metric (four-fifths cohorts are all-time by
+    # design), and protected_class is a JSON dict, so the per-key bucketing
+    # stays in Python — portable across SQLite and Postgres, which matters more
+    # than SQL-side grouping for fair-lending math. Only the two consumed
+    # columns are transferred.
     q = await db.execute(
-        select(LoanApplication.protected_class, LoanApplication.status,
-               UnderwritingDecision.decision)
+        select(LoanApplication.protected_class, UnderwritingDecision.decision)
         .join(UnderwritingDecision,
               UnderwritingDecision.application_id == LoanApplication.id)
         .where(LoanApplication.tenant_id == tenant_id,
@@ -112,7 +116,7 @@ async def fair_lending_ratios(db: AsyncSession, tenant_id: str):
     cohorts: dict[str, dict[str, dict[str, int]]] = defaultdict(lambda: defaultdict(
         lambda: {"selected": 0, "total": 0}))
     any_data = False
-    for protected, _status, decision in rows:
+    for protected, decision in rows:
         if not isinstance(protected, dict):
             continue
         for attr, group in protected.items():

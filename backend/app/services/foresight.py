@@ -104,8 +104,11 @@ async def _coverage_corpus(db: AsyncSession, tenant_id: str) -> List[str]:
     mentions it — see _SCENARIO_KEYWORDS.
     """
     corpus: List[str] = []
+    # Newest-first with a ceiling: a tenant past 1000 missions has its coverage
+    # long established, and the keyword corpus should not grow without bound.
     missions = (await db.execute(
         select(Mission.goal, Mission.narrative).where(Mission.tenant_id == tenant_id)
+        .order_by(Mission.created_at.desc()).limit(1000)
     )).all()
     for goal, narrative in missions:
         corpus.append(f"{goal or ''} {narrative or ''}".lower())

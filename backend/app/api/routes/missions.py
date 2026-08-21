@@ -200,10 +200,16 @@ async def _detail(db: AsyncSession, tenant_id: str, mission_id: str) -> Optional
         select(MissionStep).where(MissionStep.mission_id == mission_id)
         .order_by(MissionStep.seq)
     )).scalars().all()
-    events = (await db.execute(
-        select(MissionEvent).where(MissionEvent.mission_id == mission_id)
-        .order_by(MissionEvent.created_at)
-    )).scalars().all()
+    # The append-only ledger grows for the mission's whole life; the detail pane
+    # shows the newest slice, oldest-first. Thin columns — only what the
+    # response serializes.
+    events = list(reversed((await db.execute(
+        select(MissionEvent.kind, MissionEvent.message,
+               MissionEvent.step_seq, MissionEvent.created_at)
+        .where(MissionEvent.mission_id == mission_id)
+        .order_by(MissionEvent.created_at.desc())
+        .limit(200)
+    )).all()))
     return {
         "id": mission.id, "goal": mission.goal, "status": mission.status,
         "narrative": mission.narrative, "departments": mission.departments,
@@ -220,8 +226,8 @@ async def _detail(db: AsyncSession, tenant_id: str, mission_id: str) -> Optional
             for s in steps
         ],
         "ledger": [
-            {"kind": e.kind, "message": e.message, "step_seq": e.step_seq,
-             "at": e.created_at.isoformat() if e.created_at else None}
-            for e in events
+            {"kind": kind, "message": message, "step_seq": step_seq,
+             "at": created_at.isoformat() if created_at else None}
+            for kind, message, step_seq, created_at in events
         ],
     }

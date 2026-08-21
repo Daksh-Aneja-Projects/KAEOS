@@ -132,14 +132,19 @@ async def ai_inventory(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
     rules_draft = (await db.execute(select(sqlfunc.count(Rule.id)).where(
         Rule.tenant_id == tenant_id,
         Rule.is_executable == False))).scalar() or 0  # noqa: E712
-    pending_hitl = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(
-        SkillExecution.tenant_id == tenant_id,
-        SkillExecution.status == ExecutionStatus.PENDING_HITL))).scalar() or 0
-    executions = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(
-        SkillExecution.tenant_id == tenant_id))).scalar() or 0
-    hitl_routed = (await db.execute(select(sqlfunc.count(SkillExecution.id)).where(
-        SkillExecution.tenant_id == tenant_id,
-        SkillExecution.hitl_required == True))).scalar() or 0  # noqa: E712
+    # Three execution counts, one scan.
+    executions, pending_hitl, hitl_routed = (await db.execute(
+        select(
+            sqlfunc.count(SkillExecution.id),
+            sqlfunc.count(SkillExecution.id).filter(
+                SkillExecution.status == ExecutionStatus.PENDING_HITL),
+            sqlfunc.count(SkillExecution.id).filter(
+                SkillExecution.hitl_required == True),  # noqa: E712
+        ).where(SkillExecution.tenant_id == tenant_id)
+    )).one()
+    executions = executions or 0
+    pending_hitl = pending_hitl or 0
+    hitl_routed = hitl_routed or 0
 
     systems = [
         {**s, "routed_model": tier_map.get(s["model_tier"])}
