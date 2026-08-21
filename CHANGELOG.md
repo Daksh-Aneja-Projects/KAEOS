@@ -11,6 +11,45 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added / Fixed - integration-audit Phase 1: the internal event fabric and the closed loop (2026-08-21)
+
+The departments were islands and the intelligence engines terminated at
+dashboards. Phase 1 wires the internal event fabric and feeds the one closed
+learning loop the product is built around.
+
+- **The event bus was dead - now it is the internal fabric.** `emit()` had zero
+  callers, so `system_events` was never written and the customer webhook API
+  (`POST /enterprise/webhooks`) could never fire. Wired the three lifecycle
+  chokepoints (mission terminal, HITL decision, governed actuation) and added an
+  in-process handler registry so departments react to each other's events.
+- **The closed loop is fed.** Connector pulls now bridge into the event mesh
+  (correlated to the twin) and embed into the RAG namespace the copilot grounds
+  on; BYOK ingestion routes through the real scrub+vectorize pipeline instead of
+  writing one activity row; drift detection gained a lifecycle so it no longer
+  self-silences after the first hit; the inert, ungoverned precog loop was
+  removed.
+- **Learning and knowledge.** Elicitation answers become candidate rules through
+  the maker-checker path; a reversed governed write corrects its decision
+  memory (and the memory metadata write is now tenant-scoped).
+- **Governance truth.** The provenance ledger now hash-chains gate refusals and
+  post-execution overrides, not only successes; the two HITL stores reconcile
+  (a mission approval retires the paired queue entry instead of orphaning it).
+- **Cross-department automations.** HR offboarding spins up a governed IT
+  deprovision mission; a lending adverse-action raises a compliance review; a
+  support escalation raises an operations signal.
+- **Department parity.** The workforce generator gives all ten departments real
+  domain-grounded steps and rules; the support/operations litigable estate
+  (tickets, purchase orders) can now be placed on legal hold; lending and
+  procurement carry healthcare-grade gate policy (high-consequence decisions
+  route to a human, amounts and lawful basis proven in the audit trail).
+- **Connectors can become real.** A credentials panel wires the connect ->
+  test -> sync lifecycle; simulated feeds are marked DEMO and can no longer
+  pollute rule-mining, the mesh, or RAG.
+
+Several audit findings were refuted on hand-verification (an SSO login flow and
+the procurement agents already existed; a compliance-tag "silent skip" was
+actually a documented non-blocking warning) and are recorded as such.
+
 ### Fixed - integration-audit Phase 0: billing integrity and four governance boundary defects (2026-08-21)
 
 A five-track whole-system audit (department interlinking, cross-cutting
