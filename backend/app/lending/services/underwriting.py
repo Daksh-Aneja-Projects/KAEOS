@@ -327,6 +327,20 @@ async def generate_adverse_action(
     db.add(notice)
     await db.commit()
     await db.refresh(notice)
+
+    # H12: a Reg B adverse-action notice is a fair-lending event other departments
+    # must see. Emit it so compliance/legal gets a review item. Non-fatal - the
+    # notice is already issued; a bus hiccup never unwinds it.
+    try:
+        from app.services.event_bus import event_bus, EventType
+        await event_bus.emit(
+            EventType.LENDING_ADVERSE_ACTION,
+            {"application_id": app.id, "application_number": app.application_number,
+             "notice_id": notice.id, "reason_count": len(reasons)},
+            tenant_id=tenant_id)
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("adverse-action event emit skipped: %s", _e)
     return notice
 
 

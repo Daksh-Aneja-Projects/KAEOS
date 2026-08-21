@@ -21,7 +21,9 @@ from app.hr.models.core import HREmployee
 from app.hr.models.onboarding import BoardingPlan, BoardingTask, BoardingType, TaskStatus
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS
 from app.models.execution_status import ExecutionStatus
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -158,10 +160,24 @@ async def transition_boarding_task(
                     BoardingTask.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED]),
                 ))).scalar() or 0
                 plan.completed_tasks = done
-                if plan.total_tasks and done >= plan.total_tasks:
+                _just_completed = False
+                if plan.total_tasks and done >= plan.total_tasks and plan.status != "COMPLETED":
                     plan.status = "COMPLETED"
+                    _just_completed = True
                 db.add(plan)
                 await db.commit()
+                # H12: an offboarding plan reaching COMPLETED emits the department
+                # event that spawns a governed IT-deprovision mission. Guarded on
+                # the transition + type; non-fatal.
+                if _just_completed and plan.plan_type == BoardingType.OFFBOARDING:
+                    try:
+                        from app.services.event_bus import event_bus, EventType
+                        await event_bus.emit(
+                            EventType.EMPLOYEE_OFFBOARDED,
+                            {"employee_id": plan.employee_id, "plan_id": plan.id},
+                            tenant_id=tenant["tenant_id"])
+                    except Exception as _e:
+                        logger.warning("offboarding event emit skipped: %s", _e)
     return result
 
 

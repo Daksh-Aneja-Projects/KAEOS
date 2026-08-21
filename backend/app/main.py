@@ -218,6 +218,11 @@ async def lifespan(app: FastAPI):
     #  operator-triggered /advanced/precog/force-cycle route still exists.)
     from app.services.event_bus import event_bus
     from app.services.scheduler import init_scheduler
+
+    # H12: wire cross-department automations onto the bus on EVERY worker (not
+    # leader-gated) — handlers run in-process wherever an emit fires.
+    from app.services.cross_department import register_cross_department_automations
+    register_cross_department_automations()
     
     # These are SINGLETON loops. Running them on every replica means N× the LLM
     # spend and read-then-write races on the same rows. Leadership is now

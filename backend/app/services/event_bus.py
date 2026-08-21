@@ -36,7 +36,7 @@ class EventType(str, Enum):
     SYSTEM_HEALTH = "system.health"
     ACTUATION_APPLIED = "actuation.applied"
     ACTUATION_REVERSED = "actuation.reversed"
-    SUPPORT_TICKET_RESOLVED = "support.ticket.resolved"
+    SUPPORT_TICKET_ESCALATED = "support.ticket.escalated"
     LENDING_ADVERSE_ACTION = "lending.adverse_action"
 
     # Workforce Layer (New)

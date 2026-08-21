@@ -167,10 +167,20 @@ async def document_resolution(ticket_id: str, tenant: dict = Depends(require_rol
 
 @router.post("/tickets/{ticket_id}/escalate")
 async def escalate_ticket(ticket_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
-    return await run_agent_endpoint(
+    result = await run_agent_endpoint(
         EscalationAgent().escalate_ticket(db, ticket_id, tenant["tenant_id"]), tenant,
         actor=approver_identity(tenant), resource_type="ticket", resource_id=ticket_id, logger=logger,
     )
+    # H12: a support escalation is an ops-visible event — emit it so operations
+    # sees cross-department load. Non-fatal.
+    try:
+        from app.services.event_bus import event_bus, EventType
+        await event_bus.emit(
+            EventType.SUPPORT_TICKET_ESCALATED, {"ticket_id": ticket_id},
+            tenant_id=tenant["tenant_id"])
+    except Exception as _e:
+        logger.warning("support escalation event emit skipped: %s", _e)
+    return result
 
 
 @router.get("/tickets/{ticket_id}/comments")
