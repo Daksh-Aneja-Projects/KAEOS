@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
 from datetime import datetime, timezone
+from typing import Optional
 import logging
 import uuid
 
@@ -81,6 +82,28 @@ async def list_skills(
         avg_success_rate=round(avg_sr, 3),
         skills=[SkillSummary.model_validate(s.__dict__) for s in skills],
     )
+
+
+@router.get("/search")
+async def search_skills_semantic(
+    q: str,
+    domain: Optional[str] = None,
+    top_k: int = 5,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Semantic skill search over skill_embeddings (M5).
+
+    Wires the previously-unreachable READ path for the embeddings every skill
+    write already produces: an honest hybrid of a real cosine and a lexical rank
+    (never a keyword hit dressed up as a cosine). Registered before /{skill_id}
+    so the literal path is not swallowed by the id matcher.
+    """
+    if not (q or "").strip():
+        return {"query": q, "results": [], "count": 0}
+    from app.services.knowledge import PolystoreEngine
+    results = await PolystoreEngine().search_skills(
+        q.strip(), tenant_id, top_k=max(1, min(20, top_k)), domain_filter=domain)
+    return {"query": q, "results": results, "count": len(results)}
 
 
 @router.get("/{skill_id}", response_model=SkillDetail)
