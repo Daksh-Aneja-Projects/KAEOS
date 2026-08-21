@@ -5090,6 +5090,34 @@
     "Skills \u2014 L8 Registry"
    ]
   },
+  "GET /api/v1/skills/search": {
+   "operationId": "search_skills_semantic_api_v1_skills_search_get",
+   "parameters": [
+    [
+     "q",
+     "query",
+     true
+    ],
+    [
+     "domain",
+     "query",
+     false
+    ],
+    [
+     "top_k",
+     "query",
+     false
+    ]
+   ],
+   "requestBody": "null",
+   "responses": {
+    "200": "{\"content\": {\"application/json\": {\"schema\": {}}}, \"description\": \"Successful Response\"}",
+    "422": "{\"content\": {\"application/json\": {\"schema\": {\"$ref\": \"#/components/schemas/HTTPValidationError\"}}}, \"description\": \"Validation Error\"}"
+   },
+   "tags": [
+    "Skills \u2014 L8 Registry"
+   ]
+  },
   "GET /api/v1/skills/{skill_id}": {
    "operationId": "get_skill_api_v1_skills__skill_id__get",
    "parameters": [
@@ -10848,6 +10876,7 @@
   "GET /api/v1/signals",
   "GET /api/v1/skills",
   "GET /api/v1/skills/hitl/pending",
+  "GET /api/v1/skills/search",
   "GET /api/v1/skills/{skill_id}",
   "GET /api/v1/skills/{skill_id}/executions",
   "GET /api/v1/support/agents/leaderboard",
