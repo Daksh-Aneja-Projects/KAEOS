@@ -181,33 +181,36 @@ class FederatedEngine:
             # Check if local skill matches the abstract procedure hash
             local_hash = FederatedEngine._extract_zero_knowledge_procedural_weight(skill)
             if local_hash == swarm_hash:
-                # The local skill matches the global successful pattern!
-                skill.confidence = min(1.0, skill.confidence + 0.15)
-
-                # But a hash match is a HINT, not evidence. VALIDATED_PEER is a
-                # trust tier that relaxes governance downstream, so it is only
-                # granted once this tenant's OWN measured history backs it up:
-                # another org's success proves nothing about our data, our
-                # integrations, or our regulators. Without local evidence the
-                # tier is left exactly as it was.
+                # A hash match is a HINT, not evidence. Both the confidence boost
+                # AND the VALIDATED_PEER tier relax governance downstream (toward
+                # the autonomy threshold, away from HITL), so NEITHER is applied
+                # unless this tenant's OWN measured history backs it up — another
+                # org's success proves nothing about our data, integrations or
+                # regulators (M9: a foreign hint must not raise our confidence on
+                # its own). Without local evidence the skill is left untouched and
+                # only the hint is recorded.
                 evidence = await FederatedEngine._local_success_evidence(
                     db, tenant_id, skill.skill_id)
-                if evidence >= _PEER_EVIDENCE_MIN:
+                backed = evidence >= _PEER_EVIDENCE_MIN
+                delta = 0.15 if backed else 0.0
+                if backed:
+                    skill.confidence = min(1.0, skill.confidence + delta)
                     skill.confidence_tier = "VALIDATED_PEER"
 
                 if "federated_events" not in skill.guardrails:
                     skill.guardrails["federated_events"] = []
 
                 skill.guardrails["federated_events"].append({
-                    "event": "IMPORTED_SWARM_BOOST",
+                    "event": "IMPORTED_SWARM_BOOST" if backed else "SWARM_HINT_UNBACKED",
                     "global_id": swarm_global_id,
-                    "confidence_delta": 0.15,
+                    "confidence_delta": delta,
                     "local_evidence": evidence,
-                    "tier_granted": evidence >= _PEER_EVIDENCE_MIN,
+                    "tier_granted": backed,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 })
                 db.add(skill)
-                boosted_count += 1
+                if backed:
+                    boosted_count += 1
                 
         if boosted_count > 0:
             await db.commit()
