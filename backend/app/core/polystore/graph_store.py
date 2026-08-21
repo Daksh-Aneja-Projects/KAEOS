@@ -79,6 +79,12 @@ class GraphStore(ABC):
         """
 
     @abstractmethod
+    async def delete_subject(self, tenant_id: str, subject_texts: list[str]) -> int:
+        """GDPR erasure: delete this tenant's nodes whose properties contain any
+        subject text (a Knowledge node's name is content[:48] and can carry a
+        subject's PII), plus the edges touching them. Returns nodes deleted."""
+
+    @abstractmethod
     async def health(self) -> dict[str, Any]: ...
 
 
@@ -200,6 +206,31 @@ class SqliteGraphStore(GraphStore):
                 )
                 await session.commit()
 
+    async def delete_subject(self, tenant_id, subject_texts) -> int:
+        terms = [t for t in (subject_texts or []) if t and str(t).strip()]
+        if not terms:
+            return 0
+        await self.initialize()
+        async with AsyncSessionLocal() as session:
+            conds = " OR ".join(f"properties LIKE :t{i}" for i in range(len(terms)))
+            params = {"tid": tenant_id, **{f"t{i}": f"%{t}%" for i, t in enumerate(terms)}}
+            rows = await session.execute(
+                text(f"SELECT id FROM {_NODES} WHERE tenant_id=:tid AND ({conds})"),  # nosec B608
+                params)
+            ids = [r[0] for r in rows.all()]
+            if not ids:
+                return 0
+            inlist = ",".join(f":n{i}" for i in range(len(ids)))
+            idparams = {"tid": tenant_id, **{f"n{i}": nid for i, nid in enumerate(ids)}}
+            await session.execute(text(
+                f"DELETE FROM {_EDGES} WHERE tenant_id=:tid "  # nosec B608
+                f"AND (source IN ({inlist}) OR target IN ({inlist}))"), idparams)
+            await session.execute(text(
+                f"DELETE FROM {_NODES} WHERE tenant_id=:tid AND id IN ({inlist})"),  # nosec B608
+                idparams)
+            await session.commit()
+        return len(ids)
+
     async def _load(self, tenant_id: str) -> tuple[dict, list]:
         await self.initialize()
         async with AsyncSessionLocal() as session:
@@ -319,6 +350,21 @@ class Neo4jGraphStore(GraphStore):
                 f"MERGE (a)-[r:{rel_type}]->(b) SET r += $props",
                 s=source_id, t=target_id, tid=tenant_id, props=props,
             )
+
+    async def delete_subject(self, tenant_id, subject_texts) -> int:
+        terms = [t for t in (subject_texts or []) if t and str(t).strip()]
+        if not terms:
+            return 0
+        await self.initialize()
+        async with self._driver.session() as s:
+            res = await s.run(
+                "MATCH (n {tenant_id: $tid}) WHERE any(t IN $terms WHERE "
+                "coalesce(toString(n.name),'') CONTAINS t OR "
+                "coalesce(toString(n.content),'') CONTAINS t) DETACH DELETE n",
+                tid=tenant_id, terms=terms,
+            )
+            summary = await res.consume()
+            return int(summary.counters.nodes_deleted)
 
     async def traverse_impact(self, tenant_id, node_id, max_depth=3) -> list[dict[str, Any]]:
         await self.initialize()

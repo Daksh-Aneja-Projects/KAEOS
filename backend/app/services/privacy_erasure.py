@@ -629,6 +629,17 @@ async def erase_subject(
     except Exception as exc:
         logger.warning("[PrivacyErasure] vector-embedding purge skipped: %s", exc)
 
+    # ── Graph store (M13): a Knowledge node's name is content[:48] and can carry
+    # the subject's PII, and it survived erasure because only DB rows, blobs and
+    # vectors were purged. Delete this tenant's nodes matching the subject.
+    graph_nodes_deleted = 0
+    try:
+        from app.core.polystore import get_graph_store
+        terms = [t for t in ([email] + list(subject_names or [])) if t]
+        graph_nodes_deleted = await get_graph_store().delete_subject(tenant_id, terms)
+    except Exception as exc:
+        logger.warning("[PrivacyErasure] graph-node purge skipped: %s", exc)
+
     if _journal:
         await _record_deletion(db, tenant_id, "ERASE_SUBJECT",
                                employee_id=employee_id, email=email)
@@ -649,6 +660,7 @@ async def erase_subject(
         "blobs_deleted": blobs["deleted"],
         "blobs_attempted": blobs["attempted"],
         "embeddings_deleted": embeddings_deleted,
+        "graph_nodes_deleted": graph_nodes_deleted,
         "note": (
             "Direct identifiers tombstoned across the HR, sales, finance, support, "
             "engineering, operations, legal, healthcare and lending tables; customer "
