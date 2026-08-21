@@ -163,5 +163,25 @@ async def run_skill_scan(skill_id: str, tenant: dict = Depends(require_role("ope
         db.add(scan)
         new_scans.append({"scan_type": stype, "status": status, "vulnerabilities": len(vulns)})
 
+    # M1: a red-team scan that FAILS must actually cost the skill its autonomy —
+    # previously a failing scan was recorded and then ignored, so a skill proven
+    # vulnerable kept running unattended. Drop it below the autonomy floor and
+    # tag it SPECULATIVE so Gate 3 routes it to a human, and record why on the
+    # skill's guardrails for the trust page. Autonomy is restored only by fixing
+    # the skill and re-validating it (a passing re-scan of the SAME skill does
+    # not auto-restore — the vulnerability may just not have triggered this time).
+    failed = [s for s in new_scans if s["status"] == "FAILED"]
+    if failed:
+        skill.confidence = min(float(skill.confidence or 0.0), 0.5)
+        skill.confidence_tier = "SPECULATIVE"
+        gr = dict(skill.guardrails or {})
+        gr["redteam_deescalation"] = {
+            "reason": f"Failed red-team scan(s): {sorted({s['scan_type'] for s in failed})}",
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        skill.guardrails = gr
+        db.add(skill)
+
     await db.commit()
-    return {"skill_id": skill_id, "scans": new_scans, "status": "COMPLETED"}
+    return {"skill_id": skill_id, "scans": new_scans, "status": "COMPLETED",
+            "autonomy_deescalated": bool(failed)}

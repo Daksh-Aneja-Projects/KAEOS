@@ -1,7 +1,5 @@
 from typing import Dict, Any, List
 import logging
-from app.core.database import AsyncSessionLocal
-from sqlalchemy import select, update
 
 logger = logging.getLogger(__name__)
 
@@ -60,43 +58,3 @@ class RedTeamHarness:
                 "description": "Low confidence skill detected, increased risk of hallucination."
             })
         return vulnerabilities
-
-class ChaosInjector:
-    """Deliberately introduces KB errors to test agent resilience in staging."""
-    
-    SCENARIOS = [
-        "remove_critical_rule",
-        "invert_threshold",
-        "introduce_contradiction",
-        "decay_all_rules_to_inferred",
-        "corrupt_exception"
-    ]
-
-    async def inject(self, target_domain: str, scenario: str) -> bool:
-        from app.models.domain import Rule
-        if scenario not in self.SCENARIOS:
-            return False
-            
-        logger.warning(f"CHAOS INJECTION: {scenario} in domain {target_domain}")
-        
-        # Real DB corruption logic for testing resilience
-        try:
-            async with AsyncSessionLocal() as db:
-                if scenario == "decay_all_rules_to_inferred":
-                    await db.execute(
-                        update(Rule)
-                        .where(Rule.domain == target_domain)
-                        .values(confidence_tier="INFERRED", confidence_scalar=0.4)
-                    )
-                elif scenario == "remove_critical_rule":
-                    # Soft-delete a random rule in the domain
-                    rule_q = await db.execute(select(Rule).where(Rule.domain == target_domain).limit(1))
-                    rule = rule_q.scalar_one_or_none()
-                    if rule:
-                        rule.is_archived = True
-                        db.add(rule)
-                await db.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Chaos injection failed: {e}")
-            return False
