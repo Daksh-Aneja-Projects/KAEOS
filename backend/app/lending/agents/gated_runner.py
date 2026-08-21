@@ -36,5 +36,14 @@ async def run_gated_lending_skill(
         compliance_tags=compliance_tags, confidence=confidence, domain=domain,
         # Normalised to a definite value so the ECOA/TILA checkers see an
         # explicit "no approver" rather than a missing key.
-        extra_context={"has_human_approver": context.get("has_human_approver", False)},
+        # H18: seed the Gate-6 audit sources every lending skill shares — the
+        # fair-lending legal_basis (a real regulatory obligation, not asserted)
+        # and the loan amount the caller carried. setdefault semantics in the
+        # audit flag mean a caller-supplied value always wins.
+        extra_context={
+            "has_human_approver": context.get("has_human_approver", False),
+            "legal_basis": context.get("legal_basis")
+            or "regulatory_obligation:ecoa_fair_lending",
+            "amount": context.get("amount"),
+        },
     )

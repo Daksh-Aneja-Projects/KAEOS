@@ -227,6 +227,11 @@ _HR_AGENT_STEPS: dict[str, list] = {
 # assess/act. `{role}` / `{cap}` are filled from the agent def + capability.
 def _domain_steps(pack_slug: str, role: str, cap: str) -> list | None:
     templates: dict[str, list] = {
+        "hr": [
+            {"id": "load_context", "action": f"Retrieve the employee/candidate record and the applicable HR policy for the {cap} task — collect only job-related, minimized data", "tool": "none", "condition": "Always"},
+            {"id": "assess", "action": "Assess against EEOC/ADA anti-discrimination rules and the HR policy; score only job-related factors, never a protected attribute", "tool": "none", "condition": "Always"},
+            {"id": "decide", "action": f"Produce the HR decision / recommendation for '{role}' with its lawful basis, routing adverse or people-impacting actions to a human", "tool": "none", "condition": "Always"},
+        ],
         "finance": [
             {"id": "load_ledger", "action": f"Retrieve the relevant financial records, GL entries and policy for the {cap} task", "tool": "none", "condition": "Always"},
             {"id": "analyze", "action": f"Analyze the {cap} item against GAAP/GL controls and the expense/approval policy; flag variances, duplicates and policy breaches", "tool": "none", "condition": "Always"},
@@ -251,6 +256,26 @@ def _domain_steps(pack_slug: str, role: str, cap: str) -> list | None:
             {"id": "load_context", "action": f"Retrieve the process/incident, its runbook and the governing SLA for the {cap} task", "tool": "none", "condition": "Always"},
             {"id": "assess", "action": "Assess against the runbook and SLA; identify the breach/bottleneck and the safe remediation", "tool": "none", "condition": "Always"},
             {"id": "act", "action": f"Produce the remediation action / routing decision with its expected impact for '{role}'", "tool": "none", "condition": "Always"},
+        ],
+        "engineering": [
+            {"id": "load_change", "action": f"Retrieve the change/incident/PR, its diff or telemetry and the applicable change-management and SOC2/ISO-27001 controls for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "review", "action": "Review for correctness, security exposure and control compliance (change freeze, incident postmortem, backup retention); identify regressions and control gaps", "tool": "none", "condition": "Always"},
+            {"id": "recommend", "action": f"Produce the approve / block / rollback decision for '{role}' with its evidence, escalating high-risk changes to a human", "tool": "none", "condition": "Always"},
+        ],
+        "healthcare": [
+            {"id": "load_case", "action": f"Retrieve the patient/claim/clinical record and the minimum-necessary context for the {cap} task — never pull PHI beyond what the task requires", "tool": "none", "condition": "Always"},
+            {"id": "assess", "action": "Assess against HIPAA (minimum-necessary, authorization, de-identification) and Part 2 where applicable; verify a lawful basis and consent before any use of PHI", "tool": "none", "condition": "Always"},
+            {"id": "decide", "action": f"Produce the clinical/administrative decision for '{role}' with the audited PHI basis, escalating anything touching diagnosis or consent to a human", "tool": "none", "condition": "Always"},
+        ],
+        "lending": [
+            {"id": "load_application", "action": f"Retrieve the loan application, credit/bureau data and the underwriting policy for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "underwrite", "action": "Evaluate against the underwriting policy and fair-lending law (ECOA, fair lending, TILA, FDCPA); use NO prohibited basis and produce specific, accurate reasons", "tool": "none", "condition": "Always"},
+            {"id": "decide", "action": f"Produce the approve / deny / counter decision for '{role}'; a denial must carry ECOA-compliant specific reasons and route the adverse-action notice to a human", "tool": "none", "condition": "Always"},
+        ],
+        "procurement": [
+            {"id": "load_po", "action": f"Retrieve the purchase order / requisition / invoice, the vendor record and the spend-authorization matrix for the {cap} task", "tool": "none", "condition": "Always"},
+            {"id": "verify", "action": "Verify the three-way match (PO/receipt/invoice), spend authorization, segregation of duties and OFAC sanctions screening; flag any mismatch or unvetted vendor", "tool": "none", "condition": "Always"},
+            {"id": "decide", "action": f"Produce the approve / hold / reject decision for '{role}' with the matched evidence, routing awards and out-of-policy spend to a human", "tool": "none", "condition": "Always"},
         ],
     }
     return templates.get((pack_slug or "").lower())
@@ -862,9 +887,39 @@ class WorkforceGenerator:
                 "vendors": [
                     ("New vendor registrations without valid SOC2 certifications are routed to risk team.", {"trigger": "vendor_registered", "has_soc2": False}, {"action": "route_risk_review"}),
                 ]
-            }
+            },
+            "healthcare": {
+                "encounter_triage": [
+                    ("Encounter triage pulls only the minimum-necessary PHI for the presenting complaint (HIPAA minimum necessary).", {"trigger": "encounter_opened", "has_phi": True}, {"action": "minimum_necessary"}),
+                    ("Any triage the model is not confident on is routed to a licensed clinician, never auto-dispositioned.", {"trigger": "triage_scored", "low_confidence": True}, {"action": "route_to_clinician"}),
+                ],
+                "coding_suggestion": [
+                    ("AI coding suggestions are advisory and require human coder confirmation before billing (no autonomous claim submission).", {"trigger": "code_suggested"}, {"action": "require_human_confirmation"}),
+                ],
+                "phi_disclosure_review": [
+                    ("A PHI disclosure without a valid authorization or a permitted-use lawful basis is BLOCKED and escalated (HIPAA authorization).", {"trigger": "disclosure_requested", "authorization_valid": False}, {"action": "block_and_escalate"}),
+                    ("Disclosures to external parties are de-identified to the extent the purpose allows (HIPAA de-identification).", {"trigger": "disclosure_requested", "external": True}, {"action": "deidentify"}),
+                ],
+                "prior_auth_prep": [
+                    ("Prior-authorization packets use only the minimum-necessary clinical record and are human-approved before submission.", {"trigger": "prior_auth_drafted"}, {"action": "require_human_approval"}),
+                ],
+            },
+            "procurement": {
+                "three_way_match_gate": [
+                    ("Payment is released only when the purchase order, goods receipt and invoice match within tolerance; any mismatch is held for review (three-way match).", {"trigger": "invoice_for_payment", "three_way_match": False}, {"action": "hold_for_review"}),
+                ],
+                "po_approval": [
+                    ("Purchase orders above the spend-authorization threshold require human approval by an authorized approver (spend authorization).", {"trigger": "po_submitted", "above_threshold": True}, {"action": "require_authorized_approval"}),
+                    ("The requester and the approver of a purchase order must be different identities (segregation of duties).", {"trigger": "po_submitted", "same_maker_checker": True}, {"action": "block_sod_violation"}),
+                ],
+                "sanctions_screen": [
+                    ("A vendor with an OFAC sanctions-list hit is BLOCKED and routed to compliance; no PO or payment proceeds (OFAC sanctions).", {"trigger": "vendor_screened", "ofac_hit": True}, {"action": "block_and_route_compliance"}),
+                ],
+            },
         }
         domain_rules = rules_map.get(domain, {})
         return domain_rules.get(process_id, [
-            (f"Standard {domain} {process_id} rule: default logic applies.", {"trigger": "event"}, {"action": "default"})
+            (f"All {domain} '{process_id}' actions run under the department's compliance gates; "
+             "specific automation rules are pending human authoring.",
+             {"trigger": "event"}, {"action": "route_to_hitl"})
         ])

@@ -6,7 +6,7 @@ from sqlalchemy.sql import func
 import enum
 
 from app.models.domain import Base
-from app.models.mixins import new_uuid as _uuid
+from app.models.mixins import LegalHoldMixin, new_uuid as _uuid
 
 
 class TicketPriority(str, enum.Enum):
@@ -23,8 +23,9 @@ class TicketStatus(str, enum.Enum):
     RESOLVED = "RESOLVED"
     CLOSED = "CLOSED"
 
-class Ticket(Base):
-    """Customer support tickets/incidents."""
+class Ticket(Base, LegalHoldMixin):
+    """Customer support tickets/incidents. Litigable evidence (dispute/complaint
+    records), so it carries the legal-hold flag like the other regulated estates."""
     __tablename__ = "sup_tickets"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.
     __table_args__ = (

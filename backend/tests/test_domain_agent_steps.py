@@ -29,6 +29,26 @@ def test_sales_support_operations_have_domain_steps():
     assert "load_context" in _ids("operations")
 
 
+# H15: the four previously-uncovered departments (the HIPAA/ECOA/SOC2/OFAC ones)
+# must get real domain-grounded steps, not the generic assess/act fallback.
+def test_engineering_healthcare_lending_procurement_have_domain_steps():
+    assert _ids("engineering")[0] == "load_change"
+    assert _ids("healthcare")[0] == "load_case"
+    assert _ids("lending")[0] == "load_application"
+    assert _ids("procurement")[0] == "load_po"
+
+
+def test_every_canonical_department_beats_the_generic_fallback():
+    """Regression lock over the whole roster: no governed department may fall
+    through to the two-step generic template."""
+    from app.core.domain_seed import DEPARTMENT_SLUGS
+    generic = ["assess", "act"]
+    for slug in DEPARTMENT_SLUGS:
+        steps = _ids(slug)
+        assert steps != generic, f"{slug} fell through to the generic assess/act template"
+        assert len(steps) >= 2
+
+
 def test_unknown_domain_falls_back_to_generic_but_real():
     assert _ids("mystery_domain") == ["assess", "act"]
 

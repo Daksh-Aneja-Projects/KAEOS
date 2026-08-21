@@ -49,6 +49,11 @@ async def run_gated_procurement_skill(
     return await PROCUREMENT.run(
         skill_id, steps, context, tenant_id,
         compliance_tags=compliance_tags, confidence=confidence, domain=domain,
+        # H18: normalise the spend amount the Gate-6 audit flag proves — the PO
+        # carries total_amount, the requisition total_estimated_cost.
+        extra_context={"amount": context.get("amount")
+                       or context.get("total_amount")
+                       or context.get("total_estimated_cost")},
     )
 
 

@@ -6,7 +6,7 @@ from sqlalchemy.sql import func
 import enum
 
 from app.models.domain import Base
-from app.models.mixins import new_uuid as _uuid
+from app.models.mixins import LegalHoldMixin, new_uuid as _uuid
 
 
 class ProcurementStatus(str, enum.Enum):
@@ -17,8 +17,9 @@ class ProcurementStatus(str, enum.Enum):
     RECEIVED = "RECEIVED"
     CANCELLED = "CANCELLED"
 
-class PurchaseRequest(Base):
-    """Internal purchase claims submitted by employees before PO issue."""
+class PurchaseRequest(Base, LegalHoldMixin):
+    """Internal purchase claims submitted by employees before PO issue.
+    Litigable in a vendor/spend dispute, so it carries the legal-hold flag."""
     __tablename__ = "ops_purchase_requests"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -42,8 +43,9 @@ class PurchaseRequest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-class PurchaseOrder(Base):
-    """Official POs sent to suppliers."""
+class PurchaseOrder(Base, LegalHoldMixin):
+    """Official POs sent to suppliers. Litigable evidence in a vendor dispute,
+    so it carries the legal-hold flag like the other regulated estates."""
     __tablename__ = "ops_purchase_orders"
     # Tenant-scoped business key: global unique caused cross-tenant collisions.
     __table_args__ = (

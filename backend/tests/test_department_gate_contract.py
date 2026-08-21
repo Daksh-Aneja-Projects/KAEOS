@@ -55,7 +55,7 @@ async def run(dept: str, skill_id: str, context=None, **kwargs):
     ("healthcare", "healthcare_code", ["HIPAA_MINIMUM_NECESSARY", "HIPAA_AUTHORIZATION", "PART2"], 0.95),
     ("hr", "hr_onboard", ["EEOC", "GDPR"], 0.85),
     ("legal", "legal_review", ["GDPR", "CCPA", "PRIVACY"], 0.85),
-    ("lending", "lending_underwrite", ["ECOA", "FAIR_LENDING", "TILA"], 0.9),
+    ("lending", "lending_generic", ["ECOA", "FAIR_LENDING", "TILA"], 0.9),
     ("operations", "operations_qa", ["SOC2", "INTERNAL_CONTROL"], 0.85),
     ("procurement", "procurement_source", ["THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES",
                                            "SPEND_AUTHORIZATION", "OFAC_SANCTIONS"], 0.85),
@@ -72,6 +72,18 @@ async def test_department_defaults(captured, dept, skill_id, expected_tags, expe
     assert skill_obj.domain == dept
     assert skill_obj.compliance_tags == expected_tags
     assert skill_obj.confidence_tier == "INFERRED"
+
+
+# ── H18: lending + procurement high-consequence skills force HITL ────────────
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dept,skill_id", [
+    ("lending", "lending_underwrite"),     # credit decision -> human
+    ("procurement", "procurement_spend_guard"),  # PO approval / award -> human
+])
+async def test_high_consequence_skills_route_to_human(captured, dept, skill_id):
+    await run(dept, skill_id)
+    # Below the 0.82 autonomy floor: Gate 3 cannot de-escalate below a human.
+    assert captured["skill"]["confidence"] < 0.82
 
 
 # ── Empty-tag semantics differ by department, deliberately ──────────────────

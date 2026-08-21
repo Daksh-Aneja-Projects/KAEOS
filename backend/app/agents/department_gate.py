@@ -315,6 +315,16 @@ LENDING = DepartmentGate(
     domain="lending",
     default_compliance=("ECOA", "FAIR_LENDING", "TILA"),
     default_confidence=0.9,
+    # H18: credit denial and fair-lending are high-consequence — bring lending to
+    # healthcare-grade. A credit decision routes to a human (below the 0.82
+    # autonomy floor); the loan amount and the fair-lending basis are both proven
+    # in the Gate-6 audit trail (derived from a real amount / legal_basis, like
+    # finance/healthcare — never asserted).
+    confidence_overrides={"lending_underwrite": 0.79},
+    audit_flags=(
+        AuditFlag("financial_amount_logged", ("TILA",), source="amount"),
+        AuditFlag("data_processing_basis_logged", ("ECOA", "FAIR_LENDING"), source="legal_basis"),
+    ),
 )
 
 OPERATIONS = DepartmentGate(
@@ -327,6 +337,13 @@ PROCUREMENT = DepartmentGate(
     default_compliance=(
         "THREE_WAY_MATCH", "SEGREGATION_OF_DUTIES",
         "SPEND_AUTHORIZATION", "OFAC_SANCTIONS",
+    ),
+    # H18: spend authority is high-consequence — bring procurement to healthcare-
+    # grade. A PO-approval/award decision routes to a human (below the 0.82
+    # autonomy floor), and the spend amount is proven in the Gate-6 audit trail.
+    confidence_overrides={"procurement_spend_guard": 0.79},
+    audit_flags=(
+        AuditFlag("financial_amount_logged", ("SPEND_AUTHORIZATION",), source="amount"),
     ),
 )
 
