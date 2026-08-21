@@ -34,25 +34,31 @@ HR_AGENT_REGISTRY: dict[str, dict] = {
         "module": "app.hr.agents.onboarding_agent", "class": "OnboardingAgent",
         "method": "check_in_with_new_hire", "compliance": ["I9"],
     },
+    # M18: these five carry a raw-LLM sibling (answer_benefits_query,
+    # analyze_salary_band, synthesize_feedback, triage_case, analyze_exit_interview)
+    # AND a gated execute_via_pipeline. The handler's dispatch target is the GATED
+    # method, so if the (currently dormant) handler is ever wired to a dispatcher
+    # it routes through the 7 gates, never the raw bypass. The raw siblings remain
+    # only as internal helpers the gated path / tests call directly.
     "benefits": {
         "module": "app.hr.agents.benefits_agent", "class": "BenefitsAgent",
-        "method": "answer_benefits_query", "compliance": ["HIPAA", "ACA"],
+        "method": "execute_via_pipeline", "compliance": ["HIPAA", "ACA"],
     },
     "compensation": {
         "module": "app.hr.agents.compensation_agent", "class": "CompensationAgent",
-        "method": "analyze_salary_band", "compliance": ["EEOC"],
+        "method": "execute_via_pipeline", "compliance": ["EEOC"],
     },
     "performance": {
         "module": "app.hr.agents.performance_agent", "class": "PerformanceAgent",
-        "method": "synthesize_feedback", "compliance": ["EEOC"],
+        "method": "execute_via_pipeline", "compliance": ["EEOC"],
     },
     "employee_relations": {
         "module": "app.hr.agents.employee_relations_agent", "class": "EmployeeRelationsAgent",
-        "method": "triage_case", "compliance": ["EEOC", "GDPR"],
+        "method": "execute_via_pipeline", "compliance": ["EEOC", "GDPR"],
     },
     "offboarding": {
         "module": "app.hr.agents.offboarding_agent", "class": "OffboardingAgent",
-        "method": "analyze_exit_interview", "compliance": ["GDPR"],
+        "method": "execute_via_pipeline", "compliance": ["GDPR"],
     },
 }
 

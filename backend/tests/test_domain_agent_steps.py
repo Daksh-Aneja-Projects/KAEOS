@@ -56,3 +56,13 @@ def test_unknown_domain_falls_back_to_generic_but_real():
 def test_hr_still_uses_its_per_agent_steps():
     ids = _ids("hr", agent_type="recruiting")
     assert "screen_candidate" in ids   # HR-specific, not the generic fallback
+
+
+# M18: HR agents with a gated execute_via_pipeline AND a raw-LLM sibling must
+# bind the handler to the GATED method, never the raw bypass.
+def test_hr_handlers_target_the_gated_method_not_the_raw_bypass():
+    for atype in ("benefits", "compensation", "performance", "employee_relations", "offboarding"):
+        skill = build_agent_skill({"type": atype, "name": "A", "description": "x"}, "hr", _cap())
+        h = skill["handler"]
+        assert h is not None and h["method"] == "execute_via_pipeline", \
+            f"{atype} handler must dispatch the gated pipeline, not a raw-LLM bypass"
