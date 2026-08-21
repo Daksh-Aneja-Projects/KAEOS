@@ -3,14 +3,12 @@ KAEOS 10X — Pre-Cog Engine (L24)
 Zero-Prompt Asynchronous Autonomous Intelligence
 """
 import logging
-import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
 from app.models.domain import Rule, DecayEvent
 # Note: In a fully integrated system, this imports Bidder models,
 # establishing cross-repository awareness for the L24 implementation.
@@ -24,9 +22,6 @@ class PreCogEngine:
     If a shift is detected, it autonomously recalculates models across active bids.
     """
     
-    def __init__(self):
-        self.is_running = False
-        
     async def _monitor_external_signals(self, db: AsyncSession, tenant_id: str | None = None) -> List[Dict[str, Any]]:
         """Queries the L1 Data Fabric for unhandled high-authority macroeconomic signals.
 
@@ -124,29 +119,10 @@ class PreCogEngine:
         if adjusted_count > 0:
             await db.commit()
             logger.info(f"L24 Pre-Cog: Generatively recalculated {adjusted_count} rules based on macro signal. DecayEvents generated.")
-            
-    async def run_ambient_loop(self):
-        """The continuous 24/7 ambient loop."""
-        self.is_running = True
-        logger.info("L24 Pre-Cog Engine initialized and running in ambient background mode.")
-        
-        while self.is_running:
-            try:
-                async with AsyncSessionLocal() as db:
-                    signals = await self._monitor_external_signals(db)
-                    if signals:
-                        for sig in signals:
-                            await self._recalculate_active_bids(db, sig)
-                            
-                # Sleep for 1 hour before checking again
-                await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                self.is_running = False
-                logger.info("L24 Pre-Cog Engine shut down.")
-                break
-            except Exception as e:
-                logger.error(f"L24 Pre-Cog Engine error: {e}")
-                await asyncio.sleep(60)
 
-# To start the engine, the main FastAPI app lifecycle would call:
-# asyncio.create_task(PreCogEngine().run_ambient_loop())
+# NOTE (H3): the 24/7 ambient loop was removed. It queried a signal_type
+# ("MACRO_ECONOMIC_SHIFT") that no writer ever produces, so it had zero effect
+# since ship, and resurrecting it would have run an UNGOVERNED autonomous LLM
+# rule-decay loop across all tenants — the exact pattern the governance spine
+# exists to prevent. The engine remains, driven ONLY on demand by the
+# operator-gated /advanced/precog/force-cycle route.

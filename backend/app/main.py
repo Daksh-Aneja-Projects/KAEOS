@@ -211,10 +211,11 @@ async def lifespan(app: FastAPI):
         from app.core.workforce_seed import seed_workforce_graph
         await seed_workforce_graph()
 
-    # Background Service 1: PreCog Engine (L24 Ambient Intelligence)
-    # Background Service 2: Event Bus Queue Worker
-    # Background Service 3: APScheduler for Decay Checks
-    from app.services.precog_engine import PreCogEngine
+    # Background Service 1: Event Bus Queue Worker
+    # Background Service 2: APScheduler for Decay Checks
+    # (The old PreCog ambient loop was removed — H3: it queried a signal_type no
+    #  writer produces and would have run an ungoverned LLM rule-decay loop. The
+    #  operator-triggered /advanced/precog/force-cycle route still exists.)
     from app.services.event_bus import event_bus
     from app.services.scheduler import init_scheduler
     
@@ -228,26 +229,24 @@ async def lifespan(app: FastAPI):
     # leader).
     from app.services.leader_lock import leader_lock, run_election
 
-    _bg = {"precog": None, "event_bus": None, "scheduler": None}
+    _bg = {"event_bus": None, "scheduler": None}
 
     def _start_background_loops():
         if _bg["scheduler"] is not None:
             return  # already running — an idempotent re-acquire must not double-start
-        _bg["precog"] = asyncio.create_task(PreCogEngine().run_ambient_loop())
         _bg["event_bus"] = asyncio.create_task(event_bus._worker_loop())
         sched = init_scheduler()
         sched.start()
         _bg["scheduler"] = sched
-        logger.info("[Background] leader — singleton loops started (precog, event bus, scheduler)")
+        logger.info("[Background] leader — singleton loops started (event bus, scheduler)")
 
     def _stop_background_loops():
         if _bg["scheduler"] is not None:
             _bg["scheduler"].shutdown(wait=False)
             _bg["scheduler"] = None
-        for _k in ("precog", "event_bus"):
-            if _bg[_k] is not None:
-                _bg[_k].cancel()
-                _bg[_k] = None
+        if _bg["event_bus"] is not None:
+            _bg["event_bus"].cancel()
+            _bg["event_bus"] = None
 
     election_task = None
     if settings.RUN_BACKGROUND_JOBS:
@@ -270,7 +269,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown: stop electing, then stop the loops, draining cancelled tasks.
-    _precog_t, _eventbus_t = _bg.get("precog"), _bg.get("event_bus")
     if election_task is not None:
         election_task.cancel()
         try:
@@ -279,6 +277,7 @@ async def lifespan(app: FastAPI):
             # Expected: we just cancelled it. Awaiting drains the task so the
             # loop does not log "Task was destroyed but it is pending".
             pass
+    _eventbus_t = _bg.get("event_bus")  # capture before _stop nulls it
     _stop_background_loops()
     ws_subscriber_task.cancel()
     try:
@@ -287,13 +286,12 @@ async def lifespan(app: FastAPI):
         pass
     await close_redis()
 
-    for _t in (_precog_t, _eventbus_t):
-        if _t is not None:
-            try:
-                await _t
-            except asyncio.CancelledError:
-                # Expected on shutdown: _stop_background_loops() cancelled these.
-                pass
+    if _eventbus_t is not None:
+        try:
+            await _eventbus_t
+        except asyncio.CancelledError:
+            # Expected on shutdown: _stop_background_loops() cancelled it.
+            pass
 
 
 # Interactive docs and the OpenAPI schema hand out the full endpoint map
