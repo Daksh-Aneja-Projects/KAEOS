@@ -146,8 +146,6 @@ async def test_scoped_user_link_cannot_out_privilege_their_account(client, monke
     """
     import uuid as _uuid
 
-    from sqlalchemy import select
-
     from app.api.routes.approvals import approval_links
     from app.core.database import AsyncSessionLocal
     from app.models.auth import User, UserRole
