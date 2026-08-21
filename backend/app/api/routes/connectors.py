@@ -499,34 +499,39 @@ async def sync_connector(
     # Deterministic event count: based on existing ingestion velocity, defaulting to 10
     events_found = max(5, min(20, (conn.events_ingested // 100) + 10)) if conn.events_ingested else 10
     
-    # If it's BambooHR, create a real Signal record
+    # H14: a connector with NO credentials cannot produce real records, so these
+    # are SIMULATED. Mark them unmistakably (signal_type="DEMO", authority 0.0)
+    # so no downstream consumer — rule mining, the event-mesh bridge, RAG embed,
+    # any authority-floored reader — can mistake a demo feed for real-world data.
+    # The old rows claimed signal_type="WEBHOOK" and authority 0.8/0.95, i.e. they
+    # were indistinguishable from (and out-ranked) genuine connector pulls.
     if "bamboo" in conn.name.lower() or conn.category == "hris":
         new_signal = Signal(
             id=f"sig_{uuid.uuid4().hex[:8]}",
             tenant_id=conn.tenant_id,
-            signal_type="WEBHOOK",
+            signal_type="DEMO",
             source_type="bamboohr",
             source_entity="employee_update",
-            clean_payload="BambooHR sync: employee records updated",
+            clean_payload="[DEMO] BambooHR sync: employee records updated",
             pii_present=True,
-            authority_score=0.95,
+            authority_score=0.0,
             domain="HR",
             created_at=datetime.now(timezone.utc)
         )
         db.add(new_signal)
         conn.signals_extracted += 1
-    
-    # If it's Slack, create a real Signal record for the ingested message
+
+    # If it's Slack, create a simulated Signal record for the ingested message
     elif "slack" in conn.name.lower() or conn.category == "communications":
         new_signal = Signal(
             id=f"sig_{uuid.uuid4().hex[:8]}",
             tenant_id=conn.tenant_id,
-            signal_type="WEBHOOK",
+            signal_type="DEMO",
             source_type="slack",
             source_entity="channel_message",
-            clean_payload="Slack sync: new channel messages ingested and processed",
+            clean_payload="[DEMO] Slack sync: new channel messages ingested and processed",
             pii_present=False,
-            authority_score=0.8,
+            authority_score=0.0,
             domain="Support",
             created_at=datetime.now(timezone.utc)
         )

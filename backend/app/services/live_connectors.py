@@ -614,7 +614,7 @@ class LiveConnectorService:
         quarantined signals so injection-risk text never becomes grounding.
         """
         live = [s for s in signals
-                if getattr(s, "signal_type", None) != "QUARANTINED"
+                if getattr(s, "signal_type", None) not in ("QUARANTINED", "DEMO")
                 and (getattr(s, "clean_payload", "") or "").strip()]
         if not live:
             return 0

@@ -174,7 +174,9 @@ async def ingest_connector_signals(db: AsyncSession, tenant_id: str, signals: li
     """
     bridged = 0
     for sig in signals:
-        if getattr(sig, "signal_type", None) == "QUARANTINED":
+        # Never bridge injection-quarantined or simulated (DEMO) signals into the
+        # mesh — only genuine real-world pulls drive the closed loop.
+        if getattr(sig, "signal_type", None) in ("QUARANTINED", "DEMO"):
             continue
         ext = ExternalSignal(
             tenant_id=tenant_id,
