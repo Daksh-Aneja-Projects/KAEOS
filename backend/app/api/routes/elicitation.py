@@ -9,7 +9,7 @@ import uuid
 
 from app.core.database import get_db
 from app.models.domain import (
-    ElicitationQuestion, Employee,
+    ElicitationQuestion, Employee, Rule,
 )
 from app.schemas.elicitation import (
     QuestionResponse, AnswerSubmit, EmployeeContribution,
@@ -168,13 +168,64 @@ async def submit_answer(body: AnswerSubmit, tenant: dict = Depends(require_role(
         volume = math.log(1 + total) / math.log(100)
         employee.reputation_score = round(0.7 * accuracy + 0.3 * volume, 3)
 
-    await db.commit()
+    # 3. L5 Answer Processing Pipeline (H7): the expert's answer is the highest-
+    # value human knowledge the product collects. Turn it into a CANDIDATE rule
+    # so it enters the same maker-checker path every other rule clears — it lands
+    # non-executable (INFERRED tier) and only steers governed decisions once a
+    # different identity validates it (PUT /rules/{id}/validate). Previously the
+    # answer died in a text column and the "pipeline" the docstring named did not
+    # exist.
+    candidate_rule_id = None
+    answer = (body.answer_text or "").strip()
+    if answer:
+        from app.api.routes.rules import _tier_from_scalar
+        from app.services.provenance import append_ledger_event
+        vector = {
+            "source_breadth": 0.3,
+            "source_authority": 0.7,     # a named human expert answered
+            "temporal_freshness": 1.0,
+            "outcome_validation": 0.3,
+            "explicit_validation": 0.0,  # not yet validated — maker-checker
+        }
+        scalar = confidence_engine.calculate_scalar(vector)
+        rule = Rule(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            statement=answer[:2000],
+            # Freeform expert knowledge: no structured trigger/action yet — a
+            # human formalizes those at validation. Empty (not null) keeps the
+            # NOT NULL contract without inventing a trigger the expert did not give.
+            trigger_json={},
+            action_json={},
+            domain=(employee.department if employee and getattr(employee, "department", None) else None),
+            confidence_vector=vector,
+            confidence_scalar=scalar,
+            confidence_tier=_tier_from_scalar(scalar),
+            is_executable=False,  # candidate: validation makes it executable
+            authored_by=f"elicitation:{question.employee_id or 'expert'}",
+        )
+        db.add(rule)
+        candidate_rule_id = rule.id
+        # Genesis provenance (commits rule + question + reputation atomically).
+        await append_ledger_event(
+            db,
+            tenant_id=tenant_id,
+            rule_id=rule.id,
+            event_type="CREATED",
+            actor_hash="elicitation",
+            actor_role="expert_elicitation",
+            confidence_at=scalar,
+            reasoning=f"Candidate rule from expert answer to: {question.question_text[:200]}",
+        )
+    else:
+        await db.commit()
 
     return {
         "status": "PROCESSED",
         "question_id": body.question_id,
         "answer_received": True,
         "employee_reputation_updated": employee is not None,
+        "candidate_rule_id": candidate_rule_id,
     }
 
 

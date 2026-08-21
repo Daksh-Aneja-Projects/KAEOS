@@ -101,8 +101,13 @@ class VectorStore(ABC):
         ``similarity`` float in ``[-1, 1]``."""
 
     @abstractmethod
-    async def update_metadata(self, vector_id: str, key: str, value: Any) -> None:
-        """Patch a single key on a record's metadata JSON."""
+    async def update_metadata(self, vector_id: str, key: str, value: Any, *, tenant_id: str) -> None:
+        """Patch a single key on a record's metadata JSON.
+
+        tenant_id is REQUIRED and scopes the write: keyed on vector_id alone,
+        one tenant could patch another's vector (vector ids are guessable/derived
+        from execution ids). The predicate is the only thing enforcing isolation
+        here — the store is not behind RLS."""
 
     @abstractmethod
     async def delete_subject(
@@ -220,11 +225,12 @@ class SqliteVectorStore(VectorStore):
         scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:limit]
 
-    async def update_metadata(self, vector_id, key, value) -> None:
+    async def update_metadata(self, vector_id, key, value, *, tenant_id) -> None:
         await self.initialize()
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                text(f"SELECT metadata FROM {_TABLE} WHERE id = :id"), {"id": vector_id}  # nosec B608
+                text(f"SELECT metadata FROM {_TABLE} WHERE id = :id AND tenant_id = :tid"),  # nosec B608
+                {"id": vector_id, "tid": tenant_id},
             )
             row = result.first()
             if not row:
@@ -235,8 +241,8 @@ class SqliteVectorStore(VectorStore):
                 meta = {}
             meta[key] = value
             await session.execute(
-                text(f"UPDATE {_TABLE} SET metadata = :metadata WHERE id = :id"),  # nosec B608
-                {"metadata": json.dumps(meta), "id": vector_id},
+                text(f"UPDATE {_TABLE} SET metadata = :metadata WHERE id = :id AND tenant_id = :tid"),  # nosec B608
+                {"metadata": json.dumps(meta), "id": vector_id, "tid": tenant_id},
             )
             await session.commit()
 
@@ -383,15 +389,15 @@ class PgVectorStore(VectorStore):
             })
         return out
 
-    async def update_metadata(self, vector_id, key, value) -> None:
+    async def update_metadata(self, vector_id, key, value, *, tenant_id) -> None:
         await self.initialize()
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
                     f"UPDATE {_TABLE} SET metadata = jsonb_set(COALESCE(metadata, '{{}}'::jsonb), "  # nosec B608
-                    "ARRAY[:key], to_jsonb(:value::text)) WHERE id = :id"
+                    "ARRAY[:key], to_jsonb(:value::text)) WHERE id = :id AND tenant_id = :tid"
                 ),
-                {"key": key, "value": str(value), "id": vector_id},
+                {"key": key, "value": str(value), "id": vector_id, "tid": tenant_id},
             )
             await session.commit()
 

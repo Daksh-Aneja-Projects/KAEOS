@@ -298,6 +298,22 @@ class Actuator:
             import logging
             logging.getLogger(__name__).debug(
                 "[Actuator] event-bus emit skipped: %s", ev_err)
+
+        # H6: a reversed write must not keep being recalled as a clean precedent.
+        # Correct the originating decision's memory outcome (no-op if none). This
+        # is the realized-outcome feedback that makes store_outcome live.
+        if record.execution_id:
+            try:
+                from app.services.memory.enterprise_memory import EnterpriseMemoryService
+                mem_id = EnterpriseMemoryService.decision_memory_id(
+                    tenant_id, record.execution_id)
+                if mem_id:
+                    await EnterpriseMemoryService.store_outcome(
+                        None, mem_id, "REVERSED", tenant_id=tenant_id)
+            except Exception as me:
+                import logging
+                logging.getLogger(__name__).debug(
+                    "[Actuator] memory outcome update skipped: %s", me)
         return record
 
     @staticmethod

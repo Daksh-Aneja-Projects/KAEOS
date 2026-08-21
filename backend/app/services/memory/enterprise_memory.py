@@ -44,6 +44,13 @@ class EnterpriseMemoryService:
         return (vectors[0] if vectors else []), router.embedding_metadata()
 
     @staticmethod
+    def decision_memory_id(tenant_id: str, execution_id: Optional[str]) -> Optional[str]:
+        """The deterministic vector id for an execution's decision memory, so a
+        later realized outcome (e.g. a reversal) can find and correct it without
+        threading a random uuid through the whole execution flow."""
+        return f"decision-{tenant_id}-{execution_id}" if execution_id else None
+
+    @staticmethod
     async def store_decision_memory(
         db: Optional[AsyncSession],
         tenant_id: str,
@@ -56,7 +63,11 @@ class EnterpriseMemoryService:
         ``db`` is accepted for backward compatibility but the VectorStore manages
         its own sessions.
         """
-        memory_id = str(uuid.uuid4())
+        # Deterministic id keyed on the execution so store_outcome can later
+        # correct this memory (recall must not resurface a reversed decision as a
+        # clean precedent). Falls back to a random id when there is no execution.
+        memory_id = (EnterpriseMemoryService.decision_memory_id(
+            tenant_id, (decision or {}).get("execution_id")) or str(uuid.uuid4()))
         content = f"Context: {context}. Decision: {decision}. Outcome: {outcome}"
         try:
             embedding, emeta = await EnterpriseMemoryService._embed(content, tenant_id)
@@ -114,11 +125,17 @@ class EnterpriseMemoryService:
             return []
 
     @staticmethod
-    async def store_outcome(db: Optional[AsyncSession], memory_id: str, actual_outcome: str) -> None:
-        """Patch a stored memory with its realized outcome so the system can learn."""
+    async def store_outcome(db: Optional[AsyncSession], memory_id: str,
+                            actual_outcome: str, *, tenant_id: str) -> None:
+        """Patch a stored memory with its realized outcome so the system learns.
+
+        tenant_id scopes the write (the store is not behind RLS on every backend).
+        A no-op when no such memory exists — the common case when the execution
+        never reached the success path that stores one.
+        """
         try:
             store = get_vector_store()
-            await store.update_metadata(memory_id, "outcome", actual_outcome)
+            await store.update_metadata(memory_id, "outcome", actual_outcome, tenant_id=tenant_id)
             logger.info(f"[Memory] Updated outcome for memory {memory_id}: {actual_outcome}")
         except Exception as e:
             logger.error(f"[Memory] Failed to update memory outcome: {e}")
