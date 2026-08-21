@@ -21,6 +21,7 @@ from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.result_cache import get_or_compute
 from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.models.auth import User, UserRole
 from app.models.domain import Rule, Signal, Skill, SkillExecution
@@ -158,74 +159,91 @@ async def neural_world(tenant_id: str = Depends(get_tenant_id), db: AsyncSession
         select(Department).where(Department.tenant_id == tenant_id).order_by(Department.created_at)
     )).scalars().all()
 
-    nodes_by_id: dict[str, dict] = {}
-    edges: list[dict] = []
-    hub_ids: list[str] = []
-    agents_by_dept: dict[str, list[dict]] = {}
-    # Every cluster's rows are fetched in one query per entity type across all
-    # departments (connectors included, which are tenant-wide anyway), instead
-    # of five queries per department.
-    for dept, n, e in await _build_world_clusters(db, tenant_id, departments):
-        for node in n:
-            nodes_by_id.setdefault(node["id"], node)
-            if node["type"] == "agent":
-                agents_by_dept.setdefault(dept.slug, []).append(node)
-        edges.extend(e)
-        hub_ids.append(dept.id)
+    # M7: this is the heaviest read - full fan-out + an O(agents x messages)
+    # matching loop + a full graph snapshot in _brain_stats. Cache the BUILT
+    # graph, fingerprinted on the cheap counts that actually change its shape;
+    # the fingerprint is self-invalidating, so no staleness class of bug.
+    _skill_count = (await db.execute(select(sqlfunc.count()).select_from(Skill)
+                    .where(Skill.tenant_id == tenant_id))).scalar() or 0
+    _msg_count = (await db.execute(select(sqlfunc.count()).select_from(AgentMessage)
+                  .where(AgentMessage.tenant_id == tenant_id))).scalar() or 0
+    _fingerprint = [len(departments),
+                    sum(int(d.agent_count or 0) for d in departments),
+                    int(_skill_count), int(_msg_count)]
 
-    # Every department's memory rolls into the shared company brain.
-    nodes_by_id["brain"] = {"id": "brain", "type": "brain", "label": "Company Brain"}
-    for h in hub_ids:
-        edges.append({"source": h, "target": "brain", "tier": "hub-brain"})
-    # Departments connect in sequence - one organization, laid out as a line.
-    for i in range(len(hub_ids) - 1):
-        edges.append({"source": hub_ids[i], "target": hub_ids[i + 1], "tier": "hub-hub"})
+    async def _compute() -> dict:
+        nodes_by_id: dict[str, dict] = {}
+        edges: list[dict] = []
+        hub_ids: list[str] = []
+        agents_by_dept: dict[str, list[dict]] = {}
+        # Every cluster's rows are fetched in one query per entity type across all
+        # departments (connectors included, which are tenant-wide anyway), instead
+        # of five queries per department.
+        for dept, n, e in await _build_world_clusters(db, tenant_id, departments):
+            for node in n:
+                nodes_by_id.setdefault(node["id"], node)
+                if node["type"] == "agent":
+                    agents_by_dept.setdefault(dept.slug, []).append(node)
+            edges.extend(e)
+            hub_ids.append(dept.id)
 
-    # Agents that work the same department are peers.
-    for peers in agents_by_dept.values():
-        for i in range(len(peers) - 1):
-            edges.append({"source": peers[i]["id"], "target": peers[i + 1]["id"], "tier": "agent-peer"})
+        # Every department's memory rolls into the shared company brain.
+        nodes_by_id["brain"] = {"id": "brain", "type": "brain", "label": "Company Brain"}
+        for h in hub_ids:
+            edges.append({"source": h, "target": "brain", "tier": "hub-brain"})
+        # Departments connect in sequence - one organization, laid out as a line.
+        for i in range(len(hub_ids) - 1):
+            edges.append({"source": hub_ids[i], "target": hub_ids[i + 1], "tier": "hub-hub"})
 
-    # Agents that have actually MESSAGED each other (AgentMessage log) get a
-    # comms link - matched by shared name tokens, because the protocol log
-    # records logical agent names, not DepartmentAgent row ids.
-    def _tokens(name: str) -> set[str]:
-        stop = {"agent", "worker", "the", "review"}
-        return {t for t in (name or "").lower().replace("-", "_").split("_") if t and t not in stop}
+        # Agents that work the same department are peers.
+        for peers in agents_by_dept.values():
+            for i in range(len(peers) - 1):
+                edges.append({"source": peers[i]["id"], "target": peers[i + 1]["id"], "tier": "agent-peer"})
 
-    all_agents = [a for peers in agents_by_dept.values() for a in peers]
-    msg_pairs = (await db.execute(
-        select(AgentMessage.sender_agent_id, AgentMessage.receiver_agent_id)
-        .where(AgentMessage.tenant_id == tenant_id)
-        .group_by(AgentMessage.sender_agent_id, AgentMessage.receiver_agent_id)
-    )).all()
-    for sender, receiver in msg_pairs:
-        if sender == receiver:
-            continue
-        src = next((a for a in all_agents if _tokens(sender) & _tokens(a.get("agent_type") or a["label"])), None)
-        dst = next((a for a in all_agents if _tokens(receiver) & _tokens(a.get("agent_type") or a["label"])), None)
-        if src and dst and src["id"] != dst["id"]:
-            edges.append({"source": src["id"], "target": dst["id"], "tier": "agent-comms"})
+        # Agents that have actually MESSAGED each other (AgentMessage log) get a
+        # comms link - matched by shared name tokens, because the protocol log
+        # records logical agent names, not DepartmentAgent row ids.
+        def _tokens(name: str) -> set[str]:
+            stop = {"agent", "worker", "the", "review"}
+            return {t for t in (name or "").lower().replace("-", "_").split("_") if t and t not in stop}
 
-    seen: set[tuple] = set()
-    unique_edges = []
-    for e in edges:
-        key = (e["source"], e["target"])
-        if key not in seen and (key[1], key[0]) not in seen:
-            seen.add(key)
-            unique_edges.append(e)
+        all_agents = [a for peers in agents_by_dept.values() for a in peers]
+        msg_pairs = (await db.execute(
+            select(AgentMessage.sender_agent_id, AgentMessage.receiver_agent_id)
+            .where(AgentMessage.tenant_id == tenant_id)
+            .group_by(AgentMessage.sender_agent_id, AgentMessage.receiver_agent_id)
+        )).all()
+        for sender, receiver in msg_pairs:
+            if sender == receiver:
+                continue
+            src = next((a for a in all_agents if _tokens(sender) & _tokens(a.get("agent_type") or a["label"])), None)
+            dst = next((a for a in all_agents if _tokens(receiver) & _tokens(a.get("agent_type") or a["label"])), None)
+            if src and dst and src["id"] != dst["id"]:
+                edges.append({"source": src["id"], "target": dst["id"], "tier": "agent-comms"})
 
-    return {
-        "nodes": list(nodes_by_id.values()),
-        "edges": unique_edges,
-        "departments": [
-            {"id": d.id, "slug": d.slug, "name": d.name,
-             "status": d.status.value if isinstance(d.status, DepartmentStatus) else d.status,
-             "agent_count": d.agent_count, "health_score": d.health_score}
-            for d in departments
-        ],
-        "brain": await _brain_stats(db, tenant_id),
-    }
+        seen: set[tuple] = set()
+        unique_edges = []
+        for e in edges:
+            key = (e["source"], e["target"])
+            if key not in seen and (key[1], key[0]) not in seen:
+                seen.add(key)
+                unique_edges.append(e)
+
+        return {
+            "nodes": list(nodes_by_id.values()),
+            "edges": unique_edges,
+            "departments": [
+                {"id": d.id, "slug": d.slug, "name": d.name,
+                 "status": d.status.value if isinstance(d.status, DepartmentStatus) else d.status,
+                 "agent_count": d.agent_count, "health_score": d.health_score}
+                for d in departments
+            ],
+            "brain": await _brain_stats(db, tenant_id),
+        }
+
+    result, _cached = await get_or_compute(
+        "neural_world", tenant_id, _fingerprint, _compute)
+    return result
 
 
 
