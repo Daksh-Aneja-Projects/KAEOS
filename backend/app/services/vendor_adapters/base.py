@@ -44,6 +44,30 @@ class _RestAdapter:
     entity = "record"
     authority = 0.8
     pii = False
+    # M15: the record field carrying the source's OWN last-update time. When set,
+    # fetch() surfaces it as ``updated_at`` so the scheduler advances the delta
+    # cursor from the source's clock (never KAEOS's wall clock). Left None ->
+    # no watermark, an honest fixed-window pull.
+    updated_at_field: str | None = None
+
+    def cursor_params(self, config) -> Dict[str, Any]:
+        """M15: incremental-pull query params derived from ``config['_cursor']``
+        (the watermark of the newest record seen last sync). Default: none — a
+        fixed-window pull that re-reads the most-recent window each pass, so
+        changes beyond ``batch_size`` are re-fetched rather than paged past.
+        Override to fetch ONLY records changed since the watermark; ServiceNow and
+        Stripe do. Adding it to another adapter is a small, endpoint-preserving
+        change, best validated against that vendor's sandbox."""
+        return {}
+
+    def _stamp_watermark(self, signal: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
+        """Attach ``updated_at`` from ``updated_at_field`` (M15). No-op unless the
+        adapter declares the field; never overwrites an explicit value."""
+        if self.updated_at_field:
+            wm = item.get(self.updated_at_field)
+            if wm is not None:
+                signal.setdefault("updated_at", wm)
+        return signal
 
     def headers(self, config, secrets) -> Dict[str, str]:
         return {"Accept": "application/json"}
@@ -98,13 +122,16 @@ class _RestAdapter:
             r = await c.get(
                 f"{self.base_url(config, secrets).rstrip('/')}{self.fetch_path(config)}",
                 headers=self.headers(config, secrets),
-                params=self.fetch_params(config),
+                # M15: incremental filter (if the adapter defines one) rides on the
+                # same GET as the base params.
+                params={**self.fetch_params(config), **self.cursor_params(config)},
             )
             r.raise_for_status()
             body = r.json()
         items = self.extract(body)
         limit = int(config.get("batch_size", 25))
-        return [self.to_signal(i) for i in items[:limit] if isinstance(i, dict)]
+        return [self._stamp_watermark(self.to_signal(i), i)
+                for i in items[:limit] if isinstance(i, dict)]
 
 
 # ── Engineering & IT Ops ─────────────────────────────────────────────────────

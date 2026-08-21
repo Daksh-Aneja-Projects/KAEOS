@@ -73,8 +73,14 @@ class GreenhouseAdapter(_RestAdapter):
 # ── Finance ──────────────────────────────────────────────────────────────────
 
 class StripeAdapter(_RestAdapter):
-    """Stripe API — invoices. Auth: secret key bearer."""
+    """Stripe API — invoices. Auth: secret key bearer.
+
+    Incremental (M15): Stripe list endpoints filter on ``created[gte]`` (a unix
+    second), and every object carries ``created``, so the delta cursor advances
+    from the source's own clock and each pass fetches only newer objects. '>='
+    re-fetches the boundary second; the natural-key upsert absorbs it."""
     domain, entity, authority = "finance", "invoice", 0.95
+    updated_at_field = "created"
 
     def headers(self, config, secrets):
         return {"Accept": "application/json",
@@ -91,6 +97,10 @@ class StripeAdapter(_RestAdapter):
 
     def fetch_params(self, config):
         return {"limit": config.get("batch_size", 25)}
+
+    def cursor_params(self, config):
+        cursor = config.get("_cursor")
+        return {"created[gte]": cursor} if cursor else {}
 
     def extract(self, body):
         return body.get("data", [])

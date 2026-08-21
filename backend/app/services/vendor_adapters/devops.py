@@ -6,8 +6,15 @@ from .base import _RestAdapter
 
 
 class GitHubAdapter(_RestAdapter):
-    """GitHub REST v3 — pull requests for a repo. Auth: personal access token."""
+    """GitHub REST v3 — pull requests for a repo. Auth: personal access token.
+
+    Sorted newest-updated-first and watermark-ready (M15): each PR's ``updated_at``
+    is surfaced so the delta cursor advances. A server-side ``cursor_params``
+    filter is a per-vendor follow-up — the /pulls list has no ``since``, so true
+    incremental means the /issues endpoint or client-side paging, best validated
+    against a real repo."""
     domain, entity, authority = "engineering", "pull_request", 0.9
+    updated_at_field = "updated_at"
 
     def headers(self, config, secrets):
         return {"Accept": "application/vnd.github+json",
@@ -24,7 +31,8 @@ class GitHubAdapter(_RestAdapter):
         return f"/repos/{config['owner']}/{config['repo']}/pulls"
 
     def fetch_params(self, config):
-        return {"state": config.get("state", "open"), "per_page": config.get("batch_size", 25)}
+        return {"state": config.get("state", "open"), "sort": "updated",
+                "direction": "desc", "per_page": config.get("batch_size", 25)}
 
     def ok_detail(self, body):
         return f"Authenticated as {body.get('login', 'user')}"

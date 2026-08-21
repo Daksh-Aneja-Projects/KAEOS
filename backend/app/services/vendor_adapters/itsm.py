@@ -87,8 +87,14 @@ class ServiceNowAdapter(_RestAdapter):
 # ── Support ──────────────────────────────────────────────────────────────────
 
 class ZendeskAdapter(_RestAdapter):
-    """Zendesk API v2 - tickets. Auth: '{email}/token' + API token."""
+    """Zendesk API v2 - tickets. Auth: '{email}/token' + API token.
+
+    Watermark-ready (M15): each ticket's ``updated_at`` is surfaced so the delta
+    cursor advances. True server-side incremental means Zendesk's
+    /incremental/tickets export endpoint (start_time) — a per-vendor follow-up
+    best validated against a real subdomain."""
     domain, entity, authority, pii = "support", "ticket", 0.9, True
+    updated_at_field = "updated_at"
 
     def auth(self, config, secrets):
         return (f"{secrets.get('email', '')}/token", secrets.get("api_token", ""))
