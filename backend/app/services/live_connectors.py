@@ -601,3 +601,45 @@ class LiveConnectorService:
                 prior.created_at = s.created_at
                 updated += 1
         return {"inserted": inserted, "updated": updated, "inserted_signals": inserted_signals}
+
+    @staticmethod
+    async def embed_signals_into_memory(tenant_id: str, signals: list) -> int:
+        """H5: embed connector signals into the enterprise-memory vector
+        namespace - the one chat.py's RAG grounds on - so the high-volume
+        real-world ingest actually lets the copilot answer from real data
+        instead of a permanently empty corpus.
+
+        Batched (one embed call per pull), a no-op when embeddings are simulated
+        (no real model available), and best-effort: never fails the pull. Skips
+        quarantined signals so injection-risk text never becomes grounding.
+        """
+        live = [s for s in signals
+                if getattr(s, "signal_type", None) != "QUARANTINED"
+                and (getattr(s, "clean_payload", "") or "").strip()]
+        if not live:
+            return 0
+        try:
+            from app.core.polystore import get_vector_store
+            from app.services.llm_router import get_tenant_router
+            llm = await get_tenant_router(tenant_id)
+            embeddings = await llm.embed([(s.clean_payload or "")[:8000] for s in live])
+            if getattr(llm, "embeddings_simulated", False):
+                return 0
+            store = get_vector_store()
+            n = 0
+            for s, emb in zip(live, embeddings):
+                await store.upsert(
+                    vector_id=f"connector-sig-{s.id}",
+                    tenant_id=tenant_id,
+                    content=(s.clean_payload or "")[:4000],
+                    embedding=emb,
+                    metadata={"source": s.source_type,
+                              "domain": getattr(s, "domain", None),
+                              "signal_id": s.id},
+                    namespace="enterprise_memory",
+                )
+                n += 1
+            return n
+        except Exception as e:
+            logger.warning("[LiveConnector] embedding signals into memory failed: %s", e)
+            return 0

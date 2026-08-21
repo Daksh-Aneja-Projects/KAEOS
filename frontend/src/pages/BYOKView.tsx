@@ -40,12 +40,14 @@ export default function BYOKView({ domain = 'All Domains' }: { domain?: string }
     setSuccess(false);
     setError('');
     try {
-      await api.ingestSignal({
-        signal_type: 'BYOK_INGESTION',
-        source: tab === 'file' ? `Local Upload: ${fileName}` : tab === 'url' ? 'Web Scrape' : 'Manual Entry',
-        title: title || 'Custom Knowledge Upload',
-        content,  // real content for all tabs
-        severity: 'INFO'
+      // Route through the real knowledge pipeline: /neural/brain/ingest
+      // prompt-guards, PII-redacts, embeds into the enterprise-memory namespace
+      // the copilot grounds on, and writes a graph node. The old /intelligence/
+      // signals path only logged one activity-feed row (no scrub, no vector),
+      // and rejected this signal_type outright — so BYOK never actually ingested.
+      await api.neuralBrainIngest({
+        text: content,  // real content for all tabs (files are read to text)
+        domain: domain && domain !== 'All Domains' ? domain : undefined,
       });
       setSuccess(true);
       setContent('');
