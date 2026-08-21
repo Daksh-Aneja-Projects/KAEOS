@@ -61,14 +61,23 @@ _UNTRUSTED_CLOSE = "UNTRUSTED INPUT>>>"
 
 
 def _wrap_untrusted(text: str) -> str:
-    """Fence third-party/injectable content so the model treats it as data.
+    """Neutralize injection spans in third-party content, then fence it as data.
 
-    Defuses any nested delimiter forgery in the payload itself (an attacker
-    could otherwise emit our own close-marker to 'escape' the fence)."""
-    safe = str(text).replace(_UNTRUSTED_CLOSE, "UNTRUSTED-INPUT-END").replace(
-        _UNTRUSTED_OPEN, "UNTRUSTED-INPUT-BEGIN"
-    )
-    return f"{_UNTRUSTED_OPEN}\n{safe}\n{_UNTRUSTED_CLOSE}"
+    M2: this used to ONLY fence — an injection buried in the payload was labeled
+    'data' but left intact, relying entirely on the model honoring the fence. Now
+    the live imperative spans are redacted first (prompt_guard.neutralize), so the
+    executor defangs injections rather than merely wrapping them. Defense in depth
+    behind Gate 1's compliance scan: the executor no longer trusts a fence alone.
+    Falls back to the local fence if prompt_guard is somehow unavailable."""
+    try:
+        from app.services import prompt_guard
+        cleaned, _scan = prompt_guard.neutralize(str(text))
+        return prompt_guard.wrap_untrusted(cleaned)
+    except Exception:
+        safe = str(text).replace(_UNTRUSTED_CLOSE, "UNTRUSTED-INPUT-END").replace(
+            _UNTRUSTED_OPEN, "UNTRUSTED-INPUT-BEGIN"
+        )
+        return f"{_UNTRUSTED_OPEN}\n{safe}\n{_UNTRUSTED_CLOSE}"
 
 _STEP_PROMPT_TEMPLATE = """\
 SKILL: {skill_id}  |  Step {step_num}/{total_steps}  |  Tenant: {tenant_id}
