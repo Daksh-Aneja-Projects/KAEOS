@@ -324,7 +324,9 @@ async def list_commission_calculations(tenant_id: str = Depends(get_tenant_id), 
 @router.post("/commission/{calculation_id}/payout")
 async def calculate_commission(calculation_id: str, tenant: dict = Depends(require_role("operator")), db: AsyncSession = Depends(get_db)):
     return await run_agent_endpoint(
-        CommissionAgent().calculate_payout(db, calculation_id, tenant["tenant_id"]), tenant,
+        CommissionAgent().calculate_payout(
+            db, calculation_id, tenant["tenant_id"], approver=approver_identity(tenant)),
+        tenant,
         actor=approver_identity(tenant), resource_type="commission_calculation", resource_id=calculation_id, logger=logger,
     )
 
