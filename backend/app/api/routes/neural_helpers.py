@@ -347,8 +347,10 @@ def _cluster_graph(
         "sales": {"crm", "commercial"},
         "support": {"support", "communications"},
         "engineering": {"engineering"},
+        # Legal exchanges contracts over the communications backbone (email /
+        # e-signature), so it is not an island in the org graph (Phase 3).
         "operations": {"commercial"},
-        "legal": set(),
+        "legal": {"communications"},
         "healthcare": {"clinical"},
         "lending": {"core_banking"},
         "procurement": {"procurement"},

@@ -26,11 +26,13 @@ _DEPT_ALIASES = {
     "hr": ["hr", "human_resources", "humanresources", "people", "workforce"],
     "finance": ["finance", "financial", "accounting", "fp&a"],
     "legal": ["legal", "compliance", "legal_compliance", "risk_legal"],
-    "sales": ["sales", "revenue", "gtm"],
+    # "marketing"/"growth"/"demand_gen" fold into sales: there is no marketing
+    # department, so routing them to a canonical "marketing" (Phase 3) produced a
+    # plan step no department could execute. GTM work runs under sales.
+    "sales": ["sales", "revenue", "gtm", "marketing", "growth", "demand_gen"],
     "support": ["support", "customer_support", "customersupport", "cx", "service"],
     "operations": ["operations", "ops", "supply_chain"],
     "engineering": ["engineering", "eng", "platform", "it"],
-    "marketing": ["marketing", "growth", "demand_gen"],
     "healthcare": ["healthcare", "health", "clinical", "medical"],
     "lending": ["lending", "banking", "credit", "loans"],
     # No alias list needed: "procurement" is already canonical and gets no

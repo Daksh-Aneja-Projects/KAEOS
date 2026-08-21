@@ -43,7 +43,7 @@ def seed_workflows():
 
 def seed_departments():
     """
-    Seed Department records for all 7 enterprise departments.
+    Seed Department records for all 10 enterprise departments.
 
     NB: this silently returned [] for its entire life — it passed
     `sla_compliance_rate`/`automation_rate`/`last_active_at`, none of which are

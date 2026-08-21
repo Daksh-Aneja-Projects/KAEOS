@@ -551,10 +551,9 @@ app.include_router(workspace.router,       prefix=PREFIX)
 
 from app.api.routes import automation  # noqa: E402 — automation rules engine
 app.include_router(automation.router,      prefix=PREFIX)
-# NOTE: app.api.routes.workforce (graph-twin overview) is intentionally NOT
-# registered: it shadowed the Workforce Layer routes below at
-# /workforce/overview and /workforce/departments with zeroed metrics.
-# The wf_* routers serve those paths from the real Department tables.
+# The Workforce Layer routes below (wf_* routers) serve /workforce/* from the
+# real Department tables. (An old app.api.routes.workforce graph-twin overview
+# that shadowed them with zeroed metrics was deleted.)
 app.include_router(executive.router,   prefix=PREFIX)
 app.include_router(chat.router,            prefix=PREFIX)
 
