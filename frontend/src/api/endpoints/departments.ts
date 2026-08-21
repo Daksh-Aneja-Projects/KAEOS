@@ -23,10 +23,9 @@ export const departmentsApi = {
     request<{ candidate_id: string; stage: string }>(`/hr/candidates/${candidateId}/advance`, {
       method: 'POST', body: JSON.stringify({ target_stage: targetStage }),
     }),
-  hrHitlApprove: (executionId: string, reason = '', approver = 'human') =>
-    request<any>(`/hr/hitl/${executionId}/approve`, { method: 'POST', body: JSON.stringify({ reason, approver }) }),
-  hrHitlReject: (executionId: string, reason = '', approver = 'human') =>
-    request<any>(`/hr/hitl/${executionId}/reject`, { method: 'POST', body: JSON.stringify({ reason, approver }) }),
+  // M10: hrHitlApprove/hrHitlReject removed — dead client-side (no callers). HITL
+  // approvals go through the canonical /skills/hitl path (api.approveHITL/
+  // rejectHITL). The /hr/hitl/* backend routes stay for backward-compat + tests.
 
   // ─── Enterprise Brain APIs (Directive Compliance) ───
 
