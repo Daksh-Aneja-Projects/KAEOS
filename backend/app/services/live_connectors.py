@@ -583,6 +583,7 @@ class LiveConnectorService:
                         for r in rows if (r.tenant_id, r.source_type, r.external_id) in keys}
 
         inserted = updated = 0
+        inserted_signals: list = []  # H1: the new rows to bridge into the event mesh
         for s in signals:
             prior = existing.get((s.tenant_id, s.source_type, s.external_id)) if s.external_id else None
             if prior is None:
@@ -590,6 +591,7 @@ class LiveConnectorService:
                 if s.external_id:
                     existing[(s.tenant_id, s.source_type, s.external_id)] = s
                 inserted += 1
+                inserted_signals.append(s)
             else:
                 prior.clean_payload = s.clean_payload
                 prior.authority_score = s.authority_score
@@ -598,4 +600,4 @@ class LiveConnectorService:
                 prior.domain = s.domain
                 prior.created_at = s.created_at
                 updated += 1
-        return {"inserted": inserted, "updated": updated}
+        return {"inserted": inserted, "updated": updated, "inserted_signals": inserted_signals}

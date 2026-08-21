@@ -419,6 +419,14 @@ async def run_connector_pull_sync():
                 watermark = _max_watermark(records)
                 signals = LiveConnectorService.records_to_signals(records, tid, name)
                 stats = await LiveConnectorService.persist_signals(db, signals)
+                # H1: bridge the new signals into the event mesh so the pull
+                # actually feeds the closed loop (correlate-only; non-fatal).
+                try:
+                    from app.services.event_mesh import ingest_connector_signals
+                    await ingest_connector_signals(
+                        db, tid, stats.get("inserted_signals", []))
+                except Exception as be:
+                    logger.warning("[Scheduler] mesh bridge for %s failed: %s", cid, be)
                 conn = (await db.execute(
                     select(Connector).where(Connector.id == cid))).scalar_one_or_none()
                 if conn is not None:

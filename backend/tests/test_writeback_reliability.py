@@ -256,7 +256,8 @@ async def test_resync_upserts_signals_no_duplicates():
         sigs = LiveConnectorService.records_to_signals(records, TENANT, "ServiceNow")
         s1 = await LiveConnectorService.persist_signals(db, sigs)
         await db.commit()
-    assert s1 == {"inserted": 2, "updated": 0}
+    assert (s1["inserted"], s1["updated"]) == (2, 0)
+    assert len(s1["inserted_signals"]) == 2  # H1: bridged into the event mesh
 
     # Re-sync the SAME two records (one with new text) -> updates, no new rows.
     records[0]["summary"] = "one-updated"
@@ -264,7 +265,7 @@ async def test_resync_upserts_signals_no_duplicates():
         sigs = LiveConnectorService.records_to_signals(records, TENANT, "ServiceNow")
         s2 = await LiveConnectorService.persist_signals(db, sigs)
         await db.commit()
-    assert s2 == {"inserted": 0, "updated": 2}, s2
+    assert (s2["inserted"], s2["updated"]) == (0, 2), s2
 
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(select(Signal).where(

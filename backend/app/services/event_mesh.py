@@ -157,6 +157,47 @@ async def respond(db: AsyncSession, tenant_id: str, signal: ExternalSignal) -> E
     return signal
 
 
+async def ingest_connector_signals(db: AsyncSession, tenant_id: str, signals: list) -> int:
+    """H1 bridge: mirror freshly-pulled connector ``Signal`` rows into the event
+    mesh as ``ExternalSignal`` and correlate them to the twin, so the 5-minute
+    connector pull actually feeds the closed loop instead of dead-ending in the
+    ``signals`` table (two tables, previously unbridged).
+
+    Correlate-only, by design: connector pulls are high-volume operational data;
+    auto-spawning a governed response per record would flood the mesh and grow
+    external_signals unbounded. Only *newly inserted* signals are bridged (the
+    caller passes persist_signals' inserted_signals), and quarantined ones are
+    skipped so prompt-injection risk never enters the mesh. Enacting a response
+    stays a governed, on-demand decision (POST /signals/{id}/respond).
+
+    Returns the number bridged. The caller commits.
+    """
+    bridged = 0
+    for sig in signals:
+        if getattr(sig, "signal_type", None) == "QUARANTINED":
+            continue
+        ext = ExternalSignal(
+            tenant_id=tenant_id,
+            # Connector data is external-system content; correlate() text-matches
+            # the payload to the twin, so kind is a coarse prior, not the routing.
+            kind="VENDOR",
+            title=f"{sig.source_type}: {sig.source_entity}"[:300],
+            body=sig.clean_payload,
+            source=sig.source_type,
+            severity="info",
+            authority_score=getattr(sig, "authority_score", 0.5) or 0.5,
+            novelty_score=0.5,
+            status="NEW",
+        )
+        db.add(ext)
+        # ponytail: one twin-departments query per signal (correlate re-reads it).
+        # Batches are bounded by the pull batch_size; hoist the twin read if a
+        # single pull ever bridges thousands.
+        await correlate(db, tenant_id, ext)
+        bridged += 1
+    return bridged
+
+
 async def _emit_activity(tenant_id: str, signal: ExternalSignal, *, requires_action: bool) -> None:
     """Write the briefing/HITL to the real activity feed. Never fatal."""
     try:
