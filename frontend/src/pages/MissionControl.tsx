@@ -139,9 +139,9 @@ export default function MissionControl(_props: { domain?: string }) {
         </div>
 
         {/* Company Brain: self-proposed missions. Approving one spawns a governed
-            mission, so refresh the list when it does. */}
+            mission - refresh the list and open it so the plan is on screen. */}
         <div className="mb-5">
-          <BrainProposals onApproved={loadList} />
+          <BrainProposals onApproved={(missionId) => { loadList(); if (missionId) openMission(missionId); }} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5">

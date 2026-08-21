@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 
 /**
  * Company Brain — the surface where KAEOS proposes its OWN missions.
@@ -64,7 +65,7 @@ function PriorityRing({ value, color }: { value: number; color: string }) {
   );
 }
 
-export default function BrainProposals({ onApproved }: { onApproved?: () => void }) {
+export default function BrainProposals({ onApproved }: { onApproved?: (missionId?: string) => void }) {
   const { colors } = useTheme();
   const [proposals, setProposals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +82,9 @@ export default function BrainProposals({ onApproved }: { onApproved?: () => void
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // The scheduler reflects every 6h in the background; keep the panel live
+  // without a second WebSocket (see useLiveRefresh's own guidance).
+  useVisiblePoll(load, 30000);
 
   const reflect = async () => {
     setReflecting(true); setNote(null);
@@ -97,10 +101,10 @@ export default function BrainProposals({ onApproved }: { onApproved?: () => void
   const approve = async (id: string) => {
     setBusy(id);
     try {
-      await api.approveBrainProposal(id);
+      const r = await api.approveBrainProposal(id);
       setProposals(p => p.filter(x => x.id !== id));
       setNote('Approved. A governed mission is now planned; every step runs through the gates.');
-      onApproved?.();
+      onApproved?.(r?.mission_id);
     } catch (e) { console.error(e); setNote('Could not approve that proposal.'); }
     finally { setBusy(null); }
   };

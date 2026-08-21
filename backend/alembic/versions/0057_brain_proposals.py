@@ -17,6 +17,8 @@ Revises: 0056_legalhold_support_ops
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.rls import rls_enable_statements
+
 revision = "0057_brain_proposals"
 down_revision = "0056_legalhold_support_ops"
 branch_labels = None
@@ -54,6 +56,12 @@ def upgrade() -> None:
     op.create_index("ix_brain_proposals_created_at", _TABLE, ["created_at"])
     op.create_index("ix_brain_proposals_dedup", _TABLE, ["tenant_id", "dedup_key", "created_at"])
     op.create_index("ix_brain_proposals_status", _TABLE, ["tenant_id", "status"])
+    # Tenant isolation at migration time (matches 0043/0049 and every sibling
+    # that creates a tenant table): the boot-time sweep is only a backstop, and
+    # a migrate-then-serve window must not leave proposals readable cross-tenant.
+    if op.get_bind().dialect.name == "postgresql":
+        for stmt in rls_enable_statements(_TABLE):
+            op.execute(stmt)
 
 
 def downgrade() -> None:

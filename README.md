@@ -76,6 +76,17 @@ dossier (autonomy ladder, what it replaces, the SOP written out) one click away
 and a drop-anything ingest bar that teaches the brain and the Copilot in the
 same motion.
 
+The Company Brain also **thinks for itself**: on a cadence it reflects on the
+operational reality KAEOS records - a declining safe-autonomy rate, a cost
+spike, records drifting outside the platform, missions that keep failing, expert
+questions going unanswered - and proposes its own missions, each grounded in the
+real rows that triggered it. A proposal carries no authority: a human approves
+it (which plans a governed mission through the same 7 gates) or rejects it (the
+brain remembers the "no" and suppresses the idea). It learns which kinds of
+proposal its humans accept and which spawned missions actually succeed, and
+re-weights its future judgment accordingly. The brain proposes, a human
+disposes, the gates execute.
+
 Everything an agent does passes the same 7-gate pipeline. Teams watch live agent
 work in a shared queue and can approve, redirect or reject any of it, with
 per-tenant and per-department permissions and a full audit trail. Skills
@@ -231,14 +242,14 @@ is reproducible with the commands in [docs/TESTING.md](docs/TESTING.md).
 
 | | |
 |---|---|
-| Backend | 82,517 lines of Python |
-| Frontend | 32,394 lines of TypeScript / TSX |
-| API surface | 316 endpoints across 56 route modules |
-| Data model | 233 ORM tables across 77 model modules, 29 Alembic migrations (a created database holds 237 tables, including Alembic's own bookkeeping) |
-| Departments | 7, with 41 agents (HR 7, Finance 5, Legal 5, Sales 8, Support 7, Operations 6, Engineering 3) |
-| Integrations | 22 live connector adapters (5 core + 17 vendor) |
-| Tests | 900 (441 end-to-end, 459 unit) across 114 files |
-| UI | 99 React components: 45 pages, 18 views, 34 shared components |
+| Backend | 88,428 lines of application Python (135,292 tracked incl. tests, scripts and migrations) |
+| Frontend | 44,592 lines of TypeScript / TSX |
+| API surface | 682 OpenAPI operations across 62 route modules |
+| Data model | 257 ORM tables across 90 model modules, 57 Alembic migrations |
+| Departments | 10, with 48 governed agents between them |
+| Integrations | 30 live connector adapters (5 core + 25 vendor, incl. 8 bridged per-department connectors) |
+| Tests | 1,891 (439 end-to-end on a real local model, 1,452 unit) across 254 files |
+| UI | 127 React components: 55 pages, 24 views, 48 shared components |
 
 ## Documentation
 
