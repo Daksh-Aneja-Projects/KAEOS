@@ -240,43 +240,66 @@ async def run_drift_detection_job():
             tenant_ids = (await db.execute(
                 select(SorObject.tenant_id).distinct()
             )).scalars().all()
-            flagged = 0
+            flagged = resolved = refreshed = 0
             for tid in tenant_ids:
                 if not tid:
                     continue
                 report = await Actuator.compute_drift(db, tenant_id=tid)
                 drifted = report.get("drift") or []
-                if not drifted:
-                    continue
-                # One open signal per tenant at a time: re-raising every sweep
-                # would bury the operator in duplicates of the same condition.
+                # The single OPEN drift signal for this tenant, if any. One open
+                # at a time keeps the operator from drowning in duplicates - but
+                # it must have a lifecycle, or the first detection silences drift
+                # forever (the guard below would never clear).
                 open_sig = (await db.execute(
                     select(ExternalSignal).where(
                         ExternalSignal.tenant_id == tid,
                         ExternalSignal.kind == "DRIFT",
                         ExternalSignal.status != "RESOLVED",
-                    ).limit(1)
+                    ).order_by(ExternalSignal.created_at.desc()).limit(1)
                 )).scalar_one_or_none()
-                if open_sig is not None:
+
+                if not drifted:
+                    # Drift cleared (reconciled by a human, or the SoR reverted):
+                    # close the open signal so the NEXT real drift can raise a
+                    # fresh one. Without this, drift fires exactly once per tenant.
+                    if open_sig is not None:
+                        open_sig.status = "RESOLVED"
+                        open_sig.responded_at = datetime.now(timezone.utc)
+                        resolved += 1
                     continue
+
                 names = ", ".join(
                     f"{d.get('system')}:{d.get('external_id')}" for d in drifted[:5])
+                body = (f"These systems-of-record rows no longer match the last "
+                        f"governed action KAEOS took on them: {names}"
+                        f"{' and others' if len(drifted) > 5 else ''}. "
+                        f"Nothing was changed automatically; review and reconcile.")
+                severity = "warning" if len(drifted) < 10 else "critical"
+                if open_sig is not None:
+                    # Same condition still open - refresh it in place so the
+                    # operator sees the CURRENT drift set (it may have grown),
+                    # rather than a stale count or a pile of duplicates.
+                    open_sig.title = f"{len(drifted)} record(s) changed outside KAEOS"
+                    open_sig.body = body
+                    open_sig.severity = severity
+                    open_sig.matched_entities = drifted[:20]
+                    refreshed += 1
+                    continue
                 db.add(ExternalSignal(
                     tenant_id=tid, kind="DRIFT",
                     title=f"{len(drifted)} record(s) changed outside KAEOS",
-                    body=(f"These systems-of-record rows no longer match the last "
-                          f"governed action KAEOS took on them: {names}"
-                          f"{' and others' if len(drifted) > 5 else ''}. "
-                          f"Nothing was changed automatically; review and reconcile."),
+                    body=body,
                     source="drift-monitor",
-                    severity="warning" if len(drifted) < 10 else "critical",
+                    severity=severity,
                     matched_entities=drifted[:20],
                     status="NEW",
                 ))
                 flagged += 1
-            if flagged:
+            if flagged or resolved or refreshed:
                 await db.commit()
-                logger.info("[Scheduler] Drift detection raised signals for %d tenant(s)", flagged)
+                logger.info(
+                    "[Scheduler] Drift detection: %d raised, %d refreshed, %d resolved",
+                    flagged, refreshed, resolved)
     except Exception as e:
         logger.error(f"[Scheduler] Drift detection failed: {e}")
 
