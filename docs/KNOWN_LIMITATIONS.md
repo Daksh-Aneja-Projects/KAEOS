@@ -166,6 +166,24 @@ codebase itself carries no open critical or high finding from the standing pre-l
   "we updated your ERP" is only true for the systems above; everywhere else KAEOS records what it
   *would* write and keeps it reversible. Bidirectional adapters for the remaining systems of record
   are the active integration roadmap.
+- **Connector INCREMENTAL pull advances a cursor for ServiceNow only.** Every adapter pulls its
+  most-recently-updated window each pass (bounded by `batch_size`) — an honest fixed-window pull,
+  not a false delta promise — but only ServiceNow advances a persisted high-water cursor, so on a
+  source with more than `batch_size` changed rows between passes, the overflow is re-fetched next
+  pass rather than paged past. **Boundary:** generalizing the cursor is per-adapter work (each
+  adapter must surface an `updated_at` watermark AND filter on it); ServiceNow is the reference.
+- **Integration-audit follow-ups (2026-08-21).** The 2026-08-21 whole-system audit's Phase 0/1 and
+  most of Phase 2 shipped; four items are deliberately deferred, none of them correctness-open:
+  a background **re-embed job** for after an embedding-model change (the per-vector model
+  provenance stamp already exists; a model change is a deliberate ops action that also needs a
+  coordinated pgvector dim migration); the **per-adapter incremental cursor** above; **OperatorConsole
+  remediation actions** (requeue / circuit-reset — the `/ops/*` endpoints exist, the UI wiring is
+  ahead); and a **dead-frontend-export sweep** (≈20% of client exports are unused; a proper pass
+  wants `ts-prune`). The audit's closed loop is now fed end to end: connector pulls bridge into the
+  event mesh and embed into the copilot's grounding namespace, BYOK ingests through the real
+  scrub+vectorize pipeline, elicitation answers become candidate rules, and the internal event bus
+  drives the first cross-department automations (offboarding → IT deprovision, adverse-action →
+  compliance review, support escalation → operations signal).
 - **Three regulated verticals are real; `industry_vertical` still is not a switch.** This
   limitation has partly closed. KAEOS now ships **ten** departments: the seven functional
   domains (HR, Finance, Legal, Sales, Support, Operations, Engineering) plus

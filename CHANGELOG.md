@@ -11,6 +11,33 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed / Changed - integration-audit Phase 2+3: leverage what is built, then hygiene (2026-08-21)
+
+Phase 2 hardened and connected what already existed; Phase 3 swept hygiene.
+
+- **Security.** The main executor now neutralizes prompt injections in untrusted
+  content instead of only fencing it; the per-tenant MCP tool allowlist is
+  enforced (every tenant agent could previously call every registered tool); a
+  federated swarm hash-match can no longer raise a skill's confidence or trust
+  tier without this tenant's own local evidence; a failing red-team scan now
+  costs the skill its autonomy (it was recorded and ignored); and the dead,
+  cross-tenant-unsafe ChaosInjector was deleted.
+- **Privacy / money.** GDPR erasure now also purges the graph store (a Knowledge
+  node's name could carry a subject's PII); commission payouts get a hash-chained
+  audit trail recording amount, approver and beneficiary.
+- **Dead weight and cost.** ~15 dead speculative modules deleted; /neural/world
+  (the heaviest read) is cached; the copilot no longer searches a permanently
+  empty HR namespace; the semantic skill-search read path is wired; one shared
+  WebSocket per tenant replaces one-socket-per-hook.
+- **Hygiene.** Stale docstrings and comments corrected, marketing routed to a
+  real department in the planner, legal de-islanded in the org graph, empty
+  directory and untracked repo-root litter removed.
+
+Several audit findings were refuted on hand-verification (the graph layers are
+used, not dead; the HR "wrong tab" is already handled) and are recorded as such.
+Four items are deferred (see KNOWN_LIMITATIONS): a re-embed job, per-adapter pull
+cursors, OperatorConsole remediation actions, and a dead-export sweep.
+
 ### Added / Fixed - integration-audit Phase 1: the internal event fabric and the closed loop (2026-08-21)
 
 The departments were islands and the intelligence engines terminated at
