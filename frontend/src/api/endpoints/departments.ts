@@ -149,6 +149,17 @@ export const departmentsApi = {
     request<any>(`/missions/${id}/steps/${seq}/hitl`, { method: 'POST', body: JSON.stringify({ approved }) }),
   abortMission: (id: string) => request<any>(`/missions/${id}/abort`, { method: 'POST' }),
 
+  // Company Brain — self-proposed, human-governed missions. The brain observes
+  // operational reality and proposes; a human approves (spawns a governed
+  // mission) or rejects (the brain remembers the 'no'). A proposal never acts.
+  listBrainProposals: (status?: string, limit = 50) =>
+    request<any>(`/brain/proposals?limit=${limit}${status ? `&status=${status}` : ''}`),
+  brainReflect: () => request<any>('/brain/reflect', { method: 'POST' }),
+  approveBrainProposal: (id: string) =>
+    request<any>(`/brain/proposals/${id}/approve`, { method: 'POST' }),
+  rejectBrainProposal: (id: string, reason?: string) =>
+    request<any>(`/brain/proposals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: reason ?? null }) }),
+
   // SoR Actuation — the Actions Ledger (what KAEOS DID, reversible) + drift
   getActionsLedger: (limit = 50) => request<any>(`/actuation/ledger?limit=${limit}`),
   getActuationDrift: () => request<any>('/actuation/drift'),

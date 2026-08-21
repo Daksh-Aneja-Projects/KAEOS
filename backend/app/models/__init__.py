@@ -19,6 +19,7 @@ from app.models.domain import (
     RedTeamScanResult,
 )
 from app.models.reality import RealityEvent, ShockOutcome
+from app.models.brain import BrainProposal
 from app.models.foundry import TrainingExample
 from app.models.tenant_data_key import TenantDataKey
 from app.models.settings import (
@@ -69,6 +70,7 @@ __all__ = [
     "TenantLLMConfig",
     "RealityEvent",
     "ShockOutcome",
+    "BrainProposal",
     "TrainingExample",
     "MCPToolConfig",
     "OntologyConfig",

@@ -11,6 +11,43 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - The Company Brain: self-proposed, human-governed missions (2026-08-21)
+
+KAEOS reacted to signals; now it also reflects. The Company Brain observes a
+tenant's operational reality from real rows KAEOS already keeps and PROPOSES its
+own missions, closing the signal-to-mission loop from the other end.
+
+- **Reflection cycle.** On a 6h cadence (or on demand), the brain observes the
+  safe-autonomy-rate trend, cost trend, open systems-of-record drift, recurring
+  mission failures, and the elicitation backlog, and synthesizes the most
+  material into candidate missions. Every observation is grounded in a real row;
+  a fresh tenant with no signals proposes nothing (never a fabricated problem).
+- **Governed by construction.** A proposal carries no authority. It is inert
+  until an operator approves it, and approval routes through the existing
+  `plan_mission` so every spawned step still passes the 7 gates. The brain
+  proposes, a human disposes, the gates execute.
+- **It learns.** A rejected idea is suppressed for a cooldown (the brain
+  remembers the 'no'); the weight of a KIND the human keeps rejecting - or whose
+  missions keep failing - drops, so materiality is tuned by real acceptance and
+  real outcomes. An approved proposal's outcome is stamped from the mission it
+  spawned, closing the meta-loop.
+- **Surface.** Mission Control gained a live Company Brain panel: priority rings,
+  a reflect-now control, plain-English rationale and evidence, and approve /
+  dismiss. New API under `/brain/proposals` (list / approve / reject) and
+  `/brain/reflect`; migration `0057` adds `brain_proposals`.
+
+### Added - Incremental pull cursors + six per-department connectors wired (2026-08-21)
+
+- **M15.** The vendor-adapter base gained a reusable incremental-pull cursor
+  (`updated_at_field` / `cursor_params` / watermark stamping); Stripe and
+  ServiceNow now pull only what changed, GitHub and Zendesk are watermark-ready.
+- **Connectors.** The four list-sync per-department connectors (finance
+  accounting, engineering issue-tracker, healthcare EHR, procurement PO) are
+  bridged into the pull catalog and inherit the scheduler + credentials + cursor;
+  the credit-bureau connector is wired into loan-application intake with an honest
+  no-score fallback. They talk to real vendor APIs and need per-vendor sandbox
+  validation (KNOWN_LIMITATIONS).
+
 ### Fixed / Changed - integration-audit Phase 2+3: leverage what is built, then hygiene (2026-08-21)
 
 Phase 2 hardened and connected what already existed; Phase 3 swept hygiene.

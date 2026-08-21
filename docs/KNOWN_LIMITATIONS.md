@@ -192,6 +192,17 @@ codebase itself carries no open critical or high finding from the standing pre-l
   scrub+vectorize pipeline, elicitation answers become candidate rules, and the internal event bus
   drives the first cross-department automations (offboarding → IT deprovision, adverse-action →
   compliance review, support escalation → operations signal).
+- **The Company Brain proposes; it does not act alone, by design.** The brain reflects on real
+  operational signals and proposes missions, but a proposal is inert until a human approves it, and
+  approval routes through the governed planner (7 gates per step). This is a deliberate governance
+  boundary, not a gap — a self-directing brain that auto-ran missions would be the ungoverned
+  autonomy the platform exists to prevent. Two honest v1 boundaries: (1) the observation set is
+  five signal sources (autonomy-rate decline, cost spike, SoR drift, mission failures, elicitation
+  backlog); more can be added as the metrics store grows. (2) The Mission Control brain panel was
+  verified by the type-check build and the backend test suite, not a live authed browser pass —
+  the standing constraint that authed views need a real login (a password cannot be entered here)
+  applies. The reflection service, governance boundary, dedup/cooldown, meta-learning weight and
+  outcome reconciliation are unit-tested end to end.
 - **Three regulated verticals are real; `industry_vertical` still is not a switch.** This
   limitation has partly closed. KAEOS now ships **ten** departments: the seven functional
   domains (HR, Finance, Legal, Sales, Support, Operations, Engineering) plus

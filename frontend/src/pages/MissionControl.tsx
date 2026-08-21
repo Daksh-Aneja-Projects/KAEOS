@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import DomainIcon from '../components/DomainIcon';
+import BrainProposals from '../components/BrainProposals';
 import { BrainLoading, BrainEmpty, BrainError } from '../components/BrainStates';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { humanize } from '../lib/format';
@@ -135,6 +136,12 @@ export default function MissionControl(_props: { domain?: string }) {
               Give KAEOS a goal. It decomposes into a governed plan across departments, runs each step through the gates, and pauses for you at the checkpoints that matter.
             </p>
           </div>
+        </div>
+
+        {/* Company Brain: self-proposed missions. Approving one spawns a governed
+            mission, so refresh the list when it does. */}
+        <div className="mb-5">
+          <BrainProposals onApproved={loadList} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5">

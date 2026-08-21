@@ -38,6 +38,10 @@ class EventType(str, Enum):
     ACTUATION_REVERSED = "actuation.reversed"
     SUPPORT_TICKET_ESCALATED = "support.ticket.escalated"
     LENDING_ADVERSE_ACTION = "lending.adverse_action"
+    # Company Brain — a self-proposed mission (inert until a human approves it),
+    # and the governed mission that approval spawns.
+    BRAIN_PROPOSAL_CREATED = "brain.proposal.created"
+    BRAIN_MISSION_SPAWNED = "brain.mission.spawned"
 
     # Workforce Layer (New)
     DEPARTMENT_DEPLOYED = "department.deployed"

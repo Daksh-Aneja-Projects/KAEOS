@@ -205,3 +205,110 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
         "total_executions": total_executions,
         "total_signals": total_signals,
     }
+
+
+# ── Company Brain: self-proposed, human-governed missions ────────────────────
+# The brain writes PENDING proposals on a cadence (or on demand via /reflect); an
+# operator approves one to spawn a governed mission (still through the 7 gates) or
+# rejects it, which the brain remembers as a 'no'. A proposal never self-executes.
+from typing import Optional  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+from app.core.audit import record_security_event  # noqa: E402
+from app.core.tenant import approver_identity  # noqa: E402
+from app.models.brain import BrainProposal  # noqa: E402
+from app.services import company_brain  # noqa: E402
+
+
+def _proposal_view(p: BrainProposal) -> dict:
+    return {
+        "id": p.id, "title": p.title, "goal": p.goal, "rationale": p.rationale,
+        "evidence": p.evidence or [], "signal_kind": p.signal_kind,
+        "priority": p.priority, "status": p.status, "mission_id": p.mission_id,
+        "outcome": p.outcome,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "decided_at": p.decided_at.isoformat() if p.decided_at else None,
+        "decided_by": p.decided_by,
+    }
+
+
+@router.get("/proposals")
+async def list_proposals(
+    status: Optional[str] = None,
+    limit: int = 50,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """The brain's proposals for this tenant, newest first. Filter by status
+    (PENDING to see what awaits a decision)."""
+    q = select(BrainProposal).where(BrainProposal.tenant_id == tenant_id)
+    if status:
+        q = q.where(BrainProposal.status == status.strip().upper())
+    q = q.order_by(BrainProposal.created_at.desc()).limit(max(1, min(200, limit)))
+    rows = (await db.execute(q)).scalars().all()
+    return {"proposals": [_proposal_view(p) for p in rows], "count": len(rows)}
+
+
+@router.post("/reflect")
+async def reflect_now(
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run a reflection cycle now: observe reality, propose missions. On-demand
+    twin of the scheduled brain job. Proposals are PENDING — nothing executes."""
+    receipt = await company_brain.reflect_and_propose(db, tenant["tenant_id"])
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="BRAIN_REFLECT", action="WRITE",
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
+        resource_type="brain_proposal", resource_id=None,
+        details={"observed": receipt.get("observed"), "proposed": receipt.get("proposed")},
+    )
+    return receipt
+
+
+@router.post("/proposals/{proposal_id}/approve")
+async def approve_proposal_route(
+    proposal_id: str,
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a proposal: plan a governed mission from its goal and link it back.
+    Every step of that mission still passes the 7 gates."""
+    try:
+        result = await company_brain.approve_proposal(
+            db, tenant["tenant_id"], proposal_id, approver_identity(tenant))
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e) else 409, detail=str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="BRAIN_APPROVE", action="WRITE",
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
+        resource_type="brain_proposal", resource_id=proposal_id,
+        details={"mission_id": result.get("mission_id")},
+    )
+    return result
+
+
+class _RejectIn(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/proposals/{proposal_id}/reject")
+async def reject_proposal_route(
+    proposal_id: str,
+    body: _RejectIn = _RejectIn(),
+    tenant: dict = Depends(require_role("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a proposal. The brain suppresses the same idea for a cooldown."""
+    try:
+        result = await company_brain.reject_proposal(
+            db, tenant["tenant_id"], proposal_id, approver_identity(tenant), body.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e) else 409, detail=str(e))
+    await record_security_event(
+        tenant_id=tenant["tenant_id"], event_type="BRAIN_REJECT", action="WRITE",
+        actor=approver_identity(tenant), actor_role=tenant.get("role"),
+        resource_type="brain_proposal", resource_id=proposal_id,
+        details={"reason": (body.reason or "")[:200]},
+    )
+    return result

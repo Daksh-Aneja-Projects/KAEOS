@@ -221,6 +221,41 @@ async def run_autonomy_governor_job():
         logger.error(f"[Scheduler] Autonomy governor failed: {e}")
 
 
+async def run_brain_reflection():
+    """Company Brain: reflect on each tenant's operational reality and propose
+    its own governed missions. Leader-guarded, cross-tenant, per-tenant RLS.
+
+    Proposals are written PENDING and carry no authority — a human approves one
+    to spawn a mission (which still passes the 7 gates), so a background brain
+    can never actuate on its own. Per-tenant isolation: one tenant's reflection
+    failing never blinds the brain to the rest.
+    """
+    if not _is_leader():
+        return
+    from app.core.context import current_tenant_id
+    from app.core.database import AsyncSessionLocal
+    from app.models.domain import SkillExecution
+    from app.services import company_brain
+
+    async with MaintenanceSessionLocal() as mdb:
+        tenant_ids = [t for t in (await mdb.execute(
+            select(SkillExecution.tenant_id).distinct())).scalars().all() if t]
+
+    proposed = 0
+    for tid in tenant_ids:
+        token = current_tenant_id.set(tid)
+        try:
+            async with AsyncSessionLocal() as db:
+                receipt = await company_brain.reflect_and_propose(db, tid)
+                proposed += int(receipt.get("proposed", 0) or 0)
+        except Exception as e:
+            logger.warning("[Scheduler] brain reflection failed for %s: %s", tid, e)
+        finally:
+            current_tenant_id.reset(token)
+    if proposed:
+        logger.info("[Scheduler] Company Brain raised %d proposal(s)", proposed)
+
+
 async def run_drift_detection_job():
     """DETECTION ONLY: find systems-of-record rows that changed outside the
     actuation path and raise an ExternalSignal so a human sees them.
@@ -758,6 +793,15 @@ def init_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         _tracked, 'interval', hours=1, args=['drift_detection', run_drift_detection_job],
         id='drift_detection_job', replace_existing=True, max_instances=1, coalesce=True,
+    )
+    # Company Brain: reflect on operational reality (autonomy decline, cost
+    # spikes, SoR drift, mission failures, knowledge backlog) and PROPOSE its own
+    # missions. 6h cadence (proposals are considered, not chatty); every proposal
+    # is inert until a human approves it. max_instances=1 so reflections never
+    # overlap and double the model load.
+    scheduler.add_job(
+        _tracked, 'interval', hours=6, args=['brain_reflection', run_brain_reflection],
+        id='brain_reflection_job', replace_existing=True, max_instances=1, coalesce=True,
     )
     # Keep the two expensive benchmark analyses warm so opening the lane is
     # instant instead of a ~30s wait. A pass is nearly free when the org numbers
