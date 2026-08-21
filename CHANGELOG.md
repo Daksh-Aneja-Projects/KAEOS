@@ -11,6 +11,20 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.1.0] - 2026-08-21 - "The Company Brain"
+
+The third layer of the story ships: Governed Autonomy, then Department-as-a-Service,
+now a Company Brain that watches eight live operational signals, proposes its own
+governed missions, learns from every human decision and every mission outcome, and
+shows that learning on its own page. Around it: the integration audit closed end to
+end (billing integrity, the internal event fabric, six newly-wired per-department
+connectors with incremental cursors and a mocked vendor-contract lane), operator
+remediation in the console, an embedding re-embed job, and a two-wave
+production-scale performance hardening pass (connection pooling, N+1 elimination,
+memory-leak eviction, render-waste fixes).
+
 ### Added - Brain upgrade, operator remediation, re-embed job, connector contract lane (2026-08-21)
 
 The deferred integration-audit tail, executed:
