@@ -10,12 +10,14 @@ import {
 import { humanize } from '../lib/format';
 import { PAGE_PAD, PAGE_PAD_X } from '../lib/layout';
 import { SyncOperations, ConnectorHealthCards, ConnectorFeedPanel } from './ConnectorStudio.panels';
+import { ConnectorCredentialsModal } from './ConnectorCredentials';
 
 type Screen = 'library' | 'mapper' | 'sync' | 'monitor';
 
 export default function ConnectorStudio(_props: { domain?: string }) {
   const { colors } = useTheme();
   const [screen, setScreen] = useState<Screen>('library');
+  const [credsFor, setCredsFor] = useState<any>(null);  // H14: connector whose credentials modal is open
   const [connectors, setConnectors] = useState<any[]>([]);
   const [selectedConnector, setSelectedConnector] = useState<any>(null);
   const [mappings, setMappings] = useState<any[]>([]);
@@ -237,13 +239,24 @@ export default function ConnectorStudio(_props: { domain?: string }) {
                         <span>{c.signals_extracted || 0} signals</span>
                       </div>
                       {c.status === 'CONNECTED' ? (
-                        <button onClick={(e) => { e.stopPropagation(); openMapper(c); }}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
-                          style={{ background: colors.primary + '15', color: colors.primary }}>
-                          <MapPin className="w-3 h-3" /> Map Schema
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={(e) => { e.stopPropagation(); setCredsFor(c); }}
+                            title="Manage credentials & sync"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
+                            style={{ background: colors.surface1, color: colors.inkSubtle }}>
+                            <Lock className="w-3 h-3" /> Credentials
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); openMapper(c); }}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
+                            style={{ background: colors.primary + '15', color: colors.primary }}>
+                            <MapPin className="w-3 h-3" /> Map Schema
+                          </button>
+                        </div>
                       ) : (
-                        <button onClick={(e) => { e.stopPropagation(); api.connectConnector(c.id).then(() => window.location.reload()); }}
+                        // H14: connecting now opens the credentials panel so the
+                        // connector becomes REAL (stored creds -> test -> pull),
+                        // instead of flipping to CONNECTED with no credentials.
+                        <button onClick={(e) => { e.stopPropagation(); setCredsFor(c); }}
                           className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
                           style={{ background: '#22c55e15', color: '#22c55e' }}>
                           <Zap className="w-3 h-3" /> Connect
@@ -474,6 +487,14 @@ export default function ConnectorStudio(_props: { domain?: string }) {
           </div>
         )}
       </div>
+
+      {credsFor && (
+        <ConnectorCredentialsModal
+          connector={credsFor} colors={colors}
+          onClose={() => setCredsFor(null)}
+          onChanged={() => api.getConnectors().then(r => setConnectors(r.connectors || [])).catch(() => {})}
+        />
+      )}
     </div>
   );
 }
