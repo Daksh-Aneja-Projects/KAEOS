@@ -175,14 +175,48 @@ class GuardedTransport(httpx.AsyncHTTPTransport):
         return await super().handle_async_request(request)
 
 
+class _SharedGuardedTransport(GuardedTransport):
+    """A GuardedTransport that survives ``async with client`` blocks.
+
+    Every ``guarded_async_client()`` call site closes its client, and a client
+    closes its transport — which used to throw away the whole connection pool,
+    so every outbound request paid a fresh TCP + TLS handshake. Sharing the
+    transport keeps keep-alive connections across calls; the real close happens
+    once, at app shutdown, via ``aclose_shared_transports``.
+    """
+
+    async def aclose(self) -> None:   # called by each client's aclose — a no-op
+        return None
+
+
+# One pooled transport per allow_private value (None resolves per-request inside
+# _prepare_host, so a None-keyed transport stays correct in every environment).
+_SHARED_TRANSPORTS: dict[bool | None, _SharedGuardedTransport] = {}
+
+
+async def aclose_shared_transports() -> None:
+    """Really close the shared pools (app shutdown)."""
+    while _SHARED_TRANSPORTS:
+        _, t = _SHARED_TRANSPORTS.popitem()
+        try:
+            await GuardedTransport.aclose(t)   # bypass the no-op override
+        except Exception:
+            pass
+
+
 def guarded_async_client(*, allow_private: bool | None = None, **kwargs) -> httpx.AsyncClient:
     """An AsyncClient whose connections are SSRF-pinned. follow_redirects forced off.
 
     Use this in place of ``httpx.AsyncClient(...)`` for any fetch/POST to a
-    request- or tenant-supplied URL.
+    request- or tenant-supplied URL. Timeouts/auth/headers are client-level and
+    ride on each request, so the pooled transport honors them per call.
     """
     kwargs["follow_redirects"] = False
-    return httpx.AsyncClient(transport=GuardedTransport(allow_private=allow_private), **kwargs)
+    transport = _SHARED_TRANSPORTS.get(allow_private)
+    if transport is None:
+        transport = _SHARED_TRANSPORTS.setdefault(
+            allow_private, _SharedGuardedTransport(allow_private=allow_private))
+    return httpx.AsyncClient(transport=transport, **kwargs)
 
 
 def _demo() -> None:

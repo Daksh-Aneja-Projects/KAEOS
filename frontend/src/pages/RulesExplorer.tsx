@@ -209,9 +209,9 @@ export default function RulesExplorer({ domain = 'All Domains' }: { domain?: str
     setSimResult(prev => ({ ...prev, [id]: r }));
   });
 
+  const q = searchTerm.toLowerCase();
   const filteredRules = rules.filter(r =>
-    r.statement.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.domain.toLowerCase().includes(searchTerm.toLowerCase())
+    r.statement.toLowerCase().includes(q) || r.domain.toLowerCase().includes(q)
   );
 
   if (loading) return <BrainLoading message="Loading the Knowledge Polystore…" />;

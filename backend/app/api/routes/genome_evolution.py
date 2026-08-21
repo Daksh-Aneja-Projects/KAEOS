@@ -44,8 +44,8 @@ async def _live_features(db: AsyncSession, tenant_id: str) -> Dict[str, float]:
     )).one()
     capability_redundancy = (agent_stats.running / agent_stats.total * 100) if agent_stats.total else 50.0
 
-    executions = (await db.execute(
-        select(SkillExecution)
+    exec_statuses = (await db.execute(
+        select(SkillExecution.status)
         .where(SkillExecution.tenant_id == tenant_id)
         .order_by(SkillExecution.started_at.desc())
         .limit(300)
@@ -53,8 +53,8 @@ async def _live_features(db: AsyncSession, tenant_id: str) -> Dict[str, float]:
     # Delivery counts a run whose answer stood, including one a human corrected -
     # that work still shipped. It is NOT the safe-autonomy rate, which excludes
     # anything a human touched; see execution_status.SUCCEEDED_STATUSES.
-    successes = sum(1 for e in executions if (e.status or "").upper() in SUCCEEDED_STATUSES)
-    project_delivery = (successes / len(executions) * 100) if executions else 50.0
+    successes = sum(1 for s in exec_statuses if (s or "").upper() in SUCCEEDED_STATUSES)
+    project_delivery = (successes / len(exec_statuses) * 100) if exec_statuses else 50.0
 
     # Vendor spend — SQL aggregation to avoid loading all vendor rows.
     vendor_stats = (await db.execute(
@@ -170,35 +170,36 @@ async def evolution_state(
 
     features = await _live_features(db, tenant_id)
 
-    rules = (await db.execute(
-        select(Rule).where(Rule.tenant_id == tenant_id)
-    )).scalars().all()
-    verified = sum(
-        1 for r in rules
-        if (r.confidence_tier.value if hasattr(r.confidence_tier, "value") else str(r.confidence_tier)) == "VERIFIED"
-    )
-    goal_alignment = verified / len(rules) if rules else None
+    # SQL aggregates, not full-table hydrations: these tables (rules, fairness
+    # audit log, executions) grow forever, and every number below is a count or
+    # an average. coalesce(x, 0) reproduces the old Python `x or 0` per row;
+    # cast-to-String enum matching mirrors _live_features above.
+    total_rules, verified = (await db.execute(
+        select(func.count(Rule.id),
+               func.count(case((cast(Rule.confidence_tier, String) == "VERIFIED", 1))))
+        .where(Rule.tenant_id == tenant_id)
+    )).one()
+    goal_alignment = verified / total_rules if total_rules else None
 
-    skills = (await db.execute(
-        select(Skill).where(Skill.tenant_id == tenant_id)
-    )).scalars().all()
-    avg_skill_conf = (
-        sum(s.confidence or 0 for s in skills) / len(skills) if skills else None
-    )
+    skill_count, avg_conf_raw = (await db.execute(
+        select(func.count(Skill.id), func.avg(func.coalesce(Skill.confidence, 0.0)))
+        .where(Skill.tenant_id == tenant_id)
+    )).one()
+    avg_skill_conf = float(avg_conf_raw) if skill_count else None
 
-    fairness = (await db.execute(
-        select(FairnessAuditLog).where(FairnessAuditLog.tenant_id == tenant_id)
-    )).scalars().all()
-    risk_fitness = (
-        sum(1 for f in fairness if f.passed) / len(fairness) if fairness else None
-    )
+    fairness_total, fairness_passed = (await db.execute(
+        select(func.count(FairnessAuditLog.id),
+               func.count(case((FairnessAuditLog.passed == True, 1))))
+        .where(FairnessAuditLog.tenant_id == tenant_id)
+    )).one()
+    risk_fitness = fairness_passed / fairness_total if fairness_total else None
 
-    depts = (await db.execute(
-        select(Department).where(Department.tenant_id == tenant_id)
-    )).scalars().all()
-    org_fitness = (
-        sum(d.health_score or 0 for d in depts) / len(depts) if depts else None
-    )
+    dept_count, org_fitness_raw = (await db.execute(
+        select(func.count(Department.id),
+               func.avg(func.coalesce(Department.health_score, 0.0)))
+        .where(Department.tenant_id == tenant_id)
+    )).one()
+    org_fitness = float(org_fitness_raw) if dept_count else None
     org_fitness = org_fitness if org_fitness is None or org_fitness <= 1 else org_fitness / 100
 
     subscores = {
@@ -218,7 +219,7 @@ async def evolution_state(
 
     # Derived optimization moves — each anchored to a real weak signal
     optimizations = []
-    inferred = len(rules) - verified
+    inferred = total_rules - verified
     if inferred > 0 and goal_alignment is not None:
         optimizations.append({
             "type": "KNOWLEDGE_VERIFICATION",
@@ -227,18 +228,16 @@ async def evolution_state(
             "expected_cost": inferred * 50,
             "risk": 0.05,
         })
-    agents = (await db.execute(
-        select(DeployedAgent).where(DeployedAgent.tenant_id == tenant_id)
-    )).scalars().all()
-    stopped = sum(
-        1 for a in agents
-        if (a.status.value if hasattr(a.status, "value") else str(a.status)) == "STOPPED"
-    )
+    agent_total, stopped = (await db.execute(
+        select(func.count(DeployedAgent.id),
+               func.count(case((cast(DeployedAgent.status, String) == "STOPPED", 1))))
+        .where(DeployedAgent.tenant_id == tenant_id)
+    )).one()
     if stopped:
         optimizations.append({
             "type": "WORKFORCE_REACTIVATION",
             "description": f"{stopped} deployed agents are STOPPED. Restart or retire them to raise portfolio utilization.",
-            "expected_gain": round(min(0.1, stopped / max(len(agents), 1) * 0.2), 3),
+            "expected_gain": round(min(0.1, stopped / max(agent_total, 1) * 0.2), 3),
             "expected_cost": stopped * 10,
             "risk": 0.1,
         })
@@ -250,20 +249,21 @@ async def evolution_state(
             "expected_cost": 25000,
             "risk": 0.3,
         })
-    recent_failures = (await db.execute(
-        select(SkillExecution)
+    # Thin status column only — same FAILED* prefix logic, none of the row weight.
+    recent_statuses = (await db.execute(
+        select(SkillExecution.status)
         .where(
             SkillExecution.tenant_id == tenant_id,
             SkillExecution.started_at >= datetime.now(timezone.utc) - timedelta(days=7),
         )
     )).scalars().all()
-    failed = [e for e in recent_failures if (e.status or "").upper().startswith("FAILED")]
-    if failed:
+    failed_count = sum(1 for s in recent_statuses if (s or "").upper().startswith("FAILED"))
+    if failed_count:
         optimizations.append({
             "type": "EXECUTION_HARDENING",
-            "description": f"{len(failed)} skill executions failed in the last 7 days. Review their reasoning chains and retrain the weakest skills.",
-            "expected_gain": round(min(0.15, len(failed) / max(len(recent_failures), 1) * 0.3), 3),
-            "expected_cost": len(failed) * 100,
+            "description": f"{failed_count} skill executions failed in the last 7 days. Review their reasoning chains and retrain the weakest skills.",
+            "expected_gain": round(min(0.15, failed_count / max(len(recent_statuses), 1) * 0.3), 3),
+            "expected_cost": failed_count * 100,
             "risk": 0.15,
         })
 

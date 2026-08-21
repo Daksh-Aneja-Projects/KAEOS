@@ -93,8 +93,12 @@ _JWT_AUD = "kaeos-api"
 # lockout is seen by EVERY worker (start-prod.sh runs 4). When Redis is
 # unreachable these in-process structures are the fallback, so single-instance
 # dev/demo works with no extra infra (the per-process caveat then applies again).
-_revoked_jti: set[str] = set()
+# jti -> token exp (epoch). Expiry-keyed so the fallback denylist can evict
+# entries once the token they revoke could no longer be presented anyway —
+# a plain set grew by one entry per logout until process restart.
+_revoked_jti: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}   # email -> [failure epoch seconds]
+_FALLBACK_TOKEN_LIFETIME = 86400 * 8   # eviction horizon when a token has no exp
 
 _JTI_KEY = "jwt:revoked:{jti}"
 _FAIL_KEY = "login:fail:{email}"
@@ -119,10 +123,15 @@ async def revoke_token(token: str) -> bool:
     if not (payload and payload.get("jti")):
         return False
     jti = payload["jti"]
-    _revoked_jti.add(jti)
+    import time
+    now = time.time()
+    _revoked_jti[jti] = float(payload.get("exp") or (now + _FALLBACK_TOKEN_LIFETIME))
+    # Amortized eviction: logouts are rare, so an O(n) prune per revoke keeps
+    # the fallback denylist bounded by the number of still-live revocations.
+    for stale in [j for j, exp in _revoked_jti.items() if exp < now]:
+        _revoked_jti.pop(stale, None)
     r = await _redis()
     if r is not None:
-        import time
         ttl = int((payload.get("exp") or 0) - time.time())
         try:
             await r.set(_JTI_KEY.format(jti=jti), "1", ex=max(ttl, 1))
@@ -300,7 +309,12 @@ class AuthService:
         import time
         window_start = time.time() - s.LOGIN_LOCKOUT_SECONDS
         recent = [t for t in _failed_logins.get(email, []) if t >= window_start]
-        _failed_logins[email] = recent  # prune
+        if recent:
+            _failed_logins[email] = recent  # prune the window
+        else:
+            # Drop the key entirely: attempted emails are attacker-controlled,
+            # so an empty-list writeback grew the dict one key per probe forever.
+            _failed_logins.pop(email, None)
         return len(recent) >= s.LOGIN_MAX_FAILURES
 
     @staticmethod

@@ -76,16 +76,20 @@ class CSVConnector(BaseConnector):
         delimiter = self.config.get("delimiter", ",")
         encoding = self.config.get("encoding", "utf-8")
 
-        tables = []
         files = self._get_files(file_path)
 
-        for fp in files:
-            with open(fp, "r", encoding=encoding) as f:
-                reader = csv.DictReader(f, delimiter=delimiter)
-                fields = [{"name": col, "type": "string"} for col in (reader.fieldnames or [])]
-                tables.append({"name": os.path.basename(fp), "fields": fields})
+        # Same rule as fetch_delta below: file IO stays off the event loop.
+        def _read_headers() -> list[dict]:
+            tables = []
+            for fp in files:
+                with open(fp, "r", encoding=encoding) as f:
+                    reader = csv.DictReader(f, delimiter=delimiter)
+                    fields = [{"name": col, "type": "string"} for col in (reader.fieldnames or [])]
+                    tables.append({"name": os.path.basename(fp), "fields": fields})
+            return tables
 
-        return SourceSchema(tables=tables)
+        import asyncio
+        return SourceSchema(tables=await asyncio.to_thread(_read_headers))
 
     async def fetch_delta(self, cursor: Optional[SyncCursor] = None) -> RecordBatch:
         file_path = self._resolve_input_path()

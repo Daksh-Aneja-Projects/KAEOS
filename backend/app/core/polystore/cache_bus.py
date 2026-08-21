@@ -97,9 +97,16 @@ class MemoryCacheBus(CacheBus):
 
     backend_name = "memory"
 
+    # Expiry was lazy-only (checked on get), so keys written and never re-read —
+    # e.g. fingerprint-keyed result_cache misses — were immortal. Sweep on a
+    # cadence of writes, with a hard cap as the backstop.
+    _SWEEP_EVERY = 256
+    _MAX_ENTRIES = 10_000
+
     def __init__(self):
         self._store: dict[str, tuple[Optional[float], str]] = {}  # key -> (expires_at, value)
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._sets = 0
 
     def _expired(self, key: str) -> bool:
         entry = self._store.get(key)
@@ -119,6 +126,16 @@ class MemoryCacheBus(CacheBus):
     async def set(self, key, value, ttl=None):
         expires_at = (time.time() + ttl) if ttl else None
         self._store[key] = (expires_at, value)
+        self._sets += 1
+        if self._sets % self._SWEEP_EVERY == 0 or len(self._store) > self._MAX_ENTRIES:
+            now = time.time()
+            for k in [k for k, (exp, _) in self._store.items()
+                      if exp is not None and now > exp]:
+                self._store.pop(k, None)
+            # ponytail: FIFO overflow eviction (dicts keep insertion order);
+            # upgrade to LRU if a no-Redis install ever churns past the cap.
+            while len(self._store) > self._MAX_ENTRIES:
+                self._store.pop(next(iter(self._store)))
 
     async def delete(self, key):
         self._store.pop(key, None)

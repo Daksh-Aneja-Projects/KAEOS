@@ -33,6 +33,10 @@ _TERMINAL_STEP = {"DONE", "FAILED", "SKIPPED"}
 # against two concurrent runners for the same mission. (Best-effort, in-process;
 # a stale RUNNING step from a crashed worker is recovered by _recover_stale below.)
 _RUNNING_MISSIONS: set[str] = set()
+# Strong refs to the background runner tasks. Without one, asyncio may GC a
+# running task mid-flight — its finally never runs, the id stays in
+# _RUNNING_MISSIONS, and that mission becomes permanently unrunnable here.
+_RUNNER_TASKS: set[asyncio.Task] = set()
 _STEP_STALE_AFTER = timedelta(minutes=10)   # a RUNNING step older than this is presumed crashed
 
 
@@ -44,7 +48,9 @@ async def start_mission_run(tenant_id: str, mission_id: str) -> None:
     if mission_id in _RUNNING_MISSIONS:
         return
     _RUNNING_MISSIONS.add(mission_id)
-    asyncio.create_task(_run_bg(tenant_id, mission_id))
+    task = asyncio.create_task(_run_bg(tenant_id, mission_id))
+    _RUNNER_TASKS.add(task)
+    task.add_done_callback(_RUNNER_TASKS.discard)
 
 
 async def _run_bg(tenant_id: str, mission_id: str) -> None:

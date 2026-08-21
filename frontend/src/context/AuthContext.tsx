@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 
 interface AuthUser {
@@ -80,13 +80,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('kaeos-token');
   }, []);
 
+  // Stable value object so a parent re-render (e.g. a theme toggle above this
+  // provider) does not re-render every useAuth consumer.
+  const value = useMemo(() => ({
+    user, token, loading, login, logout,
+    isAdmin: user?.role === 'ADMIN',
+    isAnalyst: user?.role === 'ANALYST',
+    canExecute: user?.role === 'ADMIN' || user?.role === 'ANALYST',
+  }), [user, token, loading, login, logout]);
+
   return (
-    <AuthContext.Provider value={{
-      user, token, loading, login, logout,
-      isAdmin: user?.role === 'ADMIN',
-      isAnalyst: user?.role === 'ANALYST',
-      canExecute: user?.role === 'ADMIN' || user?.role === 'ANALYST',
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

@@ -11,6 +11,44 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed - Performance hardening pass: pooling, N+1s, leaks, render waste (2026-08-21)
+
+A production-scale sweep (three parallel audits over DB access, async/memory,
+and frontend rendering; every finding re-verified at source before fixing).
+
+- **Outbound HTTP now pools connections.** `guarded_async_client` used to build
+  a fresh transport per call, so all ~40 outbound sites (webhooks, notifier,
+  live connectors, sync engine) paid a full TCP + TLS handshake per request.
+  The SSRF-pinned transport is now shared per `allow_private` mode and closed
+  once at app shutdown; call sites unchanged.
+- **Background tasks can no longer vanish.** Mission runners and event-bus
+  automation handlers were fire-and-forget `create_task` with no reference - a
+  GC'd runner permanently wedged its mission id, and a handler exception was
+  swallowed silently. Both now hold strong refs; handler failures are logged.
+- **Memory leaks closed.** The JWT revocation fallback set (grew per logout,
+  forever), the failed-login tracker (grew per attacker-probed email), the
+  in-memory cache bus (lazy-only expiry made unread keys immortal), and the
+  HITL memory fallback (no TTL, unlike its Redis twin) all evict now.
+- **N+1s and unbounded scans.** Drift detection now uses one GROUP BY instead
+  of a query per systems-of-record object (it ran hourly per tenant); outbound
+  delivery joins credentials instead of querying per connector; webhook counters
+  are single atomic UPDATEs; the Company Brain reconciles outcomes with one IN
+  query, deduplicates in one round trip, and dropped a useless per-row refresh.
+- **Dashboards stopped hydrating whole tables.** `/brain/overview` runs 8
+  aggregate round trips instead of 13 and fetches 3 thin columns instead of 200
+  full Rule rows; `/evolution/state` computes its fitness sub-scores in SQL
+  instead of loading every rule, fairness row, and execution into Python.
+  The elicitation dashboard's total count was missing its tenant filter
+  (cross-tenant count leak) and its pending list was unbounded - both fixed.
+- **Event-loop hygiene.** Pipeline file-destination writes and CSV schema reads
+  moved off the event loop (`asyncio.to_thread`), matching their siblings.
+- **Frontend.** The knowledge-graph physics loop now parks itself once settled
+  (it re-rendered every node at 60fps forever, with two O(n) lookups per edge
+  per frame - now indexed); the status page and LiveBadge timers pause in
+  hidden tabs; the workforce directory computes its six per-render list passes
+  in one memoized pass; theme/auth/branding context values are referentially
+  stable so a provider render no longer cascades through every consumer.
+
 ### Added - The Company Brain: self-proposed, human-governed missions (2026-08-21)
 
 KAEOS reacted to signals; now it also reflects. The Company Brain observes a

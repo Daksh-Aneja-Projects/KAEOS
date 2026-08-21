@@ -77,19 +77,28 @@ class LocalFileDestination(BaseDestination):
 
         written, errors = 0, []
         try:
-            if fmt == "jsonl":
-                with open(filepath, "w", encoding="utf-8") as f:
-                    for record in records:
-                        f.write(json.dumps(record, default=str) + "\n")
-                        written += 1
-            elif fmt == "json":
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(records, f, indent=2, default=str)
-                    written = len(records)
+            # Serialization + file IO of a whole batch is blocking work — off the
+            # event loop, or one pipeline flush stalls every in-flight request.
+            import asyncio
+            written = await asyncio.to_thread(self._write_sync, filepath, fmt, records)
         except Exception as e:
             errors.append({"error": str(e)})
 
         return WriteResult(records_written=written, errors=errors)
+
+    @staticmethod
+    def _write_sync(filepath: str, fmt: str, records: list[dict]) -> int:
+        written = 0
+        if fmt == "jsonl":
+            with open(filepath, "w", encoding="utf-8") as f:
+                for record in records:
+                    f.write(json.dumps(record, default=str) + "\n")
+                    written += 1
+        elif fmt == "json":
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2, default=str)
+                written = len(records)
+        return written
 
     async def delete(self, ids: list[str]) -> int:
         return 0

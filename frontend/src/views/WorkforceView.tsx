@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import {
   Users, Briefcase, Calendar, Star, Search, UserPlus, Clock,
   CheckCircle2, XCircle, ArrowUpRight, BarChart3,
@@ -688,25 +688,38 @@ const WorkforceView: React.FC<{ domain?: string; defaultTab?: string }> = ({ def
 
   const employeeOptions = employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}` }));
 
-  // ── DIRECTORY TAB ──
-  const renderDirectoryTab = () => {
+  // One memoized pass over the (unpaginated) employee list instead of six
+  // separate filters per render — this re-ran on every keystroke and poll.
+  const directory = useMemo(() => {
+    const q = searchQ.toLowerCase();
+    const qUpper = statusFilter.toUpperCase();
+    const counts = { active: 0, onboarding: 0, leave: 0 };
+    const statusSet = new Set<string>();
     const filtered = employees.filter(e => {
-      const q = searchQ.toLowerCase();
+      const st = (e.status || '').toUpperCase();
+      statusSet.add((e.status || 'ACTIVE').toUpperCase());
+      if (st === 'ACTIVE') counts.active++;
+      else if (st === 'ONBOARDING') counts.onboarding++;
+      else if (st === 'LEAVE') counts.leave++;
       const matchName = `${e.first_name} ${e.last_name}`.toLowerCase().includes(q);
       const matchEmail = (e.email || '').toLowerCase().includes(q);
-      const matchStatus = statusFilter === 'all' || (e.status || '').toUpperCase() === statusFilter.toUpperCase();
+      const matchStatus = statusFilter === 'all' || st === qUpper;
       return (matchName || matchEmail) && matchStatus;
     });
+    return { filtered, statuses: [...statusSet], counts };
+  }, [employees, searchQ, statusFilter]);
 
-    const statuses = [...new Set(employees.map(e => (e.status || 'ACTIVE').toUpperCase()))];
+  // ── DIRECTORY TAB ──
+  const renderDirectoryTab = () => {
+    const { filtered, statuses, counts } = directory;
 
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard label="Total Headcount" value={employees.length} icon={Users} />
-          <MetricCard label="Active" value={employees.filter(e => (e.status || '').toUpperCase() === 'ACTIVE').length} icon={CheckCircle2} accent={colors.success} />
-          <MetricCard label="Onboarding" value={employees.filter(e => (e.status || '').toUpperCase() === 'ONBOARDING').length} icon={UserPlus} accent={colors.info} />
-          <MetricCard label="On Leave" value={employees.filter(e => (e.status || '').toUpperCase() === 'LEAVE').length} icon={Calendar} accent={colors.warning} />
+          <MetricCard label="Active" value={counts.active} icon={CheckCircle2} accent={colors.success} />
+          <MetricCard label="Onboarding" value={counts.onboarding} icon={UserPlus} accent={colors.info} />
+          <MetricCard label="On Leave" value={counts.leave} icon={Calendar} accent={colors.warning} />
         </div>
 
         <div className="flex gap-3 items-center flex-wrap">

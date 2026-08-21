@@ -48,36 +48,37 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     now = datetime.now(timezone.utc)
 
     # Every aggregate below is scoped to the caller's tenant.
-    # ── Total counts ──
-    rules_result = await db.execute(
-        select(sqlfunc.count(Rule.id)).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
-    )
-    total_rules = rules_result.scalar() or 0
-
-    exec_rules_result = await db.execute(
-        select(sqlfunc.count(Rule.id)).where(
-            Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True
-        )
-    )
-    executable_rules = exec_rules_result.scalar() or 0
+    # ── Rule aggregates: one round trip, not four. COUNT(DISTINCT domain)
+    # ignores NULL domains, matching the old explicit isnot(None) filter. ──
+    total_rules, executable_rules, departments, raw_avg_conf = (await db.execute(
+        select(
+            sqlfunc.count(Rule.id),
+            sqlfunc.count(Rule.id).filter(Rule.is_executable == True),
+            sqlfunc.count(sqlfunc.distinct(Rule.domain)),
+            sqlfunc.avg(Rule.confidence_scalar),
+        ).where(Rule.tenant_id == tenant_id, Rule.is_archived == False)
+    )).one()
+    total_rules = total_rules or 0
+    executable_rules = executable_rules or 0
+    departments = departments or 0
 
     skills_result = await db.execute(
         select(sqlfunc.count(Skill.id)).where(Skill.tenant_id == tenant_id)
     )
     total_skills = skills_result.scalar() or 0
 
-    executions_result = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(SkillExecution.tenant_id == tenant_id)
-    )
-    total_executions = executions_result.scalar() or 0
-
-    # ── Department count (distinct domains) ──
-    dept_result = await db.execute(
-        select(sqlfunc.count(sqlfunc.distinct(Rule.domain))).where(
-            Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.domain.isnot(None)
-        )
-    )
-    departments = dept_result.scalar() or 0
+    # ── Execution aggregates: total, last-7d, last-7d success in ONE scan ──
+    week_ago = now - timedelta(days=7)
+    total_executions, total_7d, success_count = (await db.execute(
+        select(
+            sqlfunc.count(SkillExecution.id),
+            sqlfunc.count(SkillExecution.id).filter(SkillExecution.started_at >= week_ago),
+            sqlfunc.count(SkillExecution.id).filter(
+                SkillExecution.started_at >= week_ago,
+                SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN),
+        ).where(SkillExecution.tenant_id == tenant_id)
+    )).one()
+    total_executions = total_executions or 0
 
     # ── Processes count (workflows) ──
     workflow_result = await db.execute(
@@ -106,30 +107,25 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     # ── Knowledge coverage ──
     knowledge_coverage = round(executable_rules / max(total_rules, 1), 4)
 
-    # ── Average confidence ──
-    avg_conf_result = await db.execute(
-        select(sqlfunc.avg(Rule.confidence_scalar)).where(
-            Rule.tenant_id == tenant_id, Rule.is_archived == False
-        )
-    )
-    avg_confidence = round(avg_conf_result.scalar() or 0.0, 4)
+    # ── Average confidence (from the merged Rule aggregate above) ──
+    avg_confidence = round(float(raw_avg_conf or 0.0), 4)
 
-    # ── Freshness ratio ──
+    # ── Freshness ratio: three thin columns, not 200 full Rule rows ──
     within_hl = 0
     decaying = 0
     expired = 0
     all_exec_rules = await db.execute(
-        select(Rule).where(
+        select(Rule.validated_at, Rule.created_at, Rule.half_life_days).where(
             Rule.tenant_id == tenant_id, Rule.is_archived == False, Rule.is_executable == True
         )
         .order_by(Rule.validated_at.desc())
         .limit(200)
     )
-    for r in all_exec_rules.scalars().all():
-        val_date = r.validated_at or r.created_at
+    for validated_at, created_at, half_life_days in all_exec_rules.all():
+        val_date = validated_at or created_at
         if val_date:
             days = (now - val_date.replace(tzinfo=timezone.utc)).days
-            ratio = days / max(r.half_life_days, 1)
+            ratio = days / max(half_life_days, 1)
             if ratio < 0.5:
                 within_hl += 1
             elif ratio < 1.0:
@@ -141,24 +137,8 @@ async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSessi
     fresh_total = max(within_hl + decaying + expired, 1)
     freshness_ratio = round(within_hl / fresh_total, 4)
 
-    # ── Success rate ──
-    week_ago = now - timedelta(days=7)
-    exec_7d = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago
-        )
-    )
-    total_7d = exec_7d.scalar() or 0
-    success_7d = await db.execute(
-        select(sqlfunc.count(SkillExecution.id)).where(
-            SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= week_ago,
-            SkillExecution.status == ExecutionStatus.SUCCESS_CLEAN,
-        )
-    )
-    success_count = success_7d.scalar() or 0
-    success_rate = round(success_count / max(total_7d, 1), 4)
+    # ── Success rate (from the merged execution aggregate above) ──
+    success_rate = round((success_count or 0) / max(total_7d or 0, 1), 4)
 
     # ── Enterprise IQ ──
     # Same formula as /dashboard/health overall_score

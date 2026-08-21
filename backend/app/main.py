@@ -290,6 +290,8 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     await close_redis()
+    from app.core.outbound import aclose_shared_transports
+    await aclose_shared_transports()
 
     if _eventbus_t is not None:
         try:

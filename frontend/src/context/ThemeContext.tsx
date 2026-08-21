@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 
 type Theme = 'dark' | 'light';
 
@@ -99,15 +99,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (saved as Theme) || 'dark';
   });
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     setTheme(prev => {
       const next = prev === 'dark' ? 'light' : 'dark';
       localStorage.setItem('kaeos-theme', next);
       return next;
     });
-  };
+  }, []);
 
   const colors = theme === 'dark' ? darkColors : lightColors;
+
+  // Stable context value: 101 files consume useTheme(), so a fresh object per
+  // provider render would defeat React.memo everywhere downstream.
+  const value = useMemo(() => ({ theme, toggle, colors }), [theme, toggle, colors]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -122,7 +126,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [theme, colors]);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggle, colors }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

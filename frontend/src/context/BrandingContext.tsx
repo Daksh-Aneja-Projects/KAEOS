@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { api, type Branding } from '../api/client';
 
 /**
@@ -77,8 +77,11 @@ export const BrandingProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => { void reloadBranding(); }, [reloadBranding]);
 
+  const value = useMemo(() => ({ brand, reloadBranding, applyPreview }),
+    [brand, reloadBranding, applyPreview]);
+
   return (
-    <BrandingContext.Provider value={{ brand, reloadBranding, applyPreview }}>
+    <BrandingContext.Provider value={value}>
       {children}
     </BrandingContext.Provider>
   );

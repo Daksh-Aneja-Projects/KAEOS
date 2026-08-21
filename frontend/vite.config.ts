@@ -20,7 +20,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5174,
+    // PORT env wins (lets a second dev instance coexist); default stays 5174.
+    port: Number(process.env.PORT) || 5174,
     strictPort: true,
     host: true,
   }

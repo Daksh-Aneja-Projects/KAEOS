@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.actuation import SorObject, ActionRecord
@@ -329,26 +329,34 @@ class Actuator:
             select(SorObject).where(SorObject.tenant_id == tenant_id)
         )).scalars().all()
 
+        # One GROUP BY instead of a query per SoR object (this ran N+1 from the
+        # hourly scheduler AND the /actuation/drift endpoint). SQL MAX ignores
+        # NULLs, so max(created), max(reversed) reproduce the old per-action scan.
+        touches = {
+            (s, ot, eid): (created_max, reversed_max)
+            for s, ot, eid, created_max, reversed_max in (await db.execute(
+                select(ActionRecord.system, ActionRecord.object_type,
+                       ActionRecord.external_id,
+                       func.max(ActionRecord.created_at),
+                       func.max(ActionRecord.reversed_at))
+                .where(ActionRecord.tenant_id == tenant_id)
+                .group_by(ActionRecord.system, ActionRecord.object_type,
+                          ActionRecord.external_id)
+            )).all()
+        }
+
         drifted = []
         for o in objs:
             if o.deleted:
                 continue
-            actions = (await db.execute(
-                select(ActionRecord).where(
-                    ActionRecord.tenant_id == tenant_id,
-                    ActionRecord.system == o.system,
-                    ActionRecord.object_type == o.object_type,
-                    ActionRecord.external_id == o.external_id,
-                )
-            )).scalars().all()
-
-            governed = len(actions) > 0
+            touch = touches.get((o.system, o.object_type, o.external_id))
+            governed = touch is not None
             # The most recent GOVERNED touch is the latest of any action's create
             # or reverse time — a reversal is itself a governed modification, so it
             # must not read as drift.
             last_touch = None
-            for a in actions:
-                for ts in (_as_utc(a.created_at), _as_utc(a.reversed_at)):
+            if touch:
+                for ts in (_as_utc(touch[0]), _as_utc(touch[1])):
                     if ts and (last_touch is None or ts > last_touch):
                         last_touch = ts
 

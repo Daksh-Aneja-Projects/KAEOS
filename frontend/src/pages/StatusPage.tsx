@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Database, Zap, Cpu, CheckCircle2, AlertTriangle, ArrowRight, RefreshCw } from 'lucide-react';
 import { requestPublic } from '../api/http';
 import { useTheme } from '../context/ThemeContext';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 import { formatDuration } from '../lib/time';
 import KaeosLogo from '../components/KaeosLogo';
 
@@ -41,12 +42,11 @@ export default function StatusPage() {
     }
   };
 
-  useEffect(() => {
-    void load();
-    const poll = setInterval(() => void load(), 10_000);      // re-probe liveness
-    const tick = setInterval(() => setTick(t => t + 1), 1_000); // count the clock up
-    return () => { clearInterval(poll); clearInterval(tick); };
-  }, []);
+  useEffect(() => { void load(); }, []);
+  // Status pages live in background tabs; both timers pause while hidden and
+  // re-fire on return, so a parked tab burns no requests and no renders.
+  useVisiblePoll(load, 10_000);                       // re-probe liveness
+  useVisiblePoll(() => setTick(t => t + 1), 1_000);   // count the clock up
 
   const liveUptime = baseRef.current
     ? baseRef.current.uptime + (Date.now() - baseRef.current.at) / 1000

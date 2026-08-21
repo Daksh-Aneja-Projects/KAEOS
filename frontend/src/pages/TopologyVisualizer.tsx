@@ -37,6 +37,9 @@ export default function TopologyVisualizer() {
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
 
   const nodesRef = useRef<Sim[]>([]);
+  // id -> Sim, rebuilt only when the graph loads. Nodes mutate in place, so the
+  // map stays valid; without it every edge did two O(n) find()s per frame.
+  const nodeByIdRef = useRef<Record<string, Sim>>({});
   const rafRef = useRef<number | null>(null);
   const alphaRef = useRef(1);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -73,6 +76,7 @@ export default function TopologyVisualizer() {
         vx: 0, vy: 0,
       };
     });
+    nodeByIdRef.current = Object.fromEntries(nodesRef.current.map(n => [n.id, n]));
     alphaRef.current = 1;
     startLoop();
     return stopLoop;
@@ -109,8 +113,7 @@ export default function TopologyVisualizer() {
       }
     }
     // Edge springs.
-    const byId: Record<string, Sim> = {};
-    nodes.forEach(n => byId[n.id] = n);
+    const byId = nodeByIdRef.current;
     edges.forEach(e => {
       const s = byId[e.source], t = byId[e.target]; if (!s || !t) return;
       const dx = t.x - s.x, dy = t.y - s.y; const d = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -143,6 +146,12 @@ export default function TopologyVisualizer() {
     const loop = () => {
       step();
       setTick(t => (t + 1) % 1_000_000);
+      // Settled (alpha at its floor): stop burning 60fps re-renders on an idle
+      // page. reheat() restarts the loop on drag / re-layout.
+      if (alphaRef.current <= 0.02) {
+        rafRef.current = null;
+        return;
+      }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -172,8 +181,9 @@ export default function TopologyVisualizer() {
   const onPointerMove = (e: React.PointerEvent) => {
     if (dragRef.current.id) {
       const p = toSim(e.clientX, e.clientY);
-      const n = nodesRef.current.find(x => x.id === dragRef.current.id);
+      const n = nodeByIdRef.current[dragRef.current.id];
       if (n) { n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; }
+      if (!rafRef.current) startLoop();   // keep rendering if the sim had settled mid-drag
     } else if (dragRef.current.panning) {
       const dx = e.clientX - dragRef.current.lastX, dy = e.clientY - dragRef.current.lastY;
       const svg = svgRef.current; const r = svg?.getBoundingClientRect();
@@ -196,7 +206,7 @@ export default function TopologyVisualizer() {
   const edgeActive = (s: string, t: string) => !!focus && (s === focus || t === focus);
 
   const card: React.CSSProperties = { background: colors.surface1, border: `1px solid ${colors.hairline}` };
-  const sel = selected ? nodesRef.current.find(n => n.id === selected) : null;
+  const sel = selected ? nodeByIdRef.current[selected] ?? null : null;
   const nodeR = (deg: number) => 7 + Math.min(10, deg * 1.6);
 
   const counts = useMemo(() => {
@@ -318,8 +328,8 @@ export default function TopologyVisualizer() {
               <g transform={`translate(${view.panX} ${view.panY}) scale(${view.zoom})`}>
                 {/* Edges */}
                 {graph.edges.map((e, i) => {
-                  const s = nodesRef.current.find(n => n.id === e.source);
-                  const t = nodesRef.current.find(n => n.id === e.target);
+                  const s = nodeByIdRef.current[e.source];
+                  const t = nodeByIdRef.current[e.target];
                   if (!s || !t) return null;
                   const active = edgeActive(e.source, e.target);
                   const dim = !!focus && !active;

@@ -1071,14 +1071,17 @@ async def _deliver_one(db: AsyncSession, w: OutboundWrite) -> Optional[str]:
     from app.models.domain import Connector, ConnectorCredential
     from app.services.live_connectors import decrypt_secrets
 
-    cq = select(Connector).where(Connector.tenant_id == w.tenant_id,
-                                 Connector.status.in_(("CONNECTED", "SYNCING")))
-    connectors = (await db.execute(cq)).scalars().all()
+    # One outer join instead of a credential query per connector (this runs for
+    # every outbound write on the every-minute dispatch tick).
+    rows = (await db.execute(
+        select(Connector, ConnectorCredential)
+        .outerjoin(ConnectorCredential, ConnectorCredential.connector_id == Connector.id)
+        .where(Connector.tenant_id == w.tenant_id,
+               Connector.status.in_(("CONNECTED", "SYNCING")))
+    )).all()
     target = None
     _SN_ENTITIES = set(_SERVICENOW_TABLE)
-    for c in connectors:
-        cred = (await db.execute(select(ConnectorCredential).where(
-            ConnectorCredential.connector_id == c.id))).scalar_one_or_none()
+    for c, cred in rows:
         prov = (cred.provider if cred else None)
         if w.provider and prov == w.provider:
             target = (c, cred)

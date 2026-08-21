@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTheme } from '../context/ThemeContext';
+import { useVisiblePoll } from '../hooks/useLiveRefresh';
 
 /**
  * A compact "this data is live" indicator: a heartbeat dot reflecting the
@@ -16,11 +17,9 @@ const LiveBadge: React.FC<{ lastSync: number | null; label?: string }> = ({ last
   const { status } = useWebSocket();
   const [, tick] = useState(0);
 
-  // Re-render every second so "synced Ns ago" advances.
-  useEffect(() => {
-    const t = setInterval(() => tick(n => n + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
+  // Re-render every second so "synced Ns ago" advances — paused while the tab
+  // is hidden (several badges render per dashboard; hidden tabs stay idle).
+  useVisiblePoll(() => tick(n => n + 1), 1000);
 
   const connected = status === 'connected';
   const dot = connected ? '#22c55e' : status === 'connecting' ? '#f59e0b' : '#94a3b8';

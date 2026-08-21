@@ -27,7 +27,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brain import BrainProposal
@@ -84,13 +84,17 @@ async def _reconcile_outcomes(db: AsyncSession, tenant_id: str) -> int:
             BrainProposal.tenant_id == tenant_id, BrainProposal.status == "APPROVED",
             BrainProposal.outcome.is_(None), BrainProposal.mission_id.isnot(None))
     )).scalars().all()
+    if not pending:
+        return 0
+    status_by_id = dict((await db.execute(
+        select(Mission.id, Mission.status).where(
+            Mission.tenant_id == tenant_id,
+            Mission.id.in_([p.mission_id for p in pending])))).all())
     stamped = 0
     for p in pending:
-        m = (await db.execute(
-            select(Mission).where(Mission.id == p.mission_id,
-                                  Mission.tenant_id == tenant_id))).scalar_one_or_none()
-        if m is not None and m.status in _TERMINAL:
-            p.outcome = _TERMINAL[m.status]
+        status = status_by_id.get(p.mission_id)
+        if status in _TERMINAL:
+            p.outcome = _TERMINAL[status]
             stamped += 1
     if stamped:
         await db.commit()
@@ -262,18 +266,13 @@ async def _is_suppressed(db: AsyncSession, tenant_id: str, dedup_key: str) -> bo
     the same condition inside the cooldown (the brain's memory of a 'no')."""
     cooldown = datetime.now(timezone.utc) - timedelta(days=_COOLDOWN_DAYS)
     row = (await db.execute(
-        select(BrainProposal).where(
+        select(BrainProposal.id).where(
             BrainProposal.tenant_id == tenant_id, BrainProposal.dedup_key == dedup_key,
-            BrainProposal.status.in_(("PENDING", "APPROVED")))
+            or_(BrainProposal.status.in_(("PENDING", "APPROVED")),
+                and_(BrainProposal.status == "REJECTED",
+                     BrainProposal.decided_at >= cooldown)))
         .limit(1))).scalar_one_or_none()
-    if row is not None:
-        return True
-    recent_reject = (await db.execute(
-        select(BrainProposal).where(
-            BrainProposal.tenant_id == tenant_id, BrainProposal.dedup_key == dedup_key,
-            BrainProposal.status == "REJECTED", BrainProposal.decided_at >= cooldown)
-        .limit(1))).scalar_one_or_none()
-    return recent_reject is not None
+    return row is not None
 
 
 async def _polish_rationale(tenant_id: str, cand: dict) -> Optional[str]:
@@ -351,8 +350,10 @@ async def reflect_and_propose(db: AsyncSession, tenant_id: str, *, use_llm: bool
         created.append(p)
     if created:
         await db.commit()
+        # No per-row refresh: expire_on_commit=False, and every attribute read
+        # below (id via default=_uuid, title, signal_kind, priority) is set
+        # client-side, so a refresh SELECT per proposal buys nothing.
         for p in created:
-            await db.refresh(p)
             await _emit(tenant_id, "BRAIN_PROPOSAL_CREATED",
                         {"proposal_id": p.id, "title": p.title, "signal_kind": p.signal_kind,
                          "priority": p.priority})

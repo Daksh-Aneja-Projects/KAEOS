@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.models.events import SystemEvent, WebhookSubscriptionModel
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,13 @@ class EventBus:
             cls._instance = super().__new__(cls)
             cls._instance.webhook_queue = asyncio.Queue(maxsize=1000)
             cls._instance.worker_task = None
+            cls._instance._handler_tasks = set()   # strong refs; see emit()
         return cls._instance
+
+    def _reap_handler_task(self, task) -> None:
+        self._handler_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("[EventBus] internal handler failed: %r", task.exception())
 
     @classmethod
     def on(cls, event_type: EventType, handler: Any) -> None:
@@ -176,12 +182,16 @@ class EventBus:
                 "timestamp": timestamp.isoformat(),
             }
 
-            # 2b. Internal automations (cross-department reactions). Fire-and-
-            # forget on the running loop: each handler owns its own DB session,
-            # and one failing must never block persistence or the others.
+            # 2b. Internal automations (cross-department reactions). Fired on the
+            # running loop: each handler owns its own DB session, and one failing
+            # must never block persistence or the others. A strong ref is held so
+            # the task cannot be GC'd mid-flight, and the done-callback surfaces
+            # handler exceptions that were previously swallowed.
             for handler in self._handlers.get(event_type.value, []):
                 try:
-                    asyncio.create_task(handler(event_data))
+                    task = asyncio.create_task(handler(event_data))
+                    self._handler_tasks.add(task)
+                    task.add_done_callback(self._reap_handler_task)
                 except Exception as e:
                     logger.error(f"[EventBus] internal handler dispatch failed: {e}")
 
@@ -305,20 +315,19 @@ class EventBus:
                         res.raise_for_status()
 
                         logger.info(f"[EventBus] Delivered {event_data['type']} → {sub_endpoint}")
-                        # Re-fetch sub to update metrics safely
-                        q = await db.execute(select(WebhookSubscriptionModel).where(WebhookSubscriptionModel.id == sub_id))
-                        db_sub = q.scalar_one_or_none()
-                        if db_sub:
-                            db_sub.delivery_count += 1
-                            db_sub.last_delivered_at = datetime.now(timezone.utc)
-                            db.add(db_sub)
+                        # One atomic UPDATE instead of refetch-modify: half the
+                        # round trips and no lost-update race across workers.
+                        await db.execute(
+                            update(WebhookSubscriptionModel)
+                            .where(WebhookSubscriptionModel.id == sub_id)
+                            .values(delivery_count=WebhookSubscriptionModel.delivery_count + 1,
+                                    last_delivered_at=datetime.now(timezone.utc)))
                     except Exception as e:
                         logger.warning(f"[EventBus] Delivery failed to {sub_endpoint}: {e}")
-                        q = await db.execute(select(WebhookSubscriptionModel).where(WebhookSubscriptionModel.id == sub_id))
-                        db_sub = q.scalar_one_or_none()
-                        if db_sub:
-                            db_sub.failure_count += 1
-                            db.add(db_sub)
+                        await db.execute(
+                            update(WebhookSubscriptionModel)
+                            .where(WebhookSubscriptionModel.id == sub_id)
+                            .values(failure_count=WebhookSubscriptionModel.failure_count + 1))
                 
                 await db.commit()
 

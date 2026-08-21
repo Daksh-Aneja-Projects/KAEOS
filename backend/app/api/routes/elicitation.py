@@ -30,6 +30,9 @@ async def elicitation_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asy
         .join(Employee, ElicitationQuestion.employee_id == Employee.id)
         .where(ElicitationQuestion.tenant_id == tenant_id, ElicitationQuestion.status == "PENDING")
         .order_by(ElicitationQuestion.created_at.desc())
+        # The queue can grow without bound; the dashboard shows the newest slice
+        # (its siblings below are already capped at 20/10).
+        .limit(100)
     )
     pending = []
     for eq, emp in pending_q.all():
@@ -97,7 +100,11 @@ async def elicitation_dashboard(tenant_id: str = Depends(get_tenant_id), db: Asy
     # Stats
     now = datetime.now(timezone.utc)
     now - timedelta(days=7)
-    total_q = await db.execute(select(sqlfunc.count(ElicitationQuestion.id)))
+    total_q = await db.execute(
+        select(sqlfunc.count(ElicitationQuestion.id)).where(
+            ElicitationQuestion.tenant_id == tenant_id
+        )
+    )
     total_sent = total_q.scalar() or 0
     total_answered = await db.execute(
         select(sqlfunc.count(ElicitationQuestion.id)).where(

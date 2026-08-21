@@ -71,6 +71,9 @@ class HITLManager:
         # The old code logged "falling back to in-memory storage" but stored
         # nothing - every Gate-3 pause was announced yet unactionable.
         self._memory: Dict[str, Dict[str, Any]] = {}
+        # Mirrors the Redis TTL for the fallback store: without it, a Redis
+        # outage under load grew _memory one record per HITL pause, forever.
+        self._memory_expiry: Dict[str, float] = {}
         # One backfill SCAN per process, not per empty index: an index set with
         # no members does not exist in Redis, so an EXISTS check alone would
         # re-scan on every poll for every tenant with nothing pending - which is
@@ -355,7 +358,14 @@ class HITLManager:
                     # so list_pending never has to read it to find that out.
                     await self._index_discard(redis, tenant_id, execution_id)
         else:
+            import time
+            now = time.time()
             self._memory[execution_id] = data
+            self._memory_expiry[execution_id] = now + ttl
+            # Amortized prune (same lifetime Redis enforces via setex).
+            for k in [k for k, exp in self._memory_expiry.items() if exp < now]:
+                self._memory.pop(k, None)
+                self._memory_expiry.pop(k, None)
 
     async def get_record_department(self, execution_id: str) -> str | None:
         """The department of a pending approval's skill (for scope checks)."""
