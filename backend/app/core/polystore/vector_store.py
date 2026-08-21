@@ -110,6 +110,22 @@ class VectorStore(ABC):
         here — the store is not behind RLS."""
 
     @abstractmethod
+    async def stale_vectors(
+        self,
+        tenant_id: str,
+        *,
+        current_model: str,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Vectors whose stamped ``embedding_model`` is not ``current_model``.
+
+        Every upsert stamps the producing model into metadata (see
+        ``LLMRouter.embedding_metadata``); after an EMBEDDING_MODEL change this
+        is how the re-embed job (M14) finds what to refresh. A vector with no
+        stamp at all counts as stale — it predates stamping. Returns
+        ``{id, namespace, content, metadata}`` rows, oldest first."""
+
+    @abstractmethod
     async def delete_subject(
         self,
         tenant_id: str,
@@ -245,6 +261,30 @@ class SqliteVectorStore(VectorStore):
                 {"metadata": json.dumps(meta), "id": vector_id, "tid": tenant_id},
             )
             await session.commit()
+
+    async def stale_vectors(self, tenant_id, *, current_model, limit=200) -> list[dict[str, Any]]:
+        await self.initialize()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text(
+                    f"SELECT id, namespace, content, metadata FROM {_TABLE} "  # nosec B608
+                    "WHERE tenant_id = :tenant_id AND ("
+                    "  json_extract(metadata, '$.embedding_model') IS NULL "
+                    "  OR json_extract(metadata, '$.embedding_model') != :current"
+                    ") ORDER BY created_at LIMIT :limit"
+                ),
+                {"tenant_id": tenant_id, "current": current_model, "limit": limit},
+            )
+            rows = result.mappings().all()
+        out = []
+        for r in rows:
+            try:
+                meta = json.loads(r["metadata"]) if r["metadata"] else {}
+            except (ValueError, TypeError):
+                meta = {}
+            out.append({"id": r["id"], "namespace": r["namespace"],
+                        "content": r["content"], "metadata": meta})
+        return out
 
     async def delete_subject(self, tenant_id, *, subject_ids=None, subject_texts=None) -> int:
         await self.initialize()
@@ -400,6 +440,31 @@ class PgVectorStore(VectorStore):
                 {"key": key, "value": str(value), "id": vector_id, "tid": tenant_id},
             )
             await session.commit()
+
+    async def stale_vectors(self, tenant_id, *, current_model, limit=200) -> list[dict[str, Any]]:
+        await self.initialize()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text(
+                    f"SELECT id, namespace, content, metadata FROM {_TABLE} "  # nosec B608
+                    "WHERE tenant_id = :tenant_id "
+                    "AND metadata->>'embedding_model' IS DISTINCT FROM :current "
+                    "ORDER BY created_at LIMIT :limit"
+                ),
+                {"tenant_id": tenant_id, "current": current_model, "limit": limit},
+            )
+            rows = result.mappings().all()
+        out = []
+        for r in rows:
+            meta = r["metadata"]
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except (ValueError, TypeError):
+                    meta = {}
+            out.append({"id": r["id"], "namespace": r["namespace"],
+                        "content": r["content"], "metadata": meta or {}})
+        return out
 
     async def delete_subject(self, tenant_id, *, subject_ids=None, subject_texts=None) -> int:
         await self.initialize()

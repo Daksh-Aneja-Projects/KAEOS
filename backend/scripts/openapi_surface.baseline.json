@@ -820,6 +820,17 @@
     "Billing & Usage"
    ]
   },
+  "GET /api/v1/brain/learning": {
+   "operationId": "brain_learning_api_v1_brain_learning_get",
+   "parameters": [],
+   "requestBody": "null",
+   "responses": {
+    "200": "{\"content\": {\"application/json\": {\"schema\": {}}}, \"description\": \"Successful Response\"}"
+   },
+   "tags": [
+    "Brain \u2014 Enterprise Overview"
+   ]
+  },
   "GET /api/v1/brain/overview": {
    "operationId": "brain_overview_api_v1_brain_overview_get",
    "parameters": [],
@@ -8550,6 +8561,17 @@
     "AEOS Pioneer Layers"
    ]
   },
+  "POST /api/v1/knowledge/embeddings/reembed-stale": {
+   "operationId": "reembed_stale_embeddings_route_api_v1_knowledge_embeddings_reembed_stale_post",
+   "parameters": [],
+   "requestBody": "null",
+   "responses": {
+    "200": "{\"content\": {\"application/json\": {\"schema\": {}}}, \"description\": \"Successful Response\"}"
+   },
+   "tags": [
+    "Knowledge - Semantic Index"
+   ]
+  },
   "POST /api/v1/knowledge/skill-embeddings/backfill": {
    "operationId": "backfill_skill_embeddings_route_api_v1_knowledge_skill_embeddings_backfill_post",
    "parameters": [],
@@ -10666,6 +10688,7 @@
   "GET /api/v1/billing/entitlements",
   "GET /api/v1/billing/roi",
   "GET /api/v1/billing/usage",
+  "GET /api/v1/brain/learning",
   "GET /api/v1/brain/overview",
   "GET /api/v1/brain/proposals",
   "GET /api/v1/brain/skills-file",
@@ -11169,6 +11192,7 @@
   "POST /api/v1/intelligence/correlate",
   "POST /api/v1/intelligence/proactive-alert",
   "POST /api/v1/intelligence/signals",
+  "POST /api/v1/knowledge/embeddings/reembed-stale",
   "POST /api/v1/knowledge/skill-embeddings/backfill",
   "POST /api/v1/legal/cases/{case_id}/evaluate",
   "POST /api/v1/legal/compliance/obligations/{obligation_id}/audit",

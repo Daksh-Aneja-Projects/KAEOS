@@ -265,3 +265,74 @@ async def backfill_skill_embeddings(db: AsyncSession, tenant_id: str) -> dict:
         "embedded": embedded,
         "embeddings_simulated": simulated,
     }
+
+
+async def reembed_stale_vectors(tenant_id: str, *, batch: int = 200) -> dict:
+    """M14: refresh memory vectors stamped with a different embedding model.
+
+    Every VectorStore upsert stamps the producing model into metadata; after an
+    EMBEDDING_MODEL change this re-embeds the stale rows from their stored
+    content on THIS tenant's router (BYOK respected). Refuses honestly when
+    (a) the router can only simulate embeddings — rewriting pseudo-vectors buys
+    nothing — or (b) the store rejects the new model's vector width, which
+    means a pgvector dimension migration must run first; it reports that
+    instead of failing row by row. Idempotent: re-embedded rows carry the
+    current stamp and stop matching. Capped per call; call again for the rest.
+    """
+    from app.core.polystore import get_vector_store
+    from app.services.llm_router import get_tenant_router
+    from app.services.llm_support import configured_embedding_model
+
+    configured = configured_embedding_model()
+    router = await get_tenant_router(tenant_id)
+
+    # Probe first: "current" for staleness is the model the router ACTUALLY
+    # produces vectors with right now (it may route the configured name to a
+    # local model). Comparing against the configured NAME would re-embed rows
+    # already on today's real model, forever, without converging.
+    await router.embed(["model probe"], model=configured)
+    receipt: dict = {
+        "tenant_id": tenant_id, "configured_model": configured,
+        "current_model": None, "stale_found": 0, "reembedded": 0,
+        "embeddings_simulated": False, "blocked": None,
+    }
+    if getattr(router, "embeddings_simulated", False):
+        receipt["embeddings_simulated"] = True
+        return receipt
+    current = getattr(router, "last_embedding_model", None) or configured
+    receipt["current_model"] = current
+
+    store = get_vector_store()
+    stale = await store.stale_vectors(tenant_id, current_model=current, limit=batch)
+    receipt["stale_found"] = len(stale)
+    if not stale:
+        return receipt
+
+    for v in stale:
+        content = (v.get("content") or "").strip()
+        if not content:
+            continue   # nothing to re-embed from
+        vectors = await router.embed([content], model=configured)
+        if getattr(router, "embeddings_simulated", False):
+            # The provider vanished mid-run: stop, leave the rest visibly stale.
+            receipt["embeddings_simulated"] = True
+            break
+        if not vectors or not vectors[0]:
+            continue
+        try:
+            await store.upsert(
+                vector_id=v["id"], tenant_id=tenant_id, content=content,
+                embedding=vectors[0],
+                metadata={**(v.get("metadata") or {}), **router.embedding_metadata()},
+                namespace=v.get("namespace") or "default",
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower() or "expected" in str(e).lower():
+                receipt["blocked"] = (
+                    "the vector store rejected the new model's vector width "
+                    f"({str(e)[:160]}); run a pgvector dimension migration "
+                    "before re-embedding")
+                break
+            raise
+        receipt["reembedded"] += 1
+    return receipt

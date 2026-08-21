@@ -23,6 +23,3 @@ export const PAGE_PAD = 'px-5 sm:px-6 lg:px-8 py-6';
  * up with the PAGE_PAD gutter.
  */
 export const PAGE_PAD_X = 'px-5 sm:px-6 lg:px-8';
-
-/** Vertical rhythm between the major blocks of a page. */
-export const PAGE_STACK = 'space-y-6';

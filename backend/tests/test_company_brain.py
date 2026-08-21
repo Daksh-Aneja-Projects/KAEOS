@@ -131,3 +131,56 @@ async def test_outcome_is_reconciled_from_the_spawned_mission(db):
     assert stamped == 1
     await db.refresh(p)
     assert p.outcome == "SUCCEEDED", "a completed mission closes the meta-loop"
+
+
+async def test_connector_health_observer_fires_only_on_stale(db):
+    from app.models.domain import Connector
+    now = _now()
+    db.add(Connector(tenant_id=T, name="Fresh CRM", status="CONNECTED",
+                     last_sync_at=now - timedelta(minutes=10)))
+    assert await company_brain._obs_connector_health(db, T) is None, \
+        "a freshly-syncing connector is not a problem to propose about"
+
+    db.add(Connector(tenant_id=T, name="Dead HRIS", status="CONNECTED",
+                     last_sync_at=now - timedelta(days=3)))
+    # Connected long ago but never synced counts as stale too.
+    db.add(Connector(tenant_id=T, name="Never Synced ERP", status="CONNECTED",
+                     connected_at=now - timedelta(days=2)))
+    await db.commit()
+    cand = await company_brain._obs_connector_health(db, T)
+    assert cand is not None
+    assert cand["signal_kind"] == "CONNECTOR_STALE"
+    assert "2" in cand["title"], cand["title"]
+    assert cand["evidence"][0]["kind"] == "connector"
+
+
+async def test_knowledge_decay_observer_needs_a_real_backlog(db):
+    from app.models.domain import Rule
+    now = _now()
+
+    def rule(**kw):
+        return Rule(tenant_id=T, statement="s", trigger_json={}, action_json={},
+                    is_archived=False, is_executable=True, half_life_days=90, **kw)
+
+    # Four expired rules: below the threshold, the brain stays quiet.
+    for _ in range(4):
+        db.add(rule(validated_at=now - timedelta(days=200)))
+    await db.commit()
+    assert await company_brain._obs_knowledge_decay(db, T) is None
+
+    # A fifth expired rule crosses it.
+    db.add(rule(validated_at=now - timedelta(days=400)))
+    # A fresh rule must not count.
+    db.add(rule(validated_at=now - timedelta(days=1)))
+    await db.commit()
+    cand = await company_brain._obs_knowledge_decay(db, T)
+    assert cand is not None
+    assert cand["signal_kind"] == "KNOWLEDGE_DECAY"
+    assert "5" in cand["title"], cand["title"]
+
+
+async def test_strategic_fitness_observer_is_silent_on_an_empty_tenant(db):
+    # A fresh tenant has fitness 1.0 and zero recommendations: the brain must
+    # not fabricate a structural problem out of emptiness.
+    cand = await company_brain._obs_strategic_fitness(db, "tenant_totally_empty")
+    assert cand is None

@@ -11,6 +11,46 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added - Brain upgrade, operator remediation, re-embed job, connector contract lane (2026-08-21)
+
+The deferred integration-audit tail, executed:
+
+- **The brain now watches eight signals.** Three new grounded observers join the
+  original five: connected systems that stopped syncing (the twin drifting from
+  reality), executable rules past their own declared half-life (decisions
+  running on expired knowledge), and the fitness engine's top structural
+  recommendation - the EvolutionEngine's analysis finally has a consumer. An
+  empty tenant still proposes nothing: fitness reads 1.0 with zero
+  recommendations, verified by test.
+- **The brain shows its learning.** New `GET /brain/learning` exposes, per
+  proposal kind, the decided counts, acceptance, mission outcomes and the
+  resulting materiality weight - computed by the same pure function the
+  reflection cycle uses, so the surface can never drift from the behavior.
+- **A dedicated Company Brain page.** New tab beside Missions: the live pending
+  panel, the full decision history with outcome badges, and "how it learns" -
+  animated weight meters per idea kind with plain-English decision summaries.
+- **Operator remediation is wired (M11).** The Operator Console now shows every
+  scheduled background job's last-run heartbeat (a red job is failing every
+  tick while the public status page stays green) and the durable job queue,
+  with one-click requeue of terminally FAILED jobs.
+- **Embedding re-embed job (M14).** `POST /knowledge/embeddings/reembed-stale`
+  re-embeds vectors stamped by a previous embedding model - keyed on the model
+  the router ACTUALLY produces vectors with, not the configured name, so the
+  job converges. It refuses honestly on a simulated-only router and reports the
+  required pgvector dimension migration instead of writing garbage when the
+  store rejects the new width. `VectorStore.stale_vectors` backs it on both
+  engines.
+- **Vendor contract lane.** Ten mocked contract tests now pin what each bespoke
+  connector promises the vendor: exact URLs and auth headers (QuickBooks realm
+  queries, Xero org-scope header, NetSuite account hosts, GitHub API version,
+  FHIR Accept), documented response-shape parsing, and graceful failure into
+  the pull mesh. The live credentialed sandbox pass remains the documented
+  boundary.
+- **Dead-export sweep (M17).** ts-prune across the client: one dead layout
+  constant removed; the ~100 unused type declarations it surfaced are the
+  unadopted API contract types, kept deliberately (documented in
+  KNOWN_LIMITATIONS).
+
 ### Changed - Performance hardening pass: pooling, N+1s, leaks, render waste (2026-08-21)
 
 A production-scale sweep (three parallel audits over DB access, async/memory,

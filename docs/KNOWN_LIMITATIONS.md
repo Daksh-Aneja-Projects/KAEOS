@@ -172,22 +172,32 @@ codebase itself carries no open critical or high finding from the standing pre-l
   source with more than `batch_size` changed rows between passes, the overflow is re-fetched next
   pass rather than paged past. **Boundary:** generalizing the cursor is per-adapter work (each
   adapter must surface an `updated_at` watermark AND filter on it); ServiceNow is the reference.
-- **Integration-audit follow-ups (2026-08-21).** The 2026-08-21 whole-system audit's Phase 0/1 and
-  most of Phase 2 shipped; four items are deliberately deferred, none of them correctness-open:
-  a background **re-embed job** for after an embedding-model change (the per-vector model
-  provenance stamp already exists; a model change is a deliberate ops action that also needs a
-  coordinated pgvector dim migration); **OperatorConsole remediation actions** (requeue /
-  circuit-reset — the `/ops/*` endpoints exist, the UI wiring is ahead); and a
-  **dead-frontend-export sweep** (≈20% of client exports are unused; a proper pass wants `ts-prune`).
+- **Integration-audit follow-ups (2026-08-21): all three closed later the same day.** The
+  **re-embed job** now exists (`POST /knowledge/embeddings/reembed-stale` +
+  `VectorStore.stale_vectors`): it re-embeds vectors stamped by a previous model on the model the
+  router ACTUALLY produces vectors with, refuses honestly on a simulated-only router, and reports
+  the required pgvector dimension migration instead of writing garbage when the store rejects the
+  new width. **OperatorConsole remediation** is wired: the console shows the scheduler heartbeat
+  per background job and the durable job queue with one-click requeue of terminally FAILED jobs.
+  The **dead-export sweep** ran via `ts-prune`: after excluding lazy-import default exports and
+  in-module uses, the only dead code export was one layout constant (removed). What remains is
+  ~100 unused TYPE declarations in `src/types/index.ts` — the unadopted typed API contract
+  (pages still call `request<any>`); they carry zero bundle weight and are kept deliberately so
+  the typing can be adopted rather than deleted. **Boundary:** adopting those response types
+  across the client is its own hardening project.
 - **Six per-department connectors are now wired, but unvalidated against the real vendor APIs.**
   The finance accounting (QuickBooks/Xero/NetSuite), engineering issue-tracker, healthcare EHR and
   procurement PO connectors are bridged into the pull catalog (they inherit the scheduler,
   ConnectorCredential and the incremental cursor, and fail gracefully); the credit-bureau connector
   is wired into loan-application intake with an honest "no score, enter manually" fallback; DocuSign
-  was already wired, so its duplicate connector was not re-registered. **Boundary:** these talk to
-  real external APIs (Intuit, Epic, Coupa, Equifax, …) that cannot be exercised here — the plumbing
-  is live and credential-gated, but each should be validated against that vendor's sandbox before a
-  tenant trusts the data. The audit's closed loop is now fed end to end: connector pulls bridge into the
+  was already wired, so its duplicate connector was not re-registered. A **mocked contract lane**
+  (`tests/test_connector_contracts.py`) now pins the code side of each vendor contract: the exact
+  URLs and auth headers sent, the documented response shapes parsed (QuickBooks QueryResponse,
+  Xero org-scoped invoices, NetSuite account-scoped records, GitHub issue/PR/run envelopes, FHIR
+  Bundles, Coupa purchase orders), and the graceful-failure paths the mesh depends on.
+  **Boundary:** the live half still stands — these talk to real external APIs (Intuit, Epic,
+  Coupa, Equifax, …) that need real credentials, so each should get one credentialed pass against
+  that vendor's sandbox before a tenant trusts the data. The audit's closed loop is now fed end to end: connector pulls bridge into the
   event mesh and embed into the copilot's grounding namespace, BYOK ingests through the real
   scrub+vectorize pipeline, elicitation answers become candidate rules, and the internal event bus
   drives the first cross-department automations (offboarding → IT deprovision, adverse-action →

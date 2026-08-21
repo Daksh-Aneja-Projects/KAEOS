@@ -56,6 +56,35 @@ export interface OpsTenantDetail {
   };
 }
 
+export interface OpsJob {
+  id: string;
+  tenant_id: string | null;
+  job_type: string;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  run_after: string | null;
+  last_error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface OpsJobsResponse {
+  count: number;
+  jobs: OpsJob[];
+}
+
+/** Last-run heartbeat per scheduled background job (leader process). */
+export interface OpsSchedulerBeat {
+  ok: boolean;
+  at: string;
+  error: string | null;
+}
+
+export interface OpsSchedulerResponse {
+  jobs: Record<string, OpsSchedulerBeat>;
+}
+
 export const opsApi = {
   opsOverview: (adminSecret: string) =>
     request<OpsOverview>('/ops/overview', secret(adminSecret)),
@@ -63,4 +92,12 @@ export const opsApi = {
     request<OpsTenantsResponse>('/ops/tenants', secret(adminSecret)),
   opsTenantDetail: (tenantId: string, adminSecret: string) =>
     request<OpsTenantDetail>(`/ops/tenants/${encodeURIComponent(tenantId)}`, secret(adminSecret)),
+  opsJobs: (adminSecret: string) =>
+    request<OpsJobsResponse>('/ops/jobs', secret(adminSecret)),
+  opsRequeueJob: (jobId: string, adminSecret: string) =>
+    request<{ id: string; status: string; requeued: boolean }>(
+      `/ops/jobs/${encodeURIComponent(jobId)}/requeue`,
+      { method: 'POST', ...secret(adminSecret) }),
+  opsScheduler: (adminSecret: string) =>
+    request<OpsSchedulerResponse>('/ops/scheduler', secret(adminSecret)),
 };

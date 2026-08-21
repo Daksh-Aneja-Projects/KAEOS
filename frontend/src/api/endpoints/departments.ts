@@ -155,6 +155,7 @@ export const departmentsApi = {
   listBrainProposals: (status?: string, limit = 50) =>
     request<any>(`/brain/proposals?limit=${limit}${status ? `&status=${status}` : ''}`),
   brainReflect: () => request<any>('/brain/reflect', { method: 'POST' }),
+  brainLearning: () => request<any>('/brain/learning'),
   approveBrainProposal: (id: string) =>
     request<any>(`/brain/proposals/${id}/approve`, { method: 'POST' }),
   rejectBrainProposal: (id: string, reason?: string) =>

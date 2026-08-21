@@ -79,13 +79,16 @@ same motion.
 The Company Brain also **thinks for itself**: on a cadence it reflects on the
 operational reality KAEOS records - a declining safe-autonomy rate, a cost
 spike, records drifting outside the platform, missions that keep failing, expert
-questions going unanswered - and proposes its own missions, each grounded in the
-real rows that triggered it. A proposal carries no authority: a human approves
-it (which plans a governed mission through the same 7 gates) or rejects it (the
-brain remembers the "no" and suppresses the idea). It learns which kinds of
-proposal its humans accept and which spawned missions actually succeed, and
-re-weights its future judgment accordingly. The brain proposes, a human
-disposes, the gates execute.
+questions going unanswered, connected systems that stopped syncing, executable
+rules past their own half-life, and the fitness engine's top structural
+recommendation - and proposes its own missions, each grounded in the real rows
+that triggered it. A proposal carries no authority: a human approves it (which
+plans a governed mission through the same 7 gates) or rejects it (the brain
+remembers the "no" and suppresses the idea). It learns which kinds of proposal
+its humans accept and which spawned missions actually succeed, re-weights its
+future judgment accordingly, and shows that learning on its own page: every
+kind's weight, acceptance and mission outcomes, next to the full decision
+history. The brain proposes, a human disposes, the gates execute.
 
 Everything an agent does passes the same 7-gate pipeline. Teams watch live agent
 work in a shared queue and can approve, redirect or reject any of it, with
@@ -242,14 +245,14 @@ is reproducible with the commands in [docs/TESTING.md](docs/TESTING.md).
 
 | | |
 |---|---|
-| Backend | 88,428 lines of application Python (135,292 tracked incl. tests, scripts and migrations) |
-| Frontend | 44,592 lines of TypeScript / TSX |
-| API surface | 682 OpenAPI operations across 62 route modules |
+| Backend | 88,871 lines of application Python (135,788 tracked incl. tests, scripts and migrations) |
+| Frontend | 45,092 lines of TypeScript / TSX |
+| API surface | 684 OpenAPI operations across 62 route modules |
 | Data model | 257 ORM tables across 90 model modules, 57 Alembic migrations |
 | Departments | 10, with 48 governed agents between them |
 | Integrations | 30 live connector adapters (5 core + 25 vendor, incl. 8 bridged per-department connectors) |
-| Tests | 1,891 (439 end-to-end on a real local model, 1,452 unit) across 254 files |
-| UI | 127 React components: 55 pages, 24 views, 48 shared components |
+| Tests | 1,907 (439 end-to-end on a real local model, 1,468 unit) across 256 files |
+| UI | 128 React components: 56 pages, 24 views, 48 shared components |
 
 ## Documentation
 

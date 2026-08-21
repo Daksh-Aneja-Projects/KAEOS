@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Brain, Sparkles, Check, X, Loader2, TrendingDown, DollarSign,
-  GitBranch, XCircle, BookOpen, RefreshCw, ShieldCheck,
+  GitBranch, XCircle, BookOpen, RefreshCw, ShieldCheck, PlugZap,
+  Hourglass, Dna,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -19,15 +20,23 @@ import { useVisiblePoll } from '../hooks/useLiveRefresh';
  * onApproved refreshes the host's mission list so the spawned mission appears.
  */
 
-type Kind = 'AUTONOMY_DECLINE' | 'COST_SPIKE' | 'SOR_DRIFT' | 'MISSION_FAILURES' | 'KNOWLEDGE_BACKLOG';
+type Kind = 'AUTONOMY_DECLINE' | 'COST_SPIKE' | 'SOR_DRIFT' | 'MISSION_FAILURES'
+  | 'KNOWLEDGE_BACKLOG' | 'CONNECTOR_STALE' | 'KNOWLEDGE_DECAY' | 'STRATEGIC_FITNESS';
 
-const KIND: Record<Kind, { label: string; color: string; Icon: any }> = {
+// Exported: the Brain page shares this vocabulary for its history + learning views.
+export const KIND: Record<Kind, { label: string; color: string; Icon: any }> = {
   AUTONOMY_DECLINE: { label: 'Autonomy declining', color: '#f59e0b', Icon: TrendingDown },
   COST_SPIKE: { label: 'Cost spiking', color: '#ef4444', Icon: DollarSign },
   SOR_DRIFT: { label: 'Systems drifted', color: '#8b5cf6', Icon: GitBranch },
   MISSION_FAILURES: { label: 'Missions failing', color: '#ef4444', Icon: XCircle },
   KNOWLEDGE_BACKLOG: { label: 'Knowledge backlog', color: '#3b82f6', Icon: BookOpen },
+  CONNECTOR_STALE: { label: 'Connectors stalled', color: '#f97316', Icon: PlugZap },
+  KNOWLEDGE_DECAY: { label: 'Knowledge expiring', color: '#eab308', Icon: Hourglass },
+  STRATEGIC_FITNESS: { label: 'Structural opportunity', color: '#10b981', Icon: Dna },
 };
+
+export const kindMeta = (k: string, fallbackColor: string) =>
+  KIND[k as Kind] || { label: k, color: fallbackColor, Icon: Sparkles };
 
 // rAF count-up so the priority reads as a live meter, not a static number.
 function useCountUp(target: number, ms = 700) {
@@ -119,7 +128,7 @@ export default function BrainProposals({ onApproved }: { onApproved?: (missionId
     finally { setBusy(null); }
   };
 
-  const kindOf = (k: string) => KIND[k as Kind] || { label: k, color: colors.primary, Icon: Sparkles };
+  const kindOf = (k: string) => kindMeta(k, colors.primary);
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>

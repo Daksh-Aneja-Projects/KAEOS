@@ -46,30 +46,37 @@ _METRIC_WINDOW_H = 48         # compare last 24h vs the prior 24h
 
 
 # ── meta-learning: how has the human treated this KIND of proposal? ──────────
-async def _signal_kind_weight(db: AsyncSession, tenant_id: str, kind: str) -> float:
-    """A [0.5, 1.5] multiplier on materiality, learned from history.
+def weight_from_counts(approved: int, rejected: int, succeeded: int, failed: int) -> float:
+    """The [0.5, 1.5] materiality multiplier, as a pure function of history.
 
     Up-weights kinds the human approves AND whose missions succeed; down-weights
     kinds that get rejected or that get approved but then fail. Neutral (1.0)
-    until there is enough signal to be fair."""
-    rows = (await db.execute(
-        select(BrainProposal.status, BrainProposal.outcome)
-        .where(BrainProposal.tenant_id == tenant_id, BrainProposal.signal_kind == kind,
-               BrainProposal.status.in_(("APPROVED", "REJECTED")))
-    )).all()
-    decided = len(rows)
+    until there is enough signal to be fair. Shared by the reflection cycle and
+    the /brain/learning surface so the two can never drift apart."""
+    decided = approved + rejected
     if decided < _MIN_DECIDED_FOR_WEIGHT:
         return 1.0
-    approved = sum(1 for s, _ in rows if s == "APPROVED")
-    acceptance = approved / decided
-    outcomes = [o for s, o in rows if s == "APPROVED" and o in ("SUCCEEDED", "FAILED")]
-    accept_signal = acceptance - 0.5
+    accept_signal = approved / decided - 0.5
     success_signal = 0.0
+    outcomes = succeeded + failed
     if outcomes:
-        success_rate = sum(1 for o in outcomes if o == "SUCCEEDED") / len(outcomes)
-        success_signal = success_rate - 0.5
-    weight = 1.0 + 0.5 * accept_signal + 0.5 * success_signal
-    return max(0.5, min(1.5, weight))
+        success_signal = succeeded / outcomes - 0.5
+    return max(0.5, min(1.5, 1.0 + 0.5 * accept_signal + 0.5 * success_signal))
+
+
+async def _signal_kind_weight(db: AsyncSession, tenant_id: str, kind: str) -> float:
+    approved, rejected, succeeded, failed = (await db.execute(
+        select(
+            func.count().filter(BrainProposal.status == "APPROVED"),
+            func.count().filter(BrainProposal.status == "REJECTED"),
+            func.count().filter(and_(BrainProposal.status == "APPROVED",
+                                     BrainProposal.outcome == "SUCCEEDED")),
+            func.count().filter(and_(BrainProposal.status == "APPROVED",
+                                     BrainProposal.outcome == "FAILED")),
+        ).where(BrainProposal.tenant_id == tenant_id,
+                BrainProposal.signal_kind == kind)
+    )).one()
+    return weight_from_counts(approved or 0, rejected or 0, succeeded or 0, failed or 0)
 
 
 # ── outcome reconciliation: stamp a proposal from its mission's terminal state ─
@@ -257,8 +264,95 @@ async def _obs_elicitation_backlog(db, tid):
     }
 
 
+async def _obs_connector_health(db, tid):
+    """CONNECTED systems that have stopped syncing: every hour they stay stale,
+    the twin diverges further from the source of truth."""
+    from app.models.domain import Connector
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    rows = (await db.execute(
+        select(Connector.name, Connector.last_sync_at, Connector.connected_at)
+        .where(Connector.tenant_id == tid, Connector.status == "CONNECTED"))).all()
+    stale = []
+    for name, last_sync, connected in rows:
+        anchor = last_sync or connected
+        if anchor is not None and _as_utc(anchor) < cutoff:
+            stale.append(name)
+    if not stale:
+        return None
+    names = ", ".join(stale[:3]) + (" and others" if len(stale) > 3 else "")
+    return {
+        "signal_kind": "CONNECTOR_STALE", "subject": "connector_health",
+        "title": f"{len(stale)} connected system(s) stopped syncing",
+        "goal": ("Diagnose why the connected external systems stopped syncing and "
+                 "restore the data flow so the twin stays current."),
+        "rationale": (f"{names} are connected but have not delivered records for "
+                      f"over a day. Decisions grounded on a twin that has stopped "
+                      f"receiving reality drift further from the truth every hour."),
+        "evidence": [{"kind": "connector", "ref": "connectors",
+                      "detail": f"stale_over_24h={len(stale)} names={stale[:5]}"}],
+        "base_priority": min(1.0, 0.35 + len(stale) * 0.1),
+    }
+
+
+async def _obs_knowledge_decay(db, tid):
+    """Executable rules past their half-life: governed decisions running on
+    knowledge nobody has revalidated within its own declared shelf life."""
+    from app.models.domain import Rule
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(
+        select(Rule.validated_at, Rule.created_at, Rule.half_life_days)
+        .where(Rule.tenant_id == tid, Rule.is_archived == False,  # noqa: E712
+               Rule.is_executable == True)  # noqa: E712
+        .limit(500))).all()
+    expired = 0
+    for validated_at, created_at, half_life in rows:
+        anchor = validated_at or created_at
+        if anchor is None or (now - _as_utc(anchor)).days > max(half_life or 0, 1):
+            expired += 1
+    if expired < 5:
+        return None
+    return {
+        "signal_kind": "KNOWLEDGE_DECAY", "subject": "rule_half_life",
+        "title": f"{expired} executable rules are past their half-life",
+        "goal": ("Revalidate the expired executable rules with their domain experts "
+                 "so governed decisions stop running on stale knowledge."),
+        "rationale": (f"{expired} rules that agents actively execute have outlived "
+                      f"their own declared half-life without revalidation. Each one "
+                      f"is a decision policy the organization no longer knows to be true."),
+        "evidence": [{"kind": "rule_decay", "ref": "rules",
+                      "detail": f"expired_executable={expired} (of first {len(rows)} checked)"}],
+        "base_priority": min(1.0, 0.3 + expired * 0.03),
+    }
+
+
+async def _obs_strategic_fitness(db, tid):
+    """The EvolutionEngine's top structural recommendation, fed into the brain:
+    fitness analysis was a proactive layer nothing consumed until now."""
+    from app.services.evolution.evolution_engine import EvolutionEngine
+    result = await EvolutionEngine().evaluate_and_evolve(tid)
+    opts = result.get("optimizations") or []
+    if not opts:
+        return None
+    top = opts[0]
+    kind_slug = str(top.get("type") or "STRUCTURAL").lower()
+    return {
+        "signal_kind": "STRATEGIC_FITNESS", "subject": kind_slug,
+        "title": "The fitness engine found a structural optimization",
+        "goal": (f"Carry out the recommended structural change: {top.get('description', '')}"),
+        "rationale": (f"Enterprise fitness analysis ranks this the highest-value "
+                      f"structural move right now, worth about "
+                      f"{float(top.get('expected_improvement') or 0):.1%} of fitness."),
+        "evidence": [{"kind": "fitness", "ref": "evolution_engine",
+                      "detail": (f"type={top.get('type')} current_fitness="
+                                 f"{result.get('current_fitness')} "
+                                 f"expected_improvement={top.get('expected_improvement')}")}],
+        "base_priority": min(1.0, 0.3 + float(top.get("expected_improvement") or 0) * 2),
+    }
+
+
 _OBSERVERS = [_obs_autonomy_decline, _obs_cost_spike, _obs_open_drift,
-              _obs_mission_failures, _obs_elicitation_backlog]
+              _obs_mission_failures, _obs_elicitation_backlog,
+              _obs_connector_health, _obs_knowledge_decay, _obs_strategic_fitness]
 
 
 async def _is_suppressed(db: AsyncSession, tenant_id: str, dedup_key: str) -> bool:
@@ -420,13 +514,10 @@ async def _emit(tenant_id: str, event_name: str, payload: dict) -> None:
 if __name__ == "__main__":
     # Self-check the meta-learning weight math without a DB: acceptance and
     # success both move the multiplier the right way and it stays bounded.
-    def _w(acceptance, success_rate=None):
-        accept_signal = acceptance - 0.5
-        success_signal = 0.0 if success_rate is None else success_rate - 0.5
-        return max(0.5, min(1.5, 1.0 + 0.5 * accept_signal + 0.5 * success_signal))
-    assert _w(1.0, 1.0) == 1.5, "all approved + all succeeded → max"
-    assert _w(0.0, 0.0) == 0.5, "all rejected + all failed → floor"
-    assert _w(0.0, None) == 0.75, "all rejected, no outcomes yet → damped"
-    assert _w(0.5, None) == 1.0, "neutral acceptance, no outcomes → neutral"
-    assert _w(1.0, 0.0) == 1.0, "approved but always fails → cancels out"
+    assert weight_from_counts(4, 0, 4, 0) == 1.5, "all approved + all succeeded → max"
+    assert weight_from_counts(0, 4, 0, 0) == 0.75, "all rejected, no outcomes yet → damped"
+    assert weight_from_counts(2, 2, 0, 0) == 1.0, "neutral acceptance, no outcomes → neutral"
+    assert weight_from_counts(4, 0, 0, 4) == 1.0, "approved but always fails → cancels out"
+    assert weight_from_counts(1, 1, 0, 0) == 1.0, "below the decided floor → neutral prior"
+    assert weight_from_counts(1, 9, 0, 1) == 0.55, "low acceptance + failure → strongly damped"
     print("company_brain weight self-check ok")

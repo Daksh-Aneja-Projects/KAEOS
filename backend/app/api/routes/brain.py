@@ -39,6 +39,21 @@ async def backfill_skill_embeddings_route(
     return await backfill_skill_embeddings(db, tenant["tenant_id"])
 
 
+@knowledge_router.post("/embeddings/reembed-stale")
+async def reembed_stale_embeddings_route(
+    tenant: dict = Depends(require_role("admin")),
+):
+    """Re-embed memory vectors produced by a previous embedding model (M14).
+
+    Idempotent admin maintenance action, batched per call. Honest refusals:
+    a simulated-only router re-embeds nothing, and a vector-width mismatch
+    reports the required pgvector migration instead of writing garbage.
+    """
+    from app.services.knowledge import reembed_stale_vectors
+
+    return await reembed_stale_vectors(tenant["tenant_id"])
+
+
 @router.get("/overview")
 async def brain_overview(tenant_id: str = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
     """
@@ -227,6 +242,47 @@ async def list_proposals(
     q = q.order_by(BrainProposal.created_at.desc()).limit(max(1, min(200, limit)))
     rows = (await db.execute(q)).scalars().all()
     return {"proposals": [_proposal_view(p) for p in rows], "count": len(rows)}
+
+
+@router.get("/learning")
+async def brain_learning(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """How the brain's meta-learning currently weighs each proposal kind:
+    decided counts, acceptance, mission outcomes, and the resulting materiality
+    multiplier — the transparency surface for 'why is the brain quiet about X'."""
+    from app.services.company_brain import weight_from_counts
+
+    rows = (await db.execute(
+        select(
+            BrainProposal.signal_kind,
+            sqlfunc.count(BrainProposal.id),
+            sqlfunc.count(BrainProposal.id).filter(BrainProposal.status == "APPROVED"),
+            sqlfunc.count(BrainProposal.id).filter(BrainProposal.status == "REJECTED"),
+            sqlfunc.count(BrainProposal.id).filter(BrainProposal.status == "PENDING"),
+            sqlfunc.count(BrainProposal.id).filter(BrainProposal.outcome == "SUCCEEDED"),
+            sqlfunc.count(BrainProposal.id).filter(BrainProposal.outcome == "FAILED"),
+        ).where(BrainProposal.tenant_id == tenant_id)
+        .group_by(BrainProposal.signal_kind)
+    )).all()
+    kinds = []
+    for kind, total, approved, rejected, pending, succeeded, failed in rows:
+        decided = (approved or 0) + (rejected or 0)
+        kinds.append({
+            "signal_kind": kind,
+            "total": total or 0,
+            "approved": approved or 0,
+            "rejected": rejected or 0,
+            "pending": pending or 0,
+            "succeeded": succeeded or 0,
+            "failed": failed or 0,
+            "acceptance": round((approved or 0) / decided, 3) if decided else None,
+            "weight": round(weight_from_counts(
+                approved or 0, rejected or 0, succeeded or 0, failed or 0), 3),
+        })
+    kinds.sort(key=lambda k: k["total"], reverse=True)
+    return {"kinds": kinds, "count": len(kinds)}
 
 
 @router.post("/reflect")

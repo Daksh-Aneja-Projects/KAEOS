@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2, Users, Activity, ShieldCheck, Lock, KeyRound,
-  Layers, AlertCircle, X, Server,
+  Layers, AlertCircle, X, Server, RotateCcw, Loader2, Timer, Wrench,
 } from 'lucide-react';
-import { api, type OpsOverview, type OpsTenant, type OpsTenantDetail } from '../api/client';
+import {
+  api, type OpsOverview, type OpsTenant, type OpsTenantDetail,
+  type OpsJob, type OpsSchedulerBeat,
+} from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { StatCard } from '../components/shared/StatCard';
 import { Ring } from '../components/shared/Ring';
@@ -38,14 +41,42 @@ export default function OperatorConsole() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OpsTenantDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // Remediation state: the durable job queue + the scheduler heartbeat.
+  const [jobs, setJobs] = useState<OpsJob[]>([]);
+  const [beats, setBeats] = useState<Record<string, OpsSchedulerBeat>>({});
+  const [showAllJobs, setShowAllJobs] = useState(false);
+  const [requeueing, setRequeueing] = useState<string | null>(null);
+  const [remedyNote, setRemedyNote] = useState<string | null>(null);
 
   // Load the fleet with a candidate secret. Returns true on success so both the
-  // unlock button and the silent session-restore share one path.
+  // unlock button and the silent session-restore share one path. The gate rides
+  // on overview+tenants; jobs/scheduler are best-effort so an older backend
+  // without them still unlocks the console.
   const loadFleet = async (secret: string): Promise<boolean> => {
     const [ov, tn] = await Promise.all([api.opsOverview(secret), api.opsTenants(secret)]);
     setOverview(ov);
     setTenants(tn.tenants);
+    void api.opsJobs(secret).then(j => setJobs(j.jobs)).catch(() => {});
+    void api.opsScheduler(secret).then(s => setBeats(s.jobs || {})).catch(() => {});
     return true;
+  };
+
+  const requeue = async (jobId: string) => {
+    if (!secretRef.current) return;
+    setRequeueing(jobId);
+    setRemedyNote(null);
+    try {
+      await api.opsRequeueJob(jobId, secretRef.current);
+      setJobs(prev => prev.map(j => j.id === jobId
+        ? { ...j, status: 'QUEUED', attempts: 0, last_error: null } : j));
+      setRemedyNote('Job requeued. The queue picks it up within 15 seconds.');
+    } catch (e: any) {
+      setRemedyNote(String(e?.message || '').includes('404')
+        ? 'That job is no longer failed, so there was nothing to requeue.'
+        : 'Could not requeue that job. Try again.');
+    } finally {
+      setRequeueing(null);
+    }
   };
 
   const unlock = async (candidate: string) => {
@@ -79,6 +110,7 @@ export default function OperatorConsole() {
     sessionStorage.removeItem(SECRET_KEY);
     secretRef.current = '';
     setOverview(null); setTenants([]); setSelectedId(null); setDetail(null);
+    setJobs([]); setBeats({}); setRemedyNote(null);
     setStatus('locked');
   };
 
@@ -299,6 +331,159 @@ export default function OperatorConsole() {
           colors={colors}
           onClose={() => setSelectedId(null)}
         />
+      )}
+
+      {/* Remediation: background-job heartbeat + the durable job queue */}
+      <SchedulerHeartbeat beats={beats} colors={colors} />
+      <JobQueuePanel
+        jobs={jobs}
+        showAll={showAllJobs}
+        onToggleShowAll={() => setShowAllJobs(v => !v)}
+        requeueing={requeueing}
+        onRequeue={requeue}
+        note={remedyNote}
+        colors={colors}
+      />
+    </div>
+  );
+}
+
+// ─── Remediation: scheduler heartbeat ──────────────────────────────
+// Plain-English age for a heartbeat/job timestamp; never a raw ISO string.
+function ago(iso: string | null): string {
+  if (!iso) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
+}
+
+function SchedulerHeartbeat({ beats, colors }: {
+  beats: Record<string, OpsSchedulerBeat>;
+  colors: Record<string, string>;
+}) {
+  const rows = Object.entries(beats).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <div className="rounded-xl p-5" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex items-center gap-2 mb-1">
+        <Timer className="w-4 h-4" style={{ color: colors.primary }} />
+        <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Background jobs, last run</span>
+      </div>
+      <p className="text-[12px] mb-3" style={{ color: colors.inkSubtle }}>
+        Every scheduled job's most recent run on the leader. A red job is failing every tick even while the public status page stays green.
+      </p>
+      {rows.length === 0 ? (
+        <div className="text-[13px] py-4 text-center" style={{ color: colors.inkTertiary }}>
+          No runs recorded yet. Heartbeats appear as the scheduler ticks.
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {rows.map(([name, b]) => (
+            <span key={name}
+              title={b.error ? `Last error: ${b.error}` : `Last ran ${ago(b.at)}`}
+              className="inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-full"
+              style={{
+                background: b.ok ? colors.surface2 : colors.error + '14',
+                border: `1px solid ${b.ok ? colors.hairline : colors.error + '55'}`,
+                color: b.ok ? colors.inkMuted : colors.error,
+              }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: b.ok ? colors.success : colors.error }} />
+              {humanize(name)}
+              <span style={{ color: b.ok ? colors.inkTertiary : colors.error }}>{ago(b.at)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Remediation: durable job queue ────────────────────────────────
+function JobQueuePanel({ jobs, showAll, onToggleShowAll, requeueing, onRequeue, note, colors }: {
+  jobs: OpsJob[];
+  showAll: boolean;
+  onToggleShowAll: () => void;
+  requeueing: string | null;
+  onRequeue: (id: string) => void;
+  note: string | null;
+  colors: Record<string, string>;
+}) {
+  const failed = jobs.filter(j => j.status === 'FAILED');
+  const visible = showAll ? jobs : failed;
+  const statusColor = (s: string) =>
+    s === 'FAILED' ? colors.error : s === 'RUNNING' ? colors.info
+      : s === 'QUEUED' ? colors.warning : colors.success;
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b flex-wrap" style={{ borderColor: colors.hairline }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <Wrench className="w-4 h-4 shrink-0" style={{ color: colors.primary }} />
+          <span className="text-[14px] font-medium" style={{ color: colors.ink }}>Durable job queue</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+            style={{
+              background: failed.length ? colors.error + '14' : colors.surface2,
+              color: failed.length ? colors.error : colors.inkSubtle,
+              border: `1px solid ${failed.length ? colors.error + '55' : colors.hairline}`,
+            }}>
+            {failed.length === 0 ? 'nothing failed' : `${failed.length} failed`}
+          </span>
+        </div>
+        <button onClick={onToggleShowAll}
+          className="text-[12px] px-2.5 py-1 rounded-lg font-medium"
+          style={{ background: colors.surface2, border: `1px solid ${colors.hairline}`, color: colors.inkSubtle }}>
+          {showAll ? 'Show failed only' : 'Show every status'}
+        </button>
+      </div>
+
+      {note && (
+        <div className="px-5 py-2 text-[12px] border-b" style={{ borderColor: colors.hairline, color: colors.inkSubtle, background: colors.canvas }}>
+          {note}
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <div className="px-5 py-8 text-center text-[13px]" style={{ color: colors.inkTertiary }}>
+          {showAll
+            ? 'The queue is empty. Durable work appears here as it is enqueued.'
+            : 'No failed jobs. When a background job exhausts its retries it lands here for a manual requeue.'}
+        </div>
+      ) : (
+        <div className="max-h-[320px] overflow-y-auto">
+          {visible.map((j, i) => (
+            <div key={j.id} className="px-5 py-3 flex items-start gap-3"
+              style={{ borderTop: i > 0 ? `1px solid ${colors.hairline}` : undefined }}>
+              <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: statusColor(j.status) }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] font-medium" style={{ color: colors.ink }}>{humanize(j.job_type)}</span>
+                  <span className="text-[11px] font-medium" style={{ color: statusColor(j.status) }}>{humanize(j.status)}</span>
+                  <span className="text-[11px]" style={{ color: colors.inkTertiary }}>
+                    attempt {j.attempts} of {j.max_attempts} · {ago(j.updated_at || j.created_at)}
+                  </span>
+                </div>
+                {j.last_error && (
+                  <p className="text-[12px] mt-0.5 truncate" title={j.last_error} style={{ color: colors.inkSubtle }}>
+                    {j.last_error}
+                  </p>
+                )}
+              </div>
+              {j.status === 'FAILED' && (
+                <button onClick={() => onRequeue(j.id)} disabled={requeueing === j.id}
+                  title="Reset attempts and run this job again"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold shrink-0 disabled:opacity-60"
+                  style={{ background: colors.primary, color: '#fff' }}>
+                  {requeueing === j.id
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <RotateCcw className="w-3.5 h-3.5" />}
+                  Requeue
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
