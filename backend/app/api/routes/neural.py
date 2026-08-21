@@ -494,7 +494,9 @@ async def brain_search(
         embedding = (await llm.embed([q]))[0]
         if not llm.embeddings_simulated:
             store = get_vector_store()
-            for namespace in ("enterprise_memory", "hr_kb"):
+            # M4: hr_kb dropped — empty in production; enterprise_memory holds all
+            # ingested knowledge (see chat.py _GROUNDING_NAMESPACES).
+            for namespace in ("enterprise_memory",):
                 for r in await store.search(
                     tenant_id=tenant_id, query_embedding=embedding, limit=5, namespace=namespace,
                 ):

@@ -12,7 +12,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["Copilot Chat"])
 
 # Namespaces in the polystore that hold real tenant content the copilot may cite.
-_GROUNDING_NAMESPACES = ("enterprise_memory", "hr_kb")
+# M4: "hr_kb" was dropped from the general copilot readers — it is HR-privileged
+# and empty in production (its only writer, HRKnowledgeBase.index_document, has no
+# non-test caller), so every chat request paid for a search of an empty namespace.
+# All ingested knowledge now lands in enterprise_memory (BYOK + connector signals,
+# H4/H5), the one populated namespace; HRKnowledgeBase still serves HR-specific
+# retrieval. Re-add hr_kb here once a general HR-KB ingestion path exists.
+_GROUNDING_NAMESPACES = ("enterprise_memory",)
 # Below this cosine similarity a hit is not evidence of anything; citing it would
 # manufacture the appearance of grounding.
 _MIN_SIMILARITY = 0.35
