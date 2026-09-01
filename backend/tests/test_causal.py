@@ -43,7 +43,10 @@ async def test_planted_lead_lag_surfaces_link(db):
                  department="support", domain="support", status="ACTIVE", confidence=0.9))
     await db.commit()
 
-    base = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    # Relative to now: discover() windows back from the current date, so a
+    # hardcoded absolute base rots out of the window as the calendar advances
+    # (this exact test went red 2026-09-02 with base = July 1 and days=60).
+    base = datetime.now(timezone.utc) - timedelta(days=20)
     # engineering adverse on days 0,1,2,3,4,5,6 with a rising pattern; support adverse
     # one day LATER mirroring engineering (A[t] ~ B[t+1]).
     eng_pattern = [3, 0, 3, 0, 3, 0, 3, 0]
