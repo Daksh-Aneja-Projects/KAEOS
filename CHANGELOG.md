@@ -25,6 +25,11 @@ All notable changes to KAEOS are documented here. This project adheres to
   tenant plan to include the feature.
 - README: honest "Open core and KAEOS Enterprise" capability matrix - each
   Enterprise row flips from "Not built" only when the capability ships.
+- Seam: Enterprise startup hooks, dispatched from the lifespan inside the
+  bootstrap leader lock (Enterprise creates its own tables there; a failing
+  hook resets the seam to inert and the core boots as open core). First
+  Enterprise capability now available through the seam: offline-verifiable
+  action proofs (the capability matrix row flipped to Available).
 
 ## [2.1.0] - 2026-08-21 - "The Company Brain"
 

@@ -205,7 +205,7 @@ actually ships.
 | Multi-tenant RLS, SSO/OIDC/SAML, SCIM, MFA | Open core | Available |
 | Connector catalog (read + basic write-back) | Open core | Available |
 | Company Brain, Foresight, Proving Ground, dashboards | Open core | Available |
-| Offline-verifiable action proofs + auditor bundles | Enterprise | Not built |
+| Offline-verifiable action proofs + auditor bundles | Enterprise | Available |
 | Deterministic decision-proof arbitration | Enterprise | Not built |
 | Earned-autonomy trust ledger | Enterprise | Not built |
 | Rehearsal: predicted-diff approvals before execution | Enterprise | Not built |

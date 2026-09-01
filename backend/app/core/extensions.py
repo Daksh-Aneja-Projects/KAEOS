@@ -48,6 +48,7 @@ class ExtensionRegistry:
 
     gate_stage_hooks: List[GateStageHook] = field(default_factory=list)
     pipeline_terminal_hooks: List[TerminalHook] = field(default_factory=list)
+    startup_hooks: List[Callable[[], Awaitable[None]]] = field(default_factory=list)
     billing_classifier: Optional[Callable[..., Any]] = None
     routers: List[Any] = field(default_factory=list)
 
@@ -64,6 +65,11 @@ class ExtensionRegistry:
 
     def add_pipeline_terminal_hook(self, hook: TerminalHook) -> None:
         self.pipeline_terminal_hooks.append(hook)
+
+    def add_startup_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
+        """Async hook run once at boot, after the core's DB init (lifespan).
+        Enterprise uses it to create/upgrade its own tables idempotently."""
+        self.startup_hooks.append(hook)
 
     def set_billing_classifier(self, fn: Callable[..., Any]) -> None:
         self.billing_classifier = fn
@@ -127,10 +133,29 @@ class ExtensionRegistry:
             except Exception:
                 logger.error("[EE] pipeline-terminal hook failed", exc_info=True)
 
+    async def dispatch_startup(self) -> None:
+        """Run Enterprise startup hooks (from the core lifespan, post-DB-init).
+
+        A failing hook disables the WHOLE seam (reset to inert) rather than
+        letting a half-initialised Enterprise run: its tables may be missing,
+        so its request paths would 500 where the contract promises a
+        professional refusal. Core boot continues as open core.
+        """
+        for hook in list(self.startup_hooks):
+            try:
+                await hook()
+            except Exception as e:
+                self.reset()
+                self.error = f"startup: {type(e).__name__}: {e}"
+                logger.error("[EE] Enterprise startup hook failed; seam reset "
+                             "to inert: %s", self.error, exc_info=True)
+                return
+
     def reset(self) -> None:
         """Return the seam to inert (used on failed registration and in tests)."""
         self.gate_stage_hooks.clear()
         self.pipeline_terminal_hooks.clear()
+        self.startup_hooks.clear()
         self.billing_classifier = None
         self.routers.clear()
         self.loaded = False

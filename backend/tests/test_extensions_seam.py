@@ -147,6 +147,34 @@ def test_load_enterprise_broken_register_resets():
     assert status["installed"] is True  # honest: present but broken
 
 
+async def test_dispatch_startup_runs_hooks():
+    ran = []
+
+    async def hook():
+        ran.append(True)
+
+    extensions.add_startup_hook(hook)
+    await extensions.dispatch_startup()
+    assert ran == [True]
+
+
+async def test_dispatch_startup_failure_resets_seam():
+    async def ok_hook():
+        pass
+
+    async def bad_hook():
+        raise RuntimeError("EE tables could not be created")
+
+    extensions.loaded = True
+    extensions.add_pipeline_terminal_hook(ok_hook)  # type: ignore[arg-type]
+    extensions.add_startup_hook(bad_hook)
+    await extensions.dispatch_startup()
+    # Half-initialised Enterprise must not run: seam inert, error surfaced.
+    assert extensions.loaded is False
+    assert extensions.pipeline_terminal_hooks == []
+    assert "EE tables could not be created" in extensions.error
+
+
 async def test_emit_gate_reaches_registered_hook():
     from app.agents.runtime import AgentExecutor
     seen = []

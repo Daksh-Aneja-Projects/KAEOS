@@ -211,6 +211,14 @@ async def lifespan(app: FastAPI):
         from app.core.workforce_seed import seed_workforce_graph
         await seed_workforce_graph()
 
+        # KAEOS Enterprise startup (still under the bootstrap lock: Enterprise
+        # creates its own tables here, and that DDL needs the same one-worker-
+        # at-a-time discipline as core schema creation). Inert no-op when the
+        # Enterprise package is absent; a failing hook resets the seam and the
+        # core boots as open core.
+        from app.core.extensions import extensions
+        await extensions.dispatch_startup()
+
     # Background Service 1: Event Bus Queue Worker
     # Background Service 2: APScheduler for Decay Checks
     # (The old PreCog ambient loop was removed — H3: it queried a signal_type no
