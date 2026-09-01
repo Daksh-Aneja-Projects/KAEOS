@@ -89,6 +89,72 @@ def require_entitlement(feature: str):
     return _checker
 
 
+# ── KAEOS Enterprise features (fusion F0) ──────────────────────────────────
+# These are provided by the private kaeos_enterprise package through the seam
+# in app.core.extensions, not by this repo. The fence: anything answering
+# "can we prove it / can we let go safely / can other vendors' agents use it"
+# is Enterprise. Kept in sync with kaeos_enterprise.FEATURES as phases land.
+EE_FEATURES = frozenset({
+    "proof",            # F1: offline-verifiable action proofs + auditor bundles
+    "decision_proof",   # F2: deterministic arbitration arithmetic
+    "trust_ledger",     # F3: earned-autonomy calibration + tier ladder
+    "rehearsal",        # F4: predicted-diff dry runs before execution
+    "gateway",          # F5: governed MCP/A2A gateway for third-party agents
+    "outcome_billing",  # F6: outcome-verified billing + invoice proofs
+    "evidence_pack",    # F7: procurement / AI-Act evidence pack generator
+})
+
+# In managed cloud, Enterprise features additionally require the plan to
+# include them. Self-host entitlement is the Enterprise package's own license
+# check (private side); if it registered, the deployment is entitled.
+PLAN_EE_FEATURES: dict[str, frozenset] = {
+    "free": frozenset(),
+    "oss": frozenset(),
+    "team": frozenset(),
+    "business": frozenset(),
+    "enterprise": EE_FEATURES,
+}
+
+
+def require_enterprise(feature: str):
+    """FastAPI Depends() factory gating a KAEOS Enterprise capability.
+
+    Refusals are professional and human-readable, never a stack trace:
+    402 when the Enterprise package is not installed/loaded, and in managed
+    cloud additionally 402 when the tenant plan does not include the feature.
+    """
+    async def _checker(
+        tenant: dict = Depends(get_tenant),
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        from app.core.extensions import extensions
+        if not extensions.provides(feature):
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    "This is a KAEOS Enterprise capability. The "
+                    f"'{feature}' feature is part of KAEOS Enterprise, which "
+                    "is not enabled on this deployment. Contact your KAEOS "
+                    "administrator to enable it."
+                ),
+            )
+        if _managed_cloud():
+            plan = normalize_plan(await plan_for_tenant(db, tenant["tenant_id"]))
+            if feature not in PLAN_EE_FEATURES[plan]:
+                raise HTTPException(
+                    status_code=402,
+                    detail=(
+                        "This is a KAEOS Enterprise capability. The "
+                        f"'{feature}' feature is not included in your "
+                        f"'{plan}' plan. Upgrade to the enterprise plan to "
+                        "unlock it."
+                    ),
+                )
+        return tenant
+
+    return _checker
+
+
 # Executions past the included allowance are billed as overage (soft limit), but
 # a runaway tenant is hard-capped at this multiple of the allowance to bound
 # spend. ponytail: flat multiple, make it per-plan config if a plan needs its own.

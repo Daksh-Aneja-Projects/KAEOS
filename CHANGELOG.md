@@ -11,7 +11,20 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **KAEOS Enterprise seam** (`app/core/extensions.py`): an extension registry
+  the private `kaeos_enterprise` package registers into at boot - gate-stage
+  observers, pipeline-terminal observers (proof sealing lands there), premium
+  vendor-adapter injection, a billing-classifier slot, and Enterprise API
+  routers mounted under the API prefix. Inert no-op on open-core installs;
+  a broken or unlicensed Enterprise package degrades honestly to open core.
+  `KAEOS_EE_DISABLED=1` forces open-core behavior with the package installed.
+- `require_enterprise()` entitlement dependency (`app/core/entitlements.py`):
+  Enterprise capabilities refuse with a professional, human-readable 402
+  (never a stack trace); in managed cloud they additionally require the
+  tenant plan to include the feature.
+- README: honest "Open core and KAEOS Enterprise" capability matrix - each
+  Enterprise row flips from "Not built" only when the capability ships.
 
 ## [2.1.0] - 2026-08-21 - "The Company Brain"
 

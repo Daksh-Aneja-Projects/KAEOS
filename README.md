@@ -42,6 +42,7 @@ app on a seeded demo tenant, not a mockup or a design comp.</sub>
 - [The differentiator: a measured confidence ceiling](#the-differentiator-a-measured-confidence-ceiling)
 - [The 7-gate pipeline](#the-7-gate-pipeline)
 - [What we refuse to fake](#what-we-refuse-to-fake)
+- [Open core and KAEOS Enterprise](#open-core-and-kaeos-enterprise)
 - [Quick start](#quick-start)
 - [Repository layout](#repository-layout)
 - [By the numbers](#by-the-numbers)
@@ -182,6 +183,36 @@ measurable, the platform returns nothing rather than something invented.
 - **There is no fake trainer.** The Foundry's weight fine-tuning step is
   external and pluggable, and the product says so.
 
+## Open core and KAEOS Enterprise
+
+Everything in this repository is Apache 2.0 and runs standalone: the 7-gate
+pipeline, the ten departments, the statutory compliance checkers, the
+dashboards, multi-tenancy with Postgres RLS, SSO/SCIM, and the connector
+catalog. That is the product, complete, with no license check and no feature
+flag pointing at a paywall.
+
+Separately, a proprietary **KAEOS Enterprise** package is being built as an
+overlay. The core ships only the loading seam (`app/core/extensions.py`): at
+boot it imports `kaeos_enterprise` if that package is installed and licensed,
+and stays inert otherwise. Calling an Enterprise endpoint on an open-core
+install returns a plain, professional message, never an error trace. The
+matrix below is kept honest: a row says "Available" only when the capability
+actually ships.
+
+| Capability | Edition | Status |
+|---|---|---|
+| 7-gate governed execution, departments, compliance checkers | Open core | Available |
+| Multi-tenant RLS, SSO/OIDC/SAML, SCIM, MFA | Open core | Available |
+| Connector catalog (read + basic write-back) | Open core | Available |
+| Company Brain, Foresight, Proving Ground, dashboards | Open core | Available |
+| Offline-verifiable action proofs + auditor bundles | Enterprise | Not built |
+| Deterministic decision-proof arbitration | Enterprise | Not built |
+| Earned-autonomy trust ledger | Enterprise | Not built |
+| Rehearsal: predicted-diff approvals before execution | Enterprise | Not built |
+| Governed gateway for third-party agents (MCP/A2A) | Enterprise | Not built |
+| Outcome-verified billing with invoice proofs | Enterprise | Not built |
+| Procurement / AI-Act evidence packs | Enterprise | Not built |
+
 ## Quick start
 
 Requires Docker and Docker Compose.
@@ -319,14 +350,17 @@ are inbound = outbound under Apache 2.0; there is no CLA to sign.
 
 ## License
 
-**All KAEOS source code is licensed under the Apache License 2.0, and only that.**
-There is no dual license, no commercial license tier, and no proprietary or
-"all rights reserved" grant anywhere in this repository. See [LICENSE](LICENSE)
-for the full text and [NOTICE](NOTICE) for required attributions.
+**All source code in this repository is licensed under the Apache License 2.0,
+and only that.** There is no dual license and no proprietary or "all rights
+reserved" grant anywhere in this repository. See [LICENSE](LICENSE) for the
+full text and [NOTICE](NOTICE) for required attributions. A separate,
+proprietary [KAEOS Enterprise](#open-core-and-kaeos-enterprise) package exists
+outside this repository; nothing here requires it.
 
-**Everything needed to run KAEOS is in this repository.** No feature is gated
-behind a paid tier, no proprietary component is required to stand the platform
-up, and there is no licence check or usage telemetry reporting back to anyone.
+**Everything needed to run KAEOS is in this repository.** No feature in this
+repository is gated behind a paid tier, no proprietary component is required to
+stand the platform up, and there is no licence check or usage telemetry
+reporting back to anyone.
 The platform ships with no analytics SDK; the only outbound observability is
 OpenTelemetry tracing, which stays off unless you set
 `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector **you** run.

@@ -27,6 +27,7 @@ from app.core.context import (
     current_tenant_id,
 )
 from app.core.database import AsyncSessionLocal
+from app.core.extensions import extensions
 from app.core.metrics import GATE_TRANSITIONS, observe_pipeline
 from app.core.telemetry import tracer
 from app.models.agent_factory import ActivityEventType, ActivitySeverity
@@ -400,6 +401,10 @@ class AgentExecutor:
             })
         except Exception as e:
             logger.debug(f"[Gate] ws ping skipped: {e}")
+        # Enterprise seam: gate-stage observers (dispatch swallows hook errors;
+        # observers see, never decide - a hook can never alter the verdict).
+        if extensions.gate_stage_hooks:
+            await extensions.dispatch_gate_stage(context, gate, state, detail)
 
     async def execute_skill(
         self, skill: Dict[str, Any], context: Dict[str, Any],
@@ -473,6 +478,10 @@ class AgentExecutor:
                 context.get("execution_id"), result.get("status"), total_ms,
                 " ".join(f"{s['gate']}:{s['ms']}ms" for s in stages),
             )
+            # Enterprise seam: pipeline-terminal observers (proof sealing lands
+            # here). Best-effort by contract - sealing never blocks execution.
+            if extensions.pipeline_terminal_hooks:
+                await extensions.dispatch_pipeline_terminal(skill, context, result)
         return result
 
     async def _gate_compliance_and_fairness(

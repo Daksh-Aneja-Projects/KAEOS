@@ -566,6 +566,15 @@ app.include_router(wf_domain_packs_router, prefix=PREFIX)
 app.include_router(wf_processes_router,    prefix=PREFIX)
 app.include_router(wf_analytics_router,    prefix=PREFIX)
 
+# ── KAEOS Enterprise seam (fusion F0) ───────────────────────────────────────
+# Loads the private kaeos_enterprise package if installed and enabled, letting
+# it register gate/terminal hooks, premium adapters, and its routers under the
+# same prefix. Inert no-op on open-core installs; honest degrade on a broken
+# package (core boots, Enterprise routes refuse professionally). Must run
+# AFTER core mounts so Enterprise can never shadow a core route.
+from app.core.extensions import load_enterprise  # noqa: E402
+load_enterprise(app, prefix=PREFIX)
+
 
 # ── Health checks ───────────────────────────────────────────────────────────
 
