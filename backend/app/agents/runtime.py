@@ -661,13 +661,20 @@ class AgentExecutor:
                 # holds regardless of whether this event lands.
                 logger.debug(f"[Gate3] failsafe activity event skipped: {feed_err}")
 
-        # Two independent reasons to route to a human:
+        # Enterprise seam: extension confidence caps (input trust). They only
+        # ever lower confidence or force review; a suspect input routes to a
+        # human below regardless of any threshold or dial.
+        effective_confidence, _ext_force_reason = await self._apply_extension_caps(
+            effective_confidence, skill, context)
+
+        # Three independent reasons to route to a human:
         #  (a) confidence below the CONFIGURED autonomous-exec threshold (this
         #      used to be a hardcoded 0.82 literal that ignored the config knob);
         #  (b) HIGH-CONSEQUENCE actions (payments, terminations, contract
         #      execution, external sends, irreversible/data-deletion) ALWAYS go
         #      to a human, regardless of confidence — you don't let a model wire
-        #      money on its own no matter how sure it is.
+        #      money on its own no matter how sure it is;
+        #  (c) an Enterprise cap provider forced review (a suspect input).
         # The Autonomy Dial: per-domain risk appetite set by an executive overrides
         # the platform default threshold (falls back to it when unset). Gives the
         # dial real teeth at the confidence gate.
@@ -679,9 +686,12 @@ class AgentExecutor:
         # executor's skill dict may not carry the explicit flag.
         _high_consequence = is_high_consequence(skill) or is_high_consequence(skill_obj)
 
-        if _high_consequence or effective_confidence < _threshold:
+        if _high_consequence or _ext_force_reason or effective_confidence < _threshold:
             if _high_consequence:
                 logger.info(f"[Gate3] high-consequence action -> forcing HITL: {skill.get('skill_id')}")
+            if _ext_force_reason:
+                logger.info(f"[Gate3] extension cap forced HITL for "
+                            f"{skill.get('skill_id')}: {_ext_force_reason}")
             gate_decision = await self.hitl.request_human_confirmation(skill, context)
             # Non-blocking HITL returns immediately with pending=True
             if gate_decision.get("pending"):
@@ -700,6 +710,40 @@ class AgentExecutor:
         await self._emit_gate(context, "hitl", "passed")
         # Pass: the caller proceeds to Gates 4-6.
         return None
+
+    async def _apply_extension_caps(
+        self, effective_confidence: float, skill: Dict[str, Any], context: dict,
+    ) -> tuple:
+        """Run the Enterprise confidence-cap providers over this run.
+
+        Returns (capped confidence, force-HITL reason or None). Providers can
+        only lower confidence or force review, never raise or bypass; an
+        erroring provider fails closed to the failsafe ceiling, mirroring the
+        model-ceiling failure path above.
+        """
+        force_reason = None
+        for cap_fn in extensions.confidence_caps:
+            try:
+                cap = await cap_fn(skill, context)
+            except Exception:
+                cap = {
+                    "ceiling": get_settings().FAILSAFE_CONFIDENCE_CEILING,
+                    "force_hitl": False,
+                    "reason": "extension cap provider failed; failsafe ceiling applied",
+                }
+                logger.error("[Gate3] Enterprise confidence-cap provider "
+                             "failed; failsafe ceiling applied (fail-closed)",
+                             exc_info=True)
+            if not isinstance(cap, dict):
+                continue
+            ceiling = cap.get("ceiling")
+            if ceiling is not None:
+                effective_confidence = min(effective_confidence, float(ceiling))
+                await self._emit_gate(context, "confidence", "capped",
+                                      str(cap.get("reason", ""))[:300])
+            if cap.get("force_hitl"):
+                force_reason = cap.get("reason") or "an input requires human review"
+        return effective_confidence, force_reason
 
     async def _run_gates(
         self, skill: Dict[str, Any], context: Dict[str, Any],
@@ -760,7 +804,33 @@ class AgentExecutor:
                     execution_id=context.get("execution_id", "unknown"),
                     tenant_id=context.get("tenant_id", "default"),
                 )
-                decision = (transcript.arbitrator_decision or {}).get("decision", "ESCALATE")
+                arb = transcript.arbitrator_decision or {}
+                decision = arb.get("decision", "ESCALATE")
+                rationale = arb.get("rationale")
+                # Enterprise seam: the arithmetic arbitrator. When registered,
+                # the deterministic verdict from the stored role outputs
+                # decides; the LLM arbitrator's prose stands as commentary but
+                # cannot override the numbers. Fail-closed: a solver error or
+                # a None (unusable transcript) leaves the LLM verdict in force.
+                if extensions.debate_solver is not None:
+                    try:
+                        solved = await extensions.debate_solver(
+                            {"proposer": transcript.proposer_argument or {},
+                             "advocate": transcript.advocate_argument or {},
+                             "arbitrator": arb},
+                            context,
+                        )
+                    except Exception:
+                        logger.error("[EE] debate solver failed; the LLM "
+                                     "arbitrator stands", exc_info=True)
+                        solved = None
+                    if isinstance(solved, dict) and solved.get("decision") in (
+                            "PROCEED", "ESCALATE", "BLOCK"):
+                        decision = solved["decision"]
+                        rationale = solved.get("rationale") or rationale
+                        await self._persist_arithmetic_verdict(
+                            transcript.id, decision, rationale,
+                            solved.get("proof_summary") or {})
                 if decision in ("BLOCK", "ESCALATE"):
                     # Record the lap on the stopping path too, or the latency
                     # trace omits the single most expensive gate.
@@ -770,7 +840,7 @@ class AgentExecutor:
                     await self.activity_feed.emit(
                         event_type=ActivityEventType.DEBATE_BLOCKED,
                         title=f"Debate Engine BLOCKED: {skill.get('skill_id', 'unknown')}",
-                        description=(transcript.arbitrator_decision or {}).get("rationale", ""),
+                        description=rationale or "",
                         tenant_id=context.get("tenant_id", "default"),
                         severity=ActivitySeverity.CRITICAL,
                         source_type="execution",
@@ -780,7 +850,7 @@ class AgentExecutor:
                     return {
                         "status": ExecutionStatus.BLOCKED_DEBATE,
                         "debate_decision": decision,
-                        "rationale": (transcript.arbitrator_decision or {}).get("rationale"),
+                        "rationale": rationale,
                         "transcript_id": transcript.id,
                     }
                 elif decision == "ESCALATE":
@@ -803,6 +873,35 @@ class AgentExecutor:
 
         await self._emit_gate(context, "debate", "passed")
         return None
+
+    @staticmethod
+    async def _persist_arithmetic_verdict(
+        transcript_id: str, decision: str, rationale: str | None,
+        proof_summary: dict,
+    ) -> None:
+        """Store the arithmetic verdict beside the LLM's on the transcript.
+
+        Best-effort: the verdict already governs the run (and the Enterprise
+        seal carries the full proof); a persistence hiccup must never turn a
+        decided gate into a crash. The JSON column is REASSIGNED, not mutated,
+        so SQLAlchemy sees the change."""
+        try:
+            from app.models.agent_factory import DebateTranscript
+            async with AsyncSessionLocal() as session:
+                row = await session.get(DebateTranscript, transcript_id)
+                if row is not None:
+                    row.arbitrator_decision = {
+                        **(row.arbitrator_decision or {}),
+                        "arithmetic_verdict": {
+                            "decision": decision,
+                            "rationale": rationale,
+                            **proof_summary,
+                        },
+                    }
+                    await session.commit()
+        except Exception as e:
+            logger.error(f"[EE] could not persist the arithmetic verdict on "
+                         f"transcript {transcript_id}: {e}")
 
     async def _gate_execute(
         self, skill: Dict[str, Any], context: Dict[str, Any], skill_obj,

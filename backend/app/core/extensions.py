@@ -50,6 +50,22 @@ class ExtensionRegistry:
     pipeline_terminal_hooks: List[TerminalHook] = field(default_factory=list)
     startup_hooks: List[Callable[[], Awaitable[None]]] = field(default_factory=list)
     billing_classifier: Optional[Callable[..., Any]] = None
+    # The ONE slot that decides rather than observes: the debate gate's
+    # arithmetic arbitrator. Called with the stored role dicts
+    # ({proposer, advocate, arbitrator}) and the execution context; returns
+    # None (the LLM arbitrator stands) or {"decision": PROCEED|ESCALATE|BLOCK,
+    # "rationale": str, "proof_summary": dict}. Its decision space is exactly
+    # the gate's own, and an erroring solver falls back to the LLM arbitrator
+    # - it can widen scrutiny, never bypass the gate.
+    debate_solver: Optional[Callable[[dict, dict], Awaitable[Optional[dict]]]] = None
+    # Gate-3 confidence-cap providers (input trust lands here). Each is called
+    # with (skill, context) and returns None or {"ceiling": float|None,
+    # "force_hitl": bool, "reason": str}. Caps only ever LOWER effective
+    # confidence or force human review - a provider can widen scrutiny, never
+    # grant autonomy; an erroring provider fails closed to the failsafe
+    # ceiling.
+    confidence_caps: List[Callable[[dict, dict], Awaitable[Optional[dict]]]] = \
+        field(default_factory=list)
     routers: List[Any] = field(default_factory=list)
 
     # Load state - surfaced honestly (ops console / status), never guessed.
@@ -73,6 +89,12 @@ class ExtensionRegistry:
 
     def set_billing_classifier(self, fn: Callable[..., Any]) -> None:
         self.billing_classifier = fn
+
+    def set_debate_solver(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
+        self.debate_solver = fn
+
+    def add_confidence_cap(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
+        self.confidence_caps.append(fn)
 
     def add_router(self, router: Any) -> None:
         self.routers.append(router)
@@ -157,6 +179,8 @@ class ExtensionRegistry:
         self.pipeline_terminal_hooks.clear()
         self.startup_hooks.clear()
         self.billing_classifier = None
+        self.debate_solver = None
+        self.confidence_caps.clear()
         self.routers.clear()
         self.loaded = False
         self.version = None

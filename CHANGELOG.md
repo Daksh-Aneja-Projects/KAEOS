@@ -30,6 +30,21 @@ All notable changes to KAEOS are documented here. This project adheres to
   hook resets the seam to inert and the core boots as open core). First
   Enterprise capability now available through the seam: offline-verifiable
   action proofs (the capability matrix row flipped to Available).
+- Seam: the debate solver slot - the one hook that decides rather than
+  observes. When Enterprise registers its arithmetic arbitrator, the debate
+  gate's verdict comes from a deterministic calculation over the stored
+  Proposer/Advocate/Arbitrator outputs; the LLM arbitrator's prose stands as
+  commentary but cannot override the numbers, and the arithmetic verdict is
+  persisted beside it on the transcript. Fail-closed: a solver error or an
+  unusable transcript leaves the LLM verdict in force. Its decision space is
+  exactly the gate's own (PROCEED / ESCALATE / BLOCK) - it can widen
+  scrutiny, never bypass the gate. Matrix row flipped to Available.
+- Seam: Gate-3 confidence-cap providers. An Enterprise provider can lower a
+  run's effective confidence or force human review from the run's INPUT
+  provenance (a suspect or tampered input routes to a human regardless of
+  any autonomy dial); it can never raise confidence or bypass the gate, and
+  an erroring provider fails closed to the failsafe ceiling - the same
+  posture as the model-ceiling failure path.
 
 ## [2.1.0] - 2026-08-21 - "The Company Brain"
 

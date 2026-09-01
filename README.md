@@ -206,8 +206,8 @@ actually ships.
 | Connector catalog (read + basic write-back) | Open core | Available |
 | Company Brain, Foresight, Proving Ground, dashboards | Open core | Available |
 | Offline-verifiable action proofs + auditor bundles | Enterprise | Available |
-| Deterministic decision-proof arbitration | Enterprise | Not built |
-| Earned-autonomy trust ledger | Enterprise | Not built |
+| Deterministic decision-proof arbitration | Enterprise | Available |
+| Earned-autonomy trust ledger | Enterprise | Partial: input-trust gating, calibration, and the read-only ledger ship; automatic tier movement is pending |
 | Rehearsal: predicted-diff approvals before execution | Enterprise | Not built |
 | Governed gateway for third-party agents (MCP/A2A) | Enterprise | Not built |
 | Outcome-verified billing with invoice proofs | Enterprise | Not built |

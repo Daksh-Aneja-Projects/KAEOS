@@ -189,6 +189,100 @@ async def test_emit_gate_reaches_registered_hook():
     assert seen == [("compliance", "passed", "ok")]
 
 
+class _FakeTranscript:
+    def __init__(self, decision="PROCEED", rationale="llm view"):
+        self.id = "transcript-seam-test"  # absent from the DB; persist no-ops
+        self.proposer_argument = {"evidence": ["a"], "confidence": 0.9}
+        self.advocate_argument = {"risks": [], "ungrounded_claims_found": 0}
+        self.arbitrator_decision = {"decision": decision, "rationale": rationale,
+                                    "final_confidence": 0.9}
+
+
+class _FakeDebateEngine:
+    def __init__(self, transcript):
+        self._t = transcript
+
+    def should_debate(self, skill_obj, context):
+        return True, "seam-test"
+
+    async def run_debate(self, skill_obj, context, execution_id, tenant_id):
+        return self._t
+
+
+async def test_debate_solver_decides_the_gate():
+    from app.agents.runtime import AgentExecutor
+    seen = []
+
+    async def solver(roles, context):
+        seen.append(roles)
+        return {"decision": "PROCEED", "rationale": "arithmetic says go",
+                "proof_summary": {"margin": 0.2}}
+
+    extensions.set_debate_solver(solver)
+    ex = AgentExecutor(None, None)
+    # The LLM arbitrator says BLOCK; the registered solver's PROCEED decides.
+    ex._debate_engine = _FakeDebateEngine(_FakeTranscript(decision="BLOCK"))
+    outcome = await ex._gate_debate(
+        {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"},
+        object(), pre_approved=False)
+    assert outcome is None, "solver PROCEED must let the pipeline continue"
+    assert seen and set(seen[0]) == {"proposer", "advocate", "arbitrator"}
+
+
+async def test_debate_solver_error_falls_back_to_llm():
+    from app.agents.runtime import AgentExecutor
+
+    async def broken(roles, context):
+        raise RuntimeError("solver down")
+
+    extensions.set_debate_solver(broken)
+    ex = AgentExecutor(None, None)
+    # Solver fails; the LLM arbitrator's PROCEED stands (fail-closed to the
+    # existing verdict, never a crash).
+    ex._debate_engine = _FakeDebateEngine(_FakeTranscript(decision="PROCEED"))
+    outcome = await ex._gate_debate(
+        {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"},
+        object(), pre_approved=False)
+    assert outcome is None
+
+
+async def test_confidence_caps_lower_and_force_but_never_raise():
+    from app.agents.runtime import AgentExecutor
+
+    async def capping(skill, context):
+        return {"ceiling": 0.6, "force_hitl": False, "reason": "uncertain input"}
+
+    async def raising(skill, context):
+        return {"ceiling": 0.99, "force_hitl": False, "reason": "generous"}
+
+    async def forcing(skill, context):
+        return {"ceiling": None, "force_hitl": True, "reason": "suspect input"}
+
+    extensions.add_confidence_cap(capping)
+    extensions.add_confidence_cap(raising)
+    extensions.add_confidence_cap(forcing)
+    ex = AgentExecutor(None, None)
+    conf, force = await ex._apply_extension_caps(
+        0.9, {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"})
+    assert conf == 0.6, "min() semantics: a cap can lower, never raise"
+    assert force == "suspect input"
+
+
+async def test_erroring_cap_provider_fails_closed():
+    from app.agents.runtime import AgentExecutor
+    from app.core.config import get_settings
+
+    async def broken(skill, context):
+        raise RuntimeError("provider down")
+
+    extensions.add_confidence_cap(broken)
+    ex = AgentExecutor(None, None)
+    conf, force = await ex._apply_extension_caps(
+        0.95, {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"})
+    assert conf == min(0.95, get_settings().FAILSAFE_CONFIDENCE_CEILING)
+    assert force is None
+
+
 async def test_require_enterprise_refusal_copy(monkeypatch):
     checker = entitlements.require_enterprise("proof")
 
