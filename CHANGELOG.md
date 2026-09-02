@@ -75,6 +75,13 @@ All notable changes to KAEOS are documented here. This project adheres to
   and an `external_agent` origin on the run, and the API-key tenant context
   now carries that stable `key_id`. Client-supplied principal/channel keys
   are stripped like the other trust-bearing context keys.
+- Seam: the billing-classifier slot is now consulted by usage rating. When
+  Enterprise registers an outcome classifier, the metered unit becomes the
+  verified outcome (autonomous + assisted; blocked is not billed). The core
+  clamps the verified count to the governed-run count - a classifier can
+  narrow what is billed, never inflate it - and an erroring classifier
+  leaves the plain count in force. Ratings gain `governed_executions` and,
+  when classified, `metered_by_outcome`.
 - Copilot numeric grounding (integrity band): every figure in a streamed
   answer - digits and small number words - is checked against the retrieved
   records and the person's own question; a final `grounding` event names

@@ -50,26 +50,51 @@ async def rate_tenant_period(
     """
     period = period or period_start_of()
     nxt = _next_period_start(period)
+    start = datetime(period.year, period.month, period.day, tzinfo=timezone.utc)
+    end = datetime(nxt.year, nxt.month, nxt.day, tzinfo=timezone.utc)
     executions = await db.scalar(
         select(func.count(SkillExecution.id)).where(
             SkillExecution.tenant_id == tenant_id,
-            SkillExecution.started_at >= datetime(period.year, period.month, period.day, tzinfo=timezone.utc),
-            SkillExecution.started_at < datetime(nxt.year, nxt.month, nxt.day, tzinfo=timezone.utc),
+            SkillExecution.started_at >= start,
+            SkillExecution.started_at < end,
             # Only rows the gate pipeline actually evaluated are billable.
             SkillExecution.status.in_(GOVERNED_VOCABULARY),
         )
     ) or 0
+    metered = int(executions)
+    by_class = None
+    # Enterprise seam: outcome-verified billing. When a classifier is
+    # registered, the metered unit becomes the VERIFIED OUTCOME (autonomous /
+    # assisted; blocked is not billed), read from the gate trail and the
+    # human-approval record - never from anything the acting agent can set.
+    # It can only narrow the count; an erroring classifier leaves the plain
+    # governed-run count in force (billing never fails open to zero or to
+    # more than the runs that happened).
+    from app.core.extensions import extensions
+    if extensions.billing_classifier is not None:
+        try:
+            verdict = await extensions.billing_classifier(db, tenant_id, start, end)
+        except Exception as e:
+            logger.error("[Usage] outcome classifier failed; metering governed runs: %s", e)
+            verdict = None
+        if isinstance(verdict, dict) and isinstance(verdict.get("metered_executions"), int):
+            metered = max(0, min(metered, int(verdict["metered_executions"])))
+            by_class = verdict.get("by_class")
     plan = await plan_for_tenant(db, tenant_id)
     allowance = allowance_for_plan(plan)
-    overage = max(0, executions - allowance)
-    return {
+    overage = max(0, metered - allowance)
+    out = {
         "tenant_id": tenant_id,
         "period_start": period.isoformat(),
         "plan": plan,
-        "metered_executions": int(executions),
+        "governed_executions": int(executions),
+        "metered_executions": metered,
         "included_allowance": allowance,
         "overage_units": overage,
     }
+    if by_class is not None:
+        out["metered_by_outcome"] = by_class
+    return out
 
 
 async def record_and_report(

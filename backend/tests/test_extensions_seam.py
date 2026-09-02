@@ -464,3 +464,44 @@ def test_mcp_tools_extend_but_never_shadow_core_tools():
         extensions.add_mcp_tools([{**good, "forward": {"method": "GET", "path": "no-slash"}}])
     extensions.reset()
     assert extensions.mcp_tools == []
+
+
+async def test_billing_classifier_can_only_narrow_the_metered_count(monkeypatch):
+    """Outcome-verified billing: the classifier's verified count replaces the
+    governed-run count but can never exceed it, and an erroring classifier
+    leaves the plain count in force."""
+    from app.services import usage_rating
+
+    async def fake_scalar(*a, **k):
+        return 10
+
+    class _DB:
+        async def scalar(self, *a, **k):
+            return 10
+
+    async def plan(db, tenant_id):
+        return "enterprise"
+
+    monkeypatch.setattr(usage_rating, "plan_for_tenant", plan)
+    monkeypatch.setattr(usage_rating, "allowance_for_plan", lambda p: 5)
+
+    async def narrow(db, tenant_id, start, end):
+        return {"metered_executions": 7, "by_class": {"autonomous": 4, "assisted": 3, "blocked": 3}}
+
+    async def inflate(db, tenant_id, start, end):
+        return {"metered_executions": 99}
+
+    async def broken(db, tenant_id, start, end):
+        raise RuntimeError("classifier down")
+
+    extensions.set_billing_classifier(narrow)
+    r = await usage_rating.rate_tenant_period(_DB(), "t")
+    assert (r["governed_executions"], r["metered_executions"], r["overage_units"]) == (10, 7, 2)
+    assert r["metered_by_outcome"]["blocked"] == 3
+    extensions.set_billing_classifier(inflate)
+    assert (await usage_rating.rate_tenant_period(_DB(), "t"))["metered_executions"] == 10
+    extensions.set_billing_classifier(broken)
+    r = await usage_rating.rate_tenant_period(_DB(), "t")
+    assert r["metered_executions"] == 10 and "metered_by_outcome" not in r
+    extensions.reset()
+    assert (await usage_rating.rate_tenant_period(_DB(), "t"))["metered_executions"] == 10
