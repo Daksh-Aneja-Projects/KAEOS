@@ -11,6 +11,18 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-02 — Governed Execution & Proof
+
+The Fusion arc (F0-F7): KAEOS becomes the governed execution and proof layer.
+Gate, rehearse, execute, compensate, prove - plus an earned-autonomy ladder, a
+governed gateway for third-party agents, outcome-verified billing, and a
+procurement/AI-Act evidence pack. The moat capabilities ship in the private
+KAEOS Enterprise overlay (0.11.1) behind the open-core seam; the open core
+carries the Governed Execution surface, which shows the capability notice where
+the overlay is absent. Shipped with a pre-launch security-hardening pass (least
+privilege on the console; the HEXIS origin trust boundary) verified by an
+adversarial audit and live deny-path testing.
+
 ### Added
 - **KAEOS Enterprise seam** (`app/core/extensions.py`): an extension registry
   the private `kaeos_enterprise` package registers into at boot - gate-stage

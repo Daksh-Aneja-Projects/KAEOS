@@ -208,7 +208,7 @@ actually ships.
 | Offline-verifiable action proofs + auditor bundles | Enterprise | Available |
 | Deterministic decision-proof arbitration | Enterprise | Available |
 | Earned-autonomy trust ledger and ladder | Enterprise | Available: input-trust gating, calibration, bounded tier movement (audited, sealed, human pin wins, per-tenant enforce mode), model assurance gate |
-| Rehearsal: predicted-diff approvals before execution | Enterprise | Partial: shadow-computed predicted diffs, risk tiers, stale-rehearsal refusal and drift proofs ship; vendor dry-run adapters and the approval diff viewer are pending |
+| Rehearsal: predicted-diff approvals before execution | Enterprise | Partial: shadow-computed predicted diffs, risk tiers, stale-rehearsal refusal, drift proofs, and the approval diff viewer (the HITL queue shows what will change before you approve) ship; vendor dry-run adapters and a hermetic sandbox are pending |
 | Governed gateway for third-party agents (MCP/A2A) | Enterprise | Partial: MCP callers governed as their own principals with earned rungs, caps and proof trails; typed contract catalog; OAuth/A2A pending |
 | Outcome-verified billing with invoice proofs | Enterprise | Partial: outcomes classified from the record, metered unit becomes the verified outcome, invoice export bundles the proofs; per-class pricing pending |
 | Governed execution surface (proofs, ladder, rehearsals, external agents, outcomes) | Open core shell, Enterprise data | Available: the surface ships in the open core and shows the capability notice where the Enterprise package is absent |
