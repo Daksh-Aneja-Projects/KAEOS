@@ -35,6 +35,26 @@ codebase itself carries no open critical or high finding from the standing pre-l
 
 **Capabilities, honest boundaries, and roadmap:**
 
+- **Enterprise agent gateway - two governance-completeness gaps on secondary
+  paths (documented, hardening backlog).** The 2026-09 pre-launch audit of the
+  KAEOS Enterprise overlay fixed every finding that touched a primary path
+  (least-privilege on the console reads, admin-gating key rotation, the HEXIS
+  origin trust boundary, billing idempotency - all verified with live deny-path
+  testing) and left two lower-severity items for a focused follow-up, each
+  carrying its compensating controls and a `ponytail:` marker in the code:
+  (1) **per-principal numeric caps are check-then-act** - an external agent's
+  hourly-call / daily-spend cap counts runs recorded after the run seals, so a
+  concurrent burst by an *already-autonomous-rung* agent can overshoot the
+  numeric cap. The kill switch is exact (checked synchronously) and any
+  un-promoted agent is force-routed to a human regardless of caps, so the blast
+  radius is a quota overshoot, not a privilege or isolation break. Upgrade path:
+  an atomic reserve-at-admission counter. (2) **the raw `/actuation/execute`
+  path** applies operator-RBAC, the high-consequence human-approval gate and the
+  actuation guard, but not the gateway's earned-autonomy caps/rung for an
+  API-key caller; external agents are expected to act through the governed skill
+  pipeline, which does apply them. Upgrade path: a gateway-governance seam hook
+  dispatched for API-key principals on that route. Neither is a cross-tenant or
+  data-exposure risk.
 - **`hours_saved` requires a tenant baseline, and is null until it has one.** Hours-saved
   needs two inputs KAEOS cannot observe: how long a task took a person before automation,
   and that person's loaded hourly cost. It was once derived as
