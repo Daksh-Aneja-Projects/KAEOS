@@ -200,3 +200,18 @@ def test_resumed_run_with_correction_finalizes_as_success_with_edit():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+async def test_pause_response_carries_the_gates_reason():
+    """The gate that paused the run says WHY; the response, feed and
+    notification all carry it (a pause with no stated cause cannot be
+    reviewed well). Callers that set nothing get an honest generic line."""
+    mgr = _NoRedisHITLManager()
+    ctx = {"execution_id": f"exec-{uuid.uuid4().hex[:8]}", "tenant_id": "tenant_test",
+           "hitl_reason": "Earned-autonomy ladder: this skill is at the 'observe' tier."}
+    res = await mgr.request_human_confirmation(_skill(), ctx)
+    assert res["pending"] is True
+    assert "observe" in res["reason"] and res["reason"].startswith("Awaiting human approval")
+    bare = await mgr.request_human_confirmation(
+        _skill(), {"execution_id": f"exec-{uuid.uuid4().hex[:8]}", "tenant_id": "tenant_test"})
+    assert "require a human decision" in bare["reason"]

@@ -37,6 +37,14 @@ async def _tracked(name: str, fn) -> None:
         logger.error("[Scheduler] job %s raised: %s", name, e)
 
 
+def _leader_only(fn):
+    """Wrap a coroutine-function so it runs only on the elected leader."""
+    async def _run():
+        if _is_leader():
+            await fn()
+    return _run
+
+
 def _is_leader() -> bool:
     """Belt-and-suspenders: only the elected leader runs scheduled jobs.
 
@@ -788,6 +796,18 @@ def init_scheduler() -> AsyncIOScheduler:
         _tracked, 'interval', hours=6, args=['autonomy_governor', run_autonomy_governor_job],
         id='autonomy_governor_job', replace_existing=True
     )
+    # Enterprise seam: periodic hooks the private overlay registered at boot
+    # (the earned-autonomy ladder governor sweeps here). Same _tracked wrapper,
+    # same leader guard, so they show up at GET /ops/scheduler like core jobs.
+    try:
+        from app.core.extensions import extensions as _ee
+        for _name, _fn, _hours in _ee.periodic_hooks:
+            scheduler.add_job(
+                _tracked, 'interval', hours=_hours, args=[f'ee_{_name}', _leader_only(_fn)],
+                id=f'ee_{_name}_job', replace_existing=True, max_instances=1, coalesce=True,
+            )
+    except Exception as e:
+        logger.error(f"[Scheduler] Enterprise periodic hooks not registered: {e}")
     # Drift detection: flag systems-of-record rows changed outside the actuation
     # path. Detection only - reconciliation stays a human-gated governed action.
     scheduler.add_job(

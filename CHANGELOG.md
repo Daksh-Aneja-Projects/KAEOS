@@ -45,6 +45,12 @@ All notable changes to KAEOS are documented here. This project adheres to
   any autonomy dial); it can never raise confidence or bypass the gate, and
   an erroring provider fails closed to the failsafe ceiling - the same
   posture as the model-ceiling failure path.
+- Seam: periodic hooks. An Enterprise package can register named coroutines
+  the core scheduler runs on a fixed cadence (leader-guarded and tracked at
+  GET /ops/scheduler like every core job; a failing hook is recorded, never
+  fatal). The Enterprise earned-autonomy ladder governor sweeps here, so the
+  trust-ledger matrix row flips to Available: tier movement is bounded,
+  audited, sealed, and a human-pinned tier is never moved.
 
 ## [2.1.0] - 2026-08-21 - "The Company Brain"
 

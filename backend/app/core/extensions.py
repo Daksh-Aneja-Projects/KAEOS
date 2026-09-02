@@ -22,6 +22,10 @@ The hook points (the public contract, kept stable for Enterprise releases):
   until a classifier exists).
 - **API routers** - Enterprise endpoints mounted under the API prefix at app
   build time.
+- **periodic hooks** - named coroutines the core scheduler runs on a fixed
+  cadence on the leader replica (the earned-autonomy ladder governor sweeps
+  here). Tracked like every core job (GET /ops/scheduler); a failing hook
+  is recorded, never fatal.
 
 Entitlement gating for Enterprise ROUTES lives in
 :func:`app.core.entitlements.require_enterprise`; this module only answers
@@ -67,6 +71,9 @@ class ExtensionRegistry:
     confidence_caps: List[Callable[[dict, dict], Awaitable[Optional[dict]]]] = \
         field(default_factory=list)
     routers: List[Any] = field(default_factory=list)
+    # (name, coroutine-function, interval hours) - registered into the core
+    # scheduler at init_scheduler(); leader-guarded there like every core job.
+    periodic_hooks: List[tuple] = field(default_factory=list)
 
     # Load state - surfaced honestly (ops console / status), never guessed.
     loaded: bool = False
@@ -98,6 +105,13 @@ class ExtensionRegistry:
 
     def add_router(self, router: Any) -> None:
         self.routers.append(router)
+
+    def add_periodic_hook(self, name: str, fn: Callable[[], Awaitable[None]],
+                          *, hours: float) -> None:
+        """Run ``fn`` every ``hours`` on the core scheduler (leader only)."""
+        if not name or hours <= 0:
+            raise ValueError("periodic hook needs a name and a positive interval")
+        self.periodic_hooks.append((str(name), fn, float(hours)))
 
     def add_vendor_adapters(
         self, adapters: Dict[str, Any],
@@ -182,6 +196,7 @@ class ExtensionRegistry:
         self.debate_solver = None
         self.confidence_caps.clear()
         self.routers.clear()
+        self.periodic_hooks.clear()
         self.loaded = False
         self.version = None
         self.features = frozenset()

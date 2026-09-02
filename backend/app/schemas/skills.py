@@ -101,3 +101,6 @@ class SkillExecutionResponse(BaseModel):
     reasoning_chain: List[Dict[str, Any]] = []
     duration_ms: int = 0
     hitl_required: bool = False
+    # Plain-English cause of a pause or block (why a human is needed, which
+    # gate stopped it). None when the run completed without one.
+    reason: Optional[str] = None

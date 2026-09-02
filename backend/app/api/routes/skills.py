@@ -234,6 +234,7 @@ async def execute_skill(
         reasoning_chain=result.get("reasoning_chain", []),
         duration_ms=result.get("duration_ms", result.get("pipeline_ms", 0)),
         hitl_required=hitl_required,
+        reason=result.get("reason"),
     )
 
 

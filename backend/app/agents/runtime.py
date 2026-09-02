@@ -579,6 +579,10 @@ class AgentExecutor:
                 # exact finding above.
                 context["fairness_review_log_id"] = fairness_result["audit_log_id"]
                 context["fairness_review_flagged"] = fairness_result["flagged_attributes"]
+                context["hitl_reason"] = (
+                    "The fairness gate flagged a possible disparity on "
+                    + (", ".join(fairness_result["flagged_attributes"]) or "protected attributes")
+                    + "; a human must review before this proceeds.")
                 gate_decision = await self.hitl.request_human_confirmation(skill, context)
                 await self._emit_gate(context, "fairness", "paused")
                 _flagged = ", ".join(fairness_result["flagged_attributes"]) or "protected attributes"
@@ -692,6 +696,20 @@ class AgentExecutor:
             if _ext_force_reason:
                 logger.info(f"[Gate3] extension cap forced HITL for "
                             f"{skill.get('skill_id')}: {_ext_force_reason}")
+            # Tell the reviewer WHY, in plain English. The approval queue, the
+            # notification and the pipeline response all carry this; a pause
+            # with no stated cause is a decision nobody can review well.
+            if _high_consequence:
+                context["hitl_reason"] = (
+                    "This is a high-consequence action (payments, terminations, "
+                    "contract execution, external sends or irreversible changes "
+                    "always require a human, whatever the confidence).")
+            elif _ext_force_reason:
+                context["hitl_reason"] = str(_ext_force_reason)
+            else:
+                context["hitl_reason"] = (
+                    f"Effective confidence {effective_confidence:.2f} is below this "
+                    f"department's autonomy threshold of {_threshold:.2f}.")
             gate_decision = await self.hitl.request_human_confirmation(skill, context)
             # Non-blocking HITL returns immediately with pending=True
             if gate_decision.get("pending"):

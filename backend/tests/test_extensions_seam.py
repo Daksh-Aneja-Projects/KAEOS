@@ -317,3 +317,37 @@ async def test_require_enterprise_refusal_copy(monkeypatch):
 
     monkeypatch.setattr(entitlements, "plan_for_tenant", ent_plan)
     assert await checker(tenant=tenant, db=None) is tenant
+
+
+def test_periodic_hooks_register_and_reset():
+    """The ladder governor's cadence slot: named, positive interval, cleared
+    with the rest of the seam so a failed registration leaves no stray job."""
+    reg = ExtensionRegistry()
+
+    async def sweep():
+        pass
+
+    reg.add_periodic_hook("ladder_sweep", sweep, hours=6)
+    assert reg.periodic_hooks == [("ladder_sweep", sweep, 6.0)]
+    with pytest.raises(ValueError):
+        reg.add_periodic_hook("", sweep, hours=6)
+    with pytest.raises(ValueError):
+        reg.add_periodic_hook("x", sweep, hours=0)
+    reg.reset()
+    assert reg.periodic_hooks == []
+
+
+async def test_scheduler_leader_only_wrapper(monkeypatch):
+    """Enterprise periodic hooks run through the same leader guard as core jobs."""
+    from app.services import scheduler as sched
+    ran = []
+
+    async def fn():
+        ran.append(1)
+
+    monkeypatch.setattr(sched, "_is_leader", lambda: False)
+    await sched._leader_only(fn)()
+    assert ran == []
+    monkeypatch.setattr(sched, "_is_leader", lambda: True)
+    await sched._leader_only(fn)()
+    assert ran == [1]

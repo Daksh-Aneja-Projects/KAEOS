@@ -137,11 +137,15 @@ class HITLManager:
         # Emit an event to the activity feed
         feed = ActivityFeedService()
         tenant_id = context.get("tenant_id", "default")
+        # The gate that paused the run says why (Gate 3 / fairness set it);
+        # the generic line is only the fallback for callers that did not.
+        why = str(context.get("hitl_reason") or
+                  "Agent paused: the governance gates require a human decision here.")
 
         await feed.emit(
             event_type=ActivityEventType.HITL_REQUIRED,
             title=f"Approval Required: {skill.get('skill_id', 'unknown')}",
-            description="Agent paused due to low confidence or Tier-1 policy.",
+            description=why,
             tenant_id=tenant_id,
             severity=ActivitySeverity.ACTION_REQUIRED,
             source_type="execution",
@@ -235,6 +239,7 @@ class HITLManager:
             return (f"A governed execution paused for human approval.\n"
                     f"Skill: {skill.get('skill_id', 'unknown')}\n"
                     f"Department: {skill.get('department', 'general')}\n"
+                    f"Why: {why}\n"
                     f"Execution: {exec_id}\n"
                     f"{lines}"
                     f"Or review it in KAEOS under My Work.")
@@ -286,7 +291,7 @@ class HITLManager:
             "approved": None,
             "pending": True,
             "execution_id": exec_id,
-            "reason": "Awaiting human approval",
+            "reason": f"Awaiting human approval. {why}",
         }
 
     async def _resolve_notification_recipients(self, tenant_id: str) -> list[str]:

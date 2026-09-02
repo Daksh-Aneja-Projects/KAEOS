@@ -207,7 +207,7 @@ actually ships.
 | Company Brain, Foresight, Proving Ground, dashboards | Open core | Available |
 | Offline-verifiable action proofs + auditor bundles | Enterprise | Available |
 | Deterministic decision-proof arbitration | Enterprise | Available |
-| Earned-autonomy trust ledger | Enterprise | Partial: input-trust gating, calibration, and the read-only ledger ship; automatic tier movement is pending |
+| Earned-autonomy trust ledger and ladder | Enterprise | Available: input-trust gating, calibration, bounded tier movement (audited, sealed, human pin wins, per-tenant enforce mode), model assurance gate |
 | Rehearsal: predicted-diff approvals before execution | Enterprise | Not built |
 | Governed gateway for third-party agents (MCP/A2A) | Enterprise | Not built |
 | Outcome-verified billing with invoice proofs | Enterprise | Not built |
