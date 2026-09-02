@@ -70,7 +70,16 @@ async def execute_action(
     money. High-consequence writes (the same shared is_high_consequence rule
     Gate 3 and /skills enforce) now pause in the HITL queue and apply only
     after human approval, fail-closed, via the same resume path as every other
-    approval."""
+    approval.
+
+    ponytail: this raw path applies operator-RBAC + the high-consequence HITL
+    gate + the actuation guard, but NOT the Enterprise gateway's earned-autonomy
+    caps / rung / kill switch (those run only inside the Gate-3 skill pipeline).
+    An external-agent API key is expected to act through /skills (governed by the
+    gateway), not here. Upgrade path: dispatch a gateway-governance seam hook for
+    API-key principals on this route so a killed or capped external agent is
+    refused on the raw path too. Deferred: the core cannot import the EE gateway
+    directly, so this needs a new seam method + tests, not a release-time edit."""
     tenant_id = tenant["tenant_id"]
 
     # A client-supplied execution_id must name a real governed run of THIS

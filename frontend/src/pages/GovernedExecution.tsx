@@ -34,7 +34,9 @@ const TIER_LABEL: Record<string, string> = {
   observe: 'Observe', advise: 'Advise', act_with_approval: 'Act with approval', autonomous: 'Autonomous',
 };
 
-/** A 402 from the seam is a capability boundary, not a failure. */
+/** A 402 (capability boundary) or 403 (permission boundary) is not a failure:
+ *  it is the governance model working. Both render as a calm notice with the
+ *  backend's own sentence, never a red error with a pointless retry. */
 function EnterpriseNotice({ message }: { message: string }) {
   const { colors } = useTheme();
   return (
@@ -42,7 +44,7 @@ function EnterpriseNotice({ message }: { message: string }) {
       style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
       <Lock className="w-5 h-5 shrink-0 mt-0.5" style={{ color: colors.primary }} />
       <div>
-        <div className="text-[14px] font-semibold" style={{ color: colors.ink }}>KAEOS Enterprise capability</div>
+        <div className="text-[14px] font-semibold" style={{ color: colors.ink }}>Not available here</div>
         <p className="text-[13px] mt-1 leading-relaxed" style={{ color: colors.inkSubtle }}>{message}</p>
       </div>
     </div>
@@ -63,7 +65,10 @@ function usePanel<T>(loader: () => Promise<T>) {
       const d = await loaderRef.current();
       setData(d); setError(null); setNotice(null);
     } catch (e: any) {
-      if (e instanceof ApiError && e.status === 402) setNotice(e.message);
+      // 402 = capability not enabled; 403 = your role/principal may not see this
+      // (a viewer, or an agent key on a console view). Both are governance
+      // boundaries, shown as a notice, not a red error with a retry.
+      if (e instanceof ApiError && (e.status === 402 || e.status === 403)) setNotice(e.message);
       else setError(e?.message || 'The request failed.');
     } finally {
       setLoading(false);

@@ -159,11 +159,17 @@ async def execute_skill(
 
     # Trust boundary: these context keys are server-set only. A client planting
     # them in the request body must not be able to claim human approval (SOX
-    # gate) or Gate 3 pre-approval, so they are stripped before the context is
-    # passed anywhere downstream.
+    # gate), Gate 3 pre-approval, or a benign ORIGIN. `origin` drives the HEXIS
+    # rule: a client stating origin="human"/"connector" would otherwise override
+    # the content-taint detection and dodge the outright refusal of a high-risk
+    # write proposed from external content (risk.origin_of trusts a stated
+    # origin). Stripped here so origin is only ever server-derived: the MCP block
+    # below re-stamps "external_agent", and every other path falls through to the
+    # F3 input descriptors. Server-built contexts (missions, connectors) set
+    # their own origin and never pass through this client route.
     exec_context = dict(body.context or {})
     for _trusted_key in ("hitl_pre_approved", "has_human_approver", "agent_principal",
-                         "channel"):
+                         "channel", "origin"):
         exec_context.pop(_trusted_key, None)
     # A call that arrived through the MCP adapter is an EXTERNAL AGENT acting
     # under its own API key: the run carries that principal (server-derived,

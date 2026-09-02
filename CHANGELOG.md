@@ -90,6 +90,20 @@ All notable changes to KAEOS are documented here. This project adheres to
   Decisions tab strip now scrolls the active section into view, so a deep
   link to a later tab (e.g. /platform/trust) no longer lands with the
   selection off-screen.
+- **Pre-launch security hardening (seam + trust boundary).** A four-dimension
+  adversarial audit of the Fusion overlay, fixed and verified (18/18 live
+  deny-path assertions against a DEV_MODE=false backend; RLS re-proven on real
+  Postgres). Core-side: `require_enterprise_console()`
+  (`app/core/entitlements.py`) gates the sensitive Enterprise console reads
+  (evidence pack, rehearsal diffs, billed outcomes, agent roster) at operator
+  or above AND refuses agent / API-key principals - an onboarded third-party
+  agent could otherwise read the whole tenant's governance surface; proofs and
+  the ladder stay open to viewers for transparency. The `/skills/{id}/execute`
+  trust boundary now strips a client-supplied `origin` (it drove the HEXIS
+  rule: a caller stating `origin=human` could dodge the outright refusal of a
+  high-risk write proposed from external content). The Governed Execution
+  panels render a 403 as a calm "not available" notice, not a red error. See
+  the Enterprise overlay 0.11.1 changelog for the overlay-side fixes.
 - Seam: the billing-classifier slot is now consulted by usage rating. When
   Enterprise registers an outcome classifier, the metered unit becomes the
   verified outcome (autonomous + assisted; blocked is not billed). The core

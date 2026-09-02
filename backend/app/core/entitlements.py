@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.tenant import get_tenant
+from app.core.tenant import ROLE_HIERARCHY, get_tenant
 
 # Feature slugs gated in managed cloud. Keep in sync with the routes that gate.
 FEATURES = frozenset({"webhooks", "sso", "scim", "advanced_connectors"})
@@ -150,6 +150,41 @@ def require_enterprise(feature: str):
                         "unlock it."
                     ),
                 )
+        return tenant
+
+    return _checker
+
+
+def require_enterprise_console(feature: str, min_role: str = "operator"):
+    """Like ``require_enterprise``, but for whole-tenant governance READS that
+    expose the tenant's posture - the evidence pack (its API-key roster and
+    autonomy dials), rehearsal predicted diffs (pending record changes), billed
+    outcomes, and the full external-agent roster. These need a human console
+    principal at ``min_role`` or above.
+
+    Agent / API-key principals (which carry ``key_id``) are refused: an external
+    agent is governed as itself and scoped to its OWN record
+    (/gateway/principals/me), never the tenant's full governance surface. An
+    agent key defaults to the ``operator`` role, so a role floor alone would not
+    exclude it - the key_id check is what keeps a third party's agent from
+    reading every other principal's diffs, spend and the API-key roster.
+    """
+    base = require_enterprise(feature)
+
+    async def _checker(tenant: dict = Depends(base)) -> dict:
+        if tenant.get("key_id"):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This is a governance-console view. Agent principals are "
+                    "scoped to their own record at /gateway/principals/me."
+                ),
+            )
+        if ROLE_HIERARCHY.get(tenant.get("role", "viewer"), 0) < ROLE_HIERARCHY.get(min_role, 99):
+            raise HTTPException(
+                status_code=403,
+                detail=f"This view requires the '{min_role}' role or higher.",
+            )
         return tenant
 
     return _checker
