@@ -51,6 +51,26 @@ All notable changes to KAEOS are documented here. This project adheres to
   fatal). The Enterprise earned-autonomy ladder governor sweeps here, so the
   trust-ledger matrix row flips to Available: tier movement is bounded,
   audited, sealed, and a human-pinned tier is never moved.
+- Seam: HITL enrichers and the actuation guard. An Enterprise package can
+  attach approver-facing context to a pause before it is persisted (the
+  rehearsal gate's predicted diff), and is consulted at THE single write
+  point (`Actuator.apply_action`, so Gate 5b, the /actuation route and
+  missions are all covered) right before a system-of-record write lands.
+  The guard can only refuse - a stale rehearsal, a top-tier write proposed
+  from external content - never grant, and an erroring guard fails closed.
+  A refusal is `ActuationRefused`: the run reports BLOCKED_ACTUATION with
+  the reason (the system said no, it did not break); the route answers a
+  plain 403. Gate-3 cap providers gained a `refuse` outcome for policies no
+  approval can carry. The Enterprise rehearsal row flips to Partial.
+- Seam: write-back adapters. An Enterprise package can register outbound
+  writers by provider; the sync engine consults them before its built-in
+  chain. Only providers the core ships as an honest stub (Workday) may be
+  filled; shadowing a live core writer is refused at registration.
+- Copilot numeric grounding (integrity band): every figure in a streamed
+  answer - digits and small number words - is checked against the retrieved
+  records and the person's own question; a final `grounding` event names
+  any figure the tenant's data never contained, and the copilot shows that
+  footnote instead of letting a confident number pass as fact.
 
 ## [2.1.0] - 2026-08-21 - "The Company Brain"
 

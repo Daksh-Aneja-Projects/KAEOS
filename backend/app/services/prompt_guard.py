@@ -225,6 +225,53 @@ def wrap_untrusted(text: str) -> str:
     return f"{_FENCE_OPEN}{inner}{_FENCE_CLOSE}"
 
 
+# ── Numeric grounding ────────────────────────────────────────────────────────
+# Any run of digits a reader would take as a measured figure. A hallucinated
+# headcount or total sitting in otherwise-correct prose is indistinguishable to
+# the reader, so a figure the run's own data never contained is called out
+# rather than published as fact. (Pattern lifted from WATP's synthesis band.)
+_FIGURE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# Models write small counts as words ("five skills ran"); a reader takes those
+# as figures just the same. "one" is left out: it is a pronoun far more often
+# than a count ("no one", "one of").
+_NUMBER_WORDS = {
+    "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+    "eighty": 80, "ninety": 90, "hundred": 100, "thousand": 1000, "million": 1_000_000,
+}
+_NUMBER_WORD_RE = re.compile(r"\b(" + "|".join(_NUMBER_WORDS) + r")\b", re.I)
+
+
+def figures(text: str) -> set[str]:
+    """The numeric tokens in ``text`` - digits and small number words -
+    normalised so "1,593", "1593", "1593.0" and "five" / "5" compare equal.
+    Years and ordinals count too; the caller decides which corpus is allowed
+    to have produced them."""
+    found: set[str] = set()
+    for raw in _FIGURE_RE.findall(text or ""):
+        try:
+            num = float(raw.replace(",", ""))
+        except ValueError:
+            continue
+        found.add(str(int(num)) if num == int(num) else str(num))
+    for word in _NUMBER_WORD_RE.findall(text or ""):
+        found.add(str(_NUMBER_WORDS[word.lower()]))
+    return found
+
+
+def ungrounded_figures(text: str, *allowed_sources: str) -> list[str]:
+    """Figures in ``text`` that appear in none of ``allowed_sources`` (the
+    retrieved records, the user's own words). Empty means every number the
+    model wrote can be traced to something it was shown. Sorted for stable
+    display."""
+    allowed: set[str] = set()
+    for src in allowed_sources:
+        allowed |= figures(src)
+    return sorted(figures(text) - allowed, key=lambda v: (len(v), v))
+
+
 def guard(text: str, *, redact: bool = True) -> dict:
     """One-call convenience: scan, optionally redact, and fence untrusted content.
 

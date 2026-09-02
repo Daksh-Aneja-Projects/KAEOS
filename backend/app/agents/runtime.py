@@ -36,6 +36,7 @@ from app.models.execution_status import AgentState, ExecutionStatus
 from app.models.infrastructure import CostEvent
 from app.services.activity_feed import ActivityFeedService
 from app.services.actuation import Actuator
+from app.services.actuation.actuator import ActuationRefused
 from app.services.autonomy_policy import resolve_min_confidence
 from app.services.consequence import is_high_consequence
 from app.services.debate_engine import DebateEngine
@@ -668,8 +669,24 @@ class AgentExecutor:
         # Enterprise seam: extension confidence caps (input trust). They only
         # ever lower confidence or force review; a suspect input routes to a
         # human below regardless of any threshold or dial.
-        effective_confidence, _ext_force_reason = await self._apply_extension_caps(
-            effective_confidence, skill, context)
+        effective_confidence, _ext_force_reason, _ext_refuse_reason = \
+            await self._apply_extension_caps(effective_confidence, skill, context)
+        if _ext_refuse_reason:
+            # A policy refusal (a top-tier write proposed from external content):
+            # no approval can carry it, so it does not go to the queue - it is
+            # blocked here, with the reason, and the run ends.
+            logger.warning(f"[Gate3] extension refused {skill.get('skill_id')}: "
+                           f"{_ext_refuse_reason}")
+            await self._mark_execution_failed(context["execution_id"],
+                                              ExecutionStatus.BLOCKED_ACTUATION)
+            await self._emit_gate(context, "confidence", "blocked",
+                                  str(_ext_refuse_reason)[:300])
+            return {
+                "status": ExecutionStatus.BLOCKED_ACTUATION,
+                "execution_id": context["execution_id"],
+                "reason": str(_ext_refuse_reason),
+                "cost": await self._gate_cost(context),
+            }
 
         # Three independent reasons to route to a human:
         #  (a) confidence below the CONFIGURED autonomous-exec threshold (this
@@ -734,12 +751,14 @@ class AgentExecutor:
     ) -> tuple:
         """Run the Enterprise confidence-cap providers over this run.
 
-        Returns (capped confidence, force-HITL reason or None). Providers can
-        only lower confidence or force review, never raise or bypass; an
+        Returns (capped confidence, force-HITL reason or None, refuse reason
+        or None). Providers can only lower confidence, force review, or refuse
+        outright (a policy no approval can carry) - never raise or bypass; an
         erroring provider fails closed to the failsafe ceiling, mirroring the
         model-ceiling failure path above.
         """
         force_reason = None
+        refuse_reason = None
         for cap_fn in extensions.confidence_caps:
             try:
                 cap = await cap_fn(skill, context)
@@ -761,7 +780,9 @@ class AgentExecutor:
                                       str(cap.get("reason", ""))[:300])
             if cap.get("force_hitl"):
                 force_reason = cap.get("reason") or "an input requires human review"
-        return effective_confidence, force_reason
+            if cap.get("refuse"):
+                refuse_reason = cap.get("reason") or "refused by an Enterprise policy"
+        return effective_confidence, force_reason, refuse_reason
 
     async def _run_gates(
         self, skill: Dict[str, Any], context: Dict[str, Any],
@@ -1067,9 +1088,44 @@ class AgentExecutor:
                                if isinstance(context.get("has_human_approver"), str)
                                else None) or skill.get("skill_id", "agent"),
                         idempotency_key=_actuation.get("idempotency_key"),
+                        context=context,
                     )
                     _actuation_record_id = _rec.id
                     logger.info(f"[Gate 5b] actuated {_rec.system}:{_rec.external_id} -> {_rec.status}")
+            except ActuationRefused as e:
+                # The actuation guard said no (stale rehearsal, content-origin
+                # top tier): the system refused, it did not break. BLOCKED, with
+                # the reason, so the approver learns why their approval did not
+                # carry and can re-run for a fresh predicted diff.
+                _target = (f"{_actuation.get('system', 'sandbox')}:"
+                           f"{_actuation.get('external_id', exec_id)}")
+                logger.warning(f"[Gate 5b] governed write {exec_id} ({_target}) REFUSED "
+                               f"by the actuation guard: {e}")
+                await self._mark_execution_failed(exec_id, ExecutionStatus.BLOCKED_ACTUATION)
+                await self._emit_gate(context, "execute", "blocked",
+                                      f"governed write to {_target} refused: {str(e)[:200]}")
+                await self.activity_feed.emit(
+                    event_type=ActivityEventType.AGENT_FAILED,
+                    title=f"Governed write refused: {skill.get('skill_id', 'unknown')}",
+                    description=f"The write to {_target} was refused before it landed: {e}",
+                    tenant_id=context["tenant_id"],
+                    severity=ActivitySeverity.ACTION_REQUIRED,
+                    source_type="execution",
+                    source_id=exec_id,
+                    requires_action=True,
+                )
+                return {
+                    "status": ExecutionStatus.BLOCKED_ACTUATION,
+                    "execution_id": exec_id,
+                    "reason": f"Write to {_target} refused: {e}",
+                    "skill_output_produced": True,
+                    "actuation_target": _target,
+                    "reasoning_chain": exec_result.get("reasoning_chain", []),
+                    "steps_completed": exec_result.get("steps_completed", 0),
+                    "duration_ms": exec_result.get("duration_ms", 0),
+                    "cost": exec_result.get("cost"),
+                    "warnings": warnings,
+                }
             except Exception as e:
                 _target = (f"{_actuation.get('system', 'sandbox')}:"
                            f"{_actuation.get('external_id', exec_id)}")

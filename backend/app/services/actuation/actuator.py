@@ -47,6 +47,14 @@ def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 class ActuationError(Exception):
+    pass
+
+
+class ActuationRefused(ActuationError):
+    """A policy refusal at the write point (Enterprise actuation guard): a
+    stale rehearsal, a top-tier write proposed from external content. Distinct
+    from a failure so callers report BLOCKED, not FAILED - the system said no,
+    it did not break."""
     """Raised when an actuation request is malformed or cannot be reversed."""
 
 
@@ -92,6 +100,7 @@ class Actuator:
         execution_id: Optional[str] = None,
         actor: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        context: Optional[dict] = None,
     ) -> ActionRecord:
         operation = (operation or "").strip().upper()
         if operation not in _VALID_OPS:
@@ -109,6 +118,19 @@ class Actuator:
         )).scalar_one_or_none()
         if existing is not None and existing.status == "APPLIED":
             return existing
+
+        # Enterprise seam: the actuation guard, consulted at THE write point so
+        # every path (Gate 5b, the /actuation route, missions) is covered. It can
+        # only refuse; an erroring guard refuses (fail-closed).
+        from app.core.extensions import extensions
+        refusal = await extensions.guard_actuation(
+            {"tenant_id": tenant_id, "system": system, "object_type": object_type,
+             "external_id": external_id, "operation": operation, "payload": payload,
+             "execution_id": execution_id, "actor": actor},
+            context or {},
+        )
+        if refusal:
+            raise ActuationRefused(refusal)
 
         # Load (or prepare) the backing SoR object.
         obj = (await db.execute(

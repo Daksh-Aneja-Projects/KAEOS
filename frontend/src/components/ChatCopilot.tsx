@@ -14,6 +14,9 @@ interface Message {
   agent_name?: string;
   confidence?: number;
   sources?: string[];
+  // Numeric-grounding footnote from the backend: set only when the answer
+  // carries figures that appear in no retrieved record and not in the question.
+  grounding_note?: string;
   action?: { type: string; label: string; status: 'pending' | 'approved' | 'rejected' };
   timestamp: Date;
 }
@@ -132,6 +135,8 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
         } else if (event.type === 'token') {
           currentText += event.text || '';
           patchAgent({ content: currentText });
+        } else if (event.type === 'grounding') {
+          if (event.figures_grounded === false && event.note) patchAgent({ grounding_note: event.note });
         } else if (event.type === 'error') {
           currentText += `\n[error: ${event.message}]`;
           patchAgent({ content: currentText });
@@ -244,6 +249,13 @@ export default function ChatCopilot({ open, onOpenChange, onClose }: ChatCopilot
                       {s}
                     </span>
                   ))}
+                </div>
+              )}
+
+              {msg.grounding_note && (
+                <div className="mt-1.5 text-[11px] leading-snug px-2 py-1.5 rounded-md"
+                  style={{ background: colors.warning + '12', color: colors.warning, border: `1px solid ${colors.warning}30` }}>
+                  {msg.grounding_note}
                 </div>
               )}
 

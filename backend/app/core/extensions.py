@@ -26,6 +26,19 @@ The hook points (the public contract, kept stable for Enterprise releases):
   cadence on the leader replica (the earned-autonomy ladder governor sweeps
   here). Tracked like every core job (GET /ops/scheduler); a failing hook
   is recorded, never fatal.
+- **write-back adapters** - premium outbound writers consulted by the sync
+  engine before its built-in chain, keyed by provider. May fill a provider
+  the core ships only as an honest stub (Workday); may never shadow a live
+  core writer.
+- **HITL enrichers** - observers called when a run pauses for a human,
+  before the pause is persisted; they may ADD context (the rehearsal gate
+  attaches its predicted diff here so the approver sees what will change).
+  Errors are swallowed: the pause proceeds without the enrichment.
+- **actuation guard** - the one slot consulted at the single write point
+  (``Actuator.apply_action``) right before a system-of-record write lands.
+  It can only REFUSE (a stale rehearsal, a top-tier write proposed from
+  external content); it can never grant, and an erroring guard fails closed
+  (the write is refused, never silently applied).
 
 Entitlement gating for Enterprise ROUTES lives in
 :func:`app.core.entitlements.require_enterprise`; this module only answers
@@ -74,6 +87,14 @@ class ExtensionRegistry:
     # (name, coroutine-function, interval hours) - registered into the core
     # scheduler at init_scheduler(); leader-guarded there like every core job.
     periodic_hooks: List[tuple] = field(default_factory=list)
+    hitl_enrichers: List[Callable[[dict, dict], Awaitable[None]]] = \
+        field(default_factory=list)
+    # provider -> async fn(config, secrets, write) -> error string | None
+    writeback_adapters: Dict[str, Callable[..., Awaitable[Optional[str]]]] = \
+        field(default_factory=dict)
+    # Called with (action: dict, context: dict); returns None (proceed) or
+    # {"refuse": True, "reason": str}.
+    actuation_guard: Optional[Callable[[dict, dict], Awaitable[Optional[dict]]]] = None
 
     # Load state - surfaced honestly (ops console / status), never guessed.
     loaded: bool = False
@@ -112,6 +133,29 @@ class ExtensionRegistry:
         if not name or hours <= 0:
             raise ValueError("periodic hook needs a name and a positive interval")
         self.periodic_hooks.append((str(name), fn, float(hours)))
+
+    def add_writeback_adapters(self, adapters: Dict[str, Callable[..., Awaitable[Optional[str]]]]) -> None:
+        """Register outbound write-back writers by provider.
+
+        Refused for any provider the core writes for itself: Enterprise may
+        FILL an honest core stub (the provider is listed as writable but the
+        core's writer returns a "configure a tenant" message), never replace a
+        working core writer.
+        """
+        from app.services import sync_engine as _sync
+        live_core = set(_sync._WRITABLE_PROVIDERS) - set(_sync.WRITEBACK_STUBS)
+        clash = set(adapters) & live_core
+        if clash:
+            raise ValueError(
+                f"Enterprise write-back adapters may not shadow core writers: {sorted(clash)}"
+            )
+        self.writeback_adapters.update(adapters)
+
+    def add_hitl_enricher(self, fn: Callable[[dict, dict], Awaitable[None]]) -> None:
+        self.hitl_enrichers.append(fn)
+
+    def set_actuation_guard(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
+        self.actuation_guard = fn
 
     def add_vendor_adapters(
         self, adapters: Dict[str, Any],
@@ -169,6 +213,33 @@ class ExtensionRegistry:
             except Exception:
                 logger.error("[EE] pipeline-terminal hook failed", exc_info=True)
 
+    async def dispatch_hitl_enrich(self, skill: dict, context: dict) -> None:
+        """Let Enterprise attach approver-facing context to a pause. Observers
+        only: an erroring enricher is logged and the pause proceeds without it."""
+        for hook in self.hitl_enrichers:
+            try:
+                await hook(skill, context)
+            except Exception:
+                logger.error("[EE] HITL enricher failed", exc_info=True)
+
+    async def guard_actuation(self, action: dict, context: dict) -> Optional[str]:
+        """Consult the actuation guard. Returns a refusal reason, or None to
+        proceed. FAIL-CLOSED: a guard that raises refuses the write - a
+        system-of-record change must never land on an unverified path."""
+        if self.actuation_guard is None:
+            return None
+        try:
+            verdict = await self.actuation_guard(action, context)
+        except Exception as e:
+            logger.error("[EE] actuation guard failed; write refused (fail-closed)",
+                         exc_info=True)
+            return (f"The write was refused because the actuation guard could not "
+                    f"complete its check ({type(e).__name__}). Nothing was changed; "
+                    "retry once the guard is healthy.")
+        if isinstance(verdict, dict) and verdict.get("refuse"):
+            return str(verdict.get("reason") or "refused by the actuation guard")
+        return None
+
     async def dispatch_startup(self) -> None:
         """Run Enterprise startup hooks (from the core lifespan, post-DB-init).
 
@@ -197,6 +268,9 @@ class ExtensionRegistry:
         self.confidence_caps.clear()
         self.routers.clear()
         self.periodic_hooks.clear()
+        self.hitl_enrichers.clear()
+        self.writeback_adapters.clear()
+        self.actuation_guard = None
         self.loaded = False
         self.version = None
         self.features = frozenset()

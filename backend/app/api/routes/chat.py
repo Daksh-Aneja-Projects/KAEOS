@@ -119,6 +119,21 @@ def _build_prompt(messages: List[ChatMessage], hits: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _grounding_event(ungrounded: list[str], hits: list[dict]) -> dict:
+    """The honest footnote on an answer's numbers. Pure."""
+    if not ungrounded:
+        note = ("Every figure in this answer appears in the records shown to the "
+                "copilot." if hits else
+                "No records were retrieved; the answer carries no figures of its own.")
+    else:
+        shown = ", ".join(ungrounded[:6]) + (", ..." if len(ungrounded) > 6 else "")
+        note = (f"These figures do not appear in any retrieved record or in your "
+                f"question: {shown}. Treat them as the model's own, not as this "
+                "tenant's data.")
+    return {"type": "grounding", "ungrounded_figures": ungrounded[:20],
+            "figures_grounded": not ungrounded, "note": note}
+
+
 @router.post("/stream")
 async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_id)):
     """Stream a chat response from the KAEOS copilot via real LLM.
@@ -165,12 +180,26 @@ async def chat_stream(request: ChatRequest, tenant_id: str = Depends(get_tenant_
                 # waited for the whole generation and then waited again for the
                 # typewriter. Deltas now reach the browser as the model writes
                 # them, which is where the copilot's responsiveness actually is.
+                answer_parts: list[str] = []
                 async for delta in router_svc.stream_complete(
                     prompt=_build_prompt(request.messages, hits),
                     model_tier="fast",
                     system_prompt=SYSTEM_PROMPT,
                 ):
+                    answer_parts.append(delta)
                     yield f"data: {json.dumps({'type': 'token', 'text': delta})}\n\n"
+
+                # Numeric grounding (integrity band): every figure the model
+                # wrote must exist in what it was shown - the retrieved records
+                # or the person's own question. Anything else is named, so a
+                # confident-looking number the tenant's data never contained is
+                # never mistaken for one it did.
+                ungrounded = prompt_guard.ungrounded_figures(
+                    "".join(answer_parts),
+                    *(h["content"] for h in hits),
+                    *(m.content for m in request.messages[-_MAX_HISTORY_TURNS:]),
+                )
+                yield f"data: {json.dumps(_grounding_event(ungrounded, hits))}\n\n"
 
             except Exception as llm_err:
                 logger.warning(f"[Chat] LLM call failed: {llm_err}. Reporting honestly.")

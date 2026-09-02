@@ -18,6 +18,7 @@ from app.core.audit import record_security_event
 from app.models.actuation import ActionRecord
 from app.models.domain import SkillExecution
 from app.services.actuation import Actuator, ActuationError
+from app.services.actuation.actuator import ActuationRefused
 from app.core.tenant import approver_identity
 from app.models.execution_status import ExecutionStatus
 
@@ -150,7 +151,12 @@ async def execute_action(
             operation=body.operation, payload=body.payload,
             execution_id=body.execution_id, actor=approver_identity(tenant),
             idempotency_key=body.idempotency_key,
+            context={"tenant_id": tenant_id, "execution_id": body.execution_id,
+                     "requested_by": approver_identity(tenant), "origin": "human"},
         )
+    except ActuationRefused as e:
+        # A policy refusal, not a malformed request: say why, in plain words.
+        raise HTTPException(status_code=403, detail=str(e))
     except ActuationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

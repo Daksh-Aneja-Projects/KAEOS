@@ -262,10 +262,11 @@ async def test_confidence_caps_lower_and_force_but_never_raise():
     extensions.add_confidence_cap(raising)
     extensions.add_confidence_cap(forcing)
     ex = AgentExecutor(None, None)
-    conf, force = await ex._apply_extension_caps(
+    conf, force, refuse = await ex._apply_extension_caps(
         0.9, {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"})
     assert conf == 0.6, "min() semantics: a cap can lower, never raise"
     assert force == "suspect input"
+    assert refuse is None
 
 
 async def test_erroring_cap_provider_fails_closed():
@@ -277,10 +278,69 @@ async def test_erroring_cap_provider_fails_closed():
 
     extensions.add_confidence_cap(broken)
     ex = AgentExecutor(None, None)
-    conf, force = await ex._apply_extension_caps(
+    conf, force, refuse = await ex._apply_extension_caps(
         0.95, {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"})
     assert conf == min(0.95, get_settings().FAILSAFE_CONFIDENCE_CEILING)
-    assert force is None
+    assert force is None and refuse is None
+
+
+async def test_cap_provider_can_refuse_outright():
+    """A policy refusal (the origin rule) is neither a cap nor a pause: it is
+    surfaced as a third return the gate turns into BLOCKED."""
+    from app.agents.runtime import AgentExecutor
+
+    async def refusing(skill, context):
+        return {"ceiling": None, "force_hitl": False, "refuse": True,
+                "reason": "top-tier write proposed from external content"}
+
+    extensions.add_confidence_cap(refusing)
+    ex = AgentExecutor(None, None)
+    conf, force, refuse = await ex._apply_extension_caps(
+        0.9, {"skill_id": "s"}, {"tenant_id": "t", "execution_id": "e"})
+    assert conf == 0.9 and force is None
+    assert refuse == "top-tier write proposed from external content"
+
+
+async def test_hitl_enrichers_observe_and_swallow_errors():
+    seen = []
+
+    async def attach(skill, context):
+        context["rehearsal"] = {"summary": "one field changes"}
+        seen.append(skill["skill_id"])
+
+    async def broken(skill, context):
+        raise RuntimeError("enricher down")
+
+    extensions.add_hitl_enricher(broken)
+    extensions.add_hitl_enricher(attach)
+    ctx = {"tenant_id": "t"}
+    await extensions.dispatch_hitl_enrich({"skill_id": "s"}, ctx)
+    assert seen == ["s"] and ctx["rehearsal"]["summary"] == "one field changes"
+    extensions.reset()
+    assert extensions.hitl_enrichers == [] and extensions.actuation_guard is None
+
+
+async def test_actuation_guard_refuses_and_fails_closed():
+    action = {"tenant_id": "t", "system": "sandbox", "object_type": "invoice",
+              "external_id": "INV-1", "operation": "UPDATE", "payload": {}}
+    assert await extensions.guard_actuation(action, {}) is None   # no guard: proceed
+
+    async def allow(a, c):
+        return None
+
+    async def refuse(a, c):
+        return {"refuse": True, "reason": "the record changed since the rehearsal"}
+
+    async def broken(a, c):
+        raise RuntimeError("guard down")
+
+    extensions.set_actuation_guard(allow)
+    assert await extensions.guard_actuation(action, {}) is None
+    extensions.set_actuation_guard(refuse)
+    assert "record changed" in await extensions.guard_actuation(action, {})
+    extensions.set_actuation_guard(broken)
+    reason = await extensions.guard_actuation(action, {})
+    assert reason and "Nothing was changed" in reason, "an erroring guard refuses (fail-closed)"
 
 
 async def test_require_enterprise_refusal_copy(monkeypatch):
@@ -351,3 +411,40 @@ async def test_scheduler_leader_only_wrapper(monkeypatch):
     monkeypatch.setattr(sched, "_is_leader", lambda: True)
     await sched._leader_only(fn)()
     assert ran == [1]
+
+
+async def test_writeback_adapters_fill_stubs_but_never_shadow_core_writers():
+    from app.services import sync_engine
+
+    async def workday_writer(config, secrets, write):
+        return None
+
+    async def rogue_servicenow(config, secrets, write):
+        return None
+
+    extensions.add_writeback_adapters({"workday": workday_writer})
+    assert extensions.writeback_adapters["workday"] is workday_writer
+    with pytest.raises(ValueError, match="shadow core writers"):
+        extensions.add_writeback_adapters({"servicenow": rogue_servicenow})
+    assert "workday" in sync_engine.WRITEBACK_STUBS
+
+    class _W:
+        entity_type, op, external_id, internal_id = "time_off", "UPSERT", "E1", "i1"
+        payload, idempotency_key, id = {}, None, "w1"
+
+    # The sync engine consults the seam first: the stub's message is replaced.
+    assert await sync_engine._write_via_adapter("workday", None, {}, {}, _W()) is None
+    extensions.reset()
+    assert extensions.writeback_adapters == {}
+    err = await sync_engine._write_via_adapter("workday", None, {}, {}, _W())
+    assert err and "customer Workday tenant" in err
+
+
+def test_grounding_event_is_honest_both_ways():
+    from app.api.routes.chat import _grounding_event
+    ok = _grounding_event([], [{"content": "x"}])
+    assert ok["figures_grounded"] is True and "Every figure" in ok["note"]
+    none = _grounding_event([], [])
+    assert "No records were retrieved" in none["note"]
+    bad = _grounding_event(["38", "3"], [{"content": "x"}])
+    assert bad["figures_grounded"] is False and "38, 3" in bad["note"]

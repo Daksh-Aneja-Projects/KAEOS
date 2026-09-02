@@ -122,3 +122,44 @@ async def test_reversal_is_not_drift(db):
     await Actuator.reverse_action(db, tenant_id=t, action_id=upd.id)
     report = await Actuator.compute_drift(db, tenant_id=t)
     assert report["drift_count"] == 0  # reversal is governed, not drift
+
+
+async def test_guard_refusal_is_a_refusal_not_a_failure(db):
+    """The Enterprise actuation guard sits at THE write point: a refusal
+    raises ActuationRefused (callers report BLOCKED), an erroring guard
+    refuses (fail-closed), and nothing is written either way."""
+    from app.core.extensions import extensions
+    from app.services.actuation.actuator import ActuationRefused
+    t = "tenant_act_guard"
+    seen = []
+
+    async def refuse(action, context):
+        seen.append((action["operation"], context.get("origin")))
+        return {"refuse": True, "reason": "top-tier write proposed from external content"}
+
+    async def broken(action, context):
+        raise RuntimeError("guard down")
+
+    extensions.reset()
+    try:
+        extensions.set_actuation_guard(refuse)
+        with pytest.raises(ActuationRefused, match="external content"):
+            await Actuator.apply_action(
+                db, tenant_id=t, system="netsuite", object_type="payment",
+                external_id="PAY-1", operation="CREATE", payload={"amount": 9000},
+                context={"origin": "content"})
+        assert seen == [("CREATE", "content")]
+        extensions.set_actuation_guard(broken)
+        with pytest.raises(ActuationRefused, match="Nothing was changed"):
+            await Actuator.apply_action(
+                db, tenant_id=t, system="netsuite", object_type="payment",
+                external_id="PAY-1", operation="CREATE", payload={"amount": 9000})
+        objs = (await db.execute(select(SorObject).where(SorObject.tenant_id == t))).scalars().all()
+        assert objs == [], "a refused write leaves no record behind"
+        extensions.reset()
+        rec = await Actuator.apply_action(
+            db, tenant_id=t, system="netsuite", object_type="payment",
+            external_id="PAY-1", operation="CREATE", payload={"amount": 9000})
+        assert rec.status == "APPLIED"
+    finally:
+        extensions.reset()

@@ -137,10 +137,19 @@ class HITLManager:
         # Emit an event to the activity feed
         feed = ActivityFeedService()
         tenant_id = context.get("tenant_id", "default")
+        # Enterprise seam: let the overlay attach approver-facing context (the
+        # rehearsal gate's predicted diff) BEFORE the pause is persisted, so the
+        # queue row, the cache record and the notification all carry it.
+        from app.core.extensions import extensions
+        await extensions.dispatch_hitl_enrich(skill, context)
+
         # The gate that paused the run says why (Gate 3 / fairness set it);
         # the generic line is only the fallback for callers that did not.
         why = str(context.get("hitl_reason") or
                   "Agent paused: the governance gates require a human decision here.")
+        _reh = context.get("rehearsal")
+        if isinstance(_reh, dict) and _reh.get("summary"):
+            why = f"{why} {_reh['summary']}"
 
         await feed.emit(
             event_type=ActivityEventType.HITL_REQUIRED,

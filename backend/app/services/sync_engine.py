@@ -73,6 +73,11 @@ _WRITABLE_PROVIDERS = frozenset({
     "hubspot", "github", "pagerduty", "salesforce", "workday",
 })
 
+# Providers the core lists as writable but whose built-in writer is an HONEST
+# STUB (no public sandbox to prove a real one against). An Enterprise
+# write-back adapter may fill exactly these; the seam refuses every other name.
+WRITEBACK_STUBS = frozenset({"workday"})
+
 
 # ── Inbound: signature + normalization ────────────────────────────────────────
 
@@ -461,6 +466,14 @@ async def _write_via_adapter(provider: str, cred, config: Dict[str, Any],
             "external_id": write.external_id, "internal_id": write.internal_id,
             "data": write.payload}
     idem = write.idempotency_key or write.id
+
+    # Enterprise seam: a premium writer for this provider (fills the Workday
+    # stub below when the Enterprise package ships one). Same contract: an
+    # error string, or None when the system of record accepted the write.
+    from app.core.extensions import extensions as _ee
+    _premium = _ee.writeback_adapters.get(provider)
+    if _premium is not None:
+        return await _premium(config, secrets, write)
 
     if provider == "generic_rest":
         base = (config.get("base_url") or "").rstrip("/")
