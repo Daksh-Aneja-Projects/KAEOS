@@ -9,7 +9,7 @@ export * from './http';
 export * from './types';
 
 import { governanceApi } from './endpoints/governance';
-import { enterpriseApi } from './endpoints/enterprise';
+import { enterpriseApi, governedExecutionApi } from './endpoints/enterprise';
 import { departmentsApi } from './endpoints/departments';
 import { operationsApi } from './endpoints/operations';
 import { healthcareApi } from './endpoints/healthcare';
@@ -24,6 +24,7 @@ export * from './endpoints/branding';
 export const api = {
   ...governanceApi,
   ...enterpriseApi,
+  ...governedExecutionApi,
   ...departmentsApi,
   ...operationsApi,
   ...healthcareApi,

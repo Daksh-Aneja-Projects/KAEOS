@@ -284,6 +284,9 @@ async def get_executions(
             "confidence_delta": e.confidence_delta,
             "started_at": e.started_at.isoformat() if e.started_at else None,
             "reasoning_chain": e.reasoning_chain,
+            # WHY it paused, from the gate that paused it (Gate 3 / fairness /
+            # an Enterprise cap). One small string, not the whole context.
+            "reason": (e.context or {}).get("hitl_reason") if isinstance(e.context, dict) else None,
         }
         for e in execs
     ]
@@ -329,6 +332,9 @@ async def get_pending_hitl(
             "task_intent": e.task_intent,
             "started_at": e.started_at.isoformat() if e.started_at else None,
             "reasoning_chain": e.reasoning_chain,
+            # WHY it paused, from the gate that paused it (Gate 3 / fairness /
+            # an Enterprise cap). One small string, not the whole context.
+            "reason": (e.context or {}).get("hitl_reason") if isinstance(e.context, dict) else None,
         }
         for e in execs
     ]

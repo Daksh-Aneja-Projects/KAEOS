@@ -270,9 +270,20 @@ async def status(response: Response):
     # business metric, and its cross-tenant aggregate is an unindexed full scan
     # (skill_executions is indexed tenant_id-leading) - a DoS amplifier on an
     # auth-free endpoint. It lives on the super-admin-gated /ops/overview instead.
+    # Enterprise seam state, honestly: which paid capabilities this deployment
+    # actually provides (never guessed). The error detail stays out of this
+    # auth-free surface; operators read it in the boot log.
+    from app.core.extensions import extensions as _ee
+    _ee_status = _ee.status()
     return {
         "status": "ok" if db_ok else "degraded",
         "version": settings.APP_VERSION,
         "uptime_seconds": round(time.monotonic() - _STARTED, 1),
         "dependencies": dependencies,
+        "enterprise": {
+            "installed": _ee_status["installed"],
+            "loaded": _ee_status["loaded"],
+            "version": _ee_status["version"],
+            "features": _ee_status["features"],
+        },
     }

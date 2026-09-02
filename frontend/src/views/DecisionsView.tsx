@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu } from 'lucide-react';
+import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu, Fingerprint } from 'lucide-react';
 import { PAGE_PAD_X } from '../lib/layout';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
@@ -12,15 +12,16 @@ const ProvenanceLedger = lazy(() => import('../pages/ProvenanceLedger'));
 const ActionsLedger = lazy(() => import('../pages/ActionsLedger'));
 const RedTeamDashboard = lazy(() => import('../pages/RedTeamDashboard'));
 const TrustGovernance = lazy(() => import('./TrustGovernance'));
+const GovernedExecution = lazy(() => import('../pages/GovernedExecution'));
 // The genome + fitness studios read /genome/state and /evolution/state. They
 // sit next to the evolution timeline, the other view of how the org changes
 // over time.
 const GenomeStudio = lazy(() => import('../components/GenomeStudio'));
 const EvolutionStudio = lazy(() => import('../components/EvolutionStudio'));
 
-export default function DecisionsView({ domain }: { domain: string }) {
+export default function DecisionsView({ domain, defaultTab }: { domain: string; defaultTab?: string }) {
   const { colors } = useTheme();
-  const [activeTab, setActiveTab] = useState('cockpit');
+  const [activeTab, setActiveTab] = useState(defaultTab || 'cockpit');
 
   // Left/right arrows move between tabs, the way a tablist is expected to behave.
   const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -45,7 +46,10 @@ export default function DecisionsView({ domain }: { domain: string }) {
     { id: 'provenance', label: 'Provenance Ledger', icon: FileText },
     { id: 'actions', label: 'Actions Ledger', icon: Zap },
     { id: 'redteam', label: 'Red Team Ops', icon: Target },
-    { id: 'governance', label: 'Fairness & Debates', icon: Scale }
+    { id: 'governance', label: 'Fairness & Debates', icon: Scale },
+    // KAEOS Enterprise: proofs, the earned-autonomy ladder, rehearsals,
+    // external agents, verified outcomes. Open core shows the capability notice.
+    { id: 'governed', label: 'Governed Execution', icon: Fingerprint }
   ];
 
   return (
@@ -101,6 +105,7 @@ export default function DecisionsView({ domain }: { domain: string }) {
           {activeTab === 'actions' && <ActionsLedger />}
           {activeTab === 'redteam' && <RedTeamDashboard />}
           {activeTab === 'governance' && <TrustGovernance only={['fairness','debates']} />}
+          {activeTab === 'governed' && <GovernedExecution />}
         </Suspense>
       </div>
     </div>

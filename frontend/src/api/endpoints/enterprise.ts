@@ -1,4 +1,4 @@
-import { request } from '../http';
+import { request, requestPublic } from '../http';
 
 export const enterpriseApi = {
   // ─── Enterprise Platform APIs ───
@@ -197,3 +197,47 @@ export const enterpriseApi = {
     }
   )
 };
+
+// ─── KAEOS Enterprise: the Governed Execution & Proof Layer ───
+// Every call below is an Enterprise capability. On open core the backend
+// answers 402 with a plain sentence ("This is a KAEOS Enterprise capability
+// ..."); the surface shows that sentence, never a blank that reads as data.
+export const governedExecutionApi = {
+  // Root-mounted public /status (no auth, no tenant data): the seam state lives there.
+  getEnterpriseStatus: () => requestPublic<any>('/status'),
+  // Proofs (F1)
+  getProofLedgerSummary: () => request<any>('/proof/ledger/summary'),
+  getProofRecords: (limit = 50) => request<any>(`/proof/records?limit=${limit}`),
+  getProof: (subjectId: string) => request<any>(`/proof/${encodeURIComponent(subjectId)}`),
+  verifyProofLedger: (limit = 500) => request<any>(`/proof/ledger/verify?limit=${limit}`),
+  proofLedgerBundlePath: () => '/proof/ledger/bundle',
+  proofBundlePath: (subjectId: string) => `/proof/${encodeURIComponent(subjectId)}/bundle`,
+  // Trust ledger + ladder (F3)
+  getTrustLedger: (limit = 50) => request<any>(`/trust/ledger?limit=${limit}`),
+  getTrustEntry: (skillId: string) => request<any>(`/trust/ledger/${encodeURIComponent(skillId)}`),
+  getLadder: () => request<any>('/trust/ladder'),
+  getLadderEntry: (skillId: string) => request<any>(`/trust/ladder/${encodeURIComponent(skillId)}`),
+  setLadderMode: (enforce: boolean) => request<any>('/trust/ladder/settings', {
+    method: 'PUT', body: JSON.stringify({ enforce }),
+  }),
+  pinLadderTier: (skillId: string, tier: string, note = '') => request<any>(
+    `/trust/ladder/${encodeURIComponent(skillId)}`, { method: 'PUT', body: JSON.stringify({ tier, note }) }),
+  releaseLadderPin: (skillId: string) => request<any>(
+    `/trust/ladder/${encodeURIComponent(skillId)}/pin`, { method: 'DELETE' }),
+  getAssurance: () => request<any>('/trust/assurance'),
+  // Rehearsals (F4)
+  getRehearsals: (limit = 50) => request<any>(`/rehearsal?limit=${limit}`),
+  getRehearsal: (executionId: string) => request<any>(`/rehearsal/${encodeURIComponent(executionId)}`),
+  // Gateway (F5)
+  getGatewayPrincipals: () => request<any>('/gateway/principals'),
+  getGatewayContracts: (department?: string) => request<any>(
+    `/gateway/contracts${department ? `?department=${encodeURIComponent(department)}` : ''}`),
+  setPrincipalPolicy: (principal: string, body: { hourly_call_cap?: number | null; daily_spend_cap_usd?: number | null; disabled?: boolean; note?: string }) =>
+    request<any>(`/gateway/principals/${encodeURIComponent(principal)}/policy`, { method: 'PUT', body: JSON.stringify(body) }),
+  // Outcomes (F6)
+  getOutcomes: (period?: string) => request<any>(`/billing/outcomes${period ? `?period=${period}` : ''}`),
+  getOutcomeLines: (period?: string, outcomeClass?: string, limit = 100) => request<any>(
+    `/billing/outcomes/lines?limit=${limit}${period ? `&period=${period}` : ''}${outcomeClass ? `&outcome_class=${outcomeClass}` : ''}`),
+  outcomesExportPath: (period?: string) => `/billing/outcomes/export${period ? `?period=${period}` : ''}`,
+};
+

@@ -20,7 +20,7 @@ const SEARCHABLE_MODULES = [
   { path: '/departments/procurement', label: 'Procurement Department', keywords: 'procurement purchase order requisition vendor three-way match ofac sod spend' },
   { path: '/platform/knowledge', label: 'Knowledge', keywords: 'rules skills topology extraction connectors' },
   { path: '/platform/agents', label: 'Agents', keywords: 'deploy blueprint ooda llm mcp marketplace' },
-  { path: '/platform/decisions', label: 'Decisions', keywords: 'cockpit compliance provenance redteam hitl fairness debates governance trust' },
+  { path: '/platform/decisions', label: 'Decisions', keywords: 'cockpit compliance provenance redteam hitl fairness debates governance trust proof proofs ladder rehearsal rehearsals gateway outcomes invoice enterprise' },
   { path: '/platform/proving-ground', label: 'Proving Ground', keywords: 'assurance score gate catch-rate known-bad attack battery governance proof red team' },
   { path: '/platform/settings', label: 'Settings', keywords: 'config ontology federated' },
   { path: '/platform/users', label: 'User Management', keywords: 'admin roles users rbac' },

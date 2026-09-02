@@ -75,6 +75,18 @@ All notable changes to KAEOS are documented here. This project adheres to
   and an `external_agent` origin on the run, and the API-key tenant context
   now carries that stable `key_id`. Client-supplied principal/channel keys
   are stripped like the other trust-bearing context keys.
+- **Governed execution surface** (Decisions > Governed Execution, also at
+  /platform/trust): proofs (verify the chain in-product, download the
+  offline bundle), the earned-autonomy ladder (rung per skill with the
+  plain-English why, movements each sealed as a proof, advise/enforce
+  switch, pin/release), rehearsals (predicted diffs and whether the
+  prediction held), external agents (rungs, caps, kill switch) and verified
+  outcomes (autonomy mix, invoice lines, invoice-with-proofs export). Every
+  panel reads the Enterprise routes; on open core it shows the capability
+  sentence the backend returns, never a blank that reads as data. The HITL
+  queue now shows "what will change if you approve" (the rehearsed diff and
+  risk tier) and the real reason the run paused; the public /status carries
+  the Enterprise seam state (installed, loaded, version, features).
 - Seam: the billing-classifier slot is now consulted by usage rating. When
   Enterprise registers an outcome classifier, the metered unit becomes the
   verified outcome (autonomous + assisted; blocked is not billed). The core

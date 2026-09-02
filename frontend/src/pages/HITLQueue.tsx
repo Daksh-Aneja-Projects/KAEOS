@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle, Loader2 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
+import { DiffTable } from './GovernedExecution';
 import type { PendingHITLItem } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTheme } from '../context/ThemeContext';
@@ -21,6 +22,10 @@ export default function HITLQueue(_props: { domain?: string }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const { lastMessage } = useWebSocket();
+  // Enterprise rehearsal per pending item: the predicted diff the approver is
+  // approving. Absent on open core (402) or when the run carries no write
+  // (404) - both are silent: the queue is the same queue either way.
+  const [rehearsals, setRehearsals] = useState<Record<string, any>>({});
 
   const fetchData = useCallback(async (showSpinner = true) => {
     try {
@@ -41,6 +46,28 @@ export default function HITLQueue(_props: { domain?: string }) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing = items.filter(i => !(i.id in rehearsals));
+    if (missing.length === 0) return;
+    Promise.all(missing.map(async (i) => {
+      try {
+        return [i.id, await api.getRehearsal(i.id)] as const;
+      } catch (e: any) {
+        if (e instanceof ApiError && (e.status === 402 || e.status === 404)) return [i.id, null] as const;
+        return [i.id, null] as const;
+      }
+    })).then(pairs => {
+      if (cancelled) return;
+      setRehearsals(prev => {
+        const next = { ...prev };
+        for (const [id, r] of pairs) next[id] = r;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [items, rehearsals]);
 
   // Live refresh: an agent pausing or a decision landing pushes an activity
   // event over the tenant WebSocket - no polling.
@@ -172,6 +199,27 @@ export default function HITLQueue(_props: { domain?: string }) {
                   </div>
                 </div>
 
+                {rehearsals[item.id] && (
+                  <div className="mt-6 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.primary}30` }}>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <h4 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: colors.inkSubtle }}>What will change if you approve</h4>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                        style={{ background: (rehearsals[item.id].risk?.tier === 'HIGH' ? colors.error : rehearsals[item.id].risk?.tier === 'MEDIUM' ? colors.warning : colors.success) + '18',
+                                 color: rehearsals[item.id].risk?.tier === 'HIGH' ? colors.error : rehearsals[item.id].risk?.tier === 'MEDIUM' ? colors.warning : colors.success }}>
+                        {rehearsals[item.id].risk?.tier} risk
+                      </span>
+                    </div>
+                    <p className="text-[13px] mb-3" style={{ color: colors.inkMuted }}>{rehearsals[item.id].summary}</p>
+                    {rehearsals[item.id].level === 'shadow' && (
+                      <DiffTable before={rehearsals[item.id].predicted?.before} after={rehearsals[item.id].predicted?.after}
+                        changed={rehearsals[item.id].predicted?.changed_fields || []} />
+                    )}
+                    <p className="text-[11px] mt-2" style={{ color: colors.inkTertiary }}>
+                      {rehearsals[item.id].level_note} If the record changes before you approve, the write is refused and you will be asked to re-run.
+                    </p>
+                  </div>
+                )}
+
                 <div className="mt-6 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
                   <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.inkSubtle }}>Agent Reasoning Chain</h4>
                   <div className="space-y-2">
@@ -192,7 +240,9 @@ export default function HITLQueue(_props: { domain?: string }) {
                         style={{ background: colors.warning + '20', border: `1px solid ${colors.warning}40` }}>
                         <AlertTriangle className="w-3 h-3" style={{ color: colors.warning }} />
                       </div>
-                      <span className="font-medium" style={{ color: colors.warning }}>Confidence threshold missed. Human verification required.</span>
+                      <span className="font-medium" style={{ color: colors.warning }}>
+                        {item.reason || 'The governance gates require a human decision here.'}
+                      </span>
                     </div>
                   </div>
                 </div>

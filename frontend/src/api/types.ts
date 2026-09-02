@@ -445,6 +445,8 @@ export interface PendingHITLItem {
   task_intent: string;
   started_at: string;
   reasoning_chain: any[];
+  // Plain-English cause of the pause, set by the gate that paused the run.
+  reason?: string | null;
 }
 
 // ─── HR / Workforce Types ───

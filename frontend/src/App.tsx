@@ -506,7 +506,7 @@ function Shell() {
                 <Route path="/platform/compliance-checker" element={<ThemeAdapter><ComplianceChecker /></ThemeAdapter>} />
                 {/* Company Brain merged into Knowledge; Trust merged into Decisions (Governance tab). */}
                 <Route path="/platform/brain" element={<Navigate to="/platform/knowledge" replace />} />
-                <Route path="/platform/trust" element={<Navigate to="/platform/decisions" replace />} />
+                <Route path="/platform/trust" element={<ThemeAdapter><DecisionsView domain={domain} defaultTab="governed" /></ThemeAdapter>} />
                 <Route path="/platform/users" element={<ThemeAdapter><UserManagement /></ThemeAdapter>} />
                 <Route path="/platform/operator" element={<ThemeAdapter><OperatorConsole /></ThemeAdapter>} />
                 <Route path="/platform/settings" element={<ThemeAdapter><SettingsView domain={domain} /></ThemeAdapter>} />
