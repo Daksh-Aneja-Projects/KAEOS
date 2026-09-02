@@ -66,6 +66,15 @@ All notable changes to KAEOS are documented here. This project adheres to
   writers by provider; the sync engine consults them before its built-in
   chain. Only providers the core ships as an honest stub (Workday) may be
   filled; shadowing a live core writer is refused at registration.
+- Seam: MCP tools. An Enterprise package can add tools to the `/mcp`
+  adapter; each declares the governed route it forwards to, so it inherits
+  the caller's auth, RBAC and gates like every core tool (a name that
+  collides with a core tool is refused). The adapter marks forwarded calls
+  with an `x-kaeos-channel: mcp` header; the skill execute route turns that
+  into a server-derived `agent_principal` (the API key's stable id and name)
+  and an `external_agent` origin on the run, and the API-key tenant context
+  now carries that stable `key_id`. Client-supplied principal/channel keys
+  are stripped like the other trust-bearing context keys.
 - Copilot numeric grounding (integrity band): every figure in a streamed
   answer - digits and small number words - is checked against the retrieved
   records and the person's own question; a final `grounding` event names

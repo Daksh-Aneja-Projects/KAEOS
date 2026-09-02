@@ -1,5 +1,5 @@
 """KAEOS — Skills Registry API (L8 Compiler + L9 Runtime + L10 Feedback)"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc
@@ -131,6 +131,7 @@ async def execute_skill(
     skill_id: str,
     body: SkillExecutionRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     tenant: dict = Depends(require_role("operator")),
     _allowance: dict = Depends(require_execution_allowance()),
     db: AsyncSession = Depends(get_db),
@@ -161,8 +162,22 @@ async def execute_skill(
     # gate) or Gate 3 pre-approval, so they are stripped before the context is
     # passed anywhere downstream.
     exec_context = dict(body.context or {})
-    for _trusted_key in ("hitl_pre_approved", "has_human_approver"):
+    for _trusted_key in ("hitl_pre_approved", "has_human_approver", "agent_principal",
+                         "channel"):
         exec_context.pop(_trusted_key, None)
+    # A call that arrived through the MCP adapter is an EXTERNAL AGENT acting
+    # under its own API key: the run carries that principal (server-derived,
+    # never client-supplied) and its origin, so governance can treat a
+    # third-party agent as itself - its own ladder rung, caps and proof trail.
+    if request.headers.get("x-kaeos-channel", "").lower() == "mcp":
+        exec_context["channel"] = "mcp"
+        exec_context["agent_principal"] = {
+            "kind": "api_key",
+            "id": tenant.get("key_id") or f"{tenant.get('role', 'unknown')}:{tenant.get('name', 'unknown')}",
+            "name": tenant.get("name"),
+            "role": tenant.get("role"),
+        }
+        exec_context.setdefault("origin", "external_agent")
 
     # 2. Pre-execution guardrails (route-level throttle; runs before the
     # pipeline so a rate-limited caller never burns gate model calls).

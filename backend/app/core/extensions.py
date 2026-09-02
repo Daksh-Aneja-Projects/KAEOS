@@ -30,6 +30,10 @@ The hook points (the public contract, kept stable for Enterprise releases):
   engine before its built-in chain, keyed by provider. May fill a provider
   the core ships only as an honest stub (Workday); may never shadow a live
   core writer.
+- **MCP tools** - extra tools the core's ``/mcp`` adapter lists and calls;
+  each declares the governed REST route it forwards to (method, path, how
+  the arguments travel), so an Enterprise tool inherits the same auth, RBAC
+  and gates as every core tool - never a side door.
 - **HITL enrichers** - observers called when a run pauses for a human,
   before the pause is persisted; they may ADD context (the rehearsal gate
   attaches its predicted diff here so the approver sees what will change).
@@ -92,6 +96,9 @@ class ExtensionRegistry:
     # provider -> async fn(config, secrets, write) -> error string | None
     writeback_adapters: Dict[str, Callable[..., Awaitable[Optional[str]]]] = \
         field(default_factory=dict)
+    # MCP tool specs: {name, description, inputSchema, forward: {method, path,
+    # args: "params" | "json" | "none"}}. Validated on registration.
+    mcp_tools: List[Dict[str, Any]] = field(default_factory=list)
     # Called with (action: dict, context: dict); returns None (proceed) or
     # {"refuse": True, "reason": str}.
     actuation_guard: Optional[Callable[[dict, dict], Awaitable[Optional[dict]]]] = None
@@ -150,6 +157,27 @@ class ExtensionRegistry:
                 f"Enterprise write-back adapters may not shadow core writers: {sorted(clash)}"
             )
         self.writeback_adapters.update(adapters)
+
+    def add_mcp_tools(self, tools: List[Dict[str, Any]]) -> None:
+        """Register MCP tools that forward to governed routes.
+
+        A spec must carry name, description, inputSchema and a forward block
+        naming an HTTP method and an API path (relative to the API prefix);
+        a name that collides with a core tool is refused - Enterprise extends
+        the tool list, it never redefines what a core tool does.
+        """
+        from app.api.routes.agent_interface import TOOLS as _core_tools
+        core_names = {t["name"] for t in _core_tools}
+        for t in tools:
+            fwd = t.get("forward") or {}
+            if not (t.get("name") and t.get("description") and t.get("inputSchema")
+                    and fwd.get("method") in {"GET", "POST", "PUT", "DELETE"}
+                    and str(fwd.get("path", "")).startswith("/")
+                    and fwd.get("args", "params") in {"params", "json", "none"}):
+                raise ValueError(f"malformed MCP tool spec: {t.get('name')!r}")
+            if t["name"] in core_names:
+                raise ValueError(f"Enterprise MCP tools may not shadow core tools: {t['name']}")
+        self.mcp_tools.extend(tools)
 
     def add_hitl_enricher(self, fn: Callable[[dict, dict], Awaitable[None]]) -> None:
         self.hitl_enrichers.append(fn)
@@ -270,6 +298,7 @@ class ExtensionRegistry:
         self.periodic_hooks.clear()
         self.hitl_enrichers.clear()
         self.writeback_adapters.clear()
+        self.mcp_tools.clear()
         self.actuation_guard = None
         self.loaded = False
         self.version = None

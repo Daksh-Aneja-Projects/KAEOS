@@ -148,6 +148,11 @@ async def _forward(request: Request, method: str, path: str,
     forwards per MCP request, and per-call client construction was pure churn.
     (ASGITransport holds no sockets, so it needs no explicit shutdown.)"""
     headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_HEADERS}
+    # The governed routes learn this call came from an external agent over
+    # MCP: the execute route stamps the caller as the run's principal and
+    # tags the origin, so the Enterprise gateway can give a third-party agent
+    # its own ladder rung, caps and proof trail.
+    headers["x-kaeos-channel"] = "mcp"
     client = getattr(request.app.state, "_mcp_internal_client", None)
     if client is None:
         client = httpx.AsyncClient(
@@ -179,10 +184,28 @@ async def _call_tool(request: Request, name: str, args: dict) -> dict:
         fmt = args.get("format") or "markdown"
         r = await _forward(request, "GET", f"{prefix}/brain/skills-file", params={"format": fmt})
     else:
-        return {
-            "content": [{"type": "text", "text": f"Unknown tool: {name}"}],
-            "isError": True,
-        }
+        from app.core.extensions import extensions
+        spec = next((t for t in extensions.mcp_tools if t["name"] == name), None)
+        if spec is None:
+            return {
+                "content": [{"type": "text", "text": f"Unknown tool: {name}"}],
+                "isError": True,
+            }
+        fwd = spec["forward"]
+        path = f"{prefix}{fwd['path']}"
+        # Path templates ({skill_id}) are filled from the arguments and the
+        # consumed keys leave the body/params.
+        remaining = dict(args)
+        for key in list(remaining):
+            token = "{" + key + "}"
+            if token in path:
+                path = path.replace(token, str(remaining.pop(key)))
+        mode = fwd.get("args", "params")
+        r = await _forward(
+            request, fwd["method"], path,
+            params={k: v for k, v in remaining.items() if v is not None} if mode == "params" else None,
+            json_body=remaining if mode == "json" else None,
+        )
 
     if r.status_code >= 400:
         return {
@@ -251,7 +274,11 @@ async def mcp_endpoint(
     if method == "ping":
         return _rpc_result(req_id, {})
     if method == "tools/list":
-        return _rpc_result(req_id, {"tools": TOOLS})
+        from app.core.extensions import extensions
+        return _rpc_result(req_id, {"tools": TOOLS + [
+            {k: t[k] for k in ("name", "description", "inputSchema")}
+            for t in extensions.mcp_tools
+        ]})
     if method == "tools/call":
         params = payload.get("params") or {}
         name = params.get("name")

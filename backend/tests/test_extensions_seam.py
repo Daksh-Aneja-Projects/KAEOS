@@ -448,3 +448,19 @@ def test_grounding_event_is_honest_both_ways():
     assert "No records were retrieved" in none["note"]
     bad = _grounding_event(["38", "3"], [{"content": "x"}])
     assert bad["figures_grounded"] is False and "38, 3" in bad["note"]
+
+
+def test_mcp_tools_extend_but_never_shadow_core_tools():
+    good = {"name": "get_action_contracts", "description": "Typed contracts.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "forward": {"method": "GET", "path": "/gateway/contracts", "args": "params"}}
+    extensions.add_mcp_tools([good])
+    assert extensions.mcp_tools[0]["name"] == "get_action_contracts"
+    with pytest.raises(ValueError, match="shadow core tools"):
+        extensions.add_mcp_tools([{**good, "name": "execute_skill"}])
+    with pytest.raises(ValueError, match="malformed"):
+        extensions.add_mcp_tools([{**good, "forward": {"method": "PATCH", "path": "/x"}}])
+    with pytest.raises(ValueError, match="malformed"):
+        extensions.add_mcp_tools([{**good, "forward": {"method": "GET", "path": "no-slash"}}])
+    extensions.reset()
+    assert extensions.mcp_tools == []

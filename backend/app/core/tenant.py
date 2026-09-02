@@ -225,6 +225,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "tenant_id": key_meta["tenant_id"],
             "role": key_meta.get("role", "operator"),
             "name": key_meta.get("name", "unknown"),
+            # Stable, non-secret identity of the key (hash prefix): the
+            # principal an external agent acts as, so its runs, rung and
+            # caps can be kept apart from every other caller's.
+            "key_id": key_meta.get("key_id"),
         }
 
         logger.debug(
