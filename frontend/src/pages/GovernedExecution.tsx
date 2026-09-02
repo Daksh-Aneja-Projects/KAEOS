@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Fingerprint, ShieldCheck, ShieldAlert, Download, Loader2, GitBranch, Layers, Bot,
   Receipt, CheckCircle2, XCircle, Lock, Unlock, RefreshCw, ArrowRight,
@@ -49,14 +49,18 @@ function EnterpriseNotice({ message }: { message: string }) {
   );
 }
 
-function usePanel<T>(loader: () => Promise<T>, deps: unknown[] = []) {
+function usePanel<T>(loader: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // The loader lives in a ref (same pattern as useVisiblePoll) so `load` is
+  // stable and the effect below runs once per mount, not per render.
+  const loaderRef = useRef(loader);
+  loaderRef.current = loader;
   const load = useCallback(async () => {
     try {
-      const d = await loader();
+      const d = await loaderRef.current();
       setData(d); setError(null); setNotice(null);
     } catch (e: any) {
       if (e instanceof ApiError && e.status === 402) setNotice(e.message);
@@ -64,9 +68,8 @@ function usePanel<T>(loader: () => Promise<T>, deps: unknown[] = []) {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  useEffect(() => { setLoading(true); load(); }, [load]);
+  }, []);
+  useEffect(() => { load(); }, [load]);
   useVisiblePoll(load, 15000);
   return { data, error, notice, loading, reload: load };
 }
