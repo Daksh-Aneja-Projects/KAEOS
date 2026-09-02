@@ -277,7 +277,7 @@ export function DiffTable({ before, after, changed }: { before: any; after: any;
           <div key={k} className="grid grid-cols-3 px-3 py-1.5 font-mono"
             style={{ borderTop: `1px solid ${colors.hairline}`, background: changedHere ? colors.primary + '0d' : 'transparent', color: colors.inkMuted }}>
             <span style={{ color: colors.ink }}>{k}</span>
-            <span className="truncate" style={{ color: changedHere ? colors.error : colors.inkSubtle }}>{before && k in before ? JSON.stringify(before[k]) : '—'.replace('—', '-')}</span>
+            <span className="truncate" style={{ color: changedHere ? colors.error : colors.inkSubtle }}>{before && k in before ? JSON.stringify(before[k]) : '-'}</span>
             <span className="truncate" style={{ color: changedHere ? colors.success : colors.inkSubtle }}>{after && k in after ? JSON.stringify(after[k]) : '-'}</span>
           </div>
         );

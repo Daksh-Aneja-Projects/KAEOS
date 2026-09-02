@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu, Fingerprint } from 'lucide-react';
 import { PAGE_PAD_X } from '../lib/layout';
@@ -22,6 +22,14 @@ const EvolutionStudio = lazy(() => import('../components/EvolutionStudio'));
 export default function DecisionsView({ domain, defaultTab }: { domain: string; defaultTab?: string }) {
   const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState(defaultTab || 'cockpit');
+
+  // The strip scrolls horizontally and has 12 tabs; a deep link (e.g.
+  // /platform/trust -> the last tab) would otherwise land with the active tab
+  // off-screen and no visible selection. Keep it in view whenever it changes.
+  useEffect(() => {
+    document.getElementById(`decisions-tab-${activeTab}`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [activeTab]);
 
   // Left/right arrows move between tabs, the way a tablist is expected to behave.
   const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {

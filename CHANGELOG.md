@@ -86,7 +86,10 @@ All notable changes to KAEOS are documented here. This project adheres to
   sentence the backend returns, never a blank that reads as data. The HITL
   queue now shows "what will change if you approve" (the rehearsed diff and
   risk tier) and the real reason the run paused; the public /status carries
-  the Enterprise seam state (installed, loaded, version, features).
+  the Enterprise seam state (installed, loaded, version, features). The
+  Decisions tab strip now scrolls the active section into view, so a deep
+  link to a later tab (e.g. /platform/trust) no longer lands with the
+  selection off-screen.
 - Seam: the billing-classifier slot is now consulted by usage rating. When
   Enterprise registers an outcome classifier, the metered unit becomes the
   verified outcome (autonomous + assisted; blocked is not billed). The core
