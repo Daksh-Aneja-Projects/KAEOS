@@ -389,8 +389,7 @@ What the Apache grant does **not** cover:
 
 <div align="center">
 
-**Cofounders:** Daksh Aneja (Product and Engineering) and Sathya Sankarasubbu
-(Sales and Marketing). Built with **Claude** (Anthropic's AI coding tools) as the
+Built with **Claude** (Anthropic's AI coding tools) as the
 AI engineering assistant, across architecture, implementation, security
 hardening and verification. Human-directed and AI-built, and deliberately honest
 about what is shipped versus roadmap
