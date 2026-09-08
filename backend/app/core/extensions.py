@@ -38,11 +38,13 @@ The hook points (the public contract, kept stable for Enterprise releases):
   before the pause is persisted; they may ADD context (the rehearsal gate
   attaches its predicted diff here so the approver sees what will change).
   Errors are swallowed: the pause proceeds without the enrichment.
-- **actuation guard** - the one slot consulted at the single write point
+- **actuation guards** - consulted, in order, at the single write point
   (``Actuator.apply_action``) right before a system-of-record write lands.
-  It can only REFUSE (a stale rehearsal, a top-tier write proposed from
-  external content); it can never grant, and an erroring guard fails closed
-  (the write is refused, never silently applied).
+  Each can only REFUSE (a stale rehearsal, a top-tier write proposed from
+  external content, a killed/capped external-agent principal on the raw
+  ``/actuation/execute`` path); none can ever grant, and an erroring guard
+  fails closed (the write is refused, never silently applied) - the first
+  refusal wins, later guards are not consulted.
 
 Entitlement gating for Enterprise ROUTES lives in
 :func:`app.core.entitlements.require_enterprise`; this module only answers
@@ -99,9 +101,13 @@ class ExtensionRegistry:
     # MCP tool specs: {name, description, inputSchema, forward: {method, path,
     # args: "params" | "json" | "none"}}. Validated on registration.
     mcp_tools: List[Dict[str, Any]] = field(default_factory=list)
-    # Called with (action: dict, context: dict); returns None (proceed) or
-    # {"refuse": True, "reason": str}.
-    actuation_guard: Optional[Callable[[dict, dict], Awaitable[Optional[dict]]]] = None
+    # Each called with (action: dict, context: dict); returns None (proceed)
+    # or {"refuse": True, "reason": str}. A list (not a single slot) so
+    # independent concerns - rehearsal staleness, the gateway's kill switch/
+    # caps for an API-key principal on the raw actuation path - each
+    # register their own guard rather than composing into one function.
+    actuation_guards: List[Callable[[dict, dict], Awaitable[Optional[dict]]]] = \
+        field(default_factory=list)
 
     # Load state - surfaced honestly (ops console / status), never guessed.
     loaded: bool = False
@@ -182,8 +188,8 @@ class ExtensionRegistry:
     def add_hitl_enricher(self, fn: Callable[[dict, dict], Awaitable[None]]) -> None:
         self.hitl_enrichers.append(fn)
 
-    def set_actuation_guard(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
-        self.actuation_guard = fn
+    def add_actuation_guard(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
+        self.actuation_guards.append(fn)
 
     def add_vendor_adapters(
         self, adapters: Dict[str, Any],
@@ -251,21 +257,22 @@ class ExtensionRegistry:
                 logger.error("[EE] HITL enricher failed", exc_info=True)
 
     async def guard_actuation(self, action: dict, context: dict) -> Optional[str]:
-        """Consult the actuation guard. Returns a refusal reason, or None to
-        proceed. FAIL-CLOSED: a guard that raises refuses the write - a
-        system-of-record change must never land on an unverified path."""
-        if self.actuation_guard is None:
-            return None
-        try:
-            verdict = await self.actuation_guard(action, context)
-        except Exception as e:
-            logger.error("[EE] actuation guard failed; write refused (fail-closed)",
-                         exc_info=True)
-            return (f"The write was refused because the actuation guard could not "
-                    f"complete its check ({type(e).__name__}). Nothing was changed; "
-                    "retry once the guard is healthy.")
-        if isinstance(verdict, dict) and verdict.get("refuse"):
-            return str(verdict.get("reason") or "refused by the actuation guard")
+        """Consult every registered actuation guard, in order. Returns the
+        first refusal reason, or None once all have cleared it to proceed.
+        FAIL-CLOSED: a guard that raises refuses the write (and short-
+        circuits the rest) - a system-of-record change must never land on
+        an unverified path."""
+        for guard in self.actuation_guards:
+            try:
+                verdict = await guard(action, context)
+            except Exception as e:
+                logger.error("[EE] actuation guard failed; write refused (fail-closed)",
+                             exc_info=True)
+                return (f"The write was refused because the actuation guard could not "
+                        f"complete its check ({type(e).__name__}). Nothing was changed; "
+                        "retry once the guard is healthy.")
+            if isinstance(verdict, dict) and verdict.get("refuse"):
+                return str(verdict.get("reason") or "refused by the actuation guard")
         return None
 
     async def dispatch_startup(self) -> None:
@@ -299,7 +306,7 @@ class ExtensionRegistry:
         self.hitl_enrichers.clear()
         self.writeback_adapters.clear()
         self.mcp_tools.clear()
-        self.actuation_guard = None
+        self.actuation_guards.clear()
         self.loaded = False
         self.version = None
         self.features = frozenset()

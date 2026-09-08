@@ -317,7 +317,7 @@ async def test_hitl_enrichers_observe_and_swallow_errors():
     await extensions.dispatch_hitl_enrich({"skill_id": "s"}, ctx)
     assert seen == ["s"] and ctx["rehearsal"]["summary"] == "one field changes"
     extensions.reset()
-    assert extensions.hitl_enrichers == [] and extensions.actuation_guard is None
+    assert extensions.hitl_enrichers == [] and extensions.actuation_guards == []
 
 
 async def test_actuation_guard_refuses_and_fails_closed():
@@ -334,13 +334,23 @@ async def test_actuation_guard_refuses_and_fails_closed():
     async def broken(a, c):
         raise RuntimeError("guard down")
 
-    extensions.set_actuation_guard(allow)
+    extensions.add_actuation_guard(allow)
     assert await extensions.guard_actuation(action, {}) is None
-    extensions.set_actuation_guard(refuse)
+    extensions.actuation_guards.clear()
+    extensions.add_actuation_guard(refuse)
     assert "record changed" in await extensions.guard_actuation(action, {})
-    extensions.set_actuation_guard(broken)
+    extensions.actuation_guards.clear()
+    extensions.add_actuation_guard(broken)
     reason = await extensions.guard_actuation(action, {})
     assert reason and "Nothing was changed" in reason, "an erroring guard refuses (fail-closed)"
+
+    # Multiple guards: the FIRST refusal wins, later guards are not consulted.
+    extensions.actuation_guards.clear()
+    extensions.add_actuation_guard(refuse)
+    extensions.add_actuation_guard(broken)
+    reason = await extensions.guard_actuation(action, {})
+    assert reason and "record changed" in reason, "first refusal short-circuits"
+    extensions.actuation_guards.clear()
 
 
 async def test_require_enterprise_refusal_copy(monkeypatch):

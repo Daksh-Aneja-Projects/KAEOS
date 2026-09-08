@@ -72,15 +72,25 @@ async def execute_action(
     after human approval, fail-closed, via the same resume path as every other
     approval.
 
-    ponytail: this raw path applies operator-RBAC + the high-consequence HITL
-    gate + the actuation guard, but NOT the Enterprise gateway's earned-autonomy
-    caps / rung / kill switch (those run only inside the Gate-3 skill pipeline).
-    An external-agent API key is expected to act through /skills (governed by the
-    gateway), not here. Upgrade path: dispatch a gateway-governance seam hook for
-    API-key principals on this route so a killed or capped external agent is
-    refused on the raw path too. Deferred: the core cannot import the EE gateway
-    directly, so this needs a new seam method + tests, not a release-time edit."""
+    This raw path applies operator-RBAC + the high-consequence HITL gate +
+    every registered actuation guard. A caller authenticated by an API key
+    (an external agent expected to normally act through /skills, governed
+    by the Enterprise gateway) is stamped as its own principal below - same
+    shape /skills/execute uses - so a gateway guard registered on the
+    shared write point (Actuator.apply_action) can still recognise and
+    refuse a killed or capped agent that reaches this raw route directly,
+    even though it never touched Gate 3. A human/JWT caller is untouched.
+    """
     tenant_id = tenant["tenant_id"]
+    # Server-derived, never client-supplied - same construction as
+    # /skills/execute's MCP-channel stamp. Untouched for a human/JWT caller
+    # (no key_id): only an API-key principal an Enterprise admin has
+    # explicitly configured caps or a kill switch for is ever affected.
+    _agent_principal = (
+        {"kind": "api_key", "id": tenant["key_id"], "name": tenant.get("name"),
+         "role": tenant.get("role")}
+        if tenant.get("key_id") else None
+    )
 
     # A client-supplied execution_id must name a real governed run of THIS
     # tenant: action_records.execution_id is a FK to skill_executions.id, so an
@@ -130,6 +140,13 @@ async def execute_action(
                 "execution_id": exec_id, "tenant_id": tenant_id,
                 "intent": f"{body.operation} {target}",
                 "requested_by": tenant.get("email") or tenant.get("name") or "operator",
+                # Carried through to the eventual apply_action on approval
+                # (the generic skill-resume path threads this same context
+                # object end to end), so a killed/capped agent's write is
+                # still caught by the gateway guard even after a human
+                # approves it - see this route's own docstring.
+                **({"agent_principal": _agent_principal, "origin": "external_agent"}
+                   if _agent_principal else {}),
                 # Also on the durable DB row: the write must still apply if the
                 # 24h gate-cache record expires before someone approves.
                 "actuation": {
@@ -161,7 +178,9 @@ async def execute_action(
             execution_id=body.execution_id, actor=approver_identity(tenant),
             idempotency_key=body.idempotency_key,
             context={"tenant_id": tenant_id, "execution_id": body.execution_id,
-                     "requested_by": approver_identity(tenant), "origin": "human"},
+                     "requested_by": approver_identity(tenant),
+                     "origin": "external_agent" if _agent_principal else "human",
+                     **({"agent_principal": _agent_principal} if _agent_principal else {})},
         )
     except ActuationRefused as e:
         # A policy refusal, not a malformed request: say why, in plain words.

@@ -36,25 +36,39 @@ codebase itself carries no open critical or high finding from the standing pre-l
 **Capabilities, honest boundaries, and roadmap:**
 
 - **Enterprise agent gateway - two governance-completeness gaps on secondary
-  paths (documented, hardening backlog).** The 2026-09 pre-launch audit of the
-  KAEOS Enterprise overlay fixed every finding that touched a primary path
-  (least-privilege on the console reads, admin-gating key rotation, the HEXIS
-  origin trust boundary, billing idempotency - all verified with live deny-path
-  testing) and left two lower-severity items for a focused follow-up, each
-  carrying its compensating controls and a `ponytail:` marker in the code:
-  (1) **per-principal numeric caps are check-then-act** - an external agent's
-  hourly-call / daily-spend cap counts runs recorded after the run seals, so a
-  concurrent burst by an *already-autonomous-rung* agent can overshoot the
-  numeric cap. The kill switch is exact (checked synchronously) and any
-  un-promoted agent is force-routed to a human regardless of caps, so the blast
-  radius is a quota overshoot, not a privilege or isolation break. Upgrade path:
-  an atomic reserve-at-admission counter. (2) **the raw `/actuation/execute`
-  path** applies operator-RBAC, the high-consequence human-approval gate and the
-  actuation guard, but not the gateway's earned-autonomy caps/rung for an
-  API-key caller; external agents are expected to act through the governed skill
-  pipeline, which does apply them. Upgrade path: a gateway-governance seam hook
-  dispatched for API-key principals on that route. Neither is a cross-tenant or
-  data-exposure risk.
+  paths, both since FIXED (2026-09-08).** The 2026-09-02 pre-launch audit of
+  the KAEOS Enterprise overlay fixed every finding that touched a primary
+  path and left two lower-severity items, each with compensating controls,
+  for a focused follow-up:
+  (1) **per-principal numeric caps were check-then-act** - an external
+  agent's hourly-call cap counted runs recorded after the run seals (async),
+  so a concurrent burst could overshoot it by roughly the burst width.
+  Fixed: the hourly cap is now admission-gated by an atomic
+  `UPDATE ... SET calls=calls+1 WHERE calls<cap` reservation
+  (`kaeos_enterprise/gateway/principals.py`, `check_caps`/
+  `_reserve_hourly_call`) - admission and increment are one step, not two,
+  with the reservation released if the run is separately refused for
+  spend. The daily SPEND cap keeps a smaller residual gap: a run's actual
+  cost is unknown until it completes, so there is nothing to reserve
+  against at admission the way a call slot can be (documented in that
+  module, narrower than before - concurrent admissions are now serialized
+  through the same reservation, bounding the race to in-flight runs
+  instead of an unbounded burst). A true fix needs an admission-time cost
+  ESTIMATE, a bigger, separate feature.
+  (2) **the raw `/actuation/execute` path** skipped the gateway's
+  earned-autonomy caps/kill-switch for an API-key caller (it applied
+  operator-RBAC, the high-consequence human-approval gate, and the
+  rehearsal-staleness actuation guard, but nothing gateway-specific).
+  Fixed: the route now stamps the caller's principal into context exactly
+  like `/skills/execute` does, and a new guard
+  (`actuation_gateway_guard`, same module) is registered on the shared
+  write point (`Actuator.apply_action`'s guard dispatch, now a list -
+  `app/core/extensions.py`) so a killed or capped agent is refused there
+  too, whether it writes directly or a paused high-consequence write later
+  resumes after human approval. Deliberately still does NOT apply the
+  rung/force-HITL treatment on this route - it has its own, differently-
+  shaped consequence-based HITL gate already. Neither gap was ever a
+  cross-tenant or data-exposure risk.
 - **`hours_saved` requires a tenant baseline, and is null until it has one.** Hours-saved
   needs two inputs KAEOS cannot observe: how long a task took a person before automation,
   and that person's loaded hourly cost. It was once derived as

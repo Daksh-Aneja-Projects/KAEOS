@@ -25,6 +25,26 @@ All notable changes to KAEOS are documented here. This project adheres to
   `GovernedExecution.tsx` into `hooks/useEnterprisePanel.ts` +
   `components/EnterpriseNotice.tsx` so this second Enterprise page reuses it
   instead of duplicating it.
+- Seam: **`actuation_guard` is now a list** (`app/core/extensions.py`) -
+  `add_actuation_guard(fn)` replaces `set_actuation_guard(fn)`; every
+  registered guard is consulted in order at the shared write point
+  (`Actuator.apply_action`), first refusal wins, an erroring guard still
+  fails closed. Needed so an independent SECOND guard (the Enterprise
+  gateway's kill-switch/caps check for an API-key principal on the raw
+  `/actuation/execute` path - closing a documented pre-launch-audit
+  backlog item, EE 0.17.0) can register alongside the existing rehearsal-
+  staleness guard without composing the two into one function.
+- Fix: **`/actuation/execute` now stamps the caller's `agent_principal`**
+  into context exactly like `/skills/execute` already does for an MCP-
+  channel caller, whenever the request authenticated via an API key
+  (`tenant["key_id"]`) - server-derived, never client-supplied. Closes the
+  documented gap where an external agent hitting the raw actuation route
+  directly (bypassing the governed skill pipeline, and so bypassing the
+  gateway's earned-autonomy caps/kill-switch too) went completely
+  unrecognised as any particular principal. A human/JWT caller is
+  untouched; an uncapped API key is untouched too - see the EE changelog
+  for the guard this makes possible. Full unit lane re-verified green
+  (1492/3-skipped) since this touches a shared seam contract.
 
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 

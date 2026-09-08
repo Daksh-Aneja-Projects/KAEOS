@@ -142,14 +142,15 @@ async def test_guard_refusal_is_a_refusal_not_a_failure(db):
 
     extensions.reset()
     try:
-        extensions.set_actuation_guard(refuse)
+        extensions.add_actuation_guard(refuse)
         with pytest.raises(ActuationRefused, match="external content"):
             await Actuator.apply_action(
                 db, tenant_id=t, system="netsuite", object_type="payment",
                 external_id="PAY-1", operation="CREATE", payload={"amount": 9000},
                 context={"origin": "content"})
         assert seen == [("CREATE", "content")]
-        extensions.set_actuation_guard(broken)
+        extensions.actuation_guards.clear()
+        extensions.add_actuation_guard(broken)
         with pytest.raises(ActuationRefused, match="Nothing was changed"):
             await Actuator.apply_action(
                 db, tenant_id=t, system="netsuite", object_type="payment",
