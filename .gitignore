@@ -193,6 +193,10 @@ frontend/test-results/
 docs/YC_APPLICATION_ANSWERS.md
 marketing/yc/
 
+# Competitive/architecture research feeding the Enterprise IP roadmap — never
+# publish source material or attribution trails into the public repo.
+/.internal/
+
 # ─── Internal planning artifacts (local only) ────────────────────────────────
 # Living implementation plans and audit worksheets: stale by design, they name
 # internal review process and dev-box hardware, and they read as roadmap rather
