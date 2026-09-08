@@ -94,6 +94,21 @@ async def rate_tenant_period(
     }
     if by_class is not None:
         out["metered_by_outcome"] = by_class
+        # The plan allowance is ONE shared pool (there is no per-class
+        # allowance anywhere in the plan model), so the total overage
+        # already computed above is allocated across classes by their
+        # share of this period's metered volume - how much of THAT
+        # overage each class's own activity caused. A per-class Stripe
+        # subscription bills this; a flat one ignores it (report_usage
+        # only reads by_class_overage when stripe_meter_items is set).
+        total_billable = sum(int(by_class.get(c, 0)) for c in ("autonomous", "assisted"))
+        if total_billable > 0 and overage > 0:
+            out["by_class_overage"] = {
+                c: round(overage * int(by_class.get(c, 0)) / total_billable)
+                for c in ("autonomous", "assisted")
+            }
+        else:
+            out["by_class_overage"] = {"autonomous": 0, "assisted": 0}
     return out
 
 
@@ -123,7 +138,8 @@ async def record_and_report(
     from app.services.stripe_bridge import get_billing_provider
     provider = get_billing_provider()
     try:
-        result = await provider.report_usage(db, tenant_id, period, rating["overage_units"])
+        result = await provider.report_usage(db, tenant_id, period, rating["overage_units"],
+                                             by_class=rating.get("by_class_overage"))
         row.stripe_status = result.get("status", "noop")
         row.stripe_usage_record_id = result.get("usage_record_id")
         if result.get("status") == "reported":

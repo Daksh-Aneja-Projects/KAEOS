@@ -22,6 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+# The verified-outcome vocabulary usage_rating.py's own comments already
+# document ("the metered unit becomes the VERIFIED OUTCOME (autonomous /
+# assisted; blocked is not billed)") - referenced here, not duplicated, so
+# a per-class Stripe price lookup key always matches what the Enterprise
+# classifier actually reports. "blocked" is deliberately excluded: it is
+# never billed, so it has no price to look up.
+_OUTCOME_CLASSES = ("autonomous", "assisted")
+
 
 def _settings():
     from app.core.config import get_settings
@@ -34,7 +42,8 @@ class BillingProvider:
     enabled = False
 
     async def report_usage(
-        self, db: AsyncSession, tenant_id: str, period: date, overage_units: int
+        self, db: AsyncSession, tenant_id: str, period: date, overage_units: int,
+        by_class: dict[str, int] | None = None,
     ) -> dict:
         raise NotImplementedError
 
@@ -64,7 +73,7 @@ class BillingProvider:
 class NoopBillingProvider(BillingProvider):
     enabled = False
 
-    async def report_usage(self, db, tenant_id, period, overage_units) -> dict:
+    async def report_usage(self, db, tenant_id, period, overage_units, by_class=None) -> dict:
         return {"status": "noop", "usage_record_id": None}
 
     async def ensure_customer(self, db, tenant_id) -> str | None:
@@ -104,11 +113,22 @@ class StripeBillingProvider(BillingProvider):
         return cust["id"]
 
     async def report_usage(
-        self, db: AsyncSession, tenant_id: str, period: date, overage_units: int
+        self, db: AsyncSession, tenant_id: str, period: date, overage_units: int,
+        by_class: dict[str, int] | None = None,
     ) -> dict:
         from app.models.billing import BillingAccount
         acct = await db.get(BillingAccount, tenant_id)
-        if not acct or not acct.stripe_meter_item_id:
+        if not acct:
+            return {"status": "noop", "usage_record_id": None}
+        # Per-outcome-class pricing, only when this tenant is actually on a
+        # per-class metered subscription (stripe_meter_items populated) AND
+        # a by-class breakdown was computed. Every other tenant - the
+        # overwhelming majority, unchanged - falls through to the flat
+        # single-item push below exactly as before this feature existed.
+        if acct.stripe_meter_items and by_class:
+            return await self._report_usage_by_class(tenant_id, period, acct.stripe_meter_items,
+                                                      by_class)
+        if not acct.stripe_meter_item_id:
             # No metered subscription item wired for this tenant — nothing to push.
             return {"status": "noop", "usage_record_id": None}
         # action=set makes the push idempotent per (item, period): re-running a
@@ -125,6 +145,32 @@ class StripeBillingProvider(BillingProvider):
             )
         )
         return {"status": "reported", "usage_record_id": rec.get("id")}
+
+    async def _report_usage_by_class(
+        self, tenant_id: str, period: date, meter_items: dict, by_class: dict[str, int],
+    ) -> dict:
+        """One usage record per configured class's subscription item -
+        same idempotent action=set contract as the flat push. A class with
+        no configured item (the operator hasn't created that price yet, or
+        it genuinely earned zero this period) is skipped, never reported
+        as zero against an item that does not exist."""
+        ts = int(datetime(period.year, period.month, period.day, tzinfo=timezone.utc).timestamp())
+        reported: dict[str, str | None] = {}
+        for outcome_class, item_id in meter_items.items():
+            if not item_id:
+                continue
+            quantity = int(by_class.get(outcome_class, 0))
+            rec = await asyncio.to_thread(
+                lambda item_id=item_id, quantity=quantity, outcome_class=outcome_class:
+                    self._stripe.SubscriptionItem.create_usage_record(
+                        item_id, quantity=quantity, timestamp=ts, action="set",
+                        idempotency_key=f"usage:{tenant_id}:{period.isoformat()}:{outcome_class}",
+                    )
+            )
+            reported[outcome_class] = rec.get("id")
+        if not reported:
+            return {"status": "noop", "usage_record_id": None}
+        return {"status": "reported", "usage_record_id": None, "usage_record_ids": reported}
 
     async def _price_id_for(self, lookup_key: str, required: bool = True) -> str | None:
         """Resolve a Stripe price id by its lookup_key. The price->plan mapping
@@ -164,13 +210,26 @@ class StripeBillingProvider(BillingProvider):
         seats = max(1, int((acct.seats if acct is not None else 1) or 1))
         base_price = await self._price_id_for(plan)
         line_items = [{"price": base_price, "quantity": seats}]
-        # Metered overage price (usage_type=metered) so the resulting subscription
-        # carries a usage item that report_usage can push overage against. Without
-        # it the subscription has no meter item and every overage push no-ops.
-        # Optional: a plan may be billed flat with no metered overage.
-        metered_price = await self._price_id_for(f"{plan}_metered", required=False)
-        if metered_price:
-            line_items.append({"price": metered_price})  # metered items take no quantity
+        # Metered overage: per-outcome-class prices take priority over the
+        # flat one, when the operator has actually created them in Stripe -
+        # {plan}_metered_autonomous / {plan}_metered_assisted (the same
+        # verified-outcome vocabulary usage_rating.py already documents;
+        # "blocked" is never billed, so it has no price to look up). Falls
+        # back to the single flat {plan}_metered price when neither exists -
+        # every tenant checking out today, unchanged. A plan may also be
+        # billed flat with no metered overage at all (neither exists).
+        class_prices = {
+            outcome_class: price_id
+            for outcome_class in _OUTCOME_CLASSES
+            if (price_id := await self._price_id_for(f"{plan}_metered_{outcome_class}",
+                                                      required=False))
+        }
+        if class_prices:
+            line_items += [{"price": pid} for pid in class_prices.values()]  # no quantity
+        else:
+            metered_price = await self._price_id_for(f"{plan}_metered", required=False)
+            if metered_price:
+                line_items.append({"price": metered_price})  # metered items take no quantity
         session = await asyncio.to_thread(
             lambda: self._stripe.checkout.Session.create(
                 mode="subscription",
@@ -337,12 +396,36 @@ async def handle_webhook_event(db: AsyncSession, event: dict) -> dict:
             else:
                 acct.stripe_subscription_id = obj.get("id")
                 items = ((obj.get("items") or {}).get("data")) or []
-                # First metered item becomes the usage-record target.
+                # Per-outcome-class items are matched by lookup_key suffix
+                # ({plan}_metered_autonomous -> "autonomous") - the same
+                # naming convention create_checkout_session writes. Any
+                # OTHER metered item (the flat {plan}_metered price, or a
+                # per-class price this webhook doesn't recognise) becomes
+                # the fallback single-item target - always RE-SYNCED from
+                # this event's own item list (same as before this feature
+                # existed: a changed subscription must not leave a stale
+                # id behind), never left stuck at a prior event's value.
+                meter_items: dict[str, str] = {}
+                first_unmatched_metered: str | None = None
                 for it in items:
                     price = it.get("price") or {}
-                    if (price.get("recurring") or {}).get("usage_type") == "metered":
-                        acct.stripe_meter_item_id = it.get("id")
-                        break
+                    if (price.get("recurring") or {}).get("usage_type") != "metered":
+                        continue
+                    lookup_key = str(price.get("lookup_key") or "")
+                    matched_class = next(
+                        (c for c in _OUTCOME_CLASSES if lookup_key.endswith(f"_metered_{c}")),
+                        None)
+                    if matched_class:
+                        meter_items[matched_class] = it.get("id")
+                    elif first_unmatched_metered is None:
+                        first_unmatched_metered = it.get("id")
+                acct.stripe_meter_items = meter_items or None
+                # ONLY an unmatched item, never a class-specific item picked
+                # arbitrarily as if it were "the flat one" - old code that
+                # reads only this field and pushes the TOTAL count against
+                # it would otherwise silently double-count into whichever
+                # class happened to be first.
+                acct.stripe_meter_item_id = first_unmatched_metered
                 qty = sum(int(it.get("quantity") or 0) for it in items)
                 if qty:
                     acct.seats = qty

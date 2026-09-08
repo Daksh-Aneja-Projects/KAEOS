@@ -103,6 +103,35 @@ All notable changes to KAEOS are documented here. This project adheres to
     as Workday/OAuth2.1. Streaming, push notifications and multi-turn
     task continuation are not implemented.
   - Full unit lane re-verified green (1504/3-skipped).
+- Feature: **per-outcome-class Stripe pricing** (`app/services/
+  stripe_bridge.py`, `usage_rating.py`, `app/models/billing.py`). The
+  outcome classifier already computed a by-class breakdown
+  (`metered_by_outcome`); it was discarded at the reporting step, one
+  flat aggregate always went to Stripe. Now: `BillingAccount` gains
+  `stripe_meter_items` (migration `0059`, JSON: `{"autonomous": "si_...",
+  "assisted": "si_..."}`) alongside the existing flat
+  `stripe_meter_item_id` - additive, so a tenant never moved onto per-
+  class prices is completely unaffected (proven by a dedicated test, not
+  just asserted).
+  - `create_checkout_session` looks for `{plan}_metered_autonomous` /
+    `{plan}_metered_assisted` Stripe prices first; only when NEITHER
+    exists does it fall back to the single flat `{plan}_metered` price,
+    unchanged from before.
+  - The webhook handler matches metered subscription items to a class by
+    their Stripe `lookup_key` suffix, always re-syncing from that event's
+    own item list (a changed subscription can never leave a stale
+    mapping behind) - and never picks one class's item as a fake stand-in
+    for the flat field when every metered item resolved to a class (a
+    real bug caught and fixed while building this, before it shipped:
+    the first version did exactly that, which would have silently
+    double-counted a class's usage into the wrong price if anything
+    still read the flat field alone).
+  - The plan's included-executions allowance stays ONE shared pool (there
+    is no per-class allowance anywhere in the plan model); the already-
+    computed total overage is allocated across classes by their share of
+    that period's metered volume - how much of the shared overage each
+    class's own activity caused, not an even or arbitrary split.
+  - Full unit lane re-verified green (1513/3-skipped).
 
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 

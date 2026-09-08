@@ -101,6 +101,70 @@ async def test_stripe_subscription_created_syncs_plan(db):
 
 
 @pytest.mark.asyncio
+async def test_stripe_subscription_created_detects_per_class_meter_items(db):
+    """A subscription whose metered items use the {plan}_metered_<class>
+    lookup-key convention populates stripe_meter_items, keyed by class -
+    and still sets the flat stripe_meter_item_id fallback to whatever
+    metered item ISN'T a recognised per-class price, for old code that
+    only reads that field."""
+    from app.models.auth import Tenant
+    from app.models.billing import BillingAccount
+    from app.services.stripe_bridge import handle_webhook_event
+
+    db.add(Tenant(tenant_id="tenant_class", name="ClassCo", plan="free"))
+    db.add(BillingAccount(tenant_id="tenant_class", stripe_customer_id="cus_class"))
+    await db.commit()
+
+    res = await handle_webhook_event(db, {
+        "id": "evt_class_1", "type": "customer.subscription.created",
+        "data": {"object": {"customer": "cus_class", "id": "sub_class", "status": "active",
+                            "items": {"data": [
+            {"id": "si_base", "quantity": 3,
+             "price": {"lookup_key": "team", "recurring": {}}},
+            {"id": "si_auto", "quantity": 0,
+             "price": {"lookup_key": "team_metered_autonomous",
+                       "recurring": {"usage_type": "metered"}}},
+            {"id": "si_asst", "quantity": 0,
+             "price": {"lookup_key": "team_metered_assisted",
+                       "recurring": {"usage_type": "metered"}}},
+        ]}}},
+    })
+    assert res["status"] == "processed"
+    acct = await db.get(BillingAccount, "tenant_class")
+    assert acct.stripe_meter_items == {"autonomous": "si_auto", "assisted": "si_asst"}
+    # Neither metered item was unrecognised, so there is nothing to fall
+    # back to - the flat field stays unset rather than pointing at one
+    # arbitrary class's item as if it were the whole story.
+    assert acct.stripe_meter_item_id is None
+
+
+@pytest.mark.asyncio
+async def test_stripe_subscription_updated_resyncs_meter_items_not_stuck(db):
+    """A later event with a DIFFERENT item list must fully replace the
+    prior mapping, never merge with or get stuck on stale entries - the
+    same 'always resync from this event' contract the flat field already
+    had before per-class pricing existed."""
+    from app.models.billing import BillingAccount
+    from app.services.stripe_bridge import handle_webhook_event
+
+    db.add(BillingAccount(tenant_id="tenant_resync", stripe_customer_id="cus_resync",
+                          stripe_meter_items={"autonomous": "si_old_auto"}))
+    await db.commit()
+
+    await handle_webhook_event(db, {
+        "id": "evt_resync_1", "type": "customer.subscription.updated",
+        "data": {"object": {"customer": "cus_resync", "id": "sub_resync", "status": "active",
+                            "items": {"data": [
+            {"id": "si_flat_new", "quantity": 1,
+             "price": {"lookup_key": "team_metered", "recurring": {"usage_type": "metered"}}},
+        ]}}},
+    })
+    acct = await db.get(BillingAccount, "tenant_resync")
+    assert acct.stripe_meter_items is None   # no per-class item this time - not stale-merged
+    assert acct.stripe_meter_item_id == "si_flat_new"
+
+
+@pytest.mark.asyncio
 async def test_stripe_incomplete_subscription_does_not_grant_plan(db):
     """Fail-closed: a non-paying (incomplete/unpaid) subscription must NOT grant the
     paid tier — only active/trialing may. Locks in the status gate on entitlements."""

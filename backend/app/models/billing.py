@@ -9,7 +9,7 @@ usage is rated + optionally pushed to Stripe.
 Money is Decimal (Numeric) everywhere — never float.
 """
 from sqlalchemy import (
-    Boolean, BigInteger, Column, Date, DateTime, Integer, Numeric, String, UniqueConstraint, Index,
+    Boolean, BigInteger, Column, Date, DateTime, Integer, JSON, Numeric, String, UniqueConstraint, Index,
 )
 from sqlalchemy.sql import func
 
@@ -29,8 +29,19 @@ class BillingAccount(Base):
     seats = Column(Integer, nullable=False, default=1)
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
-    # The metered subscription item usage records are pushed against.
+    # The metered subscription item usage records are pushed against - a
+    # FLAT (single-rate) metered subscription. Kept for every tenant that
+    # never moved to per-outcome-class pricing; still populated (to the
+    # first metered item found) even on a per-class subscription, so any
+    # older code reading only this field keeps working.
     stripe_meter_item_id = Column(String, nullable=True)
+    # Per-outcome-class metered subscription, when one exists:
+    # {"autonomous": "si_...", "assisted": "si_..."}. None/empty = this
+    # tenant is on the flat single-rate subscription above; report_usage
+    # only reports per-class when this is populated, so an existing
+    # tenant's billing behavior is completely unchanged until an admin
+    # actually resubscribes them onto per-class prices.
+    stripe_meter_items = Column(JSON, nullable=True)
     # Unix ts of the newest plan-affecting subscription event applied to this
     # account, so an out-of-order Stripe redelivery cannot overwrite newer state.
     last_subscription_event_at = Column(BigInteger, nullable=True)
