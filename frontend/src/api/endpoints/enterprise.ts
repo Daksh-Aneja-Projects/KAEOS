@@ -269,5 +269,55 @@ export const governedExecutionApi = {
     request<any>(`/ontology/action-types/${encodeURIComponent(apiName)}/apply`, {
       method: 'POST', body: JSON.stringify(body),
     }),
+
+  // Value Types (F8) - reusable constraints (regex | enum | min/max) a PropertyType can point at
+  listValueTypes: () => request<any>('/ontology/value-types'),
+  createValueType: (body: { api_name: string; display_name: string; base_type?: string; constraint?: Record<string, any> }) =>
+    request<any>('/ontology/value-types', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Interfaces (F8) - a named, required-property shape an ObjectType can claim to implement
+  listInterfaces: () => request<any>('/ontology/interfaces'),
+  createInterface: (body: { api_name: string; display_name: string; required_properties?: { api_name: string; base_type?: string }[] }) =>
+    request<any>('/ontology/interfaces', { method: 'POST', body: JSON.stringify(body) }),
+  verifyConformance: (apiName: string) =>
+    request<any>(`/ontology/object-types/${encodeURIComponent(apiName)}/verify-conformance`, { method: 'POST' }),
+
+  // Link Types (F8) - typed, cardinality-checked relationships, traversed through the real graph store
+  listLinkTypes: () => request<any>('/ontology/link-types'),
+  createLinkType: (body: {
+    api_name: string; source_object_type: string; target_object_type: string; relation: string;
+    cardinality?: string; forward_name: string; reverse_name: string;
+  }) => request<any>('/ontology/link-types', { method: 'POST', body: JSON.stringify(body) }),
+  createLinkInstance: (apiName: string, body: { source_id: string; target_id: string; properties?: Record<string, any> }) =>
+    request<any>(`/ontology/link-types/${encodeURIComponent(apiName)}/instances`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  getLinkInstances: (apiName: string, nodeId: string, direction: 'forward' | 'reverse' = 'forward') =>
+    request<any>(`/ontology/link-types/${encodeURIComponent(apiName)}/instances/${encodeURIComponent(nodeId)}?direction=${direction}`),
+
+  // Object Sets (F8) - a saved handle onto a group of objects (static | dynamic | temporary | permanent)
+  createObjectSet: (body: { object_type: string; kind: string; definition?: Record<string, any>; name?: string | null }) =>
+    request<any>('/ontology/object-sets', { method: 'POST', body: JSON.stringify(body) }),
+  getObjectSetMembers: (objectSetId: string) => request<any>(`/ontology/object-sets/${encodeURIComponent(objectSetId)}/members`),
+
+  // Dataset Transactions (F11) - git-for-data branch/commit history for a connector dataset
+  createDatasetBranch: (datasetId: string, body: { name: string; from_branch?: string }) =>
+    request<any>(`/ontology/datasets/${encodeURIComponent(datasetId)}/branches`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  getDatasetBranchHistory: (datasetId: string, branch: string = 'main') =>
+    request<any>(`/ontology/datasets/${encodeURIComponent(datasetId)}/branches/${encodeURIComponent(branch)}/history`),
+  beginDatasetTransaction: (datasetId: string, body: { txn_type: string; branch?: string; cursor_used?: Record<string, any> | null }) =>
+    request<any>(`/ontology/datasets/${encodeURIComponent(datasetId)}/transactions`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  commitDatasetTransaction: (txnId: string, recordCount: number = 0) =>
+    request<any>(`/ontology/datasets/transactions/${encodeURIComponent(txnId)}/commit`, {
+      method: 'POST', body: JSON.stringify({ record_count: recordCount }),
+    }),
+  abortDatasetTransaction: (txnId: string, reason?: string) =>
+    request<any>(`/ontology/datasets/transactions/${encodeURIComponent(txnId)}/abort`, {
+      method: 'POST', body: JSON.stringify({ reason }),
+    }),
 };
 

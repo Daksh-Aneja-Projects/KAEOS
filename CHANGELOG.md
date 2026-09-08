@@ -25,6 +25,49 @@ All notable changes to KAEOS are documented here. This project adheres to
   `GovernedExecution.tsx` into `hooks/useEnterprisePanel.ts` +
   `components/EnterpriseNotice.tsx` so this second Enterprise page reuses it
   instead of duplicating it.
+- Frontend: **Object Explorer now covers the rest of the F8-F13 Ontology
+  surface** - the same page shipped browsing objects and applying
+  ActionTypes; this rounds it out against already-shipped, already-tested
+  backend routes (no backend changes). A new secondary tab strip (Objects /
+  Value types / Interfaces / Link types / Object sets) sits under the page
+  header:
+  - **Edit an existing object.** Each property in the object detail panel
+    gets an inline edit affordance (never offered on a `masked` property
+    whose real value came back redacted, or on a `mapped` ObjectType - the
+    write path is native-only). Submits `expected_versions` sourced from
+    the object's own `property_versions`; a 409 version conflict renders as
+    a plain "refresh and retry" message with a one-click refresh, never a
+    silent overwrite.
+  - **Value Types**: browse/create reusable constraints (regex, a fixed
+    list, or a numeric min/max - mirrored exactly from
+    `value_types.validate_value`, never guessed).
+  - **Interfaces**: browse/create named required-property shapes; an
+    ObjectType's detail now shows an "Implements" row with a live "Verify
+    conformance" action.
+  - **Link Types**: browse/create typed, cardinality-checked relationships
+    between ObjectTypes. The object detail panel gained a **Linked
+    Objects** section that traverses real instances for that object (via
+    the existing GraphService) and can create a new forward link.
+  - **Object Sets**: create a static (fixed id list) or dynamic
+    (single-condition live filter) set and view its resolved members.
+  - **Dataset branches**: on a native ObjectType's header, load a
+    connector dataset's branch/transaction history and create a what-if
+    branch (F11) - the dataset id is a manually-entered, per-type-remembered
+    field, since the Ontology has no formal ObjectType-to-dataset link yet.
+
+  Live-verified end to end against the real `tenant_acme` demo data on a
+  running `backend-ee` + this frontend (real value type, interface, link
+  type, object set, dataset branch and transaction all created through the
+  UI; a real edit + a real 409 conflict + refresh were driven live). Caught
+  and fixed a real bug live in the process: creating a new dataset branch
+  reloaded the *old* branch's history because the reload call raced the
+  branch-name state update instead of taking the new name explicitly.
+  One confirmed backend gap, not a frontend defect: `link_types.create_link`
+  writes a graph edge but never registers the linked objects as graph
+  nodes, so a freshly linked native object's traversal correctly, honestly
+  comes back empty (`related: []`) even though the link itself was created -
+  nothing in the ontology or object_store modules calls
+  `GraphService.register_entity`/`upsert_node` for ontology objects today.
 - Seam: **`actuation_guard` is now a list** (`app/core/extensions.py`) -
   `add_actuation_guard(fn)` replaces `set_actuation_guard(fn)`; every
   registered guard is consulted in order at the shared write point
