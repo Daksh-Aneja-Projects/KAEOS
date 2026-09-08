@@ -45,6 +45,27 @@ All notable changes to KAEOS are documented here. This project adheres to
   untouched; an uncapped API key is untouched too - see the EE changelog
   for the guard this makes possible. Full unit lane re-verified green
   (1492/3-skipped) since this touches a shared seam contract.
+- Feature: **gateway OAuth2.1 machine-to-machine token acceptance**
+  (`app/core/tenant.py`, `app/services/sso.py`, `app/models/sso.py`). A
+  THIRD auth shape alongside the `kt_` API key and the KAEOS session JWT:
+  an external agent already holding an OAuth2.1 access token from a
+  client-credentials grant against its OWN IdP presents it directly on
+  every API call, no KAEOS session, no redirect. Reuses the real SSO/OIDC
+  plumbing that already existed for human login (`sso.py`'s `discover`,
+  `jwt.PyJWKClient`-based JWKS verification) rather than building a second
+  one: `SSOConnection` gains one new nullable column,
+  `gateway_audience` (migration `0058_sso_gateway_audience`) - the
+  expected `aud` on a machine access token, distinct from `client_id`
+  (the human id_token's audience). Null = inactive; an admin must
+  explicitly set it per connection, so configuring human SSO alone never
+  opens the gateway to that IdP's tokens. `agent_principal_of(tenant)`
+  (`app/core/tenant.py`) is now the single shared helper `/skills/execute`
+  and `/actuation/execute` both call to decide whether an authenticated
+  caller is an external-agent principal, so the two routes cannot drift on
+  which auth shape counts. **UNVERIFIED against a live Entra/Okta tenant**
+  - no credentials exist on this side yet; the JWKS verification itself is
+  real and proven against a locally-generated RSA keypair
+  (`tests/test_sso.py`). Full unit lane re-verified green (1498/3-skipped).
 
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 

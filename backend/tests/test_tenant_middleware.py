@@ -104,3 +104,33 @@ async def test_poisoned_host_header_cannot_bypass_auth_gate():
         assert called is False
     finally:
         settings.DEV_MODE = prev
+
+
+def test_agent_principal_of_prefers_gateway_over_key_id():
+    """gateway_principal (an OAuth2.1 machine token - always an external
+    agent by construction) wins over a bare kt_-derived key_id (which
+    might be the tenant's own integration); neither present is a human/JWT
+    caller, and gets None - the shared helper skills.py/actuation.py both
+    route through so they can never drift on which auth shape counts."""
+    from app.core.tenant import agent_principal_of
+
+    assert agent_principal_of({"role": "operator"}) is None
+
+    key_only = agent_principal_of({"key_id": "hash123", "name": "Zapier",
+                                   "role": "operator"})
+    assert key_only == {"kind": "api_key", "id": "hash123", "name": "Zapier",
+                        "role": "operator"}
+
+    both = agent_principal_of({
+        "key_id": "hash123", "name": "irrelevant", "role": "operator",
+        "gateway_principal": {"kind": "oidc", "id": "agent-1", "name": "Agent One"},
+    })
+    assert both == {"kind": "oidc", "id": "agent-1", "name": "Agent One"}
+
+    # A copy, not the same object - mutating the result can never leak back
+    # into request.state.tenant.
+    original = {"kind": "oidc", "id": "agent-1", "name": "Agent One"}
+    tenant = {"gateway_principal": original}
+    result = agent_principal_of(tenant)
+    result["id"] = "mutated"
+    assert original["id"] == "agent-1"

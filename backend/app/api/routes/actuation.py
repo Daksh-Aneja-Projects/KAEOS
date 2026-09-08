@@ -19,7 +19,7 @@ from app.models.actuation import ActionRecord
 from app.models.domain import SkillExecution
 from app.services.actuation import Actuator, ActuationError
 from app.services.actuation.actuator import ActuationRefused
-from app.core.tenant import approver_identity
+from app.core.tenant import agent_principal_of, approver_identity
 from app.models.execution_status import ExecutionStatus
 
 router = APIRouter(prefix="/actuation", tags=["Actuation"])
@@ -82,15 +82,11 @@ async def execute_action(
     even though it never touched Gate 3. A human/JWT caller is untouched.
     """
     tenant_id = tenant["tenant_id"]
-    # Server-derived, never client-supplied - same construction as
-    # /skills/execute's MCP-channel stamp. Untouched for a human/JWT caller
-    # (no key_id): only an API-key principal an Enterprise admin has
-    # explicitly configured caps or a kill switch for is ever affected.
-    _agent_principal = (
-        {"kind": "api_key", "id": tenant["key_id"], "name": tenant.get("name"),
-         "role": tenant.get("role")}
-        if tenant.get("key_id") else None
-    )
+    # Server-derived, never client-supplied. Untouched for a human/JWT
+    # caller (neither key_id nor gateway_principal): only a principal an
+    # Enterprise admin has explicitly configured caps or a kill switch for
+    # is ever affected.
+    _agent_principal = agent_principal_of(tenant)
 
     # A client-supplied execution_id must name a real governed run of THIS
     # tenant: action_records.execution_id is a FK to skill_executions.id, so an

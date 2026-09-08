@@ -225,6 +225,12 @@ class SSOConnectionIn(BaseModel):
     email_domain: Optional[str] = None
     default_role: str = "VIEWER"
     is_enabled: bool = True
+    # OIDC only: the expected `aud` claim on an external agent's OWN OAuth2.1
+    # access token (a client-credentials grant against this same IdP),
+    # activating gateway machine-to-machine token acceptance. None/blank
+    # leaves it OFF - human SSO login configured here does not, by itself,
+    # open the gateway to that IdP's tokens.
+    gateway_audience: Optional[str] = None
 
 
 def _serialize(conn: SSOConnection) -> dict:
@@ -251,6 +257,7 @@ def _serialize(conn: SSOConnection) -> dict:
         ),
         "default_role": conn.default_role,
         "is_enabled": conn.is_enabled,
+        "gateway_audience": conn.gateway_audience,
     }
 
 
@@ -299,6 +306,7 @@ async def upsert_connection(data: SSOConnectionIn,
 
     if data.protocol == "OIDC":
         conn.client_id = data.client_id
+        conn.gateway_audience = (data.gateway_audience or "").strip() or None
         if data.client_secret:
             conn.client_secret_encrypted = sso_svc.encrypt_client_secret(data.client_secret)
         elif existing is None:

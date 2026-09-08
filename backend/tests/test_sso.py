@@ -163,6 +163,27 @@ async def test_upsert_connection_encrypts_secret_and_never_leaks_it(db):
     assert sso_svc.decrypt_client_secret(conn.client_secret_encrypted) == "sh-secret"
 
 
+async def test_gateway_audience_configurable_via_admin_route_and_off_by_default(db):
+    """Human SSO configured alone does not open the gateway: gateway_audience
+    starts unset, and only setting it (an explicit admin action) activates
+    machine-to-machine token acceptance for that connection."""
+    created = sso_routes.SSOConnectionIn(
+        protocol="OIDC", issuer="https://idp2.example/", client_id="cid2",
+        client_secret="s2",
+    )
+    out = await sso_routes.upsert_connection(created, user={"role": "ADMIN"},
+                                             tenant_id=T, db=db)
+    assert out["gateway_audience"] is None
+
+    updated = sso_routes.SSOConnectionIn(
+        protocol="OIDC", issuer="https://idp2.example/", client_id="cid2",
+        client_secret=None, gateway_audience="api://kaeos-gateway",
+    )
+    out = await sso_routes.upsert_connection(updated, user={"role": "ADMIN"},
+                                             tenant_id=T, db=db)
+    assert out["gateway_audience"] == "api://kaeos-gateway"
+
+
 async def test_connection_for_email_empty_returns_none():
     # No domain -> no DB touch, returns None (login page falls back to password).
     assert await sso_svc.connection_for_email("") is None
@@ -256,6 +277,110 @@ async def test_verified_domain_cannot_be_taken_over(_sso_table, monkeypatch):
     # Discovery resolves to the original owner and does NOT 500 on the duplicate.
     routed = await sso_svc.connection_for_email("u@shared.com")
     assert routed is not None and routed.tenant_id == "tenant_a"
+
+
+# ── gateway (machine-to-machine) token acceptance ─────────────────────────────
+
+class _FakeGatewayConn:
+    tenant_id = "tenant_gw_oidc"
+    default_role = "OPERATOR"
+    gateway_audience = "api://kaeos-gateway"
+
+
+def _make_access_token(priv, *, iss, aud, exp_delta=300, **extra_claims):
+    now = int(time.time())
+    claims = {"iss": iss, "aud": aud, "sub": "sp-object-id-1",
+             "iat": now, "exp": now + exp_delta, **extra_claims}
+    return jwt.encode(claims, priv, algorithm="RS256")
+
+
+def test_verify_gateway_token_happy_path(monkeypatch):
+    priv, pub = _rsa_keypair()
+    _patch_jwks(monkeypatch, pub)
+    disc = {"issuer": "https://idp.example", "jwks_uri": "https://idp.example/jwks"}
+    conn = _FakeGatewayConn()
+    tok = _make_access_token(priv, iss=disc["issuer"], aud=conn.gateway_audience,
+                             azp="agent-client-id")
+    claims = sso_svc.verify_gateway_token(tok, disc, conn)
+    assert claims["sub"] == "sp-object-id-1"
+    assert sso_svc.gateway_principal_id(claims) == "agent-client-id"   # prefers azp
+
+
+def test_verify_gateway_token_wrong_audience_refused(monkeypatch):
+    priv, pub = _rsa_keypair()
+    _patch_jwks(monkeypatch, pub)
+    disc = {"issuer": "https://idp.example", "jwks_uri": "https://idp.example/jwks"}
+    tok = _make_access_token(priv, iss=disc["issuer"], aud="some-other-api")
+    with pytest.raises(sso_svc.SSOError):
+        sso_svc.verify_gateway_token(tok, disc, _FakeGatewayConn())
+
+
+def test_gateway_principal_id_falls_back_through_claims():
+    assert sso_svc.gateway_principal_id({"appid": "app1"}) == "app1"
+    assert sso_svc.gateway_principal_id({"sub": "sub1"}) == "sub1"
+    assert sso_svc.gateway_principal_id({"client_id": "c1"}) == "c1"
+    with pytest.raises(sso_svc.SSOError):
+        sso_svc.gateway_principal_id({"iat": 123})   # no usable claim - never invented
+
+
+async def test_connection_for_issuer_only_matches_gateway_activated(_sso_table):
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.sso import SSOConnection
+    async with MaintenanceSessionLocal() as db:
+        # A human-login-only connection (no gateway_audience) never matches -
+        # SSO for humans existing does not silently open the gateway too.
+        db.add(SSOConnection(tenant_id="tenant_human_only", protocol="OIDC",
+                             issuer="https://idp.example", is_enabled=True))
+        db.add(SSOConnection(tenant_id="tenant_gw_oidc", protocol="OIDC",
+                             issuer="https://idp.example", gateway_audience="api://gw",
+                             is_enabled=True))
+        await db.commit()
+    conn = await sso_svc.connection_for_issuer("https://idp.example")
+    assert conn is not None and conn.tenant_id == "tenant_gw_oidc"
+    assert await sso_svc.connection_for_issuer("https://unknown.example") is None
+
+
+async def test_gateway_token_middleware_path_end_to_end(monkeypatch, _sso_table):
+    """The full path TenantMiddleware._try_gateway_token drives: an unknown-
+    to-KAEOS bearer token, resolved purely from its own iss claim to a
+    tenant, verified, and turned into a gateway_principal - never a kt_ key,
+    never a KAEOS session JWT."""
+    from app.core.database import MaintenanceSessionLocal
+    from app.core.tenant import _try_gateway_token
+    from app.models.sso import SSOConnection
+
+    priv, pub = _rsa_keypair()
+    _patch_jwks(monkeypatch, pub)
+    issuer = "https://idp.example/gw-e2e"
+    async with MaintenanceSessionLocal() as db:
+        db.add(SSOConnection(tenant_id="tenant_gw_e2e", protocol="OIDC", issuer=issuer,
+                             gateway_audience="api://kaeos-gateway",
+                             default_role="OPERATOR", is_enabled=True))
+        await db.commit()
+
+    async def fake_discover(iss):
+        return {"issuer": iss, "jwks_uri": f"{iss}/jwks"}
+    monkeypatch.setattr(sso_svc, "discover", fake_discover)
+
+    tok = _make_access_token(priv, iss=issuer, aud="api://kaeos-gateway",
+                             azp="external-agent-1")
+    resolved = await _try_gateway_token(tok)
+    assert resolved == {
+        "tenant_id": "tenant_gw_e2e", "role": "operator",
+        "name": "external-agent-1",
+        "gateway_principal": {"kind": "oidc", "id": "external-agent-1",
+                              "name": "external-agent-1"},
+    }
+
+    # A structurally-invalid token (no claims to even read an issuer from)
+    # degrades to None - falls through to the normal 401, never raises.
+    assert await _try_gateway_token("not-a-jwt-at-all") is None
+    # A well-formed but unregistered issuer: also None, not an error.
+    other = _make_access_token(priv, iss="https://never-configured.example", aud="x")
+    assert await _try_gateway_token(other) is None
+    # Right issuer, wrong audience: verification fails, still None (not 500).
+    wrong_aud = _make_access_token(priv, iss=issuer, aud="api://not-the-gateway")
+    assert await _try_gateway_token(wrong_aud) is None
 
 
 def test_safe_return_to_blocks_open_redirect():

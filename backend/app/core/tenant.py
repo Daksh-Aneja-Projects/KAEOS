@@ -39,6 +39,7 @@ Add before the router registrations:
     app.add_middleware(TenantMiddleware)
 """
 import logging
+from typing import Optional
 
 from fastapi import Depends, Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -164,6 +165,21 @@ class TenantMiddleware(BaseHTTPMiddleware):
             from app.services.auth import decode_token, is_jti_revoked
             payload = decode_token(raw_key)
             if not payload:
+                # Not a KAEOS-issued session token. Before refusing outright,
+                # check whether it's a machine-to-machine OAuth2.1 access
+                # token from an external agent's OWN IdP (a client-
+                # credentials grant against a tenant's SSOConnection that
+                # has activated gateway_audience - see app/services/sso.py's
+                # "gateway (machine-to-machine) token acceptance" section).
+                # This only ever WIDENS who can authenticate, never narrows
+                # it: an unconfigured/unknown/invalid token still refuses
+                # exactly as before.
+                gateway_tenant = await _try_gateway_token(raw_key)
+                if gateway_tenant is not None:
+                    request.state.tenant = gateway_tenant
+                    logger.debug(f"[Tenant] Gateway OAuth token resolved: "
+                                f"tenant_id={gateway_tenant['tenant_id']} path={req_path}")
+                    return await call_next(request)
                 return _unauthorized("Invalid or expired token")
             # Revocation (logout) is enforced here because decode_token is sync and
             # the denylist is the shared (Redis) store checked asynchronously.
@@ -391,7 +407,72 @@ def approver_identity(tenant: dict) -> str:
     )
 
 
+def agent_principal_of(tenant: dict) -> Optional[dict]:
+    """The external-agent principal this AUTHENTICATED caller is, if any -
+    shared by every route that needs to stamp `agent_principal` into a
+    governed run's context (skills.py's MCP-channel path, actuation.py's
+    raw-write path), so the two never drift on which auth shape counts.
+
+    `gateway_principal` (a gateway OAuth2.1 token - see
+    `_try_gateway_token`) takes precedence: it is ALWAYS an external agent,
+    by construction of that auth path. A bare `key_id` (a kt_ API key)
+    might instead be the tenant's own trusted integration calling
+    directly - callers that only want THAT signal check `tenant.get(
+    "key_id")` themselves rather than call this (see skills.py's MCP-
+    channel gate, which is deliberately narrower than this function).
+    None for a human/JWT caller with neither.
+    """
+    if tenant.get("gateway_principal"):
+        return dict(tenant["gateway_principal"])
+    if tenant.get("key_id"):
+        return {"kind": "api_key", "id": tenant["key_id"],
+               "name": tenant.get("name"), "role": tenant.get("role")}
+    return None
+
+
 # ── Internal helpers ─────────────────────────────────────────────────────────
+
+async def _try_gateway_token(raw_key: str) -> Optional[dict]:
+    """An OAuth2.1 access token from an external agent's own IdP (client-
+    credentials grant), the gateway's machine-to-machine auth shape -
+    distinct from a KAEOS session JWT or a kt_ API key. Returns a tenant
+    dict only once the token's signature is verified against that
+    connection's real JWKS; anything unresolvable returns None (falls
+    through to the caller's normal 401), never raises - a malformed or
+    foreign-issued token must degrade to "not authenticated", not 500.
+    """
+    import jwt as _jwt
+    try:
+        unverified = _jwt.decode(raw_key, options={"verify_signature": False})
+    except _jwt.PyJWTError:
+        return None
+    issuer = unverified.get("iss")
+    if not issuer:
+        return None
+    from app.services import sso
+    conn = await sso.connection_for_issuer(str(issuer))
+    if conn is None:
+        return None
+    try:
+        disc = await sso.discover(str(issuer))
+        claims = sso.verify_gateway_token(raw_key, disc, conn)
+        principal_id = sso.gateway_principal_id(claims)
+    except sso.SSOError:
+        return None
+    return {
+        "tenant_id": conn.tenant_id,
+        "role": (conn.default_role or "VIEWER").lower(),
+        "name": str(claims.get("name") or claims.get("azp") or principal_id),
+        # A dedicated shape (not overloading key_id with a kt_-key's
+        # meaning) - skills.py/actuation.py read this to stamp
+        # agent_principal, same as they already do for an MCP-forwarded
+        # kt_ key, so the gateway's caps/rung tracking recognizes this
+        # caller as its own principal regardless of which auth shape it
+        # arrived on.
+        "gateway_principal": {"kind": "oidc", "id": principal_id,
+                              "name": str(claims.get("name") or principal_id)},
+    }
+
 
 def _unauthorized(detail: str) -> Response:
     from starlette.responses import JSONResponse

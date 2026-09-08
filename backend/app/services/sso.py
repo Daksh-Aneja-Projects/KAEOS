@@ -180,6 +180,72 @@ def verify_id_token(id_token: str, disc: dict, conn: SSOConnection, expected_non
     return claims
 
 
+# ── gateway (machine-to-machine) token acceptance ────────────────────────────
+#
+# A THIRD auth shape, distinct from both the kt_ API key and the browser-based
+# id_token login flow above: an external agent already holds an OAuth2.1
+# ACCESS token from a client-credentials grant against the SAME IdP a tenant
+# configured for human SSO, and presents it directly on every KAEOS API call
+# (no KAEOS session, no redirect). Reusing SSOConnection is a deliberate
+# choice, not scope creep: the issuer/JWKS trust relationship is identical to
+# human login, only the audience and claim shape differ (an access token is
+# aud'd to a resource/API, never to client_id) - see gateway_audience on the
+# model. UNVERIFIED against a live Entra/Okta tenant: no credentials exist on
+# this side yet; the JWKS verification itself is real and covered by
+# test_sso_gateway_token.py against a locally-generated RSA keypair.
+
+async def connection_for_issuer(issuer: str) -> Optional[SSOConnection]:
+    """Which tenant's SSOConnection, if any, has activated gateway token
+    acceptance for this issuer. Cross-tenant by necessity (the caller's
+    tenant is exactly what this lookup is resolving) - same maintenance-
+    session carve-out as connection_for_email."""
+    from app.core.database import MaintenanceSessionLocal
+    async with MaintenanceSessionLocal() as owner:
+        row = await owner.execute(
+            select(SSOConnection).where(
+                SSOConnection.issuer == issuer,
+                SSOConnection.protocol == "OIDC",
+                SSOConnection.gateway_audience.isnot(None),
+                SSOConnection.is_enabled == True,  # noqa: E712
+            ).order_by(SSOConnection.created_at.asc())
+        )
+        return row.scalars().first()
+
+
+def verify_gateway_token(access_token: str, disc: dict, conn: SSOConnection) -> dict:
+    """Verify an access token's signature (RS256 via JWKS) against the
+    connection's configured gateway_audience. No nonce (there is no browser
+    flow to replay); no email requirement (machine tokens routinely have
+    none) - the caller derives a principal id from whatever claims exist
+    (sub, azp, appid, client_id, in that preference order)."""
+    try:
+        jwk_client = jwt.PyJWKClient(disc["jwks_uri"])
+        signing_key = jwk_client.get_signing_key_from_jwt(access_token)
+        return jwt.decode(
+            access_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=conn.gateway_audience,
+            issuer=disc["issuer"],
+        )
+    except jwt.PyJWTError as e:
+        raise SSOError(f"gateway token verification failed: {e}") from e
+
+
+def gateway_principal_id(claims: dict) -> str:
+    """A stable per-agent identity from whatever a client-credentials token
+    actually carries - IdPs disagree on the field name (Entra: azp/appid;
+    Okta and most others: sub is already the app's own client id for this
+    grant type), so this tries them in the order most likely to be stable
+    and human-attributable, never invents one."""
+    for key in ("azp", "appid", "sub", "client_id"):
+        value = claims.get(key)
+        if value:
+            return str(value)
+    raise SSOError("gateway token carried no usable principal claim "
+                   "(none of azp/appid/sub/client_id)")
+
+
 # ── connection lookup ─────────────────────────────────────────────────────────
 
 async def get_connection(db: AsyncSession, tenant_id: str, protocol: str = "OIDC") -> Optional[SSOConnection]:

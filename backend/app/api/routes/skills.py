@@ -184,6 +184,16 @@ async def execute_skill(
             "role": tenant.get("role"),
         }
         exec_context.setdefault("origin", "external_agent")
+    # A caller authenticated by a gateway OAuth2.1 token (TenantMiddleware's
+    # _try_gateway_token) is, by construction, ALWAYS an external agent -
+    # unlike a kt_ API key (which could be the tenant's own trusted
+    # automation calling directly, hence that path's MCP-channel gate),
+    # there is no "this is just our own integration" case for a machine-
+    # to-machine OAuth token. Stamped regardless of channel.
+    elif tenant.get("gateway_principal"):
+        from app.core.tenant import agent_principal_of
+        exec_context["agent_principal"] = agent_principal_of(tenant)
+        exec_context.setdefault("origin", "external_agent")
 
     # 2. Pre-execution guardrails (route-level throttle; runs before the
     # pipeline so a rate-limited caller never burns gate model calls).

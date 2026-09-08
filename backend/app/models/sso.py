@@ -61,6 +61,14 @@ class SSOConnection(Base):
     # Role granted to a just-in-time provisioned user on first SSO login.
     default_role = Column(String(16), nullable=False, default="VIEWER")
 
+    # Machine-to-machine: the expected `aud` claim on an ACCESS token an
+    # external agent presents directly (client-credentials grant against
+    # this SAME IdP), distinct from `client_id` (the audience of a human's
+    # id_token in the browser login flow above). Null = gateway token
+    # acceptance for this connection is NOT active - a caller's token is
+    # refused with the reason, never accepted on an unconfigured audience.
+    gateway_audience = Column(String(256), nullable=True)
+
     is_enabled = Column(Boolean, nullable=False, default=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
