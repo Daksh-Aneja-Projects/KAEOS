@@ -171,12 +171,14 @@ async def execute_skill(
     for _trusted_key in ("hitl_pre_approved", "has_human_approver", "agent_principal",
                          "channel", "origin"):
         exec_context.pop(_trusted_key, None)
-    # A call that arrived through the MCP adapter is an EXTERNAL AGENT acting
-    # under its own API key: the run carries that principal (server-derived,
-    # never client-supplied) and its origin, so governance can treat a
-    # third-party agent as itself - its own ladder rung, caps and proof trail.
-    if request.headers.get("x-kaeos-channel", "").lower() == "mcp":
-        exec_context["channel"] = "mcp"
+    # A call that arrived through an agent-to-agent protocol adapter (MCP or
+    # A2A) is an EXTERNAL AGENT acting under its own API key: the run
+    # carries that principal (server-derived, never client-supplied) and
+    # its origin, so governance can treat a third-party agent as itself -
+    # its own ladder rung, caps and proof trail.
+    _channel = request.headers.get("x-kaeos-channel", "").lower()
+    if _channel in ("mcp", "a2a"):
+        exec_context["channel"] = _channel
         exec_context["agent_principal"] = {
             "kind": "api_key",
             "id": tenant.get("key_id") or f"{tenant.get('role', 'unknown')}:{tenant.get('name', 'unknown')}",

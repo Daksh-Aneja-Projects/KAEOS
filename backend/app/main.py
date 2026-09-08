@@ -485,6 +485,13 @@ app.include_router(neural.router,          prefix=PREFIX)
 # tenant isolation as humans, never a side door around them.
 from app.api.routes import agent_interface as agent_interface_routes
 app.include_router(agent_interface_routes.router, prefix=PREFIX)
+# A2A (Agent2Agent) - a second thin protocol adapter, same governed-route
+# forwarding as MCP above. Mounted at the ROOT, not PREFIX: the Agent Card
+# lives at the domain root's /.well-known/ path by A2A convention (an agent
+# must discover it before it knows how to authenticate to anything else),
+# and /a2a itself matches the URL the card advertises.
+from app.api.routes import a2a as a2a_routes
+app.include_router(a2a_routes.router)
 from app.api.routes import billing
 app.include_router(billing.router,         prefix=PREFIX)
 from app.api.routes import ops as ops_routes

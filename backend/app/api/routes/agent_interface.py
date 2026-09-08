@@ -141,18 +141,23 @@ def _rpc_result(req_id, result: dict) -> JSONResponse:
 
 
 async def _forward(request: Request, method: str, path: str,
-                   params: dict | None = None, json_body: dict | None = None) -> httpx.Response:
+                   params: dict | None = None, json_body: dict | None = None,
+                   channel: str = "mcp") -> httpx.Response:
     """Call one of our own governed routes in-process, as the caller.
 
     The in-process client is cached on app.state: _call_tool issues several
     forwards per MCP request, and per-call client construction was pure churn.
-    (ASGITransport holds no sockets, so it needs no explicit shutdown.)"""
+    (ASGITransport holds no sockets, so it needs no explicit shutdown.)
+
+    ``channel`` names which protocol adapter is calling ("mcp" or "a2a" -
+    the A2A adapter in a2a.py reuses this same forwarder, passing its own
+    channel through rather than being mislabeled as MCP)."""
     headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_HEADERS}
     # The governed routes learn this call came from an external agent over
-    # MCP: the execute route stamps the caller as the run's principal and
-    # tags the origin, so the Enterprise gateway can give a third-party agent
-    # its own ladder rung, caps and proof trail.
-    headers["x-kaeos-channel"] = "mcp"
+    # an agent-to-agent protocol: the execute route stamps the caller as the
+    # run's principal and tags the origin, so the Enterprise gateway can
+    # give a third-party agent its own ladder rung, caps and proof trail.
+    headers["x-kaeos-channel"] = channel
     client = getattr(request.app.state, "_mcp_internal_client", None)
     if client is None:
         client = httpx.AsyncClient(

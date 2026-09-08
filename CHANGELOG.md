@@ -66,6 +66,43 @@ All notable changes to KAEOS are documented here. This project adheres to
   - no credentials exist on this side yet; the JWKS verification itself is
   real and proven against a locally-generated RSA keypair
   (`tests/test_sso.py`). Full unit lane re-verified green (1498/3-skipped).
+- Feature: **A2A (Agent2Agent) protocol adapter** (`app/api/routes/a2a.py`).
+  A second thin protocol adapter next to the existing MCP one, same design
+  rule: forwards in-process to the governed `/skills/{id}/execute` route
+  with the caller's own auth headers, so an A2A caller inherits the same
+  7-gate pipeline, RBAC and tenant isolation - never a side door.
+  `GET /.well-known/agent-card.json` (root-mounted, unauthenticated by
+  design - discovery happens before a caller knows how to authenticate to
+  anything else, same reasoning as OIDC's own well-known discovery
+  document); `POST /a2a` (JSON-RPC 2.0: `message/send` plus the
+  `tasks/send` alias some clients on an earlier spec revision still send,
+  and `tasks/get`). `_forward` (shared with the MCP adapter) now takes a
+  `channel` argument so an A2A-originated call is tagged `"a2a"`, never
+  mislabeled `"mcp"`; `/skills/execute`'s agent_principal stamp now
+  recognizes both channels identically.
+  - **Never free-text intent routing.** A message must name its target
+    skill explicitly in a structured DataPart
+    (`{"kind":"data","data":{"skill_id":"...", "intent":"..."}}`) - KAEOS
+    does not guess which of a tenant's skills a natural-language message
+    means; that is a real, separate intent-classification feature, not
+    invented here. A message with no skill_id gets a `"rejected"` task
+    with the reason, never a fabricated attempt.
+  - Execution status maps onto A2A's `TaskState` with one documented
+    judgment call per state (no member is a literal match: A2A describes
+    a single agent's own task lifecycle, not a multi-gate governance
+    verdict) - `PENDING_HITL`/`ESCALATED_DEBATE` -> `"input-required"`
+    (the closest built-in state for "paused, needs something first"; A2A
+    has no state for "a human must approve"), `BLOCKED_*` ->
+    `"rejected"` (a governance refusal IS the agent deciding not to act),
+    `FAILED_*` -> `"failed"`, everything terminal-successful ->
+    `"completed"`.
+  - **UNVERIFIED against a live reference A2A client** - the spec has had
+    real wire-format churn across revisions (hedged here by accepting
+    both the current and one prior method name); this needs a genuine
+    interop pass once such a client exists to test against, same honesty
+    as Workday/OAuth2.1. Streaming, push notifications and multi-turn
+    task continuation are not implemented.
+  - Full unit lane re-verified green (1504/3-skipped).
 
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 
