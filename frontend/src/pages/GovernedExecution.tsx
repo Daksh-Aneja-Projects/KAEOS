@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Fingerprint, ShieldCheck, ShieldAlert, Download, Loader2, GitBranch, Layers, Bot,
   Receipt, CheckCircle2, XCircle, Lock, Unlock, RefreshCw, ArrowRight,
 } from 'lucide-react';
-import { api, ApiError, downloadFile } from '../api/client';
+import { api, downloadFile } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
-import { useVisiblePoll } from '../hooks/useLiveRefresh';
+import { EnterpriseNotice } from '../components/EnterpriseNotice';
+import { useEnterprisePanel as usePanel } from '../hooks/useEnterprisePanel';
 import { humanize } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import { PAGE_PAD } from '../lib/layout';
@@ -33,51 +34,6 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
 const TIER_LABEL: Record<string, string> = {
   observe: 'Observe', advise: 'Advise', act_with_approval: 'Act with approval', autonomous: 'Autonomous',
 };
-
-/** A 402 (capability boundary) or 403 (permission boundary) is not a failure:
- *  it is the governance model working. Both render as a calm notice with the
- *  backend's own sentence, never a red error with a pointless retry. */
-function EnterpriseNotice({ message }: { message: string }) {
-  const { colors } = useTheme();
-  return (
-    <div className="rounded-xl p-5 flex items-start gap-3"
-      style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
-      <Lock className="w-5 h-5 shrink-0 mt-0.5" style={{ color: colors.primary }} />
-      <div>
-        <div className="text-[14px] font-semibold" style={{ color: colors.ink }}>Not available here</div>
-        <p className="text-[13px] mt-1 leading-relaxed" style={{ color: colors.inkSubtle }}>{message}</p>
-      </div>
-    </div>
-  );
-}
-
-function usePanel<T>(loader: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  // The loader lives in a ref (same pattern as useVisiblePoll) so `load` is
-  // stable and the effect below runs once per mount, not per render.
-  const loaderRef = useRef(loader);
-  loaderRef.current = loader;
-  const load = useCallback(async () => {
-    try {
-      const d = await loaderRef.current();
-      setData(d); setError(null); setNotice(null);
-    } catch (e: any) {
-      // 402 = capability not enabled; 403 = your role/principal may not see this
-      // (a viewer, or an agent key on a console view). Both are governance
-      // boundaries, shown as a notice, not a red error with a retry.
-      if (e instanceof ApiError && (e.status === 402 || e.status === 403)) setNotice(e.message);
-      else setError(e?.message || 'The request failed.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-  useVisiblePoll(load, 15000);
-  return { data, error, notice, loading, reload: load };
-}
 
 function Pill({ text, tone }: { text: string; tone: 'ok' | 'warn' | 'bad' | 'muted' | 'primary' }) {
   const { colors } = useTheme();

@@ -15,6 +15,16 @@ All notable changes to KAEOS are documented here. This project adheres to
   KAEOS Enterprise F8/F9 (the Enterprise Ontology + Markings, EE 0.12.0) -
   a private-repo capability; no new code in the public core beyond the
   entitlement flag and the README capability-matrix rows.
+- Frontend: **Object Explorer** (`frontend/src/pages/ObjectExplorer.tsx`), a
+  new Decisions tab - a generic UI over the Enterprise Ontology (browse
+  typed objects, apply governed ActionTypes through the same gate pipeline,
+  see markings and masked properties). Same open-core-shell pattern as the
+  existing Governed Execution surface: ships in the public core, shows the
+  capability notice where the Enterprise package is absent. Extracted the
+  shared 402/403-as-governance-notice panel loader out of
+  `GovernedExecution.tsx` into `hooks/useEnterprisePanel.ts` +
+  `components/EnterpriseNotice.tsx` so this second Enterprise page reuses it
+  instead of duplicating it.
 
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 

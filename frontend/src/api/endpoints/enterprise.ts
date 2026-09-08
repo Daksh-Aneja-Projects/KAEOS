@@ -239,5 +239,35 @@ export const governedExecutionApi = {
   getOutcomeLines: (period?: string, outcomeClass?: string, limit = 100) => request<any>(
     `/billing/outcomes/lines?limit=${limit}${period ? `&period=${period}` : ''}${outcomeClass ? `&outcome_class=${outcomeClass}` : ''}`),
   outcomesExportPath: (period?: string) => `/billing/outcomes/export${period ? `?period=${period}` : ''}`,
+
+  // Enterprise Ontology (F8+F9): object/property/link/value types + object sets
+  listObjectTypes: () => request<any>('/ontology/object-types'),
+  getObjectType: (apiName: string) => request<any>(`/ontology/object-types/${encodeURIComponent(apiName)}`),
+  listPropertyTypes: (apiName: string) => request<any>(`/ontology/object-types/${encodeURIComponent(apiName)}/properties`),
+  searchObjects: (objectType: string, body: { filter?: any; limit?: number; branch?: string }) =>
+    request<any>(`/ontology/objects/${encodeURIComponent(objectType)}/search`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  getObject: (objectType: string, pk: string) =>
+    request<any>(`/ontology/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(pk)}`),
+  createObject: (objectType: string, body: { properties: Record<string, any>; markings?: string[] }) =>
+    request<any>(`/ontology/objects/${encodeURIComponent(objectType)}`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  updateObject: (objectType: string, pk: string, body: { changes: Record<string, any>; expected_versions: Record<string, number> }) =>
+    request<any>(`/ontology/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(pk)}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    }),
+  bootstrapOntologyType: (which: string) => request<any>('/ontology/bootstrap', {
+    method: 'POST', body: JSON.stringify({ which }),
+  }),
+
+  // Action Type registry (F10) - a typed front-door onto governed Skills
+  listActionTypes: () => request<any>('/ontology/action-types'),
+  getActionTypeSchema: (apiName: string) => request<any>(`/ontology/action-types/${encodeURIComponent(apiName)}/schema`),
+  applyActionType: (apiName: string, body: { parameters: Record<string, any>; target_pk?: string | null }) =>
+    request<any>(`/ontology/action-types/${encodeURIComponent(apiName)}/apply`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
 };
 

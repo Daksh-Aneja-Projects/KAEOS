@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu, Fingerprint } from 'lucide-react';
+import { Activity, Users, TrendingUp, Shield, FileText, Target, Gauge, Scale, Zap, Dna, Cpu, Fingerprint, Boxes } from 'lucide-react';
 import { PAGE_PAD_X } from '../lib/layout';
 
 const CommandCenter = lazy(() => import('../views/CommandCenter'));
@@ -13,6 +13,7 @@ const ActionsLedger = lazy(() => import('../pages/ActionsLedger'));
 const RedTeamDashboard = lazy(() => import('../pages/RedTeamDashboard'));
 const TrustGovernance = lazy(() => import('./TrustGovernance'));
 const GovernedExecution = lazy(() => import('../pages/GovernedExecution'));
+const ObjectExplorer = lazy(() => import('../pages/ObjectExplorer'));
 // The genome + fitness studios read /genome/state and /evolution/state. They
 // sit next to the evolution timeline, the other view of how the org changes
 // over time.
@@ -57,7 +58,11 @@ export default function DecisionsView({ domain, defaultTab }: { domain: string; 
     { id: 'governance', label: 'Fairness & Debates', icon: Scale },
     // KAEOS Enterprise: proofs, the earned-autonomy ladder, rehearsals,
     // external agents, verified outcomes. Open core shows the capability notice.
-    { id: 'governed', label: 'Governed Execution', icon: Fingerprint }
+    { id: 'governed', label: 'Governed Execution', icon: Fingerprint },
+    // KAEOS Enterprise: the typed object/link/action model (F8-F10) - a
+    // generic entity browser reading live ontology metadata, not a
+    // hand-built page per department. Open core shows the capability notice.
+    { id: 'ontology', label: 'Object Explorer', icon: Boxes },
   ];
 
   return (
@@ -114,6 +119,7 @@ export default function DecisionsView({ domain, defaultTab }: { domain: string; 
           {activeTab === 'redteam' && <RedTeamDashboard />}
           {activeTab === 'governance' && <TrustGovernance only={['fairness','debates']} />}
           {activeTab === 'governed' && <GovernedExecution />}
+          {activeTab === 'ontology' && <ObjectExplorer />}
         </Suspense>
       </div>
     </div>
