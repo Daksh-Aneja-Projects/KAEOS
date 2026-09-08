@@ -11,6 +11,11 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+- Seam: `ontology` added to `EE_FEATURES` (`app/core/entitlements.py`) for
+  KAEOS Enterprise F8/F9 (the Enterprise Ontology + Markings, EE 0.12.0) -
+  a private-repo capability; no new code in the public core beyond the
+  entitlement flag and the README capability-matrix rows.
+
 ## [2.2.0] - 2026-09-02 — Governed Execution & Proof
 
 The Fusion arc (F0-F7): KAEOS becomes the governed execution and proof layer.

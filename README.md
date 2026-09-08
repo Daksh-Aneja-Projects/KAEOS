@@ -213,6 +213,8 @@ actually ships.
 | Outcome-verified billing with invoice proofs | Enterprise | Partial: outcomes classified from the record, metered unit becomes the verified outcome, invoice export bundles the proofs; per-class pricing pending |
 | Governed execution surface (proofs, ladder, rehearsals, external agents, outcomes) | Open core shell, Enterprise data | Available: the surface ships in the open core and shows the capability notice where the Enterprise package is absent |
 | Procurement / AI-Act evidence packs | Enterprise | Partial: the RFP set generated from the record, sections labelled measured or self-assessed; no external certification claimed |
+| Enterprise Ontology: typed object/property/link/interface/value types over the data model | Enterprise | Partial: object/property/link/interface/value types, four kinds of object set, a generic query+write surface; "mapped" types describe existing tables read-only (zero migration), "native" types get a governed store when none exists; an action-type registry and dataset versioning are pending |
+| Markings: a mandatory, role-independent security axis over the Ontology | Enterprise | Available: grantable to a specific person or agent, not just a role; hard-rejects a whole object before any discretionary filtering, never a partial view |
 
 ## Quick start
 

@@ -102,6 +102,8 @@ EE_FEATURES = frozenset({
     "gateway",          # F5: governed MCP/A2A gateway for third-party agents
     "outcome_billing",  # F6: outcome-verified billing + invoice proofs
     "evidence_pack",    # F7: procurement / AI-Act evidence pack generator
+    "ontology",         # F8: the Enterprise Ontology - typed object/link/
+                        # action model over the core's data
 })
 
 # In managed cloud, Enterprise features additionally require the plan to
