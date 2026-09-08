@@ -104,6 +104,7 @@ EE_FEATURES = frozenset({
     "evidence_pack",    # F7: procurement / AI-Act evidence pack generator
     "ontology",         # F8: the Enterprise Ontology - typed object/link/
                         # action model over the core's data
+    "agent_evals",      # F12: agent-behavior feedback + pinned regression suite
 })
 
 # In managed cloud, Enterprise features additionally require the plan to
