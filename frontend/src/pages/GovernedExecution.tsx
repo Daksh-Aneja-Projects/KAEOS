@@ -163,7 +163,7 @@ function ProofsPanel() {
         {rows.length === 0 ? (
           <div className="p-6"><BrainEmpty title="No proofs sealed yet" /></div>
         ) : rows.map((r: any) => (
-          <div key={r.id || r.entry_hash} className="px-4 py-3 flex items-center gap-3 text-[13px]" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
+          <div key={r.id || r.entry_hash} className="px-4 py-3 flex items-center gap-3 text-[13px] flex-wrap" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
             <span className="font-mono text-[11px] w-10 shrink-0" style={{ color: colors.inkTertiary }}>#{r.seq}</span>
             <Pill text={humanize(r.subject_kind || 'action')} tone="primary" />
             <span className="truncate flex-1">{r.skill_id ? `${humanize(r.skill_id)} · ` : ''}{r.subject_id}</span>
