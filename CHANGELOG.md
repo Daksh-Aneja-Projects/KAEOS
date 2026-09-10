@@ -11,6 +11,17 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+- Frontend: **Governed execution rounds out the Enterprise surface (EE
+  0.23.0).** The Committees tab gains a "Convene a committee" form for a
+  standalone question (options, criteria with weights, an explicit
+  performance matrix - every cell typed, the backend still refuses a hole -
+  and the roster) and a "Whole workspace" scope over the new console list.
+  A new **Evidence** tab surfaces F7 for the first time: every section of
+  the procurement / AI-Act pack with its measured or self-assessed label
+  and a one-line summary, the EU AI Act mapping, and the zip download.
+  External agents gain a caps editor (runs per hour, spend per UTC day)
+  next to the kill switch, with the note that both are reserved at
+  admission. `api/endpoints/enterprise.ts` gains the three calls.
 - Frontend: **the Governed execution surface closes two loops the Enterprise
   package (0.22.0) now supports.** (1) A **Committees** tab: every committee
   the signed-in person is part of, a ballot (one endorsement per option,

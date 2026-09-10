@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Fingerprint, ShieldCheck, ShieldAlert, Download, Loader2, GitBranch, Layers, Bot,
   Receipt, CheckCircle2, XCircle, Lock, Unlock, RefreshCw, ArrowRight, Gavel, ThumbsUp,
-  ThumbsDown, Play, ChevronDown, ChevronUp,
+  ThumbsDown, Play, ChevronDown, ChevronUp, FileCheck, Plus, Trash2,
 } from 'lucide-react';
 import { api, downloadFile } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -22,7 +22,7 @@ import { PAGE_PAD } from '../lib/layout';
  * panel shows that sentence. Nothing here is rendered from a constant.
  */
 
-type Tab = 'proofs' | 'ladder' | 'rehearsals' | 'gateway' | 'outcomes' | 'committees' | 'quality';
+type Tab = 'proofs' | 'ladder' | 'rehearsals' | 'gateway' | 'outcomes' | 'committees' | 'quality' | 'evidence';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'proofs', label: 'Proofs', icon: Fingerprint },
@@ -37,6 +37,9 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   // F12: a human's verdict on a sealed run, and the pinned cases that keep
   // a skill honest. Both feed the trust ladder.
   { id: 'quality', label: 'Quality', icon: ThumbsUp },
+  // F7: the procurement / AI-Act evidence pack, read from the record, each
+  // section labelled measured or self-assessed.
+  { id: 'evidence', label: 'Evidence', icon: FileCheck },
 ];
 
 const TIER_LABEL: Record<string, string> = {
@@ -383,10 +386,52 @@ function GatewayPanel() {
             ))}
           </div>
           <div className="mt-2 text-[11px]" style={{ color: colors.inkTertiary }}>
-            Caps: {p.policy?.hourly_call_cap != null ? `${p.policy.hourly_call_cap} runs per hour` : 'no hourly cap'}, {p.policy?.daily_spend_cap_usd != null ? `$${p.policy.daily_spend_cap_usd} per day` : 'no daily spend cap'}.
+            Caps: {p.policy?.hourly_call_cap != null ? `${p.policy.hourly_call_cap} runs per hour` : 'no hourly cap'}, {p.policy?.daily_spend_cap_usd != null ? `$${p.policy.daily_spend_cap_usd} per UTC day` : 'no daily spend cap'}.
+            Both are reserved at admission: a call slot, and an evidence-based estimate of the run's cost that the real cost replaces when it completes.
           </div>
+          <CapsEditor principal={p} onSaved={panel.reload} />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The two numeric caps for one external agent; blank means no cap. */
+function CapsEditor({ principal, onSaved }: { principal: any; onSaved: () => void }) {
+  const { colors } = useTheme();
+  const pol = principal.policy || {};
+  const [hourly, setHourly] = useState<string>(pol.hourly_call_cap != null ? String(pol.hourly_call_cap) : '');
+  const [spend, setSpend] = useState<string>(pol.daily_spend_cap_usd != null ? String(pol.daily_spend_cap_usd) : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      await api.setPrincipalPolicy(principal.principal, {
+        hourly_call_cap: hourly.trim() === '' ? null : Number(hourly),
+        daily_spend_cap_usd: spend.trim() === '' ? null : Number(spend),
+        disabled: !!pol.disabled, note: pol.note || '',
+      });
+      onSaved();
+    } catch (e: any) { setError(e?.message || 'The caps were refused.'); }
+    finally { setBusy(false); }
+  };
+  const input: React.CSSProperties = { background: colors.inputBg, color: colors.ink, border: `1px solid ${colors.hairline}` };
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap text-[12px]" style={{ color: colors.inkSubtle }}>
+      <label className="flex items-center gap-1.5">Runs per hour
+        <input type="number" min={0} value={hourly} onChange={e => setHourly(e.target.value)} placeholder="none"
+          aria-label="Hourly call cap" className="w-20 px-2 py-1 rounded-md text-[12px]" style={input} />
+      </label>
+      <label className="flex items-center gap-1.5">Spend per day ($)
+        <input type="number" min={0} step="0.01" value={spend} onChange={e => setSpend(e.target.value)} placeholder="none"
+          aria-label="Daily spend cap in dollars" className="w-24 px-2 py-1 rounded-md text-[12px]" style={input} />
+      </label>
+      <button onClick={save} disabled={busy}
+        className="text-[11px] px-2 py-1 rounded-md disabled:opacity-50" style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+        {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save caps'}
+      </button>
+      {error && <span style={{ color: colors.error }}>{error}</span>}
     </div>
   );
 }
@@ -452,13 +497,19 @@ function OutcomesPanel() {
 function Ballot({ committee, onCast }: { committee: any; onCast: () => void }) {
   const { colors } = useTheme();
   const options: any[] = committee.options || [];
-  const [scores, setScores] = useState<Record<string, number>>(() =>
-    Object.fromEntries(options.map((o: any) => [o.key, 0.5])));
+  const [scores, setScores] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cast = async () => {
     setBusy(true); setError(null);
-    try { await api.castCommitteeVote(committee.id, scores); onCast(); }
+    try {
+      // Send exactly what the sliders show: an untouched slider is a real
+      // 0.5 endorsement, never an omitted key (the pool reads an omission
+      // as "did not endorse", which is not what a 50% slider says).
+      const ballot = Object.fromEntries(options.map((o: any) => [o.key, scores[o.key] ?? 0.5]));
+      await api.castCommitteeVote(committee.id, ballot);
+      onCast();
+    }
     catch (e: any) { setError(e?.message || 'The vote was refused.'); }
     finally { setBusy(false); }
   };
@@ -541,30 +592,269 @@ function CommitteeCard({ row, onChange }: { row: any; onChange: () => void }) {
   );
 }
 
+type KeyLabel = { key: string; label: string };
+type CriterionDraft = { key: string; label: string; weight: string };
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+
+/**
+ * Convene a standalone committee: options, criteria, an explicit performance
+ * matrix (every cell typed, never defaulted - the backend refuses a hole),
+ * and the named approvers. A committee for a paused run is convened from
+ * the HITL queue instead, where the two options are fixed.
+ */
+function ConveneForm({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
+  const { colors } = useTheme();
+  const [subject, setSubject] = useState('');
+  const [approvers, setApprovers] = useState('');
+  const [options, setOptions] = useState<KeyLabel[]>([{ key: 'approve', label: 'Approve' }, { key: 'reject', label: 'Reject' }]);
+  const [criteria, setCriteria] = useState<CriterionDraft[]>([{ key: 'benefit', label: 'Benefit', weight: '1' }]);
+  const [perf, setPerf] = useState<Record<string, Record<string, string>>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cell = (o: string, c: string) => perf[o]?.[c] ?? '0.5';
+  const setCell = (o: string, c: string, v: string) => setPerf(p => ({ ...p, [o]: { ...(p[o] || {}), [c]: v } }));
+  const input: React.CSSProperties = { background: colors.inputBg, color: colors.ink, border: `1px solid ${colors.hairline}` };
+  const submit = async () => {
+    setBusy(true); setError(null);
+    try {
+      const roster = approvers.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+      const performance: Record<string, Record<string, number>> = {};
+      for (const o of options) {
+        performance[o.key] = {};
+        for (const c of criteria) performance[o.key][c.key] = Number(cell(o.key, c.key));
+      }
+      await api.createCommittee({
+        subject,
+        options: options.map(o => ({ key: o.key, label: o.label })),
+        criteria: criteria.map(c => ({ key: c.key, label: c.label, raw_weight: Number(c.weight) })),
+        performance, required_approvers: roster,
+      });
+      onCreated(); onClose();
+    } catch (e: any) { setError(e?.message || 'The committee could not be convened.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-xl p-4 space-y-4" style={{ background: colors.surface1, border: `1px solid ${colors.primary}40` }}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[14px] font-semibold" style={{ color: colors.ink }}>Convene a committee</div>
+        <button onClick={onClose} className="text-[12px]" style={{ color: colors.inkSubtle }}>Cancel</button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>What is being decided
+          <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Release the $50k vendor payout"
+            aria-label="Subject" className="w-full px-3 py-2 rounded-lg text-[13px]" style={input} />
+        </label>
+        <label className="text-[12px] space-y-1" style={{ color: colors.inkSubtle }}>Required approvers, comma separated
+          <input value={approvers} onChange={e => setApprovers(e.target.value)} placeholder="cfo@acme.com, legal@acme.com"
+            aria-label="Required approvers" className="w-full px-3 py-2 rounded-lg text-[13px]" style={input} />
+        </label>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <div className="text-[12px] font-medium" style={{ color: colors.inkSubtle }}>Options (at least two)</div>
+          {options.map((o, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={o.label} aria-label={`Option ${i + 1} label`} placeholder="Label"
+                onChange={e => setOptions(os => os.map((x, j) => j === i ? { key: slug(e.target.value) || `option_${i + 1}`, label: e.target.value } : x))}
+                className="flex-1 px-3 py-1.5 rounded-lg text-[13px]" style={input} />
+              <span className="text-[11px] font-mono w-24 truncate" style={{ color: colors.inkTertiary }}>{o.key}</span>
+              <button onClick={() => setOptions(os => os.filter((_, j) => j !== i))} disabled={options.length <= 2} aria-label="Remove option"
+                className="p-1 rounded-md disabled:opacity-30" style={{ color: colors.inkSubtle }}><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          <button onClick={() => setOptions(os => [...os, { key: `option_${os.length + 1}`, label: '' }])}
+            className="text-[12px] flex items-center gap-1" style={{ color: colors.primary }}><Plus className="w-3.5 h-3.5" /> Add option</button>
+        </div>
+        <div className="space-y-2">
+          <div className="text-[12px] font-medium" style={{ color: colors.inkSubtle }}>Criteria and their weights</div>
+          {criteria.map((c, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={c.label} aria-label={`Criterion ${i + 1} label`} placeholder="Label"
+                onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, key: slug(e.target.value) || `criterion_${i + 1}`, label: e.target.value } : x))}
+                className="flex-1 px-3 py-1.5 rounded-lg text-[13px]" style={input} />
+              <input type="number" min={0} step="0.1" value={c.weight} aria-label={`Criterion ${i + 1} weight`}
+                onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, weight: e.target.value } : x))}
+                className="w-20 px-2 py-1.5 rounded-lg text-[13px]" style={input} />
+              <button onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))} disabled={criteria.length <= 1} aria-label="Remove criterion"
+                className="p-1 rounded-md disabled:opacity-30" style={{ color: colors.inkSubtle }}><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          <button onClick={() => setCriteria(cs => [...cs, { key: `criterion_${cs.length + 1}`, label: '', weight: '1' }])}
+            className="text-[12px] flex items-center gap-1" style={{ color: colors.primary }}><Plus className="w-3.5 h-3.5" /> Add criterion</button>
+        </div>
+      </div>
+      <div>
+        <div className="text-[12px] font-medium mb-1" style={{ color: colors.inkSubtle }}>How each option scores on each criterion, 0 to 1. Every cell is yours to set; 0.5 means no structural preference.</div>
+        <div className="overflow-x-auto">
+          <table className="text-[12px]" style={{ color: colors.inkMuted }}>
+            <thead><tr><th className="text-left pr-3 py-1" style={{ color: colors.inkSubtle }}>Option</th>
+              {criteria.map(c => <th key={c.key} className="text-left pr-3 py-1 font-medium" style={{ color: colors.inkSubtle }}>{c.label || c.key}</th>)}</tr></thead>
+            <tbody>
+              {options.map(o => (
+                <tr key={o.key}><td className="pr-3 py-1" style={{ color: colors.ink }}>{o.label || o.key}</td>
+                  {criteria.map(c => (
+                    <td key={c.key} className="pr-3 py-1">
+                      <input type="number" min={0} max={1} step="0.05" value={cell(o.key, c.key)} aria-label={`${o.label || o.key} on ${c.label || c.key}`}
+                        onChange={e => setCell(o.key, c.key, e.target.value)} className="w-20 px-2 py-1 rounded-md" style={input} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={submit} disabled={busy || !subject.trim()}
+          className="px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50"
+          style={{ background: colors.primary + '18', color: colors.primary }}>
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gavel className="w-3.5 h-3.5" />} Convene
+        </button>
+        {error && <span className="text-[12px]" style={{ color: colors.error }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
 function CommitteesPanel() {
   const { colors } = useTheme();
   const panel = usePanel(() => api.listCommittees());
+  const [scope, setScope] = useState<'mine' | 'all'>('mine');
+  const [convening, setConvening] = useState(false);
+  // The console list is loaded alongside the personal one (a viewer gets a
+  // 403 notice, shown only in the "Whole workspace" scope), so switching
+  // scope never waits on a fetch that a scope-dependent loader would skip.
+  const all = usePanel(() => api.listAllCommittees());
   if (panel.loading) return <BrainLoading message="Reading committees…" />;
   if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
   if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
-  const rows: any[] = (panel.data as any)?.committees || [];
+  const mine: any[] = (panel.data as any)?.committees || [];
+  const rows: any[] = scope === 'all' ? ((all.data as any)?.committees || []) : mine;
   const open = rows.filter(r => r.status !== 'decided');
   const decided = rows.filter(r => r.status === 'decided');
+  const reloadBoth = () => { panel.reload(); if (scope === 'all') all.reload(); };
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Open committees" value={open.length} note="Waiting on a named approver" />
-        <Stat label="Need my vote" value={open.filter(r => r.i_must_vote && !r.my_vote_cast).length} note="Ballots you have not cast" />
+        <Stat label="Need my vote" value={mine.filter(r => r.status !== 'decided' && r.i_must_vote && !r.my_vote_cast).length} note="Ballots you have not cast" />
         <Stat label="Decided" value={decided.length} note="Verdicts, each sealed as a proof" />
         <Stat label="Paused runs decided" value={rows.filter(r => r.hitl_resolution === 'approved' || r.hitl_resolution === 'rejected').length} note="Resumed or stopped by a committee" />
       </div>
-      <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
-        Each approver casts one ballot; the same arithmetic that arbitrates the debate gate pools them into a verdict that replays from the stored inputs.
-        Convene a committee on a pending approval from the HITL queue; its verdict resumes or stops that run.
-      </p>
-      {rows.length === 0 ? <BrainEmpty title="No committee involves you yet" /> : (
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => setConvening(c => !c)}
+          className="px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center gap-2"
+          style={{ background: colors.primary + '18', color: colors.primary }}>
+          <Gavel className="w-3.5 h-3.5" /> {convening ? 'Close the form' : 'Convene a committee'}
+        </button>
+        <div className="flex items-center rounded-lg p-0.5" role="tablist" aria-label="Committee scope" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          {(['mine', 'all'] as const).map(s => (
+            <button key={s} role="tab" aria-selected={scope === s} onClick={() => setScope(s)}
+              className="px-2.5 py-1 rounded-md text-[12px] font-medium"
+              style={{ background: scope === s ? colors.navActive : 'transparent', color: scope === s ? colors.navActiveText : colors.inkSubtle }}>
+              {s === 'mine' ? 'Involving me' : 'Whole workspace'}
+            </button>
+          ))}
+        </div>
+        <span className="text-[12px]" style={{ color: colors.inkSubtle }}>
+          Each approver casts one ballot; the same arithmetic that arbitrates the debate gate pools them into a verdict that replays from the stored inputs.
+        </span>
+      </div>
+      {convening && <ConveneForm onCreated={reloadBoth} onClose={() => setConvening(false)} />}
+      {scope === 'all' && all.notice && <EnterpriseNotice message={all.notice} />}
+      {scope === 'all' && all.error && <BrainError message={all.error} onRetry={all.reload} />}
+      {rows.length === 0 && !(scope === 'all' && (all.loading || all.notice || all.error)) ? (
+        <BrainEmpty title={scope === 'all' ? 'No committee has been convened in this workspace' : 'No committee involves you yet'} />
+      ) : (
         <div className="space-y-3">
-          {[...open, ...decided].map(r => <CommitteeCard key={r.id} row={r} onChange={panel.reload} />)}
+          {[...open, ...decided].map(r => <CommitteeCard key={r.id} row={r} onChange={reloadBoth} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Evidence pack ─────────────────────────────────────────────────────────────
+
+const SECTION_LABEL: Record<string, string> = {
+  controls: 'Implemented controls', audit_trail: 'Per-action audit trail', model_pinning: 'Model version pinning',
+  hitl_thresholds: 'Human-in-the-loop thresholds', agent_identity: 'Agent identity scoping', kill_switch: 'Kill switch',
+  rehearsals: 'Rehearsals', outcomes: 'Verified outcomes', committees: 'Committee decisions', oversight_mapping: 'EU AI Act oversight mapping',
+};
+
+function sectionSummary(name: string, data: any): string {
+  if (data == null) return 'Not available';
+  switch (name) {
+    case 'controls': return `${(data.controls || []).length} control(s) inventoried`;
+    case 'audit_trail': return `${Array.isArray(data) ? data.length : 0} newest proof(s) with reasoning`;
+    case 'model_pinning': return `${Array.isArray(data) ? data.length : 0} model layer(s) pinned`;
+    case 'hitl_thresholds': return `ladder ${data.ladder_mode}, ${(data.skill_rungs || []).length} skill rung(s), ${(data.department_dials || []).length} department dial(s)`;
+    case 'agent_identity': return `${(data.api_keys || []).length} API key(s), ${(data.external_agent_policies || []).length} external-agent polic(ies)`;
+    case 'kill_switch': return `${(data.agents_currently_disabled || []).length} agent(s) currently disabled`;
+    case 'rehearsals': return data.prediction_held_rate == null ? 'no rehearsed write has landed yet' : `prediction held ${(data.prediction_held_rate * 100).toFixed(0)}%`;
+    case 'outcomes': return Object.entries(data.by_class || {}).map(([k, v]) => `${v} ${k}`).join(', ') || 'no outcomes yet';
+    case 'committees': return Object.entries(data.by_status || {}).map(([k, v]) => `${v} ${k}`).join(', ') || 'none convened yet';
+    case 'oversight_mapping': return `${Array.isArray(data) ? data.length : 0} article(s) mapped`;
+    default: return '';
+  }
+}
+
+function EvidencePanel() {
+  const { colors } = useTheme();
+  const panel = usePanel(() => api.getEvidenceSummary(25));
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  if (panel.loading) return <BrainLoading message="Reading the evidence pack…" />;
+  if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
+  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  const pack: any = panel.data || {};
+  const sections = Object.entries(pack).filter(([k, v]) => k !== 'meta' && v && typeof v === 'object' && 'basis' in (v as any));
+  const download = async () => {
+    setBusy(true); setActionError(null);
+    try { await downloadFile(api.evidencePackPath(), 'kaeos-evidence-pack.zip'); }
+    catch (e: any) { setActionError(e?.message || 'Download failed.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Measured sections" value={sections.filter(([, v]: any) => v.basis === 'measured').length} note="Read from this deployment's record" />
+        <Stat label="Self-assessed" value={sections.filter(([, v]: any) => v.basis === 'self-assessed').length} note="KAEOS's statements about its own design" />
+        <Stat label="Scope" value={<span className="text-[13px]">{pack.meta?.scope || 'Not available'}</span>} />
+        <div className="rounded-xl p-4 flex flex-col justify-between" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          <div className="text-[11px]" style={{ color: colors.inkSubtle }}>Zip: one JSON per section, the proof bundle, a README naming the boundary</div>
+          <button onClick={download} disabled={busy}
+            className="mt-2 px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ background: colors.primary + '18', color: colors.primary }}>
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Download evidence pack
+          </button>
+        </div>
+      </div>
+      {actionError && <div className="text-[12px]" style={{ color: colors.error }}>{actionError}</div>}
+      <div className="rounded-xl p-4 text-[12px]" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
+        {pack.meta?.external_certifications || 'Not available'}
+      </div>
+      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}` }}>
+        <div className="px-4 py-2.5 text-[11px] font-medium" style={{ background: colors.surface2, color: colors.inkSubtle }}>Sections, as an assessor reads them</div>
+        {sections.map(([name, s]: any) => (
+          <div key={name} className="px-4 py-3 flex items-center gap-3 text-[13px] flex-wrap" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
+            <span className="font-medium min-w-[200px]" style={{ color: colors.ink }}>{SECTION_LABEL[name] || humanize(name)}</span>
+            <Pill text={s.basis === 'measured' ? 'Measured' : 'Self-assessed'} tone={s.basis === 'measured' ? 'ok' : 'warn'} />
+            <span className="flex-1" style={{ color: colors.inkSubtle }}>{sectionSummary(name, s.data)}</span>
+          </div>
+        ))}
+      </div>
+      {Array.isArray(pack.oversight_mapping?.data) && (
+        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}` }}>
+          <div className="px-4 py-2.5 text-[11px] font-medium" style={{ background: colors.surface2, color: colors.inkSubtle }}>EU AI Act duties and the mechanism behind each (a self-assessment, not a conformity assessment)</div>
+          {pack.oversight_mapping.data.map((m: any) => (
+            <div key={m.article} className="px-4 py-3" style={{ borderTop: `1px solid ${colors.hairline}` }}>
+              <div className="text-[13px] font-medium" style={{ color: colors.ink }}>{m.article}</div>
+              <p className="text-[12px] mt-1 leading-relaxed" style={{ color: colors.inkMuted }}>{m.mechanism}</p>
+              <div className="text-[11px] mt-1" style={{ color: colors.inkTertiary }}>Evidence: {m.evidence}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -725,6 +1015,7 @@ export default function GovernedExecution({ defaultTab }: { defaultTab?: Tab }) 
           {tab === 'outcomes' && <OutcomesPanel />}
           {tab === 'committees' && <CommitteesPanel />}
           {tab === 'quality' && <QualityPanel />}
+          {tab === 'evidence' && <EvidencePanel />}
         </div>
       </div>
     </div>

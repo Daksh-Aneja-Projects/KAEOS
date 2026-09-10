@@ -325,6 +325,9 @@ export const governedExecutionApi = {
   // convened with an execution_id decides that paused run.
   listCommittees: (executionId?: string) =>
     request<any>(`/decision/committees${executionId ? `?execution_id=${encodeURIComponent(executionId)}` : ''}`),
+  // Every committee in the workspace: a governance-console read (operator+,
+  // never an agent principal), so the backend answers 403 for a viewer.
+  listAllCommittees: () => request<any>('/decision/committees/all'),
   getCommittee: (id: string) => request<any>(`/decision/committees/${encodeURIComponent(id)}`),
   createCommittee: (body: {
     subject: string; options: { key: string; label: string; summary?: string }[];
@@ -349,5 +352,10 @@ export const governedExecutionApi = {
     }),
   listRegressionCases: () => request<any>('/evals/regression-cases'),
   runRegressionSuite: () => request<any>('/evals/regression-suite/run', { method: 'POST' }),
+
+  // Evidence pack (F7): the RFP / AI-Act set read from the record, each
+  // section labelled measured or self-assessed; the zip adds the proofs.
+  getEvidenceSummary: (trailLimit = 25) => request<any>(`/evidence/pack/summary?trail_limit=${trailLimit}`),
+  evidencePackPath: () => '/evidence/pack',
 };
 
