@@ -11,6 +11,25 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+- Frontend: **the Governed execution surface closes two loops the Enterprise
+  package (0.22.0) now supports.** (1) A **Committees** tab: every committee
+  the signed-in person is part of, a ballot (one endorsement per option,
+  other ballots hidden until the verdict) for each one that still owes their
+  vote, and, once decided, the verdict with the arithmetic laid out step by
+  step and the proof-seal state. The **HITL queue** gained a "Convene
+  committee" affordance per pending item: name the approvers, and the
+  committee is bound to that paused run with exactly two options (approve /
+  reject) and an explicit even matrix, so the pooled ballots alone decide;
+  the item then shows "Committee: n of m votes" and the verdict resumes or
+  stops the run through the core's own HITL resolver. (2) A **Quality**
+  tab plus thumbs-up / thumbs-down on every sealed clean run in the Proofs
+  panel (the proof row now names its skill): ratings, "pin as regression
+  case" on a thumbs-down, and "run regression suite" with per-case results -
+  both of which the trust ladder now reads as evidence. Same open-core-shell
+  pattern as before: ships here, shows the capability notice where the
+  Enterprise package is absent. `api/endpoints/enterprise.ts` gained the
+  committee and evals calls. Live-verified against a running `backend-ee`
+  (DEV_MODE, its own SQLite file) on a fresh dev database.
 - Seam: `ontology` added to `EE_FEATURES` (`app/core/entitlements.py`) for
   KAEOS Enterprise F8/F9 (the Enterprise Ontology + Markings, EE 0.12.0) -
   a private-repo capability; no new code in the public core beyond the

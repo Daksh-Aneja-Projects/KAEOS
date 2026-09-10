@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle, Loader2 } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle, Loader2, Gavel } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { DiffTable } from './GovernedExecution';
 import type { PendingHITLItem } from '../api/client';
@@ -26,6 +26,14 @@ export default function HITLQueue(_props: { domain?: string }) {
   // approving. Absent on open core (402) or when the run carries no write
   // (404) - both are silent: the queue is the same queue either way.
   const [rehearsals, setRehearsals] = useState<Record<string, any>>({});
+  // Enterprise committee per pending item (F2's human half): a decision too
+  // big for one approver is put to named approvers whose ballots are pooled
+  // by arithmetic; the verdict resumes or stops this run. `undefined` = not
+  // looked up yet, `null` = none convened (or open core, silently).
+  const [committees, setCommittees] = useState<Record<string, any>>({});
+  const [convening, setConvening] = useState<string | null>(null);
+  const [approvers, setApprovers] = useState('');
+  const [conveneError, setConveneError] = useState<string | null>(null);
 
   const fetchData = useCallback(async (showSpinner = true) => {
     try {
@@ -68,6 +76,58 @@ export default function HITLQueue(_props: { domain?: string }) {
     });
     return () => { cancelled = true; };
   }, [items, rehearsals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing = items.filter(i => !(i.id in committees));
+    if (missing.length === 0) return;
+    Promise.all(missing.map(async (i) => {
+      try {
+        const d = await api.listCommittees(i.id);
+        return [i.id, (d?.committees || [])[0] || null] as const;
+      } catch {
+        return [i.id, null] as const;   // open core (402) or no access: no committee to show
+      }
+    })).then(pairs => {
+      if (cancelled) return;
+      setCommittees(prev => {
+        const next = { ...prev };
+        for (const [id, c] of pairs) next[id] = c;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [items, committees]);
+
+  const convene = async (item: PendingHITLItem) => {
+    const roster = approvers.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    if (roster.length === 0) { setConveneError('Name at least one approver (their KAEOS identity, e.g. an email).'); return; }
+    setConveneError(null);
+    setBusyId(item.id);
+    try {
+      // Two options, one criterion, an explicit even matrix: no structural
+      // preference, so the pooled ballots alone decide. The backend refuses
+      // any other option set for a committee bound to a paused run.
+      const c = await api.createCommittee({
+        subject: `Approve or reject: ${humanize(item.task_intent)} (${humanize(item.skill_id_name)})`,
+        options: [
+          { key: 'approve', label: 'Approve and resume', summary: 'Let the paused run proceed' },
+          { key: 'reject', label: 'Reject', summary: 'Stop the run here' },
+        ],
+        criteria: [{ key: 'decision', label: 'Should this run proceed?', raw_weight: 1, rationale: 'The pause reason and the predicted change, as shown in the queue' }],
+        performance: { approve: { decision: 0.5 }, reject: { decision: 0.5 } },
+        required_approvers: roster,
+        execution_id: item.id,
+      });
+      setCommittees(prev => ({ ...prev, [item.id]: c }));
+      setConvening(null);
+      setApprovers('');
+    } catch (e: any) {
+      setConveneError(e?.message || 'The committee could not be convened.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   // Live refresh: an agent pausing or a decision landing pushes an activity
   // event over the tenant WebSocket - no polling.
@@ -185,7 +245,22 @@ export default function HITLQueue(_props: { domain?: string }) {
                       )}
                     </p>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex gap-2 shrink-0 flex-wrap">
+                    {committees[item.id] ? (
+                      <span className="px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center gap-2"
+                        title={committees[item.id].subject}
+                        style={{ background: colors.primary + '15', color: colors.primary }}>
+                        <Gavel className="w-4 h-4" />
+                        Committee: {committees[item.id].votes_cast ?? 0} of {committees[item.id].votes_required} votes
+                      </span>
+                    ) : committees[item.id] === null ? (
+                      <button onClick={() => { setConvening(convening === item.id ? null : item.id); setConveneError(null); }}
+                        disabled={busyId === item.id}
+                        className="px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:opacity-80 flex items-center gap-2 disabled:opacity-40"
+                        style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+                        <Gavel className="w-4 h-4" /> Convene committee
+                      </button>
+                    ) : null}
                     <button onClick={() => handleReject(item.id)} disabled={busyId === item.id}
                       className="px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:opacity-80 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: colors.error + '15', color: colors.error }}>
@@ -198,6 +273,27 @@ export default function HITLQueue(_props: { domain?: string }) {
                     </button>
                   </div>
                 </div>
+
+                {convening === item.id && !committees[item.id] && (
+                  <div className="mt-5 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.primary}30` }}>
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: colors.inkSubtle }}>Put this decision to a committee</h4>
+                    <p className="text-[12px] mb-3" style={{ color: colors.inkMuted }}>
+                      Each named approver casts one ballot in Governed execution, Committees. The ballots are pooled by the same arithmetic that arbitrates the debate gate; when the last one lands, the verdict approves or rejects this run and is sealed as a proof.
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input type="text" value={approvers} onChange={e => setApprovers(e.target.value)}
+                        aria-label="Required approvers" placeholder="Approver identities, comma separated (e.g. cfo@acme.com, legal@acme.com)"
+                        className="flex-1 min-w-[240px] px-3 py-2 rounded-lg text-[13px] focus:outline-none"
+                        style={{ background: colors.inputBg, color: colors.ink, border: `1px solid ${colors.hairline}` }} />
+                      <button onClick={() => convene(item)} disabled={busyId === item.id}
+                        className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white flex items-center gap-2 disabled:opacity-50"
+                        style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}cc)` }}>
+                        {busyId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gavel className="w-4 h-4" />} Convene
+                      </button>
+                    </div>
+                    {conveneError && <p className="text-[12px] mt-2" style={{ color: colors.error }}>{conveneError}</p>}
+                  </div>
+                )}
 
                 {rehearsals[item.id] && (
                   <div className="mt-6 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.primary}30` }}>

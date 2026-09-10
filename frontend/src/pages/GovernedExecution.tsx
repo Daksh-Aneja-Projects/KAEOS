@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
   Fingerprint, ShieldCheck, ShieldAlert, Download, Loader2, GitBranch, Layers, Bot,
-  Receipt, CheckCircle2, XCircle, Lock, Unlock, RefreshCw, ArrowRight,
+  Receipt, CheckCircle2, XCircle, Lock, Unlock, RefreshCw, ArrowRight, Gavel, ThumbsUp,
+  ThumbsDown, Play, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { api, downloadFile } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
@@ -21,7 +22,7 @@ import { PAGE_PAD } from '../lib/layout';
  * panel shows that sentence. Nothing here is rendered from a constant.
  */
 
-type Tab = 'proofs' | 'ladder' | 'rehearsals' | 'gateway' | 'outcomes';
+type Tab = 'proofs' | 'ladder' | 'rehearsals' | 'gateway' | 'outcomes' | 'committees' | 'quality';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'proofs', label: 'Proofs', icon: Fingerprint },
@@ -29,6 +30,13 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: 'rehearsals', label: 'Rehearsals', icon: GitBranch },
   { id: 'gateway', label: 'External agents', icon: Bot },
   { id: 'outcomes', label: 'Outcomes', icon: Receipt },
+  // F2's human half: named approvers, one ballot each, the same arithmetic
+  // as the debate gate; a committee convened from the HITL queue decides
+  // that paused run.
+  { id: 'committees', label: 'Committees', icon: Gavel },
+  // F12: a human's verdict on a sealed run, and the pinned cases that keep
+  // a skill honest. Both feed the trust ladder.
+  { id: 'quality', label: 'Quality', icon: ThumbsUp },
 ];
 
 const TIER_LABEL: Record<string, string> = {
@@ -57,6 +65,41 @@ function Stat({ label, value, note }: { label: string; value: React.ReactNode; n
 }
 
 // ── Proofs ────────────────────────────────────────────────────────────────────
+
+/**
+ * Thumbs-up / thumbs-down on one sealed action proof (F12). The rating is a
+ * HUMAN judgment on the run's outcome; a thumbs-down counts as adverse
+ * evidence in the skill's trust ledger, whatever the status code said.
+ */
+function RateRun({ executionId, skillId, onRated }: { executionId: string; skillId: string; onRated?: () => void }) {
+  const { colors } = useTheme();
+  const [rated, setRated] = useState<'up' | 'down' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const rate = async (rating: 'up' | 'down') => {
+    setBusy(true); setError(null);
+    try {
+      await api.submitSkillFeedback({ execution_id: executionId, skill_id_name: skillId, rating });
+      setRated(rating);
+      onRated?.();
+    } catch (e: any) { setError(e?.message || 'The rating was refused.'); }
+    finally { setBusy(false); }
+  };
+  if (rated) return <Pill text={rated === 'up' ? 'Rated good' : 'Rated wrong'} tone={rated === 'up' ? 'ok' : 'bad'} />;
+  return (
+    <span className="flex items-center gap-1 shrink-0" title={error || 'Was this outcome right? Your answer feeds the trust ladder.'}>
+      <button onClick={() => rate('up')} disabled={busy} aria-label="Rate this run good"
+        className="p-1 rounded-md disabled:opacity-40" style={{ color: colors.success, background: colors.success + '12' }}>
+        <ThumbsUp className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={() => rate('down')} disabled={busy} aria-label="Rate this run wrong"
+        className="p-1 rounded-md disabled:opacity-40" style={{ color: colors.error, background: colors.error + '12' }}>
+        <ThumbsDown className="w-3.5 h-3.5" />
+      </button>
+      {error && <span className="text-[11px]" style={{ color: colors.error }}>{error}</span>}
+    </span>
+  );
+}
 
 function ProofsPanel() {
   const { colors } = useTheme();
@@ -123,8 +166,11 @@ function ProofsPanel() {
           <div key={r.id || r.entry_hash} className="px-4 py-3 flex items-center gap-3 text-[13px]" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
             <span className="font-mono text-[11px] w-10 shrink-0" style={{ color: colors.inkTertiary }}>#{r.seq}</span>
             <Pill text={humanize(r.subject_kind || 'action')} tone="primary" />
-            <span className="truncate flex-1">{r.subject_id}</span>
+            <span className="truncate flex-1">{r.skill_id ? `${humanize(r.skill_id)} · ` : ''}{r.subject_id}</span>
             {r.status && <Pill text={humanize(r.status)} tone={String(r.status).startsWith('SUCCESS') ? 'ok' : String(r.status).startsWith('BLOCKED') || String(r.status).startsWith('FAILED') ? 'bad' : 'muted'} />}
+            {r.subject_kind === 'action' && r.skill_id && String(r.status || '').startsWith('SUCCESS') && (
+              <RateRun executionId={r.subject_id} skillId={r.skill_id} />
+            )}
             <span className="text-[11px] whitespace-nowrap" style={{ color: colors.inkTertiary }}>{r.created_at ? timeAgo(r.created_at) : ''}</span>
           </div>
         ))}
@@ -400,6 +446,230 @@ function OutcomesPanel() {
   );
 }
 
+// ── Committees ────────────────────────────────────────────────────────────────
+
+/** One approver's ballot: an endorsement of each option, 0 to 1. */
+function Ballot({ committee, onCast }: { committee: any; onCast: () => void }) {
+  const { colors } = useTheme();
+  const options: any[] = committee.options || [];
+  const [scores, setScores] = useState<Record<string, number>>(() =>
+    Object.fromEntries(options.map((o: any) => [o.key, 0.5])));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cast = async () => {
+    setBusy(true); setError(null);
+    try { await api.castCommitteeVote(committee.id, scores); onCast(); }
+    catch (e: any) { setError(e?.message || 'The vote was refused.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-3 rounded-lg p-3 space-y-2" style={{ background: colors.surface2, border: `1px solid ${colors.primary}30` }}>
+      <div className="text-[11px] font-medium" style={{ color: colors.inkSubtle }}>Your position: how strongly you endorse each option. Other ballots stay hidden until the verdict.</div>
+      {options.map((o: any) => (
+        <label key={o.key} className="flex items-center gap-3 text-[13px]" style={{ color: colors.ink }}>
+          <span className="w-40 truncate" title={o.summary}>{o.label}</span>
+          <input type="range" min={0} max={100} value={Math.round((scores[o.key] ?? 0.5) * 100)}
+            aria-label={`Endorsement of ${o.label}`}
+            onChange={e => setScores(s => ({ ...s, [o.key]: Number(e.target.value) / 100 }))} className="flex-1" />
+          <span className="w-12 text-right tabular-nums text-[12px]" style={{ color: colors.inkSubtle }}>{Math.round((scores[o.key] ?? 0.5) * 100)}%</span>
+        </label>
+      ))}
+      <div className="flex items-center gap-3">
+        <button onClick={cast} disabled={busy}
+          className="px-3 py-1.5 rounded-lg text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50"
+          style={{ background: colors.primary + '18', color: colors.primary }}>
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gavel className="w-3.5 h-3.5" />} Cast my vote
+        </button>
+        {error && <span className="text-[12px]" style={{ color: colors.error }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+function CommitteeCard({ row, onChange }: { row: any; onChange: () => void }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const detail = usePanel(() => api.getCommittee(row.id));
+  const c: any = detail.data || row;
+  const decided = c.status === 'decided';
+  const needsMe = row.i_must_vote && !row.my_vote_cast && !decided;
+  const steps: any[] = c.proof?.steps || [];
+  return (
+    <div className="rounded-xl p-4" style={{ background: colors.surface1, border: `1px solid ${needsMe ? colors.primary + '60' : colors.hairline}` }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Gavel className="w-4 h-4 shrink-0" style={{ color: colors.primary }} />
+        <span className="text-[14px] font-semibold" style={{ color: colors.ink }}>{c.subject}</span>
+        <Pill text={decided ? `Decided: ${c.decision_label || humanize(c.decision)}` : 'Open'} tone={decided ? 'ok' : needsMe ? 'primary' : 'warn'} />
+        <span className="text-[12px] tabular-nums" style={{ color: colors.inkSubtle }}>{c.votes_cast ?? row.votes_cast ?? 0} of {c.votes_required ?? row.votes_required} votes cast</span>
+        {row.execution_id && (
+          <Pill text={c.hitl_resolution ? `Paused run ${humanize(c.hitl_resolution)}` : 'Decides a paused run'} tone={c.hitl_resolution === 'approved' ? 'ok' : c.hitl_resolution === 'rejected' ? 'bad' : 'muted'} />
+        )}
+        {decided && (c.proof_id ? <Pill text="Proof sealed" tone="ok" /> : <Pill text="Seal missing" tone="bad" />)}
+        <span className="ml-auto text-[11px] whitespace-nowrap" style={{ color: colors.inkTertiary }}>{row.created_at ? timeAgo(row.created_at) : ''}</span>
+      </div>
+      {!decided && (
+        <div className="text-[12px] mt-1.5" style={{ color: colors.inkSubtle }}>
+          Voted so far: {(c.voted_by || []).length ? (c.voted_by || []).join(', ') : 'nobody yet'}. Required: {(c.required_approvers || []).join(', ')}.
+        </div>
+      )}
+      {needsMe && <Ballot committee={c} onCast={() => { detail.reload(); onChange(); }} />}
+      {decided && c.verdict && (
+        <div className="mt-3">
+          <p className="text-[12px] font-mono leading-relaxed" style={{ color: colors.inkMuted }}>{c.verdict}</p>
+          <button onClick={() => setOpen(o => !o)} className="mt-2 text-[12px] flex items-center gap-1" style={{ color: colors.primary }}>
+            {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />} {open ? 'Hide' : 'Show'} how the arithmetic decided
+          </button>
+          {open && (
+            <div className="mt-2 space-y-2">
+              {steps.map((s: any) => (
+                <div key={s.label} className="rounded-lg p-3" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+                  <div className="text-[12px] font-semibold" style={{ color: colors.ink }}>{s.label}</div>
+                  <div className="text-[11px] font-mono mt-0.5" style={{ color: colors.inkSubtle }}>{s.formula}</div>
+                  <div className="text-[12px] mt-1" style={{ color: colors.inkMuted }}>{s.detail}</div>
+                </div>
+              ))}
+              {(c.proof?.positions || []).length > 0 && (
+                <div className="text-[12px]" style={{ color: colors.inkSubtle }}>
+                  Positions: {(c.proof.positions as any[]).map((p: any) => `${p.persona_name} (${Object.entries(p.endorsements || {}).map(([k, v]) => `${k} ${Math.round(Number(v) * 100)}%`).join(', ')})`).join('; ')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommitteesPanel() {
+  const { colors } = useTheme();
+  const panel = usePanel(() => api.listCommittees());
+  if (panel.loading) return <BrainLoading message="Reading committees…" />;
+  if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
+  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  const rows: any[] = (panel.data as any)?.committees || [];
+  const open = rows.filter(r => r.status !== 'decided');
+  const decided = rows.filter(r => r.status === 'decided');
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Open committees" value={open.length} note="Waiting on a named approver" />
+        <Stat label="Need my vote" value={open.filter(r => r.i_must_vote && !r.my_vote_cast).length} note="Ballots you have not cast" />
+        <Stat label="Decided" value={decided.length} note="Verdicts, each sealed as a proof" />
+        <Stat label="Paused runs decided" value={rows.filter(r => r.hitl_resolution === 'approved' || r.hitl_resolution === 'rejected').length} note="Resumed or stopped by a committee" />
+      </div>
+      <p className="text-[12px]" style={{ color: colors.inkSubtle }}>
+        Each approver casts one ballot; the same arithmetic that arbitrates the debate gate pools them into a verdict that replays from the stored inputs.
+        Convene a committee on a pending approval from the HITL queue; its verdict resumes or stops that run.
+      </p>
+      {rows.length === 0 ? <BrainEmpty title="No committee involves you yet" /> : (
+        <div className="space-y-3">
+          {[...open, ...decided].map(r => <CommitteeCard key={r.id} row={r} onChange={panel.reload} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Quality ───────────────────────────────────────────────────────────────────
+
+const EXPECTED_STATUSES = ['SUCCESS_CLEAN', 'PENDING_HITL', 'BLOCKED_COMPLIANCE', 'BLOCKED_DEBATE', 'HUMAN_OVERRIDDEN'];
+
+function QualityPanel() {
+  const { colors } = useTheme();
+  const feedback = usePanel(() => api.listSkillFeedback());
+  const cases = usePanel(() => api.listRegressionCases());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [suite, setSuite] = useState<any>(null);
+  const [expected, setExpected] = useState<Record<string, string>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
+  if (feedback.loading) return <BrainLoading message="Reading agent quality…" />;
+  if (feedback.notice) return <EnterpriseNotice message={feedback.notice} />;
+  if (feedback.error) return <BrainError message={feedback.error} onRetry={feedback.reload} />;
+  const fb: any[] = (feedback.data as any)?.feedback || [];
+  const pinned: any[] = (cases.data as any)?.cases || [];
+  const promote = async (row: any) => {
+    setBusy(row.id); setActionError(null);
+    try {
+      await api.promoteFeedback(row.id, { expected_status: expected[row.id] || 'SUCCESS_CLEAN' });
+      await Promise.all([feedback.reload(), cases.reload()]);
+    } catch (e: any) { setActionError(e?.message || 'Promotion was refused.'); }
+    finally { setBusy(null); }
+  };
+  const runSuite = async () => {
+    setBusy('suite'); setActionError(null);
+    try { setSuite(await api.runRegressionSuite()); }
+    catch (e: any) { setActionError(e?.message || 'The suite could not run.'); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Human ratings" value={fb.length} note="Thumbs on sealed runs, from the Proofs tab" />
+        <Stat label="Rated wrong" value={fb.filter(f => f.rating === 'down').length} note="Adverse evidence in the trust ladder" />
+        <Stat label="Pinned regression cases" value={pinned.length} note="Re-run against the live gate config" />
+        <div className="rounded-xl p-4 flex flex-col justify-between" style={{ background: colors.surface1, border: `1px solid ${colors.hairline}` }}>
+          <div className="text-[11px]" style={{ color: colors.inkSubtle }}>{suite ? `${suite.passed} of ${suite.total} passed` : 'Deterministic: no model call needed'}</div>
+          <button onClick={runSuite} disabled={busy === 'suite' || pinned.length === 0}
+            className="mt-2 px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ background: colors.primary + '18', color: colors.primary }}>
+            {busy === 'suite' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Run regression suite
+          </button>
+        </div>
+      </div>
+      {actionError && <div className="text-[12px]" style={{ color: colors.error }}>{actionError}</div>}
+      {suite && suite.failed > 0 && (
+        <div className="rounded-xl p-4 text-[13px]" style={{ background: colors.error + '12', border: `1px solid ${colors.error}30`, color: colors.ink }}>
+          {suite.failed} case(s) fail under the live gate configuration. The trust ladder withholds the autonomous rung for those skills until they pass.
+        </div>
+      )}
+      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}` }}>
+        <div className="px-4 py-2.5 text-[11px] font-medium" style={{ background: colors.surface2, color: colors.inkSubtle }}>Ratings, newest first. A thumbs-down can be pinned as a regression case that freezes the run's inputs.</div>
+        {fb.length === 0 ? <div className="p-6"><BrainEmpty title="No run has been rated yet" /></div> : fb.map((f: any) => (
+          <div key={f.id} className="px-4 py-2.5 flex items-center gap-3 text-[12px] flex-wrap" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
+            {f.rating === 'up' ? <ThumbsUp className="w-3.5 h-3.5 shrink-0" style={{ color: colors.success }} /> : <ThumbsDown className="w-3.5 h-3.5 shrink-0" style={{ color: colors.error }} />}
+            <span className="font-medium" style={{ color: colors.ink }}>{humanize(f.skill_id_name)}</span>
+            <span className="font-mono text-[11px] truncate max-w-[160px]" style={{ color: colors.inkTertiary }}>{f.execution_id}</span>
+            <Pill text={humanize(f.triage_status)} tone={f.triage_status === 'regression_case' ? 'ok' : 'muted'} />
+            {f.note && <span className="truncate" style={{ color: colors.inkSubtle }}>{f.note}</span>}
+            {f.rating === 'down' && f.triage_status !== 'regression_case' && (
+              <span className="ml-auto flex items-center gap-2">
+                <select value={expected[f.id] || 'SUCCESS_CLEAN'} onChange={e => setExpected(s => ({ ...s, [f.id]: e.target.value }))}
+                  aria-label="Expected status for the pinned case"
+                  className="text-[11px] rounded-md px-2 py-1" style={{ background: colors.inputBg, color: colors.ink, border: `1px solid ${colors.hairline}` }}>
+                  {EXPECTED_STATUSES.map(s => <option key={s} value={s}>{humanize(s)}</option>)}
+                </select>
+                <button onClick={() => promote(f)} disabled={busy === f.id}
+                  className="text-[11px] px-2 py-1 rounded-md disabled:opacity-50" style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+                  {busy === f.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Pin as regression case'}
+                </button>
+              </span>
+            )}
+            <span className="text-[11px] whitespace-nowrap" style={{ color: colors.inkTertiary }}>{f.created_at ? timeAgo(f.created_at) : ''}</span>
+          </div>
+        ))}
+      </div>
+      {pinned.length > 0 && (
+        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}` }}>
+          <div className="px-4 py-2.5 text-[11px] font-medium" style={{ background: colors.surface2, color: colors.inkSubtle }}>Pinned regression cases</div>
+          {pinned.map((c: any) => {
+            const run = (suite?.runs || []).find((r: any) => r.case_id === c.id);
+            return (
+              <div key={c.id} className="px-4 py-2.5 flex items-center gap-3 text-[12px]" style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }}>
+                <span className="font-medium" style={{ color: colors.ink }}>{humanize(c.skill_id_name)}</span>
+                <Pill text={humanize(c.department)} tone="muted" />
+                <span style={{ color: colors.inkSubtle }}>expects {humanize(c.expected_status)}</span>
+                {run && <Pill text={run.passed ? 'Passed' : `Failed: got ${humanize(run.status || 'no status')}`} tone={run.passed ? 'ok' : 'bad'} />}
+                <span className="ml-auto text-[11px] whitespace-nowrap" style={{ color: colors.inkTertiary }}>{c.created_at ? timeAgo(c.created_at) : ''}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function GovernedExecution({ defaultTab }: { defaultTab?: Tab }) {
@@ -453,6 +723,8 @@ export default function GovernedExecution({ defaultTab }: { defaultTab?: Tab }) 
           {tab === 'rehearsals' && <RehearsalsPanel />}
           {tab === 'gateway' && <GatewayPanel />}
           {tab === 'outcomes' && <OutcomesPanel />}
+          {tab === 'committees' && <CommitteesPanel />}
+          {tab === 'quality' && <QualityPanel />}
         </div>
       </div>
     </div>

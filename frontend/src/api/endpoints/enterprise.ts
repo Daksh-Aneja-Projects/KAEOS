@@ -319,5 +319,35 @@ export const governedExecutionApi = {
     request<any>(`/ontology/datasets/transactions/${encodeURIComponent(txnId)}/abort`, {
       method: 'POST', body: JSON.stringify({ reason }),
     }),
+
+  // Committee Decisions (F2, the human half): named approvers, one ballot
+  // each, pooled by the same arithmetic as the debate gate. A committee
+  // convened with an execution_id decides that paused run.
+  listCommittees: (executionId?: string) =>
+    request<any>(`/decision/committees${executionId ? `?execution_id=${encodeURIComponent(executionId)}` : ''}`),
+  getCommittee: (id: string) => request<any>(`/decision/committees/${encodeURIComponent(id)}`),
+  createCommittee: (body: {
+    subject: string; options: { key: string; label: string; summary?: string }[];
+    criteria: { key: string; label: string; raw_weight: number; rationale?: string }[];
+    performance: Record<string, Record<string, number>>; required_approvers: string[];
+    execution_id?: string;
+  }) => request<any>('/decision/committees', { method: 'POST', body: JSON.stringify(body) }),
+  castCommitteeVote: (id: string, endorsements: Record<string, number>) =>
+    request<any>(`/decision/committees/${encodeURIComponent(id)}/vote`, {
+      method: 'POST', body: JSON.stringify({ endorsements }),
+    }),
+
+  // Agent Quality Evals (F12): a human's thumbs-up/down on a sealed run, the
+  // triage queue, pinned regression cases and the deterministic suite.
+  submitSkillFeedback: (body: { execution_id: string; skill_id_name: string; rating: 'up' | 'down'; note?: string }) =>
+    request<any>('/evals/feedback', { method: 'POST', body: JSON.stringify(body) }),
+  listSkillFeedback: (triageStatus?: string) =>
+    request<any>(`/evals/feedback${triageStatus ? `?triage_status=${encodeURIComponent(triageStatus)}` : ''}`),
+  promoteFeedback: (feedbackId: string, body: { expected_status: string; reference_text?: string; pass_threshold?: number }) =>
+    request<any>(`/evals/feedback/${encodeURIComponent(feedbackId)}/promote`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  listRegressionCases: () => request<any>('/evals/regression-cases'),
+  runRegressionSuite: () => request<any>('/evals/regression-suite/run', { method: 'POST' }),
 };
 
