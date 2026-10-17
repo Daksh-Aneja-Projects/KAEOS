@@ -64,6 +64,30 @@ def validate_dump(dump_path: Path) -> int:
     return size
 
 
+def schema_free_list(dump_path: Path) -> Path | None:
+    """A pg_restore TOC list (-L) without the schema objects themselves.
+
+    A dump taken with --schema public carries DROP / CREATE / COMMENT ON SCHEMA
+    public. On a managed Postgres the provider owns that schema, so the app's
+    owner role cannot run them: pg_restore restored every row and still exited
+    1 with three "errors ignored" (measured in the 2026-10-17 drill), which in
+    an incident reads as a failed restore. The schema already exists; only its
+    contents are restored. Returns None when the dump has no such entries.
+    """
+    proc = subprocess.run(["pg_restore", "-l", str(dump_path)], capture_output=True, text=True,
+                          timeout=300)
+    if proc.returncode != 0:
+        fail(f"pg_restore -l could not read the dump: {proc.stderr.strip()}")
+    lines = proc.stdout.splitlines()
+    kept = [ln for ln in lines
+            if not (" SCHEMA - " in ln or " COMMENT - SCHEMA " in ln)]
+    if len(kept) == len(lines):
+        return None
+    out = dump_path.with_suffix(".restore.list")
+    out.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Restore a KAEOS Postgres dump via docker exec + pg_restore (destructive)."
@@ -84,6 +108,9 @@ def main() -> None:
     if args.direct:
         restore_cmd = ["pg_restore", "-d", args.db, "--clean", "--if-exists",
                        "--no-owner", "--no-privileges"]
+        toc = schema_free_list(args.dump)
+        if toc is not None:
+            restore_cmd += ["-L", str(toc)]
     else:
         check_docker(args.container)
         restore_cmd = [

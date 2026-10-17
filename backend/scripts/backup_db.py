@@ -62,7 +62,7 @@ def check_docker(container: str) -> None:
 
 
 def run_backup(container: str | None, out_path: Path, *, user: str = DB_USER,
-               db: str = DB_NAME) -> None:
+               db: str = DB_NAME, schemas: list[str] | None = None) -> None:
     """Stream pg_dump custom-format output into out_path: from inside the
     container, or (container None) with the local pg_dump against the server
     the standard libpq variables name (PGHOST, PGPORT, PGUSER, PGPASSWORD,
@@ -73,6 +73,10 @@ def run_backup(container: str | None, out_path: Path, *, user: str = DB_USER,
         # --no-owner / --no-privileges: a managed service's role names differ
         # from the restore target's, and ownership is re-applied by the app.
         cmd = ["pg_dump", "-Fc", "--no-owner", "--no-privileges", "-d", db]
+    # A managed service keeps its own schemas (auth, storage, ...) next to the
+    # app's, unreadable to the app's owner role: dump only the app's schema.
+    for schema in schemas or ():
+        cmd += ["-n", schema]
     print(f"Running: {' '.join(cmd)}")
     start = time.monotonic()
     with out_path.open("wb") as fh:
@@ -131,6 +135,9 @@ def main() -> None:
     parser.add_argument("--user", default=DB_USER,
                         help=f"Database role inside the container (default: {DB_USER}; the "
                              "production compose uses kaeos_admin)")
+    parser.add_argument("--schema", action="append", metavar="NAME",
+                        help="Dump only this schema (repeatable). On a managed Postgres use "
+                             "--schema public: the provider's own schemas are not the app's")
     parser.add_argument("--db", default=DB_NAME,
                         help=f"Database name (default: {DB_NAME}; the production compose uses "
                              "kaeos_prod)")
@@ -145,7 +152,8 @@ def main() -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = out_dir / f"kaeos_{stamp}.dump"
 
-    run_backup(None if args.direct else args.container, out_path, user=args.user, db=args.db)
+    run_backup(None if args.direct else args.container, out_path, user=args.user, db=args.db,
+               schemas=args.schema)
     apply_retention(out_dir, args.retention, keep=out_path)
 
     print("\nBackup summary")
