@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import hashlib
+import hmac
 import secrets
 
 from sqlalchemy import select
@@ -203,6 +204,17 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+
+def _invite_binding(placeholder_hash: str) -> str:
+    """A short keyed digest of the pending account's placeholder hash."""
+    return hmac.new(_get_secret_key().encode(), (placeholder_hash or "").encode(),
+                    hashlib.sha256).hexdigest()[:32]
+
+
+# A real bcrypt hash of a random value nobody knows: verifying against it costs
+# what verifying a real account costs, and never succeeds.
+_DUMMY_HASH = "$2b$12$FSdgdiRXxOpkN4MBS29n2OBbfpGQt3ypqjqlh/16wFhVBHKQrhZnm"
+
 class AuthService:
     """Authentication and user management service."""
 
@@ -291,57 +303,77 @@ class AuthService:
                 "(set ADMIN_PASSWORD in .env to make it stable)", email, password,
             )
 
-    @staticmethod
-    async def _is_locked_out(email: str) -> bool:
-        """True if this email has too many recent failures (brute-force guard).
+    # Two counters per attempt: the e-mail from THIS address (the brute-force
+    # guard), and the e-mail from anywhere at five times the limit. Keyed on the
+    # e-mail alone, anyone could lock any account out by failing five times;
+    # keyed on the address alone, a botnet could guess forever.
+    EMAIL_WIDE_MULTIPLE = 5
 
-        Redis-backed so the counter is shared across workers; falls back to the
-        in-process window when Redis is down.
+    @staticmethod
+    def _lock_keys(email: str, ip: str | None) -> list[tuple[str, int]]:
+        s = get_settings()
+        return [(f"{email}|{ip or 'unknown'}", s.LOGIN_MAX_FAILURES),
+                (email, s.LOGIN_MAX_FAILURES * AuthService.EMAIL_WIDE_MULTIPLE)]
+
+    @staticmethod
+    async def _is_locked_out(email: str, ip: str | None = None) -> bool:
+        """True if this e-mail has too many recent failures from this address,
+        or from everywhere at the wider limit (brute-force guard).
+
+        Redis-backed so the counters are shared across workers; falls back to
+        the in-process window when Redis is down.
         """
+        import time
         s = get_settings()
         r = await _redis()
-        if r is not None:
-            try:
-                val = await r.get(_FAIL_KEY.format(email=email))
-                return int(val or 0) >= s.LOGIN_MAX_FAILURES
-            except Exception:
-                pass
-        import time
-        window_start = time.time() - s.LOGIN_LOCKOUT_SECONDS
-        recent = [t for t in _failed_logins.get(email, []) if t >= window_start]
-        if recent:
-            _failed_logins[email] = recent  # prune the window
-        else:
-            # Drop the key entirely: attempted emails are attacker-controlled,
-            # so an empty-list writeback grew the dict one key per probe forever.
-            _failed_logins.pop(email, None)
-        return len(recent) >= s.LOGIN_MAX_FAILURES
+        for key, limit in AuthService._lock_keys(email, ip):
+            if r is not None:
+                try:
+                    val = await r.get(_FAIL_KEY.format(email=key))
+                    if int(val or 0) >= limit:
+                        return True
+                    continue
+                except Exception:
+                    pass
+            window_start = time.time() - s.LOGIN_LOCKOUT_SECONDS
+            recent = [t for t in _failed_logins.get(key, []) if t >= window_start]
+            if recent:
+                _failed_logins[key] = recent  # prune the window
+            else:
+                # Drop the key entirely: attempted emails are attacker-controlled,
+                # so an empty-list writeback grew the dict one key per probe forever.
+                _failed_logins.pop(key, None)
+            if len(recent) >= limit:
+                return True
+        return False
 
     @staticmethod
-    async def _record_failure(email: str) -> None:
+    async def _record_failure(email: str, ip: str | None = None) -> None:
+        import time
         s = get_settings()
         r = await _redis()
-        if r is not None:
-            try:
-                key = _FAIL_KEY.format(email=email)
-                n = await r.incr(key)
-                if n == 1:
-                    await r.expire(key, s.LOGIN_LOCKOUT_SECONDS)
-                return
-            except Exception:
-                pass
-        import time
-        _failed_logins.setdefault(email, []).append(time.time())
+        for key, _limit in AuthService._lock_keys(email, ip):
+            if r is not None:
+                try:
+                    rkey = _FAIL_KEY.format(email=key)
+                    n = await r.incr(rkey)
+                    if n == 1:
+                        await r.expire(rkey, s.LOGIN_LOCKOUT_SECONDS)
+                    continue
+                except Exception:
+                    pass
+            _failed_logins.setdefault(key, []).append(time.time())
 
     @staticmethod
-    async def _clear_failures(email: str) -> None:
-        _failed_logins.pop(email, None)
+    async def _clear_failures(email: str, ip: str | None = None) -> None:
         r = await _redis()
-        if r is not None:
-            try:
-                await r.delete(_FAIL_KEY.format(email=email))
-            except Exception:
-                pass
+        for key, _limit in AuthService._lock_keys(email, ip):
+            _failed_logins.pop(key, None)
+            if r is not None:
+                try:
+                    await r.delete(_FAIL_KEY.format(email=key))
+                except Exception:
+                    pass
 
     @staticmethod
     async def login(db: AsyncSession, email: str, password: str,
@@ -355,7 +387,7 @@ class AuthService:
         from app.core.audit import record_security_event
         _tenant_for_audit = get_settings().ADMIN_TENANT  # best-effort tenant for pre-auth events
 
-        if await AuthService._is_locked_out(email):
+        if await AuthService._is_locked_out(email, ip_address):
             await record_security_event(
                 tenant_id=_tenant_for_audit, event_type="AUTH_FAILURE", action="LOGIN",
                 result="BLOCKED", actor=email, ip_address=ip_address,
@@ -366,16 +398,17 @@ class AuthService:
             select(User).where(User.email == email, User.is_active == True)
         )
         user = result.scalar_one_or_none()
-        if not user or not await _verify_password(password, user.hashed_password):
-            await AuthService._record_failure(email)
+        # An unknown e-mail costs the same bcrypt work as a known one, so the
+        # response time does not say which addresses have accounts.
+        password_ok = await _verify_password(
+            password, user.hashed_password if user else _DUMMY_HASH)
+        if not user or not password_ok:
+            await AuthService._record_failure(email, ip_address)
             await record_security_event(
                 tenant_id=(user.tenant_id if user else _tenant_for_audit),
                 event_type="AUTH_FAILURE", action="LOGIN", result="BLOCKED",
                 actor=email, ip_address=ip_address, details={"reason": "bad_credentials"})
             return None
-
-        # Success — clear the failure counter (shared + local).
-        await AuthService._clear_failures(email)
 
         # Second factor: if MFA is enabled for this user, a valid TOTP code is
         # required before a session is issued. Missing/invalid code returns a
@@ -387,12 +420,18 @@ class AuthService:
                 # count it toward the lockout so the 6-digit TOTP cannot be
                 # brute-forced by an attacker who already has the password.
                 if mfa_code:
-                    await AuthService._record_failure(email)
+                    await AuthService._record_failure(email, ip_address)
                 await record_security_event(
                     tenant_id=user.tenant_id, event_type="AUTH_MFA", action="LOGIN",
                     result="BLOCKED", actor=user.email, ip_address=ip_address,
                     details={"reason": "mfa_required" if not mfa_code else "mfa_invalid"})
                 return {"mfa_required": True}
+
+        # Success - clear the failure counters only now, after BOTH factors.
+        # Clearing them on a right password (before the code was checked) reset
+        # the count on every attempt, so a wrong TOTP code could be retried
+        # forever by anyone holding the password.
+        await AuthService._clear_failures(email, ip_address)
 
         # Update login tracking
         user.login_count = (user.login_count or 0) + 1
@@ -530,6 +569,8 @@ class AuthService:
             return {"error": "user_not_found"}
         user.role = new_role
         await db.commit()
+        from app.core.tenant import forget_session_user
+        forget_session_user(user.id)
         return {"id": user.id, "role": new_role.value}
 
     @staticmethod
@@ -558,6 +599,8 @@ class AuthService:
                 return {"error": "cannot_deactivate_last_admin"}
         user.is_active = False
         await db.commit()
+        from app.core.tenant import forget_session_user
+        forget_session_user(user.id)
         return {"id": user.id, "is_active": False}
 
     @staticmethod
@@ -570,6 +613,8 @@ class AuthService:
             return {"error": "user_not_found"}
         user.is_active = True
         await db.commit()
+        from app.core.tenant import forget_session_user
+        forget_session_user(user.id)
         return {"id": user.id, "is_active": True}
 
     @staticmethod
@@ -624,6 +669,10 @@ class AuthService:
         now = datetime.now(timezone.utc)
         token = jwt.encode(
             {"purpose": "invite", "user_id": user.id, "tenant_id": tenant_id,
+             # Binds the invite to the account's unusable placeholder password:
+             # once anyone sets a password the binding no longer matches, so the
+             # link works exactly once and never after a deactivation.
+             "ph": _invite_binding(user.hashed_password),
              "aud": "kaeos-invite", "iat": now, "exp": now + timedelta(days=7)},
             _get_secret_key(), algorithm="HS256",
         )
@@ -649,8 +698,27 @@ class AuthService:
         user = (await db.execute(select(User).where(User.id == claims["user_id"]))).scalar_one_or_none()
         if not user:
             return {"error": "user_not_found"}
-        user.hashed_password = await _hash_password(password)
-        user.is_active = True
+        # Single use: the account must still be the pending invitee (inactive,
+        # never signed in, placeholder password unchanged). A replay after
+        # acceptance would otherwise overwrite the password, and a replay after
+        # deactivation would switch the account back on.
+        placeholder = user.hashed_password
+        if (user.is_active or user.last_login_at is not None
+                or user.tenant_id != claims.get("tenant_id")
+                or not hmac.compare_digest(str(claims.get("ph") or ""), _invite_binding(placeholder))):
+            return {"error": "invalid_or_expired_invite"}
+        from sqlalchemy import update as _update
+        new_hash = await _hash_password(password)
+        # Compare-and-set, so two concurrent accepts cannot both succeed.
+        done = await db.execute(
+            _update(User).where(User.id == user.id, User.hashed_password == placeholder,
+                                User.is_active == False)  # noqa: E712
+            .values(hashed_password=new_hash, is_active=True))
+        if done.rowcount != 1:
+            await db.rollback()
+            return {"error": "invalid_or_expired_invite"}
         await db.commit()
+        from app.core.tenant import forget_session_user
+        forget_session_user(user.id)
         logger.info(f"[Auth] Invite accepted: {user.email}")
         return {"id": user.id, "email": user.email, "is_active": True}

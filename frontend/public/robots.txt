@@ -7,6 +7,10 @@ Allow: /login
 Allow: /llms.txt
 Disallow: /platform/
 Disallow: /departments/
+Disallow: /departments
+Disallow: /deploy
+Disallow: /getting-started
+Disallow: /accept-invite
 Disallow: /my-work
 Disallow: /analytics
 Disallow: /integrations

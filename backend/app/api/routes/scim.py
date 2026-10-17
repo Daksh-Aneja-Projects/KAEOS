@@ -13,6 +13,7 @@ create, get, list (userName filter), replace (PUT), patch active, and deactivate
 """
 import logging
 import secrets
+from app.core.tenant import forget_session_user
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -162,6 +163,7 @@ async def scim_replace_user(user_id: str, body: dict,
     if "active" in body:
         u.is_active = bool(body["active"])
     await db.commit()
+    forget_session_user(u.id)
     await db.refresh(u)
     return _scim_user(u)
 
@@ -186,6 +188,7 @@ async def scim_patch_user(user_id: str, body: dict,
             elif not path and isinstance(value, dict) and "active" in value:
                 u.is_active = _as_bool(value["active"])
     await db.commit()
+    forget_session_user(u.id)
     await db.refresh(u)
     return _scim_user(u)
 
@@ -198,6 +201,7 @@ async def scim_delete_user(user_id: str,
     u = await _get_scoped(db, user_id, tenant["tenant_id"])
     u.is_active = False
     await db.commit()
+    forget_session_user(u.id)
     return Response(status_code=204)
 
 

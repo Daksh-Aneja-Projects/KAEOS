@@ -15,7 +15,7 @@ from app.core.database import get_db
 from app.core.tenant import check_department_scope, get_tenant, get_tenant_id, require_role
 from app.core.audit import record_security_event
 from app.models.missions import Mission, MissionStep, MissionEvent
-from app.core.tenant import approver_identity
+from app.core.tenant import approver_identity, require_human_decider
 from app.services.missions import (
     plan_mission, abort_mission, resolve_hitl_step, start_mission_run,
 )
@@ -152,7 +152,7 @@ async def advance(
 @router.post("/{mission_id}/steps/{seq}/hitl")
 async def resolve_hitl(
     mission_id: str, seq: int, body: HitlIn,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     await _guard_mission_scope(db, tenant, mission_id, step_seq=seq)

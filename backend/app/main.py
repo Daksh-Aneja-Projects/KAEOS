@@ -92,8 +92,16 @@ async def lifespan(app: FastAPI):
     #      production and refused.
     # Both conditions must hold, so the unset case and the unrecognised case
     # both fail closed: DEV_MODE never disables auth by omission.
-    _DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
+    from app.core.config import DEV_ENVIRONMENTS as _DEV_ENVIRONMENTS
     _env_explicit = "ENVIRONMENT" in settings.model_fields_set
+    # The other half: with authentication ON, an unset ENVIRONMENT would slide
+    # to "development" and skip every production control (SQLite allowed, docs
+    # served, demo data seeded). A real deployment must say what it is.
+    if not settings.DEV_MODE and not _env_explicit:
+        raise RuntimeError(
+            "ENVIRONMENT is unset: refusing to start with authentication on. Set "
+            "ENVIRONMENT=production for a deployment (or development/test for a "
+            "local real-auth run) so the right controls apply.")
     if settings.DEV_MODE and (
         not _env_explicit or settings.ENVIRONMENT.lower() not in _DEV_ENVIRONMENTS
     ):

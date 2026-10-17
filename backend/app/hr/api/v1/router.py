@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.audit import record_security_event
-from app.core.tenant import approver_identity, require_role
+from app.core.tenant import approver_identity, require_human_decider
 from app.hr.services.workflows import SPECS as WORKFLOW_SPECS  # noqa: F401  (re-exported)
 
 from app.hr.api.v1.routers import (
@@ -58,7 +58,7 @@ router.include_router(recruiting.router)
 async def hitl_approve(
     execution_id: str,
     body: HITLDecision,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
 ):
     """Approve a pending HITL-gated HR execution.
 
@@ -87,7 +87,7 @@ async def hitl_approve(
 async def hitl_reject(
     execution_id: str,
     body: HITLDecision,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
 ):
     """Reject a pending HITL-gated HR execution.
 

@@ -105,7 +105,21 @@ EE_FEATURES = frozenset({
     "ontology",         # F8: the Enterprise Ontology - typed object/link/
                         # action model over the core's data
     "agent_evals",      # F12: agent-behavior feedback + pinned regression suite
+    "authority",        # F14: autonomy on a named person's lent authority
 })
+
+
+async def tenant_has_ee_feature(tenant_id: str, feature: str) -> bool:
+    """Whether a tenant's PLAN admits an Enterprise feature - for the overlay's
+    own seams that run outside a request (Gate 3's authorizer, a sweep). They
+    only run when the package is loaded, so self-host is always yes; in managed
+    cloud the tenant's plan must include the feature."""
+    if not _managed_cloud():
+        return True
+    from app.core.database import MaintenanceSessionLocal
+    async with MaintenanceSessionLocal() as db:
+        plan = normalize_plan(await plan_for_tenant(db, tenant_id))
+    return feature in PLAN_EE_FEATURES[plan]
 
 # In managed cloud, Enterprise features additionally require the plan to
 # include them. Self-host entitlement is the Enterprise package's own license
@@ -175,7 +189,12 @@ def require_enterprise_console(feature: str, min_role: str = "operator"):
     base = require_enterprise(feature)
 
     async def _checker(tenant: dict = Depends(base)) -> dict:
-        if tenant.get("key_id"):
+        from app.core.tenant import agent_principal_of
+        # Every machine principal is refused, not only kt_ keys: a gateway
+        # OAuth2.1 agent carries no key_id but is still an agent, and its
+        # display name comes from its own IdP, so it must never reach a
+        # surface that acts as a named person (lending, accepting, undoing).
+        if tenant.get("key_id") or agent_principal_of(tenant):
             raise HTTPException(
                 status_code=403,
                 detail=(

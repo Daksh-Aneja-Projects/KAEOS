@@ -219,8 +219,10 @@ async def update_department(
     target.department = dept
     db.add(target)
     await db.commit()
+    from app.core.tenant import forget_session_user
+    forget_session_user(target.id)
     return {"id": target.id, "email": target.email, "department": target.department,
-            "note": "Scope applies from the user's next login."}
+            "note": "Their current sessions end now; the new scope applies when they sign in again."}
 
 
 @router.delete("/users/{user_id}")
@@ -279,7 +281,9 @@ async def invite_user(
     # otherwise the admin still gets the link in the response to share manually.
     from app.core.config import get_settings
     _base = (get_settings().FRONTEND_BASE_URL or "http://localhost:5174").rstrip("/")
-    invite_link = f"{_base}/accept-invite?token={result['invite_token']}" \
+    # In the fragment, not the query: a fragment never reaches a server, so the
+    # token stays out of access logs, proxies and Referer headers.
+    invite_link = f"{_base}/accept-invite#token={result['invite_token']}" \
         if result.get("invite_token") else None
     if invite_link:
         result["invite_link"] = invite_link

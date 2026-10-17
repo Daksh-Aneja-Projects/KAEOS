@@ -158,10 +158,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = {"/health", "/health/live", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
     def _caller_id(self, request: Request) -> str:
+        from app.core.config import get_settings
+        from app.core.tenant import _DEV_TENANT
         tenant = getattr(request.state, "tenant", None)
-        if tenant and isinstance(tenant, dict):
+        # Pre-authentication paths (login, invite acceptance, SSO) carry the
+        # placeholder tenant, so keying on it put every anonymous caller in ONE
+        # bucket: 1,100 bad logins from one address locked everyone out of
+        # signing in. Those are keyed on the caller's own address instead.
+        anonymous = tenant is _DEV_TENANT and not get_settings().DEV_MODE
+        if tenant and isinstance(tenant, dict) and not anonymous:
             return tenant.get("tenant_id", "anonymous")
-        return request.client.host if request.client else "unknown"
+        from app.core.net import client_ip
+        return f"ip:{client_ip(request) or 'unknown'}"
 
     async def _redis_exceeded(self, caller_id: str, now: float):
         """Shared fixed-window counter. Returns (exceeded, retry_after) or None if

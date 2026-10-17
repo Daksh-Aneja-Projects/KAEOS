@@ -129,6 +129,27 @@ async def persist_blocked_execution(
         logger.warning("[Usage] could not persist blocked execution %s: %s", execution_id, e)
 
 
+
+# Context keys only the server sets. A caller-supplied context (a request body,
+# an MCP tool's arguments) is stripped of them at every entry, so nobody can
+# claim approval, lent authority, a rehearsal, a confidence or a reviewer.
+GATE_STAMPED_KEYS = ("authority", "rehearsal")
+CALLER_FORBIDDEN_KEYS = frozenset({
+    "hitl_pre_approved", "has_human_approver", "agent_principal", "channel", "origin",
+    "hitl_attestation", "hitl_approved", "approver", "maker", "requested_by",
+    "confidence", "fairness_review_log_id", "fairness_review_flagged",
+    "execution_id", "tenant_id", *GATE_STAMPED_KEYS,
+})
+
+
+def strip_caller_context(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop every server-set key, and every underscore-prefixed internal one
+    (`_skill_obj`, `_gate_t_last`, ...), from a caller-supplied context."""
+    for k in list(ctx):
+        if k in CALLER_FORBIDDEN_KEYS or (isinstance(k, str) and k.startswith("_")):
+            ctx.pop(k, None)
+    return ctx
+
 class AgentExecutor:
     """L9 - Execution Engine with AEOS Debate + Fairness gates.
     
@@ -833,6 +854,12 @@ class AgentExecutor:
         # Defense in depth: strip trust-bearing keys a caller (or a request
         # body flowing into context) may have planted. They are server-set only.
         context.pop("hitl_pre_approved", None)
+        if not hitl_pre_approved:
+            # A fresh run never enters holding authority or a rehearsal: both
+            # are stamped by this run's own gates. Only a resumed run (whose
+            # context the server stored) carries them in.
+            for _k in GATE_STAMPED_KEYS:
+                context.pop(_k, None)
 
         # Publish identity BEFORE gate 1. The gates themselves make model calls
         # (fairness scoring, debate), so setting this only in the executor

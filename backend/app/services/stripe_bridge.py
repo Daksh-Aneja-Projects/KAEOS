@@ -255,6 +255,9 @@ class StripeBillingProvider(BillingProvider):
     def verify_webhook(self, payload: bytes, sig_header: str) -> dict:
         if not sig_header:
             raise ValueError("Missing Stripe-Signature header")
+        # An empty secret makes the signature an HMAC anyone can compute.
+        if not self._webhook_secret:
+            raise ValueError("Stripe webhook secret is not configured; refusing the event")
         # construct_event raises SignatureVerificationError on tamper/replay.
         return self._stripe.Webhook.construct_event(
             payload, sig_header, self._webhook_secret

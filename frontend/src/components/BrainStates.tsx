@@ -81,7 +81,7 @@ interface BrainErrorProps {
 }
 
 export const BrainError: React.FC<BrainErrorProps> = ({ message, onRetry }) => (
-  <div className="flex flex-col items-center justify-center py-16 gap-3">
+  <div className="flex flex-col items-center justify-center py-16 gap-3" role="alert">
     <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
       style={{ background: 'rgba(229, 83, 75, 0.08)' }}>
       <AlertTriangle className="w-7 h-7" style={{ color: '#E5534B' }} />
@@ -101,6 +101,18 @@ export const BrainError: React.FC<BrainErrorProps> = ({ message, onRetry }) => (
     )}
   </div>
 );
+
+
+/**
+ * Small inline banner for a refresh that failed while the last loaded figures
+ * are still on screen. Use instead of BrainError when data already exists.
+ */
+export const RefreshFailed: React.FC<{ show: boolean }> = ({ show }) => show ? (
+  <div role="alert" className="text-[12px] rounded-lg px-3 py-1.5 shrink-0 break-words"
+    style={{ background: 'rgba(229, 83, 75, 0.08)', color: '#E5534B', border: '1px solid rgba(229, 83, 75, 0.25)' }}>
+    Could not refresh. Showing the last loaded figures.
+  </div>
+) : null;
 
 
 interface LiveIndicatorProps {

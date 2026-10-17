@@ -82,7 +82,56 @@ def test_sqlite_is_refused_in_a_production_environment():
 
 
 def test_postgres_passes_the_production_database_check():
+    # A full production config (hosts, no demo seed, a data key) on Postgres.
     assert _problems(
         ENVIRONMENT="production",
-        DATABASE_URL="postgresql+asyncpg://kaeos_app:pw@db:5432/kaeos",
+        DATABASE_URL="postgresql+asyncpg://db:5432/kaeos",
+        ALLOWED_HOSTS=["api.kaeos.example.com"], SEED_DEMO_DATA=False, DEBUG=False,
+        CONNECTOR_ENCRYPTION_KEY="b" * 44,
     ) == []
+
+
+# ── launch audit 2026-10-17 ──────────────────────────────────────────────────
+
+PROD = dict(GOOD, ENVIRONMENT="production", DATABASE_URL="postgresql+asyncpg://localhost:5432/kaeos",
+            ALLOWED_HOSTS=["api.kaeos.example.com"], SEED_DEMO_DATA=False, DEBUG=False,
+            CONNECTOR_ENCRYPTION_KEY="b" * 44)
+
+
+def _prod(**overrides) -> list[str]:
+    return Settings(**{**PROD, **overrides}).validate_production_security()
+
+
+def test_a_correct_hosted_config_has_no_problems():
+    assert _prod() == []
+    assert _prod(KAEOS_MANAGED_CLOUD=True, STRIPE_API_KEY="sk_test_x",
+                 STRIPE_WEBHOOK_SECRET="whsec_x") == []
+
+
+def test_managed_stripe_without_a_webhook_secret_is_refused():
+    """P3: an empty secret lets anyone forge a subscription.updated and take the
+    Enterprise plan."""
+    assert any("STRIPE_WEBHOOK_SECRET" in p for p in _prod(
+        KAEOS_MANAGED_CLOUD=True, STRIPE_API_KEY="sk_test_x", STRIPE_WEBHOOK_SECRET=""))
+
+
+@pytest.mark.parametrize("override,needle", [
+    (dict(ALLOWED_HOSTS=["*"]), "ALLOWED_HOSTS"),
+    (dict(DEBUG=True), "DEBUG"),
+    (dict(SEED_DEMO_DATA=True), "SEED_DEMO_DATA"),
+    (dict(CONNECTOR_ENCRYPTION_KEY=""), "CONNECTOR_ENCRYPTION_KEY"),
+])
+def test_production_controls(override, needle):
+    assert any(needle in p for p in _prod(**override))
+
+
+@pytest.mark.parametrize("env", ["prd", "live", "eu-1", "Production", "staging"])
+def test_unknown_environment_names_are_production_like(env):
+    assert Settings(**{**PROD, "ENVIRONMENT": env}).is_production_like
+    assert not Settings(**{**PROD, "ENVIRONMENT": "ci"}).is_production_like
+
+
+def test_stripe_webhook_refuses_an_empty_secret():
+    from app.services.stripe_bridge import StripeBillingProvider
+    with pytest.raises(ValueError):
+        StripeBillingProvider(object(), "").verify_webhook(b"{}", "t=1,v1=abc")

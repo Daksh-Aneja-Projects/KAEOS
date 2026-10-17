@@ -106,6 +106,22 @@ def _schema_for_worker():
 
 
 @pytest.fixture(autouse=True)
+def _session_check_stand_in(request, monkeypatch):
+    """Most tests mint session tokens for users that exist only in the token's
+    claims, and the middleware's live account check reads the APP engine (the
+    sidecar), not the test engine those tests write users to. So the check is
+    stood in by "the account is as the token says" here; the real check runs in
+    tests marked ``real_session_check`` (tests/test_session_freshness.py)."""
+    if request.node.get_closest_marker("real_session_check"):
+        return
+    import app.core.tenant as tenant_mod
+
+    async def _token_is_current(payload):
+        return None
+    monkeypatch.setattr(tenant_mod, "session_refusal", _token_is_current)
+
+
+@pytest.fixture(autouse=True)
 async def setup_db(request):
     """Per-test DATA isolation: sweep every row after the test (name kept -
     it is the anchor other fixtures order themselves against)."""

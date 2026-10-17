@@ -55,12 +55,33 @@ export default function HITLQueue(_props: { domain?: string }) {
     fetchData();
   }, [fetchData]);
 
-  // Review attestation: when each item first reached this screen. A decision
-  // records how long the approver had it in front of them.
-  const firstSeen = useRef<Record<string, number>>({});
+  // Review attestation: seconds an item was actually in view. Time counts only
+  // while the tab is visible AND the item's card is in the viewport, so leaving
+  // the tab open on another window does not read as a review.
+  const secondsInView = useRef<Record<string, number>>({});
+  const inView = useRef<Record<string, boolean>>({});
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const registerCard = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (typeof IntersectionObserver === 'undefined') { inView.current[id] = !!el; return; }
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver(entries => {
+        for (const en of entries) {
+          const cid = (en.target as HTMLElement).dataset.hitlId;
+          if (cid) inView.current[cid] = en.isIntersecting;
+        }
+      }, { threshold: 0.2 });
+    }
+    if (el) { el.dataset.hitlId = id; observerRef.current.observe(el); }
+  }, []);
   useEffect(() => {
-    for (const item of items) firstSeen.current[item.id] ??= Date.now();
-  }, [items]);
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      for (const id of Object.keys(inView.current)) {
+        if (inView.current[id]) secondsInView.current[id] = (secondsInView.current[id] || 0) + 0.25;
+      }
+    }, 250);
+    return () => { clearInterval(t); observerRef.current?.disconnect(); observerRef.current = null; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,9 +178,11 @@ export default function HITLQueue(_props: { domain?: string }) {
   };
 
   const attestationFor = (id: string) => ({
-    seconds_visible: (Date.now() - (firstSeen.current[id] || Date.now())) / 1000,
-    diff_shown: !!rehearsals[id],
-    reasoning_shown: true,
+    seconds_visible: secondsInView.current[id] || 0,
+    // Only what was genuinely rendered: the diff table appears for a shadow
+    // rehearsal, the reasoning chain only when it has steps.
+    diff_shown: rehearsals[id]?.level === 'shadow',
+    reasoning_shown: Array.isArray(items.find(i => i.id === id)?.reasoning_chain) && (items.find(i => i.id === id)!.reasoning_chain as unknown[]).length > 0,
     channel: 'console',
   });
 
@@ -235,7 +258,7 @@ export default function HITLQueue(_props: { domain?: string }) {
             </div>
           ) : (
             filteredItems.map(item => (
-              <div key={item.id} style={card} className="p-6 group">
+              <div key={item.id} ref={el => registerCard(item.id, el)} style={card} className="p-6 group">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2.5 mb-2 flex-wrap">
@@ -289,7 +312,7 @@ export default function HITLQueue(_props: { domain?: string }) {
                 </div>
                 {/* Attested review: the decision records what the reviewer had in front of them. */}
                 <p className="mt-3 text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>
-                  Your decision records how long this item was on your screen; a decision made within 5 seconds is marked quick and does not count as evidence that the skill is safe to run alone.
+                  Your decision records how long this item was in view while this tab was open; a decision made within 5 seconds is marked quick and does not count as evidence that the skill is safe to run alone.
                 </p>
 
                 {convening === item.id && !committees[item.id] && (

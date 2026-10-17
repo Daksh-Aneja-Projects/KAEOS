@@ -56,6 +56,8 @@ _DEV_TENANT = {
 
 # Role hierarchy — used by require_role() dependency
 ROLE_HIERARCHY = {"viewer": 0, "operator": 1, "admin": 2}
+# User RBAC roles (ADMIN/ANALYST/VIEWER) onto tenant roles; anything else is a viewer.
+JWT_ROLE_MAP = {"ADMIN": "admin", "ANALYST": "operator", "VIEWER": "viewer"}
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -82,10 +84,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
         original_call_next = call_next
 
         async def call_next(req: Request):  # noqa: F811 - deliberate shadow
-            from app.core.context import current_actor, current_tenant_id
+            from app.core.context import current_actor, current_actor_role, current_tenant_id
             tenant = getattr(req.state, "tenant", None)
             if isinstance(tenant, dict) and tenant.get("tenant_id"):
                 current_tenant_id.set(tenant["tenant_id"])
+                current_actor_role.set(str(tenant.get("role") or "") or None)
                 # Same hook publishes who is acting. Requests carry a person;
                 # background jobs never pass through here, so they stay None.
                 actor = tenant.get("user_id") or tenant.get("name")
@@ -190,8 +193,20 @@ class TenantMiddleware(BaseHTTPMiddleware):
             # the denylist is the shared (Redis) store checked asynchronously.
             if await is_jti_revoked(payload.get("jti")):
                 return _unauthorized("Invalid or expired token")
+            # A token is a snapshot of the account at sign-in. Deactivating
+            # someone or changing their role must end their sessions now, not
+            # when the token expires (up to 24 h later).
+            try:
+                ended = await session_refusal(payload)
+            except Exception as e:  # the user table is unreachable
+                logger.error(f"[Tenant] Could not verify the session's account: {e}")
+                from starlette.responses import JSONResponse
+                return JSONResponse(status_code=503, content={
+                    "detail": "Could not confirm your account right now. Try again in a moment."})
+            if ended:
+                return _unauthorized(ended)
             # Map user RBAC roles (ADMIN/ANALYST/VIEWER) onto tenant roles
-            jwt_role_map = {"ADMIN": "admin", "ANALYST": "operator", "VIEWER": "viewer"}
+            jwt_role_map = JWT_ROLE_MAP
             # department claim: None/absent = org-wide user
             request.state.tenant = {
                 "tenant_id": payload.get("tenant_id", "default"),
@@ -321,6 +336,31 @@ def require_role(required_role: str):
     return _checker
 
 
+def require_human_decider(required_role: str = "operator"):
+    """Gate for every human-in-the-loop DECISION (approve / reject / resolve).
+
+    A role floor alone let an agent API key (operator by default) approve the
+    very pause its own run raised, defeating enforce mode and sealing "a human
+    decided" under the key's name. A pause exists for a person to decide, so
+    every machine principal (kt_ key or gateway OAuth agent) is refused here.
+    """
+    def _checker(tenant: dict = Depends(get_tenant)) -> dict:
+        if tenant.get("key_id") or agent_principal_of(tenant):
+            raise HTTPException(
+                status_code=403,
+                detail=("Only a person can decide a paused run. Agent keys and "
+                        "external agents can propose work but never approve it."),
+            )
+        if ROLE_HIERARCHY.get(tenant.get("role", "viewer"), 0) < ROLE_HIERARCHY.get(required_role, 99):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Deciding a paused run needs the '{required_role}' role or higher.",
+            )
+        return tenant
+
+    return _checker
+
+
 def require_department(department: str):
     """FastAPI Depends() factory - confines a surface to one department.
 
@@ -404,6 +444,11 @@ def approver_identity(tenant: dict) -> str:
     never from a client-supplied field (which is trivially spoofable). Used by
     every HITL decision path so non-repudiation is uniform.
     """
+    # A gateway OAuth2.1 agent's `name` is a claim its own IdP chose, so it
+    # could name itself after a person; its identity is its verified subject.
+    gp = tenant.get("gateway_principal")
+    if gp:
+        return f"oidc:{gp.get('id')}"
     return (
         tenant.get("email")
         or tenant.get("user_id")
@@ -433,6 +478,71 @@ def agent_principal_of(tenant: dict) -> Optional[dict]:
         return {"kind": "api_key", "id": tenant["key_id"],
                "name": tenant.get("name"), "role": tenant.get("role")}
     return None
+
+
+# ── Session freshness ────────────────────────────────────────────────────────
+# user_id -> (expires_at monotonic, (tenant_id, ROLE, department, is_active) or None)
+_SESSION_CACHE: dict[str, tuple[float, Optional[tuple]]] = {}
+SESSION_RECHECK_SECONDS = 30.0
+
+
+def forget_session_user(user_id: Optional[str]) -> None:
+    """Drop the cached account state so the next request re-reads it. Called
+    by every change that must end sessions (deactivate, role, department,
+    password); other workers pick it up within SESSION_RECHECK_SECONDS."""
+    if user_id:
+        _SESSION_CACHE.pop(str(user_id), None)
+
+
+async def _session_user_state(user_id: str) -> Optional[tuple]:
+    import time
+    now = time.monotonic()
+    hit = _SESSION_CACHE.get(user_id)
+    if hit and hit[0] > now:
+        return hit[1]
+    from sqlalchemy import select
+    from app.core.database import MaintenanceSessionLocal
+    from app.models.auth import User
+    # The owner session: the user row is read before any tenant context exists.
+    async with MaintenanceSessionLocal() as db:
+        row = (await db.execute(
+            select(User.tenant_id, User.role, User.department, User.is_active)
+            .where(User.id == user_id))).first()
+    state = None
+    if row is not None:
+        role = getattr(row.role, "value", row.role)
+        state = (row.tenant_id, str(role), row.department or None, bool(row.is_active))
+    _SESSION_CACHE[user_id] = (now + SESSION_RECHECK_SECONDS, state)
+    return state
+
+
+async def session_refusal(payload: dict) -> Optional[str]:
+    """None when the token still describes the account as it is now, else the
+    sentence the caller is refused with. Raises when the account cannot be read
+    (the middleware answers 503 rather than guessing)."""
+    user_id = payload.get("user_id") or payload.get("sub")
+    if not user_id:
+        return "Invalid or expired token"
+    state = await _session_user_state(str(user_id))
+    if state is None:
+        return "This account no longer exists. Sign in again."
+    tenant_id, role, department, active = state
+    if not active:
+        return "This account has been deactivated."
+    if (tenant_id != payload.get("tenant_id") or role != payload.get("role")
+            or department != (payload.get("department") or None)):
+        return "Your access has changed. Sign in again to continue."
+    return None
+
+
+def gateway_role(default_role: Optional[str]) -> str:
+    """The tenant role a gateway OAuth2.1 agent acts with. The connection's
+    default role is read as a user role (ADMIN/ANALYST/VIEWER) or a tenant role
+    (admin/operator/viewer); anything unknown is a viewer, and a machine is
+    capped at operator - it never holds the admin role."""
+    raw = str(default_role or "VIEWER")
+    role = JWT_ROLE_MAP.get(raw.upper()) or (raw.lower() if raw.lower() in ROLE_HIERARCHY else "viewer")
+    return "operator" if ROLE_HIERARCHY[role] > ROLE_HIERARCHY["operator"] else role
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -466,7 +576,10 @@ async def _try_gateway_token(raw_key: str) -> Optional[dict]:
         return None
     return {
         "tenant_id": conn.tenant_id,
-        "role": (conn.default_role or "VIEWER").lower(),
+        # Mapped through the same table as a session JWT ('ANALYST' is an
+        # operator, never an unknown role that a lookup could misread), and
+        # capped at operator: a machine never holds the admin role.
+        "role": gateway_role(conn.default_role),
         "name": str(claims.get("name") or claims.get("azp") or principal_id),
         # A dedicated shape (not overloading key_id with a kt_-key's
         # meaning) - skills.py/actuation.py read this to stamp

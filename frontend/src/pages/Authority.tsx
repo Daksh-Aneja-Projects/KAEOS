@@ -7,7 +7,7 @@ import { Link } from 'react-router';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainError, BrainEmpty, RefreshFailed } from '../components/BrainStates';
 import { EnterpriseNotice } from '../components/EnterpriseNotice';
 import { useEnterprisePanel as usePanel } from '../hooks/useEnterprisePanel';
 import { humanize } from '../lib/format';
@@ -448,7 +448,7 @@ function GrantCard({ g, me, onChanged }: { g: any; me: string | null; onChanged:
               </span>
             </>
           ) : (
-            <span className="text-[12px]" style={{ color: colors.inkMuted }}>{`Waiting for ${g.holder} to accept`}</span>
+            <span className="text-[12px] break-words [overflow-wrap:anywhere]" style={{ color: colors.inkMuted }}>{`Waiting for ${g.holder} to accept`}</span>
           )}
         </div>
       )}
@@ -506,7 +506,7 @@ function GrantCard({ g, me, onChanged }: { g: any; me: string | null; onChanged:
         </div>
       )}
 
-      {error && <div className="text-[12px]" style={{ color: colors.error }}>{error}</div>}
+      {error && <div className="text-[12px]" style={{ color: colors.error }} role="alert">{error}</div>}
     </div>
   );
 }
@@ -521,7 +521,7 @@ function Underwriting({ skill, onUse }: { skill: string; onUse: (s: any) => void
     const s = skill.trim();
     if (!s) { setState({ loading: false, data: null, error: null }); return; }
     let cancelled = false;
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState({ loading: true, data: null, error: null });
     const t = setTimeout(async () => {
       try {
         const data = await api.getAuthorityUnderwriting(s, 90);
@@ -540,7 +540,7 @@ function Underwriting({ skill, onUse }: { skill: string; onUse: (s: any) => void
     return <p className="text-[12px]" style={{ color: colors.inkTertiary }}>Enter a skill to see what the record says before you lend.</p>;
   }
   if (state.loading && !state.data) return <BrainLoading variant="compact" message="Reading the record for this skill…" />;
-  if (state.error) return <p className="text-[12px]" style={{ color: colors.error }}>{state.error}</p>;
+  if (state.error) return <p className="text-[12px]" style={{ color: colors.error }} role="alert">{state.error}</p>;
   const u = state.data;
   if (!u) return null;
 
@@ -800,7 +800,7 @@ function ReplayPanel({ draft, hasDraft, fallbackCurrency }: {
 
 function ReviewQuality() {
   const { colors } = useTheme();
-  const rq = usePanel(() => api.getAuthorityReviewers(90));
+  const rq = usePanel(() => api.getAuthorityReviewers(90), { poll: false });
   const d: any = rq.data;
   const pctRaw = d?.workspace?.evidence_grade_pct;
   const shown = useAnimatedValue(pctRaw != null && Number.isFinite(Number(pctRaw)) ? Number(pctRaw) : 0);
@@ -819,7 +819,7 @@ function ReviewQuality() {
       <div className="px-4 pt-3 pb-4 space-y-3">
         <p className="text-[11.5px]" style={{ color: colors.inkTertiary }}>Whether the humans in the loop actually looked</p>
         {rq.loading && !d && <BrainLoading variant="compact" message="Reading who decided what…" />}
-        {rq.error && !d && <p className="text-[12px]" style={{ color: colors.error }}>{rq.error}</p>}
+        {rq.error && !d && <p className="text-[12px]" style={{ color: colors.error }} role="alert">{rq.error}</p>}
         {d && (Number(w.decisions || 0) === 0 && reviewers.length === 0 ? (
           <div className="py-2 text-[12.5px]" style={{ color: colors.inkTertiary }}>No human decisions in this window yet.</div>
         ) : d && (
@@ -859,7 +859,7 @@ function ReviewQuality() {
                 <tbody>
                   {reviewers.map((x, i) => (
                     <tr key={`${x.approver}-${i}`} style={{ borderTop: i === 0 ? undefined : `1px solid ${colors.hairline}` }}>
-                      <td className="py-1.5 pr-3 max-w-[200px] truncate" style={{ color: colors.ink }} title={x.approver || undefined}>{x.approver || NOT_MEASURED}</td>
+                      <td className="py-1.5 pr-3 max-w-[200px] break-words [overflow-wrap:anywhere]" style={{ color: colors.ink }} title={x.approver || undefined}>{x.approver || NOT_MEASURED}</td>
                       <td className={num}>{numText(x.decisions)}</td>
                       <td className={num}>{secondsText(x.median_seconds)}</td>
                       <td className={num}>{pctText(x.quick_rate_pct)}</td>
@@ -890,6 +890,7 @@ function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
   onLent: () => void; sectionRef: React.RefObject<HTMLDivElement | null>; fallbackCurrency: string;
 }) {
   const { colors } = useTheme();
+  const { isAdmin } = useAuth();
   const inputStyle = useInputStyle();
   const [f, setF] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
@@ -957,6 +958,7 @@ function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
         <form onSubmit={submit} className="p-4 space-y-3">
           <p className="text-[11.5px] leading-snug" style={{ color: colors.inkTertiary }}>
             The grant is held by you, under your name. Anything above these limits goes to a person.
+            {!isAdmin && ' As an operator, name a department or skills, a limit per action, a cap per window and an end date within 90 days.'}
           </p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label="Department">
@@ -999,7 +1001,8 @@ function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
               <input value={f.currency} onChange={e => set({ currency: e.target.value })} className={inputCls} style={inputStyle} maxLength={6} />
             </Field>
             <Field label="Expires in days">
-              <input type="number" min={1} value={f.expires_in_days} onChange={e => set({ expires_in_days: e.target.value })} className={inputCls} style={inputStyle} placeholder="Blank for no expiry" />
+              <input type="number" min={1} value={f.expires_in_days} onChange={e => set({ expires_in_days: e.target.value })} className={inputCls} style={inputStyle}
+                placeholder={isAdmin ? 'Blank for no expiry' : 'Required, up to 90'} max={isAdmin ? undefined : 90} />
             </Field>
           </div>
           <Field label="Tripwire: suspend after N adverse runs">
@@ -1084,7 +1087,7 @@ function TokenButton({ executionId }: { executionId: string }) {
     <>
       <button onClick={fetchToken} disabled={st === 'busy'}
         title="A signed, offline-verifiable statement of whose authority this run proceeded on. Carry it to a downstream system."
-        className="ml-auto px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 disabled:opacity-50"
+        className="ml-auto px-2 py-0.5 min-h-[28px] min-w-[28px] justify-center rounded-md text-[11px] font-semibold flex items-center gap-1 disabled:opacity-50"
         style={{ background: colors.surface2, color: st === 'copied' ? colors.success : colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
         {st === 'busy' ? <Loader2 className="w-3 h-3 animate-spin" /> : st === 'copied' ? <Check className="w-3 h-3" /> : <KeyRound className="w-3 h-3" />}
         {st === 'copied' ? 'Copied' : 'Token'}
@@ -1168,7 +1171,7 @@ function FeedRow({ u, onChanged }: { u: any; onChanged: () => void }) {
       {canUndo && (
         <button onClick={toggleUndo} aria-expanded={ud.open}
           title="Take back the write this run made, if it can still be taken back."
-          className="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1"
+          className="px-2 py-0.5 min-h-[28px] min-w-[28px] justify-center rounded-md text-[11px] font-semibold flex items-center gap-1"
           style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
           <Undo2 className="w-3 h-3" /> Undo
         </button>
@@ -1257,7 +1260,7 @@ function BalancePanel() {
 function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
   const { colors } = useTheme();
   const inputStyle = useInputStyle();
-  const dp = usePanel(() => api.getAuthorityDeputies());
+  const dp = usePanel(() => api.getAuthorityDeputies(), { poll: false });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState({ deputy: '', note: '' });
@@ -1318,7 +1321,7 @@ function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
           A deputy covers for you while you are away. A handover lends your active, delegable grants to your deputy until you return.
         </p>
         {dp.loading && !d && <BrainLoading variant="compact" message="Reading who covers for whom…" />}
-        {dp.error && !d && <p className="text-[12px]" style={{ color: colors.error }}>{dp.error}</p>}
+        {dp.error && !d && <p className="text-[12px]" style={{ color: colors.error }} role="alert">{dp.error}</p>}
 
         {d && (
           <>
@@ -1327,7 +1330,7 @@ function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
               <div className="text-[11.5px] font-medium" style={{ color: colors.inkSubtle }}>My deputy</div>
               {accepted && (
                 <div className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2" style={soft}>
-                  <span className="text-[12.5px] font-medium min-w-0 truncate" style={{ color: colors.ink }}>{accepted.deputy}</span>
+                  <span className="text-[12.5px] font-medium min-w-0 break-words [overflow-wrap:anywhere]" style={{ color: colors.ink }}>{accepted.deputy}</span>
                   <Pill text="Accepted" tone="ok" />
                   <button onClick={() => run(`revoke-${accepted.id}`, () => api.revokeAuthorityDeputyship(accepted.id))} disabled={busy !== null}
                     className={`${btn} ml-auto`} style={quiet}>
@@ -1366,7 +1369,7 @@ function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
                 <div className="text-[11.5px] font-medium" style={{ color: colors.inkSubtle }}>Deputyships offered to me</div>
                 {offered.map(x => (
                   <div key={x.id} className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2" style={soft}>
-                    <span className="text-[12px] flex-1 min-w-[140px]" style={{ color: colors.inkMuted }}>
+                    <span className="text-[12px] flex-1 min-w-[140px] break-words [overflow-wrap:anywhere]" style={{ color: colors.inkMuted }}>
                       {`${x.holder} asks you to cover for them`}
                       {x.note && <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{`. ${x.note}`}</span>}
                     </span>
@@ -1381,7 +1384,7 @@ function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
                   </div>
                 ))}
                 {deputyFor.map(x => (
-                  <div key={x.id} className="text-[11.5px]" style={{ color: colors.inkTertiary }}>{`You are the deputy for ${x.holder}.`}</div>
+                  <div key={x.id} className="text-[11.5px] break-words [overflow-wrap:anywhere]" style={{ color: colors.inkTertiary }}>{`You are the deputy for ${x.holder}.`}</div>
                 ))}
               </div>
             )}
@@ -1431,7 +1434,7 @@ function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
                 <div className="text-[12px]" style={{ color: colors.inkTertiary }}>You can hand over once a deputy has accepted.</div>
               )}
               {covering.map(h => (
-                <div key={h.id} className="rounded-lg px-3 py-2 text-[12px]" style={{ ...soft, color: colors.inkMuted }}>
+                <div key={h.id} className="rounded-lg px-3 py-2 text-[12px] break-words [overflow-wrap:anywhere]" style={{ ...soft, color: colors.inkMuted }}>
                   {`You are covering ${h.holder} ${sinceText(h)}.`}
                   <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{` ${plural(Number(h.grant_count || 0), 'grant', 'grants')} lent to you.`}</span>
                 </div>
@@ -1489,8 +1492,8 @@ function DeclaredView({ r }: { r: any }) {
 function PortabilityPanel({ isAdmin }: { isAdmin: boolean }) {
   const { colors } = useTheme();
   const inputStyle = useInputStyle();
-  const issuers = usePanel(() => api.listAuthorityIssuers());
-  const declared = usePanel(() => api.listAuthorityDeclared());
+  const issuers = usePanel(() => api.listAuthorityIssuers(), { poll: false });
+  const declared = usePanel(() => api.listAuthorityDeclared(), { poll: false });
   const [skill, setSkill] = useState('');
   const [exp, setExp] = useState<{ busy: boolean; token: string; copied: boolean; note: string; error: string | null }>(
     { busy: false, token: '', copied: false, note: '', error: null });
@@ -1605,7 +1608,7 @@ function PortabilityPanel({ isAdmin }: { isAdmin: boolean }) {
         <div className="space-y-1.5">
           <div className={head} style={{ color: colors.inkSubtle }}>Trusted issuers</div>
           {issuers.loading && !issuers.data && <BrainLoading variant="compact" message="Reading trusted issuers…" />}
-          {issuers.error && !issuers.data && <p className="text-[12px]" style={{ color: colors.error }}>{issuers.error}</p>}
+          {issuers.error && !issuers.data && <p className="text-[12px]" style={{ color: colors.error }} role="alert">{issuers.error}</p>}
           {issuers.data && issuerList.length === 0 && <div className="text-[12px]" style={{ color: colors.inkTertiary }}>No issuer is trusted yet, so imported records stay unverified.</div>}
           {issuerList.map((x, i) => (
             <div key={x.id} className="py-1.5 flex items-center gap-2 flex-wrap text-[12px]"
@@ -1648,14 +1651,14 @@ function PortabilityPanel({ isAdmin }: { isAdmin: boolean }) {
         <div className="space-y-1.5">
           <div className={head} style={{ color: colors.inkSubtle }}>Declared records</div>
           {declared.loading && !declared.data && <BrainLoading variant="compact" message="Reading declared records…" />}
-          {declared.error && !declared.data && <p className="text-[12px]" style={{ color: colors.error }}>{declared.error}</p>}
+          {declared.error && !declared.data && <p className="text-[12px]" style={{ color: colors.error }} role="alert">{declared.error}</p>}
           {declared.data && declaredList.length === 0 && <div className="text-[12px]" style={{ color: colors.inkTertiary }}>No record has been imported yet.</div>}
           {declaredList.slice(0, 20).map((x, i) => (
             <div key={x.id} style={{ borderTop: i === 0 ? undefined : `1px solid ${colors.hairline}` }}>
               <button onClick={() => setOpenId(openId === x.id ? null : x.id)} aria-expanded={openId === x.id}
                 className="w-full py-1.5 flex items-center gap-2 flex-wrap text-[12px] text-left" style={{ color: colors.inkMuted }}>
                 {openId === x.id ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
-                <span className="font-medium min-w-0 truncate" style={{ color: colors.ink }}>{x.issuer || NOT_MEASURED}</span>
+                <span className="font-medium min-w-0 break-words [overflow-wrap:anywhere]" style={{ color: colors.ink }}>{x.issuer || NOT_MEASURED}</span>
                 <span className="min-w-0 truncate flex-1">{x.subject_kind === 'skill' ? humanize(x.subject_id) : x.subject_id}</span>
                 <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{x.imported_at ? `Imported ${timeAgo(x.imported_at)}` : ''}</span>
                 {x.verified ? <Pill text="Verified" tone="ok" /> : <Pill text="Not verified" tone="bad" />}
@@ -1674,13 +1677,22 @@ function PortabilityPanel({ isAdmin }: { isAdmin: boolean }) {
 export default function Authority() {
   const { colors } = useTheme();
   const { isAdmin } = useAuth();
-  const settings = usePanel(() => api.getAuthoritySettings());
+  const settings = usePanel(() => api.getAuthoritySettings(), { poll: false });
   const exposure = usePanel(() => api.getAuthorityExposure());
   // The workspace ledger is operator+; a viewer's 403 simply hides its card.
   const ledger = usePanel(() => api.getAuthorityLedger(1));
   const lendRef = useRef<HTMLDivElement>(null);
   const [modeBusy, setModeBusy] = useState(false);
   const [confirmEnforce, setConfirmEnforce] = useState(false);
+  const [confirmReady, setConfirmReady] = useState(false);
+  // Enforce is armed only by a deliberate second step: the confirm button stays
+  // disabled for a moment after it appears so a double click cannot arm it.
+  useEffect(() => {
+    setConfirmReady(false);
+    if (!confirmEnforce) return;
+    const t = setTimeout(() => setConfirmReady(true), 1500);
+    return () => clearTimeout(t);
+  }, [confirmEnforce]);
   const [modeError, setModeError] = useState<string | null>(null);
   const [pauseBusy, setPauseBusy] = useState(false);
 
@@ -1733,7 +1745,7 @@ export default function Authority() {
 
   const switchMode = async () => {
     const next = mode === 'enforce' ? 'observe' : 'enforce';
-    if (next === 'enforce' && !confirmEnforce) { setConfirmEnforce(true); return; }
+    if (next === 'enforce' && (!confirmEnforce || !confirmReady)) { setConfirmEnforce(true); return; }
     setModeBusy(true); setModeError(null);
     try { await api.setAuthorityMode(next); setConfirmEnforce(false); reloadAll(); }
     catch (e: any) { setModeError(e?.message || 'The mode was not changed.'); }
@@ -1757,7 +1769,7 @@ export default function Authority() {
 
   if (exposure.loading) return <div className={PAGE_PAD}><BrainLoading message="Reading what runs under your name…" /></div>;
   if (exposure.notice) return <div className={PAGE_PAD}><EnterpriseNotice message={exposure.notice} /></div>;
-  if (exposure.error) return <div className={PAGE_PAD}><BrainError message={exposure.error} onRetry={exposure.reload} /></div>;
+  if (exposure.error && !exposure.data) return <div className={PAGE_PAD}><BrainError message={exposure.error} onRetry={exposure.reload} /></div>;
 
   const today = x.today || {};
   const showUnlent = !!ledger.data && !ledger.notice && !ledger.error;
@@ -1791,13 +1803,25 @@ export default function Authority() {
             )}
             {canToggle && (
               <>
-                <button onClick={switchMode} disabled={modeBusy}
-                  className="px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50" style={btnQuiet}>
-                  {modeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : mode === 'enforce' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                  {mode === 'enforce' ? 'Switch to observe' : confirmEnforce ? 'Confirm: send unlent runs to a human' : 'Switch to enforce'}
-                </button>
-                {confirmEnforce && (
-                  <button onClick={() => setConfirmEnforce(false)} className="px-2 py-1.5 rounded-lg text-[11.5px]" style={{ color: colors.inkSubtle }}>Cancel</button>
+                {!(mode !== 'enforce' && confirmEnforce) ? (
+                  <button onClick={switchMode} disabled={modeBusy}
+                    className="px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50" style={btnQuiet}>
+                    {modeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : mode === 'enforce' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                    {mode === 'enforce' ? 'Switch to observe' : 'Switch to enforce'}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap rounded-lg px-2.5 py-1.5" role="group" aria-label="Confirm enforce mode"
+                    style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+                    <span className="text-[11.5px] leading-snug max-w-[320px]" style={{ color: colors.inkMuted }}>
+                      Enforce mode sends every run that has no lent signature to a human for approval instead of letting it proceed.
+                    </span>
+                    <button onClick={switchMode} disabled={modeBusy || !confirmReady}
+                      className="px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50" style={{ background: colors.primary, color: '#fff' }}>
+                      {modeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
+                      {confirmReady ? 'Confirm enforce' : 'Confirm enforce (wait)'}
+                    </button>
+                    <button onClick={() => setConfirmEnforce(false)} className="px-2 py-1.5 rounded-lg text-[11.5px]" style={{ color: colors.inkSubtle }}>Cancel</button>
+                  </div>
                 )}
               </>
             )}
@@ -1815,7 +1839,8 @@ export default function Authority() {
           </div>
         </div>
       </div>
-      {modeError && <div className="text-[12px] shrink-0" style={{ color: colors.error }}>{modeError}</div>}
+      <RefreshFailed show={!!(exposure.staleError || ledger.staleError)} />
+      {modeError && <div className="text-[12px] shrink-0" style={{ color: colors.error }} role="alert">{modeError}</div>}
 
       {/* Stats */}
       <div className={`grid grid-cols-2 ${showUnlent ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3 shrink-0`}>

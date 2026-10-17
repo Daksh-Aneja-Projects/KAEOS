@@ -82,7 +82,7 @@ services:
         VITE_API_BASE: http://localhost:8001/api/v1
     restart: unless-stopped
     ports:
-      - "5174:80"
+      - "5174:8080"
     depends_on:
       - backend
 

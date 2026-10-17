@@ -6,9 +6,9 @@
          tag and only works as an HTTP header, which the backend sends (plus
          X-Frame-Options: DENY). Keeping it here only produced console noise. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; script-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: wss:" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="It reads like chaos, it is the opposite. KAEOS is the Governed AI Workforce: Autonomous departments for every function and every regulated industry, that act on their own only when they have proven they can, with a signed audit trail for every decision." />
+    <meta name="description" content="KAEOS: governed AI agents for the enterprise. Every autonomous action runs on a named person's lent authority, with a signed proof." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -44,29 +44,6 @@
         "Earned autonomy on a calibrated trust ladder",
         "Authority: every autonomous action under a named person's lent, limited, revocable signature",
         "Offline-verifiable signed proofs and an EU AI Act evidence pack read from the record"
-      ]
-    }
-    </script>
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "On whose authority does a KAEOS agent act when no human is in the loop?",
-          "acceptedAnswer": {"@type": "Answer", "text": "On a named person's lent authority. A person lends their own signature to the machine with limits per action and per period; the run is reserved against that grant before it proceeds, the grant can be revoked at once, and the sealed proof of the run names the person."}
-        },
-        {
-          "@type": "Question",
-          "name": "How does KAEOS decide whether an agent may act autonomously?",
-          "acceptedAnswer": {"@type": "Answer", "text": "Autonomy is earned, not granted: calibrated outcomes move a skill up a four-rung trust ladder, the customer's own model is probed for a confidence ceiling, high-consequence actions always pause for a human, and a run that clears every rule still needs a person's lent authority."}
-        },
-        {
-          "@type": "Question",
-          "name": "Can an auditor verify what a KAEOS agent did without trusting KAEOS?",
-          "acceptedAnswer": {"@type": "Answer", "text": "Yes. Every governed run is sealed as an Ed25519-signed, hash-chained proof that verifies offline with a standalone script against the tenant's pinned public key, and the evidence pack labels each section as measured from the record or self-assessed."}
-        }
       ]
     }
     </script>

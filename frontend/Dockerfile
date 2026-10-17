@@ -14,22 +14,14 @@ ARG VITE_API_BASE=http://localhost:8001/api/v1
 ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+# Production stage: nginx that runs as a non-root user and listens on 8080, so
+# it starts under the Helm chart's runAsNonRoot pod security context.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 
-# Copy built assets
 COPY --from=build /app/dist /usr/share/nginx/html
+# SPA routing, security headers and noindex for app routes (see nginx.conf).
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Nginx config for SPA routing
-RUN echo 'server { \
-    listen 80; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

@@ -73,20 +73,28 @@ def main() -> None:
                         help=f"Postgres container name (default: {DEFAULT_CONTAINER})")
     parser.add_argument("--yes", action="store_true",
                         help="Actually perform the restore. Without this flag only the plan is printed.")
+    parser.add_argument("--direct", action="store_true",
+                        help="Use the local pg_restore against PGHOST/PGUSER/PGPASSWORD (a managed "
+                             "Postgres) instead of docker exec")
+    parser.add_argument("--user", default=DB_USER, help=f"Database role (default: {DB_USER})")
+    parser.add_argument("--db", default=DB_NAME, help=f"Database name (default: {DB_NAME})")
     args = parser.parse_args()
 
     size = validate_dump(args.dump)
-    check_docker(args.container)
-
-    restore_cmd = [
-        "docker", "exec", "-i", args.container,
-        "pg_restore", "-U", DB_USER, "-d", DB_NAME, "--clean", "--if-exists",
-    ]
+    if args.direct:
+        restore_cmd = ["pg_restore", "-d", args.db, "--clean", "--if-exists",
+                       "--no-owner", "--no-privileges"]
+    else:
+        check_docker(args.container)
+        restore_cmd = [
+            "docker", "exec", "-i", args.container,
+            "pg_restore", "-U", args.user, "-d", args.db, "--clean", "--if-exists",
+        ]
 
     print("Restore plan")
     print(f"  dump file: {args.dump.resolve()} ({size:,} bytes)")
-    print(f"  container: {args.container}")
-    print(f"  database:  {DB_NAME} (user {DB_USER})")
+    print(f"  target:    {'direct (PGHOST)' if args.direct else args.container}")
+    print(f"  database:  {args.db} (user {'PGUSER' if args.direct else args.user})")
     print(f"  command:   {' '.join(restore_cmd)}  < dump")
     print("  effect:    DROPS existing objects (--clean --if-exists) and recreates them from the dump.")
     print("  warning:   all data written to the database after this dump was taken WILL BE LOST.")
@@ -108,7 +116,7 @@ def main() -> None:
     if stderr:
         print("pg_restore warnings:")
         print(stderr)
-    print(f"OK: restore of {args.dump.name} into {DB_NAME} completed.")
+    print(f"OK: restore of {args.dump.name} into {args.db} completed.")
     print("Next: restart the backend container so connection pools re-sync: docker compose restart backend")
 
 

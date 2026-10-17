@@ -31,7 +31,31 @@ async def test_invite_then_accept_activates_without_admin_password(db):
     u2 = (await db.execute(select(User).where(User.email == "invitee@corp.com"))).scalar_one()
     assert u2.is_active is True
     from app.services.auth import _verify_password
-    assert _verify_password("a-strong-password-123", u2.hashed_password)
+    # awaited: an un-awaited coroutine is truthy, so this used to pass vacuously
+    assert await _verify_password("a-strong-password-123", u2.hashed_password)
+
+
+async def test_an_invite_link_works_exactly_once(db):
+    """P2 (launch audit 2026-10-17): a replay after acceptance overwrote the
+    password; a replay after deactivation switched the account back on."""
+    from sqlalchemy import select
+    from app.services.auth import _verify_password
+    res = await AuthService.invite_user(
+        db, email="once@example.com", display_name="Once", role=UserRole.ANALYST,
+        created_by="admin1", tenant_id=T)
+    tok = res["invite_token"]
+    assert (await AuthService.accept_invite(db, tok, "first-strong-password"))["is_active"] is True
+    replay = await AuthService.accept_invite(db, tok, "attacker-password-123")
+    assert replay.get("error") == "invalid_or_expired_invite"
+    u = (await db.execute(select(User).where(User.email == "once@example.com"))).scalar_one()
+    await db.refresh(u)
+    assert await _verify_password("first-strong-password", u.hashed_password)
+
+    await AuthService.deactivate_user(db, u.id, tenant_id=T)
+    again = await AuthService.accept_invite(db, tok, "attacker-password-123")
+    assert again.get("error") == "invalid_or_expired_invite"
+    await db.refresh(u)
+    assert u.is_active is False
 
 
 async def test_accept_invite_rejects_tampered_token(db):

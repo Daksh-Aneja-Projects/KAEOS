@@ -10,6 +10,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.tenant import get_tenant_id, require_role
+from app.core.tenant import require_human_decider
 from app.core.entitlements import require_execution_allowance
 from app.core.audit import record_security_event
 from app.models.domain import Skill, SkillExecution
@@ -167,10 +168,12 @@ async def execute_skill(
     # below re-stamps "external_agent", and every other path falls through to the
     # F3 input descriptors. Server-built contexts (missions, connectors) set
     # their own origin and never pass through this client route.
-    exec_context = dict(body.context or {})
-    for _trusted_key in ("hitl_pre_approved", "has_human_approver", "agent_principal",
-                         "channel", "origin"):
-        exec_context.pop(_trusted_key, None)
+    from app.agents.runtime import strip_caller_context
+    from app.core.tenant import approver_identity
+    exec_context = strip_caller_context(dict(body.context or {}))
+    # The maker of this request is the authenticated caller, never a body field:
+    # segregation-of-duties checks compare it with whoever approves.
+    exec_context["maker"] = approver_identity(tenant)
     # A call that arrived through an agent-to-agent protocol adapter (MCP or
     # A2A) is an EXTERNAL AGENT acting under its own API key: the run
     # carries that principal (server-derived, never client-supplied) and
@@ -385,7 +388,7 @@ class RejectHitlIn(BaseModel):
 async def approve_hitl(
     exec_id: str,
     body: ApproveHitlIn | None = None,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """L9 - Approve a pending HITL execution (your own tenant's only).
@@ -479,7 +482,7 @@ async def reject_hitl(
     exec_id: str,
     background_tasks: BackgroundTasks,
     body: RejectHitlIn | None = None,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """L9 - Reject a pending HITL execution (operator+, your own tenant's only)."""

@@ -1,4 +1,4 @@
-from app.core.tenant import approver_identity, get_tenant, get_tenant_id, require_role
+from app.core.tenant import (approver_identity, get_tenant, get_tenant_id, require_human_decider)
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +42,7 @@ async def get_hitl_status(
 @router.post("/resolve")
 async def resolve_hitl(
     req: HITLResolutionRequest,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
 ):
     """Resolve a pending HITL approval (Redis-backed, restart-safe).
 
@@ -82,7 +82,7 @@ async def resolve_hitl(
 async def approve_hitl(
     execution_id: str,
     data: HITLDecisionBody | None = None,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
 ):
     """Approve a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager
@@ -120,7 +120,7 @@ async def approve_hitl(
 async def reject_hitl(
     execution_id: str,
     data: HITLDecisionBody | None = None,
-    tenant: dict = Depends(require_role("operator")),
+    tenant: dict = Depends(require_human_decider("operator")),
 ):
     """Reject a pending HITL request (operator+; approver = authenticated principal)."""
     from app.services.hitl_manager import hitl_manager

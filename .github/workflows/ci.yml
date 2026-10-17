@@ -241,10 +241,10 @@ jobs:
   security-scan:
     # Dependency + static-analysis security scanning.
     # bandit (our own code) is BLOCKING at medium+ severity — a new medium/high
-    # finding fails the build. Dependency advisories (pip-audit / npm audit) stay
-    # advisory: they surface upstream transitive CVEs that are often unfixable
-    # without a major bump, so they are triaged separately rather than blocking
-    # every unrelated merge.
+    # finding fails the build. Dependency advisories are BLOCKING too (launch
+    # audit 2026-10-17: two pinned packages carried 15 known advisories while
+    # the step only warned). An advisory that genuinely cannot be fixed yet is
+    # accepted explicitly with --ignore-vuln <ID> and a comment saying why.
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -254,8 +254,7 @@ jobs:
         python-version: "3.12"
     - name: Install scanners
       run: pip install pip-audit bandit
-    - name: pip-audit (known CVEs in backend dependencies)
-      continue-on-error: true
+    - name: pip-audit (known CVEs in backend dependencies — BLOCKING)
       run: |
         cd backend
         pip-audit -r requirements.txt
@@ -267,8 +266,7 @@ jobs:
       uses: actions/setup-node@v7
       with:
         node-version: "22"
-    - name: npm audit (frontend dependencies, high+ severity)
-      continue-on-error: true
+    - name: npm audit (frontend dependencies, high+ severity — BLOCKING)
       run: |
         cd frontend
         npm audit --audit-level=high

@@ -54,6 +54,22 @@ services:
       - ENVIRONMENT=production
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set for production}
       - ADMIN_SECRET=${ADMIN_SECRET:?ADMIN_SECRET must be set for production}
+      # The boot validator refuses production without these (see
+      # Settings.validate_production_security): a separate data key for stored
+      # secrets, the real tenant (never the demo one), the real hostnames and
+      # browser origins, and no demo fixtures.
+      - CONNECTOR_ENCRYPTION_KEY=${CONNECTOR_ENCRYPTION_KEY:?CONNECTOR_ENCRYPTION_KEY must be set for production}
+      - ADMIN_TENANT=${ADMIN_TENANT:?ADMIN_TENANT must name your real tenant}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:?ADMIN_EMAIL must be set}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set (12+ chars)}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:?ALLOWED_HOSTS must list the API hostnames as a JSON array}
+      - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS must list the frontend origins as a JSON array}
+      - SEED_DEMO_DATA=false
+      - DEBUG=false
+      # Managed cloud only: billing. Leave unset for a self-hosted install.
+      - KAEOS_MANAGED_CLOUD=${KAEOS_MANAGED_CLOUD:-false}
+      - STRIPE_API_KEY=${STRIPE_API_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
     volumes:
       # Persist local-disk state so a container restart does not lose it:
       #  - logs/  holds audit-fallback.jsonl, the tamper-evidence sink written

@@ -134,3 +134,25 @@ def test_agent_principal_of_prefers_gateway_over_key_id():
     result = agent_principal_of(tenant)
     result["id"] = "mutated"
     assert original["id"] == "agent-1"
+
+
+def test_gateway_agent_identity_is_its_verified_subject_not_its_name():
+    """C1 (launch audit 2026-10-17): a gateway agent's `name` is chosen by its
+    own IdP, so it could call itself after a person and act as them. Its
+    identity is the verified subject, prefixed so it can never equal an email."""
+    from app.core.tenant import approver_identity
+    tenant = {"tenant_id": "t", "role": "operator", "name": "cfo@example.com",
+              "gateway_principal": {"kind": "oidc", "id": "agent-7", "name": "cfo@example.com"}}
+    assert approver_identity(tenant) == "oidc:agent-7"
+    assert approver_identity({"tenant_id": "t", "email": "sam@example.com"}) == "sam@example.com"
+
+
+def test_gateway_role_maps_user_roles_and_never_grants_admin():
+    from app.core.tenant import gateway_role
+    assert gateway_role("ANALYST") == "operator"
+    assert gateway_role("OPERATOR") == "operator"
+    assert gateway_role("VIEWER") == "viewer"
+    assert gateway_role(None) == "viewer"
+    assert gateway_role("something-else") == "viewer"
+    assert gateway_role("ADMIN") == "operator"
+    assert gateway_role("admin") == "operator"

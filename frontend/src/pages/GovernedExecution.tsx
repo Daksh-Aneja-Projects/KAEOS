@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api, downloadFile } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { BrainLoading, BrainError, BrainEmpty } from '../components/BrainStates';
+import { BrainLoading, BrainError, BrainEmpty, RefreshFailed } from '../components/BrainStates';
 import { EnterpriseNotice } from '../components/EnterpriseNotice';
 import { useEnterprisePanel as usePanel } from '../hooks/useEnterprisePanel';
 import { humanize } from '../lib/format';
@@ -128,12 +128,13 @@ function ProofsPanel() {
 
   if (summary.loading) return <BrainLoading message="Reading the proof ledger…" />;
   if (summary.notice) return <EnterpriseNotice message={summary.notice} />;
-  if (summary.error) return <BrainError message={summary.error} onRetry={summary.reload} />;
+  if (summary.error && !summary.data) return <BrainError message={summary.error!} onRetry={summary.reload} />;
   const s: any = summary.data || {};
   const rows: any[] = (records.data as any)?.records || (Array.isArray(records.data) ? records.data : []);
 
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!summary.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Proofs sealed" value={s.count ?? s.total ?? '0'} note="Signed, chained, offline-verifiable" />
         <Stat label="Chain head" value={<span className="text-[13px] font-mono break-all">{(s.head?.entry_hash || s.head_hash || 'none').toString().slice(0, 22)}</span>} />
@@ -171,11 +172,13 @@ function ProofsPanel() {
             <Pill text={humanize(r.subject_kind || 'action')} tone="primary" />
             <span className="truncate flex-1">{r.skill_id ? `${humanize(r.skill_id)} · ` : ''}{r.subject_id}</span>
             {r.status && <Pill text={humanize(r.status)} tone={String(r.status).startsWith('SUCCESS') ? 'ok' : String(r.status).startsWith('BLOCKED') || String(r.status).startsWith('FAILED') ? 'bad' : 'muted'} />}
-            {r.authority && (r.authority.basis === 'delegated'
+            {r.authority && (r.authority.basis === 'delegated' && typeof r.authority.holder === 'string' && r.authority.holder.trim()
               ? <Pill text={`Under ${r.authority.holder}'s authority`} tone="primary" />
-              : r.authority.basis === 'direct'
+              : r.authority.basis === 'direct' && typeof r.authority.holder === 'string' && r.authority.holder.trim()
                 ? <Pill text={r.authority.quick === true ? `Approved by ${r.authority.holder} (quick)` : `Approved by ${r.authority.holder}`} tone={r.authority.quick === true ? 'warn' : 'ok'} />
-                : <Pill text="Nobody's authority" tone="warn" />)}
+                : r.authority.basis === 'none'
+                  ? <Pill text="Nobody's authority" tone="warn" />
+                  : <Pill text="Authority not recorded" tone="muted" />)}
             {r.subject_kind === 'action' && r.skill_id && String(r.status || '').startsWith('SUCCESS') && (
               <RateRun executionId={r.subject_id} skillId={r.skill_id} />
             )}
@@ -205,7 +208,7 @@ function LadderPanel() {
 
   if (ladder.loading) return <BrainLoading message="Reading the trust ladder…" />;
   if (ladder.notice) return <EnterpriseNotice message={ladder.notice} />;
-  if (ladder.error) return <BrainError message={ladder.error} onRetry={ladder.reload} />;
+  if (ladder.error && !ladder.data) return <BrainError message={ladder.error!} onRetry={ladder.reload} />;
   const d: any = ladder.data || {};
   const skills: any[] = d.skills || [];
   const moves: any[] = d.recent_movements || [];
@@ -214,6 +217,7 @@ function LadderPanel() {
 
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!ladder.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Layers mode" value={enforced ? 'Enforce' : 'Advise'}
           note={enforced ? 'Skills below autonomous route to a human' : 'Rungs are recorded, runs are not gated'} />
@@ -306,12 +310,13 @@ function RehearsalsPanel() {
   const panel = usePanel(() => api.getRehearsals(40));
   if (panel.loading) return <BrainLoading message="Reading rehearsals…" />;
   if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
-  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  if (panel.error && !panel.data) return <BrainError message={panel.error!} onRetry={panel.reload} />;
   const d: any = panel.data || {};
   const rows: any[] = d.rehearsals || [];
   const held = d.prediction_held_rate;
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!panel.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Prediction held" value={held == null ? 'Not yet' : `${(held * 100).toFixed(0)}%`} note={d.prediction_held_note || 'Of rehearsed writes that landed'} />
         <Stat label="Matched" value={d.by_status?.APPLIED_MATCH ?? 0} note="Landed exactly as predicted" />
@@ -351,7 +356,7 @@ function GatewayPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   if (panel.loading) return <BrainLoading message="Reading external agents…" />;
   if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
-  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  if (panel.error && !panel.data) return <BrainError message={panel.error!} onRetry={panel.reload} />;
   const rows: any[] = (panel.data as any)?.principals || [];
   const toggle = async (p: any) => {
     setBusy(p.principal); setActionError(null);
@@ -363,6 +368,7 @@ function GatewayPanel() {
   };
   return (
     <div className="space-y-4">
+      <RefreshFailed show={!!panel.staleError} />
       <p className="text-[13px]" style={{ color: colors.inkSubtle }}>
         Other people's agents that acted here over MCP. Each is governed as itself: its own rung per skill, earned on its own record, its own caps, its own proof trail.
       </p>
@@ -451,7 +457,7 @@ function OutcomesPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   if (summary.loading) return <BrainLoading message="Reading verified outcomes…" />;
   if (summary.notice) return <EnterpriseNotice message={summary.notice} />;
-  if (summary.error) return <BrainError message={summary.error} onRetry={summary.reload} />;
+  if (summary.error && !summary.data) return <BrainError message={summary.error!} onRetry={summary.reload} />;
   const d: any = summary.data || {};
   const c = d.counts || {};
   const rows: any[] = (lines.data as any)?.lines || [];
@@ -463,6 +469,7 @@ function OutcomesPanel() {
   };
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!summary.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Stat label={`Billed outcomes, ${d.period}`} value={d.billed_outcomes ?? 0} note="Autonomous and assisted" />
         <Stat label="Autonomous" value={c.autonomous ?? 0} note="No human in the loop" />
@@ -733,7 +740,7 @@ function CommitteesPanel() {
   const all = usePanel(() => api.listAllCommittees());
   if (panel.loading) return <BrainLoading message="Reading committees…" />;
   if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
-  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  if (panel.error && !panel.data) return <BrainError message={panel.error!} onRetry={panel.reload} />;
   const mine: any[] = (panel.data as any)?.committees || [];
   const rows: any[] = scope === 'all' ? ((all.data as any)?.committees || []) : mine;
   const open = rows.filter(r => r.status !== 'decided');
@@ -741,6 +748,7 @@ function CommitteesPanel() {
   const reloadBoth = () => { panel.reload(); if (scope === 'all') all.reload(); };
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!panel.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Open committees" value={open.length} note="Waiting on a named approver" />
         <Stat label="Need my vote" value={mine.filter(r => r.status !== 'decided' && r.i_must_vote && !r.my_vote_cast).length} note="Ballots you have not cast" />
@@ -768,7 +776,7 @@ function CommitteesPanel() {
       </div>
       {convening && <ConveneForm onCreated={reloadBoth} onClose={() => setConvening(false)} />}
       {scope === 'all' && all.notice && <EnterpriseNotice message={all.notice} />}
-      {scope === 'all' && all.error && <BrainError message={all.error} onRetry={all.reload} />}
+      {scope === 'all' && all.error && !all.data && <BrainError message={all.error} onRetry={all.reload} />}
       {rows.length === 0 && !(scope === 'all' && (all.loading || all.notice || all.error)) ? (
         <BrainEmpty title={scope === 'all' ? 'No committee has been convened in this workspace' : 'No committee involves you yet'} />
       ) : (
@@ -812,7 +820,7 @@ function EvidencePanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   if (panel.loading) return <BrainLoading message="Reading the evidence pack…" />;
   if (panel.notice) return <EnterpriseNotice message={panel.notice} />;
-  if (panel.error) return <BrainError message={panel.error} onRetry={panel.reload} />;
+  if (panel.error && !panel.data) return <BrainError message={panel.error!} onRetry={panel.reload} />;
   const pack: any = panel.data || {};
   const sections = Object.entries(pack).filter(([k, v]) => k !== 'meta' && v && typeof v === 'object' && 'basis' in (v as any));
   const download = async () => {
@@ -823,6 +831,7 @@ function EvidencePanel() {
   };
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!panel.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Measured sections" value={sections.filter(([, v]: any) => v.basis === 'measured').length} note="Read from this deployment's record" />
         <Stat label="Self-assessed" value={sections.filter(([, v]: any) => v.basis === 'self-assessed').length} note="KAEOS's statements about its own design" />
@@ -880,7 +889,7 @@ function QualityPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   if (feedback.loading) return <BrainLoading message="Reading agent quality…" />;
   if (feedback.notice) return <EnterpriseNotice message={feedback.notice} />;
-  if (feedback.error) return <BrainError message={feedback.error} onRetry={feedback.reload} />;
+  if (feedback.error && !feedback.data) return <BrainError message={feedback.error!} onRetry={feedback.reload} />;
   const fb: any[] = (feedback.data as any)?.feedback || [];
   const pinned: any[] = (cases.data as any)?.cases || [];
   const promote = async (row: any) => {
@@ -899,6 +908,7 @@ function QualityPanel() {
   };
   return (
     <div className="space-y-5">
+      <RefreshFailed show={!!feedback.staleError} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Human ratings" value={fb.length} note="Thumbs on sealed runs, from the Proofs tab" />
         <Stat label="Rated wrong" value={fb.filter(f => f.rating === 'down').length} note="Adverse evidence in the trust ladder" />

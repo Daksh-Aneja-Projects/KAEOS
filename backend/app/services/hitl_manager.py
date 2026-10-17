@@ -62,7 +62,8 @@ QUICK_DECISION_SECONDS = 5.0
 
 
 def normalize_attestation(raw: Dict[str, Any] | None, *, approver: str,
-                          approved: bool) -> Dict[str, Any]:
+                          approved: bool, pause_started_at: Any = None,
+                          maker: str | None = None) -> Dict[str, Any]:
     """The review attestation as stored: what the deciding surface MEASURED
     about the human's review, server-stamped. Never trusts the client's
     conclusion - only its measurements, which are clamped and typed here.
@@ -71,15 +72,34 @@ def normalize_attestation(raw: Dict[str, Any] | None, *, approver: str,
     e-mail link): the decision is recorded as unattested, which is honest
     about what is known, never as a quick or an attended review.
     """
+    now = datetime.now(timezone.utc)
     out: Dict[str, Any] = {
         "present": False,
         "approver": approver,
+        # The decide routes refuse every machine principal, so whoever reaches
+        # here through them is a person; the field makes that explicit.
+        "approver_kind": "human",
         "approved": bool(approved),
-        "decided_at": datetime.now(timezone.utc).isoformat(),
+        "decided_at": now.isoformat(),
         "quick_threshold_seconds": QUICK_DECISION_SECONDS,
+        # The person who asked for the run decided it too: allowed (a one-person
+        # team), but the proof says so rather than reading as a second pair of eyes.
+        "self_review": bool(maker) and str(maker) == str(approver),
     }
     if not isinstance(raw, dict):
         return out
+    # How long the pause has existed bounds how long it can have been on
+    # screen: a client claiming more is clamped and the record says so.
+    elapsed = None
+    if pause_started_at:
+        try:
+            started = (pause_started_at if isinstance(pause_started_at, datetime)
+                       else datetime.fromisoformat(str(pause_started_at)))
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            elapsed = max(0.0, (now - started).total_seconds())
+        except (TypeError, ValueError):
+            elapsed = None
     seconds = raw.get("seconds_visible")
     try:
         seconds = float(seconds)
@@ -87,13 +107,18 @@ def normalize_attestation(raw: Dict[str, Any] | None, *, approver: str,
         seconds = None
     if seconds is not None and seconds != seconds:  # NaN: a measurement nobody made
         seconds = None
+    overclaimed = False
     if seconds is not None:
         seconds = max(0.0, min(seconds, 7 * 24 * 3600.0))
+        if elapsed is not None and seconds > elapsed + 2.0:
+            seconds, overclaimed = elapsed, True
     out.update({
         "present": seconds is not None,
         "seconds_visible": seconds,
-        "diff_shown": bool(raw.get("diff_shown")),
-        "reasoning_shown": bool(raw.get("reasoning_shown")),
+        "overclaimed": overclaimed,
+        # Only a real JSON true counts; the string "false" is not a yes.
+        "diff_shown": raw.get("diff_shown") is True,
+        "reasoning_shown": raw.get("reasoning_shown") is True,
         "channel": str(raw.get("channel") or "console")[:32],
         "quick": (seconds is not None and seconds < QUICK_DECISION_SECONDS),
     })
@@ -602,7 +627,24 @@ class HITLManager:
         except Exception:
             pass
 
-        _attest = normalize_attestation(attestation, approver=approver, approved=approved)
+        # Bounds for the attestation: when the pause began, and who asked.
+        _ctx = (record or {}).get("context") if isinstance((record or {}).get("context"), dict) else {}
+        _pause_start = (record or {}).get("created_at")
+        _maker = _ctx.get("maker") if isinstance(_ctx, dict) else None
+        if _pause_start is None or _maker is None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    row = (await session.execute(
+                        select(SkillExecution.started_at, SkillExecution.context)
+                        .where(SkillExecution.id == execution_id))).first()
+                if row is not None:
+                    _pause_start = _pause_start or row.started_at
+                    if _maker is None and isinstance(row.context, dict):
+                        _maker = row.context.get("maker")
+            except Exception:
+                logger.debug("[HITL] could not read the pause bounds for %s", execution_id)
+        _attest = normalize_attestation(attestation, approver=approver, approved=approved,
+                                        pause_started_at=_pause_start, maker=_maker)
         if record:
             record["status"] = "RESOLVED"
             record["decision"] = approved

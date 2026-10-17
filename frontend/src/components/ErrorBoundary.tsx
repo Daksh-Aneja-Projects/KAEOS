@@ -12,6 +12,14 @@ interface State {
   error: Error | null;
 }
 
+/** True when the error is a lazy chunk that no longer exists (a newer deploy replaced it). */
+export function isChunkLoadError(error: unknown): boolean {
+  const msg = String((error as any)?.message ?? error ?? '');
+  const name = String((error as any)?.name ?? '');
+  return name === 'ChunkLoadError'
+    || /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk [\w-]+ failed|error loading dynamically imported module/i.test(msg);
+}
+
 /**
  * Catches render errors in any child component tree and shows a recovery UI
  * instead of crashing the entire application.
@@ -32,6 +40,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const stale = isChunkLoadError(this.state.error);
       return (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -43,13 +52,15 @@ export default class ErrorBoundary extends Component<Props, State> {
             alignItems: 'center', justifyContent: 'center',
           }}><AlertTriangle style={{ width: 24, height: 24, color: '#e5534b' }} /></div>
           <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: 'var(--color-ink, #f7f8f8)' }}>
-            {this.props.fallbackTitle || 'Module Error'}
+            {stale ? 'Update available' : (this.props.fallbackTitle || 'Module Error')}
           </h3>
           <p style={{ fontSize: 13, color: 'var(--color-ink-subtle, #8a8f98)', margin: 0, maxWidth: 400, textAlign: 'center' }}>
-            {this.state.error?.message || 'An unexpected error occurred in this module.'}
+            {stale
+              ? 'A newer version of KAEOS is available. Reload to continue.'
+              : (this.state.error?.message || 'An unexpected error occurred in this module.')}
           </p>
           <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => (stale ? window.location.reload() : this.setState({ hasError: false, error: null }))}
             style={{
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
               background: '#5e6ad2', color: '#fff', border: 'none', cursor: 'pointer',
@@ -58,7 +69,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             onMouseOver={e => (e.currentTarget.style.background = '#828fff')}
             onMouseOut={e => (e.currentTarget.style.background = '#5e6ad2')}
           >
-            Retry Module
+            {stale ? 'Reload' : 'Retry Module'}
           </button>
         </div>
       );

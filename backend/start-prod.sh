@@ -15,7 +15,9 @@ DATABASE_URL="${KAEOS_OWNER_DB_URL:-$DATABASE_URL}" alembic upgrade head
 # resets this dir on boot and marks dead workers so the endpoint aggregates
 # correctly. EXPOSE_METRICS publishes the /metrics endpoint (off by default).
 export PROMETHEUS_MULTIPROC_DIR="${PROMETHEUS_MULTIPROC_DIR:-/tmp/kaeos-metrics}"
-export EXPOSE_METRICS="${EXPOSE_METRICS:-true}"
+# Off unless the deployment asks for it: /metrics leaks per-endpoint traffic and
+# belongs on an internal scrape network, not the public port.
+export EXPOSE_METRICS="${EXPOSE_METRICS:-false}"
 
 echo "Starting Gunicorn server (as non-owner app role)..."
 exec gunicorn app.main:app -c gunicorn.conf.py -w "${GUNICORN_WORKERS:-4}" -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001

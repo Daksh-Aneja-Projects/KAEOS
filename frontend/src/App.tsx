@@ -20,6 +20,7 @@ import { BrandingProvider, useBranding } from './context/BrandingContext';
 import ThemeAdapter from './components/ThemeAdapter';
 import ErrorBoundary from './components/ErrorBoundary';
 import NeedsPlanToast from './components/NeedsPlanToast';
+import { useRouteTitle } from './hooks/useDocumentTitle';
 
 // Pages
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -201,6 +202,7 @@ function Shell() {
   // shell has to survive a phone.
   const [navOpen, setNavOpen] = useState(false);
   const location = useLocation();
+  useRouteTitle();
 
   // Navigating on mobile should dismiss the drawer, otherwise it covers the
   // page the user just asked for.

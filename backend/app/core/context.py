@@ -23,6 +23,10 @@ current_request_id: ContextVar[str | None] = ContextVar("current_request_id", de
 # scheduler, precog, the autonomy governor) leave this None, which is how a
 # live UI can tell "my action" from "something the system started on its own".
 current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)
+# The acting principal's tenant role (viewer / operator / admin), published by
+# the same middleware hook, so audit rows written deep in a service record the
+# real role instead of a guess.
+current_actor_role: ContextVar[str | None] = ContextVar("current_actor_role", default=None)
 # The request-scoped AsyncSession, published by get_db so the gate pipeline can
 # release its pooled connection before minutes of LLM calls (see
 # AgentExecutor.execute_skill). None outside a request; typed loosely to keep

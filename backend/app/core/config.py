@@ -296,7 +296,9 @@ class Settings(BaseSettings):
 
     @property
     def is_production_like(self) -> bool:
-        return self.ENVIRONMENT.lower() in ("production", "prod", "staging")
+        # Fail closed: only a known local name is not production. A typo or a
+        # house name ('prd', 'live', 'eu-1') gets every production control.
+        return self.ENVIRONMENT.strip().lower() not in DEV_ENVIRONMENTS
 
     @property
     def docs_enabled(self) -> bool:
@@ -363,6 +365,33 @@ class Settings(BaseSettings):
                 "CORS_ORIGINS must list explicit origins, not '*', when DEV_MODE "
                 "is off - credentials are allowed, so a wildcard is reflected back "
                 "to any site the caller visits.")
+        # The billing webhook is what moves a tenant between plans. With the
+        # Stripe provider on and no signing secret, construct_event verifies an
+        # HMAC over an EMPTY key, which anyone can compute: a forged
+        # subscription.updated would hand out the Enterprise plan.
+        if self.KAEOS_MANAGED_CLOUD and self.STRIPE_API_KEY and not self.STRIPE_WEBHOOK_SECRET:
+            problems.append(
+                "STRIPE_WEBHOOK_SECRET must be set when KAEOS_MANAGED_CLOUD and "
+                "STRIPE_API_KEY are on - without it any caller can forge a plan change.")
+        if self.is_production_like:
+            if any(h.strip() == "*" for h in self.ALLOWED_HOSTS):
+                problems.append(
+                    "ALLOWED_HOSTS must list the real hostnames, not '*', in a "
+                    "production environment.")
+            if self.DEBUG:
+                problems.append(
+                    "DEBUG must be off in a production environment - it echoes SQL, "
+                    "including writes to the users table, into the logs.")
+            if self.SEED_DEMO_DATA:
+                problems.append(
+                    "SEED_DEMO_DATA must be false in a production environment - it "
+                    "writes fictional records at boot.")
+            if not self.CONNECTOR_ENCRYPTION_KEY:
+                problems.append(
+                    "CONNECTOR_ENCRYPTION_KEY must be set in a production environment. "
+                    "Without it stored secrets are encrypted with SECRET_KEY, so "
+                    "rotating the session key would lock out MFA, connector "
+                    "credentials and proof keys.")
         problems.extend(self.validate_production_database())
         return problems
 
@@ -386,6 +415,10 @@ class Settings(BaseSettings):
                 "application query filters. Use PostgreSQL in production."
             )
         return problems
+
+
+# Names that mean "a machine nobody else uses". Everything else is production-like.
+DEV_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "testing", "ci"})
 
 
 @lru_cache()

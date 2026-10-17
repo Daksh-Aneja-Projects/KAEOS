@@ -38,7 +38,7 @@
   --color-ink: #f7f8f8;
   --color-ink-muted: #d0d6e0;
   --color-ink-subtle: #8a8f98;
-  --color-ink-tertiary: #62666d;
+  --color-ink-tertiary: #7d828a;
 
   --color-success: #27a644;
   --color-warning: #f5a623;
@@ -348,4 +348,20 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Keyboard focus ring, deliberately OUTSIDE every @layer. Unlayered rules beat
+   layered ones regardless of specificity, so Tailwind's `focus:outline-none`
+   (utilities layer) can no longer strip the ring from inputs and buttons. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-primary-hover);
+  outline-offset: 2px;
+}
+[data-focus-styled]:focus-visible {
+  outline: none;
 }

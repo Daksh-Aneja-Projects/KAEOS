@@ -81,7 +81,7 @@ def _is_protected(route) -> bool:
         call = getattr(dep, "dependency", dep)
         qn = getattr(call, "__qualname__", "") or ""
         if ("require_role" in qn or "require_service_or_role" in qn
-                or "require_superadmin" in qn):
+                or "require_superadmin" in qn or "require_human_decider" in qn):
             return True
 
     stack = list(getattr(route.dependant, "dependencies", []) or [])
@@ -93,7 +93,7 @@ def _is_protected(route) -> bool:
             break
         qn = getattr(getattr(dep, "call", None), "__qualname__", "") or ""
         if ("require_role" in qn or "require_service_or_role" in qn
-                or "require_superadmin" in qn):
+                or "require_superadmin" in qn or "require_human_decider" in qn):
             return True
         stack.extend(dep.dependencies)
     try:

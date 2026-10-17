@@ -23,9 +23,12 @@ export default function AcceptInvite() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
-  // Accept the token from the link, but let the user paste it if the mail
-  // client mangled the URL.
-  const [token, setToken] = useState(params.get('token') || '');
+  // Accept the token from the link (in the fragment, so it never reaches a
+  // server log; older links carried it in the query), but let the user paste
+  // it if the mail client mangled the URL.
+  const linkToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token')
+    || params.get('token') || '';
+  const [token, setToken] = useState(linkToken);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -122,7 +125,7 @@ export default function AcceptInvite() {
             )}
 
             {/* Only shown when the link did not carry a token. */}
-            {!params.get('token') && (
+            {!linkToken && (
               <div>
                 <label className="text-[11px] font-semibold uppercase tracking-wider block mb-1.5"
                   style={{ color: colors.inkSubtle }}>Invitation code</label>

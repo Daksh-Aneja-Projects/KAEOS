@@ -37,22 +37,22 @@ afterEach(() => {
 });
 
 describe('SWR cache', () => {
-  it('within the 15s window: resolves from cache AND revalidates in background', async () => {
+  it('within the 10s window: resolves from cache AND revalidates in background', async () => {
     // Note: the module has no separate "fresh, skip network" state - EVERY
     // within-TTL hit returns the cached body and fires a background refetch.
     vi.useFakeTimers();
     expect(await http.request('/w')).toEqual({ n: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    vi.advanceTimersByTime(14_999); // still inside the window
+    vi.advanceTimersByTime(9_999); // still inside the window
     expect(await http.request('/w')).toEqual({ n: 1 }); // served from cache...
     expect(fetchMock).toHaveBeenCalledTimes(2); // ...while a background refetch fired
   });
 
-  it('past the 15s TTL: blocks on a fresh network fetch', async () => {
+  it('past the 10s TTL: blocks on a fresh network fetch', async () => {
     vi.useFakeTimers();
     await http.request('/t');
-    vi.advanceTimersByTime(15_000); // TTL check is strict `<`, so exactly 15s is expired
+    vi.advanceTimersByTime(10_000); // TTL check is strict `<`, so exactly 10s is expired
     expect(await http.request('/t')).toEqual({ n: 2 }); // awaited the network, not the cache
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

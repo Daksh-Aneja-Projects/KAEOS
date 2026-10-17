@@ -59,6 +59,10 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+// The plan-upgrade toast is shown at most once per session: a page that polls a
+// gated route would otherwise repeat it on every tick.
+let _needsPlanToastShown = false;
+
 async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('kaeos-token');
   // Spread options FIRST, then set the merged headers - otherwise `...options`
@@ -92,7 +96,8 @@ async function _exec<T>(path: string, options?: RequestInit): Promise<T> {
     // 402 Payment Required is the backend's entitlement/needs-plan contract.
     // Broadcast the message so the app root (NeedsPlanToast) can surface an
     // upgrade CTA; every caller's existing `catch` still gets the ApiError.
-    if (res.status === 402) {
+    if (res.status === 402 && !_needsPlanToastShown) {
+      _needsPlanToastShown = true;
       window.dispatchEvent(new CustomEvent('kaeos:needs-plan', {
         detail: { message: typeof detail === 'string' ? detail : undefined },
       }));
@@ -155,7 +160,7 @@ const _inflightGets = new Map<string, Promise<any>>();
 // Any mutation flushes the whole cache: coarse, but it can never serve a read
 // the user's own write just invalidated.
 const _getCache = new Map<string, { t: number; data: any }>();
-const _SWR_TTL_MS = 15_000;
+const _SWR_TTL_MS = 10_000;
 
 // LRU bound: expired entries are never swept, so without a cap a long-lived
 // tab grows the map for every distinct GET it ever made. 300 entries covers

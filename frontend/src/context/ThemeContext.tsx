@@ -21,7 +21,7 @@ const darkColors = {
   ink: '#f7f8f8',
   inkMuted: '#d0d6e0',
   inkSubtle: '#8a8f98',
-  inkTertiary: '#62666d',
+  inkTertiary: '#7d828a',
   success: '#27a644',
   warning: '#f5a623',
   error: '#e5534b',

@@ -61,6 +61,7 @@ async def websocket_endpoint(
                     and key_meta.get("tenant_id") == tenant_id
                 )
             else:
+                from app.core.tenant import session_refusal
                 from app.services.auth import decode_token, is_jti_revoked
                 payload = decode_token(token)
                 authorized = bool(
@@ -68,6 +69,11 @@ async def websocket_endpoint(
                     and payload.get("tenant_id") == tenant_id
                     and not await is_jti_revoked(payload.get("jti"))
                 )
+                if authorized:
+                    try:
+                        authorized = await session_refusal(payload) is None
+                    except Exception:
+                        authorized = False
         if not authorized:
             logger.warning(f"[WS] Rejected unauthenticated connection for tenant {tenant_id}")
             await websocket.close(code=1008, reason="Unauthorized")

@@ -61,12 +61,18 @@ def check_docker(container: str) -> None:
         fail(f"container '{container}' exists but is not running. Start it with 'docker compose up -d postgres'.")
 
 
-def run_backup(container: str, out_path: Path) -> None:
-    """Stream pg_dump custom-format output from the container into out_path."""
-    cmd = [
-        "docker", "exec", container,
-        "pg_dump", "-U", DB_USER, "-Fc", DB_NAME,
-    ]
+def run_backup(container: str | None, out_path: Path, *, user: str = DB_USER,
+               db: str = DB_NAME) -> None:
+    """Stream pg_dump custom-format output into out_path: from inside the
+    container, or (container None) with the local pg_dump against the server
+    the standard libpq variables name (PGHOST, PGPORT, PGUSER, PGPASSWORD,
+    PGSSLMODE) - a managed Postgres such as Neon or Supabase."""
+    if container:
+        cmd = ["docker", "exec", container, "pg_dump", "-U", user, "-Fc", db]
+    else:
+        # --no-owner / --no-privileges: a managed service's role names differ
+        # from the restore target's, and ownership is re-applied by the app.
+        cmd = ["pg_dump", "-Fc", "--no-owner", "--no-privileges", "-d", db]
     print(f"Running: {' '.join(cmd)}")
     start = time.monotonic()
     with out_path.open("wb") as fh:
@@ -119,9 +125,19 @@ def main() -> None:
                         help=f"Postgres container name (default: {DEFAULT_CONTAINER})")
     parser.add_argument("--retention", type=int, default=14, metavar="N",
                         help="Delete dumps older than N days (default: 14; 0 disables)")
+    parser.add_argument("--direct", action="store_true",
+                        help="Use the local pg_dump against PGHOST/PGUSER/PGPASSWORD (a managed "
+                             "Postgres) instead of docker exec")
+    parser.add_argument("--user", default=DB_USER,
+                        help=f"Database role inside the container (default: {DB_USER}; the "
+                             "production compose uses kaeos_admin)")
+    parser.add_argument("--db", default=DB_NAME,
+                        help=f"Database name (default: {DB_NAME}; the production compose uses "
+                             "kaeos_prod)")
     args = parser.parse_args()
 
-    check_docker(args.container)
+    if not args.direct:
+        check_docker(args.container)
 
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -129,14 +145,16 @@ def main() -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = out_dir / f"kaeos_{stamp}.dump"
 
-    run_backup(args.container, out_path)
+    run_backup(None if args.direct else args.container, out_path, user=args.user, db=args.db)
     apply_retention(out_dir, args.retention, keep=out_path)
 
     print("\nBackup summary")
     print(f"  file:      {out_path}")
     print(f"  size:      {out_path.stat().st_size:,} bytes")
-    print(f"  container: {args.container}")
-    print(f"  database:  {DB_NAME} (user {DB_USER}, custom format)")
+    print(f"  source:    {'direct (PGHOST)' if args.direct else args.container}")
+    print(f"  database:  {args.db} (user {args.user if not args.direct else 'PGUSER'}, custom format)")
+    print("  note:      this dump is unencrypted and local. Copy it off this machine (and encrypt "
+          "it) - a backup on the same disk as the database is not a backup.")
     print(f"  retention: {args.retention} days")
 
 

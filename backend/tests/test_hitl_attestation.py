@@ -16,7 +16,7 @@ The rules pinned here:
 import asyncio
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -113,9 +113,15 @@ def test_nan_seconds_must_not_become_an_attended_review(nan):
     assert out["seconds_visible"] is None or math.isfinite(out["seconds_visible"])
 
 
-def test_the_diff_and_reasoning_flags_are_coerced_to_booleans():
-    out = _norm({"seconds_visible": 20, "diff_shown": 1, "reasoning_shown": "yes"})
+def test_the_diff_and_reasoning_flags_count_only_a_real_true():
+    # Launch audit 2026-10-17: bool("false") is True, so a client sending the
+    # string "false" was recorded as having shown the diff. Only JSON true counts.
+    out = _norm({"seconds_visible": 20, "diff_shown": True, "reasoning_shown": True})
     assert out["diff_shown"] is True and out["reasoning_shown"] is True
+    out = _norm({"seconds_visible": 20, "diff_shown": 1, "reasoning_shown": "yes"})
+    assert out["diff_shown"] is False and out["reasoning_shown"] is False
+    out = _norm({"seconds_visible": 20, "diff_shown": "false", "reasoning_shown": "true"})
+    assert out["diff_shown"] is False and out["reasoning_shown"] is False
     out = _norm({"seconds_visible": 20, "diff_shown": 0, "reasoning_shown": None})
     assert out["diff_shown"] is False and out["reasoning_shown"] is False
     out = _norm({"seconds_visible": 20})
@@ -195,7 +201,9 @@ def _pending(exec_id, tenant="tenant_attest", **context):
     return {
         "exec_id": exec_id, "skill_id": "attest_skill", "tenant_id": tenant,
         "status": "PENDING", "decision": None, "approver": None, "reason": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        # The pause has been waiting a minute: an attestation of up to 60 s on
+        # screen is possible; more is clamped (normalize_attestation).
+        "created_at": (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat(),
         "skill_def": {"skill_id": "attest_skill", "steps": [], "department": "support"},
         "context": {"intent": "refund", "amount": 40, **context},
     }
@@ -329,6 +337,10 @@ async def test_a_gate_pause_decided_with_an_attestation_stores_it_on_record_and_
     ctx = {"execution_id": exec_id, "tenant_id": "tenant_attest", "instruction": "refund 40"}
     out = await mgr.request_human_confirmation(skill, ctx)
     assert out["pending"] is True
+    # the reviewer looked at it for a minute before deciding
+    rec = await mgr._get_record(exec_id)
+    rec["created_at"] = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    await mgr._put_record(exec_id, rec)
 
     assert await mgr.resolve_hitl(exec_id, False, "sam@example.com", reason="no",
                                   attestation={"seconds_visible": 30, "diff_shown": True}) is True
@@ -345,3 +357,48 @@ async def test_a_gate_pause_decided_with_an_attestation_stores_it_on_record_and_
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── launch audit 2026-10-17 (H3 + attestation honesty) ───────────────────────
+
+def test_an_agent_principal_cannot_decide_a_paused_run():
+    from fastapi import HTTPException
+    from app.core.tenant import require_human_decider
+    gate = require_human_decider("operator")
+    assert gate(tenant={"tenant_id": "t", "role": "operator", "email": "a@example.com"})
+    for agent in ({"tenant_id": "t", "role": "operator", "key_id": "k1", "name": "bot"},
+                  {"tenant_id": "t", "role": "operator",
+                   "gateway_principal": {"kind": "oidc", "id": "g1", "name": "bot"}}):
+        with pytest.raises(HTTPException) as e:
+            gate(tenant=agent)
+        assert e.value.status_code == 403 and "Only a person" in e.value.detail
+    with pytest.raises(HTTPException):
+        gate(tenant={"tenant_id": "t", "role": "viewer"})
+
+
+def test_every_hitl_decision_route_uses_the_human_gate():
+    """Pins the route table: an approve / reject / resolve route that only
+    checks a role would let an agent key approve its own pause again."""
+    from app.main import app
+    decide = [r for r in app.routes if getattr(r, "methods", None) and "POST" in r.methods
+              and "hitl" in r.path.split("/")
+              and (r.path.rsplit("/", 1)[-1] in ("approve", "reject", "resolve", "hitl"))]
+    assert len(decide) >= 8, [r.path for r in decide]
+    for r in decide:
+        calls = {getattr(d.call, "__qualname__", "") for d in r.dependant.dependencies}
+        assert any("require_human_decider" in c for c in calls), r.path
+
+
+def test_attestation_is_clamped_to_the_pause_and_strict_about_booleans():
+    from datetime import datetime, timedelta, timezone
+    from app.services.hitl_manager import normalize_attestation
+    started = datetime.now(timezone.utc) - timedelta(seconds=10)
+    att = normalize_attestation({"seconds_visible": 3600, "diff_shown": "false",
+                                 "reasoning_shown": 1}, approver="a@example.com",
+                                approved=True, pause_started_at=started.isoformat())
+    assert att["overclaimed"] is True and att["seconds_visible"] <= 12
+    assert att["diff_shown"] is False and att["reasoning_shown"] is False
+    assert att["approver_kind"] == "human" and att["self_review"] is False
+    own = normalize_attestation({"seconds_visible": 4}, approver="a@example.com",
+                                approved=True, maker="a@example.com")
+    assert own["self_review"] is True and own["overclaimed"] is False

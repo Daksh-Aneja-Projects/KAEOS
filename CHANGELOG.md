@@ -11,6 +11,45 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Security (pre-launch audit, 2026-10-17)
+
+- Sessions follow the account: the middleware re-reads the user (active,
+  role, tenant, department) at most every 30 s and at once after a
+  deactivation, reactivation, role or department change, so a deactivated
+  user's token stops working immediately instead of up to 24 h later.
+- Invite links work exactly once (bound to the pending account's
+  placeholder password, compare-and-set on accept) and carry the token in
+  the URL fragment, out of server logs.
+- Only a person can decide a paused run (`require_human_decider` on every
+  HITL approve / reject / resolve route, the HR and mission ones included);
+  the attestation is clamped to how long the pause existed, counts only a
+  real `true`, and records `approver_kind` and `self_review`.
+- Caller-supplied context is stripped of every server-set key (authority,
+  rehearsal, approver, attestation, confidence, maker, internal `_` keys);
+  the maker is the authenticated caller.
+- Gateway OAuth agents: identity is `oidc:<subject>`, the connection's role
+  maps through the user-role table and is capped at operator; console gates
+  refuse every machine principal.
+- Login: lockout per e-mail and address with a wider e-mail-only cap; the
+  failure count is cleared only after both factors (a wrong TOTP code used
+  to reset with every right password); unknown e-mails cost the same bcrypt
+  work; anonymous requests are rate-limited per address, not in one shared
+  bucket.
+- Production boot refuses: an unset ENVIRONMENT with authentication on,
+  `ALLOWED_HOSTS=*`, DEBUG, demo seeding, a missing CONNECTOR_ENCRYPTION_KEY,
+  and managed-cloud Stripe without a webhook secret (the webhook also
+  refuses events when the secret is empty). Unknown environment names count
+  as production.
+- Containers: the backend runs as uid 1000 owning logs/ and data/; the
+  frontend is nginx-unprivileged on 8080 with frame, HSTS, nosniff and
+  referrer headers and noindex on app routes; `/metrics` is off unless
+  asked for. The production compose and Helm values set every variable the
+  boot check needs.
+- Dependencies: PyJWT 2.15.1, litellm 1.93.2, `npm audit fix`; pip-audit and
+  npm audit now fail CI.
+- Backup / restore: `--direct` mode for a managed Postgres (libpq PG*
+  variables), `--user` / `--db` for the production compose.
+
 - Seam + Gate 3: **autonomy authorizers** (`extensions.add_autonomy_authorizer`,
   `authorize_autonomy`). The pipeline now asks, for a run every other rule
   lets through with no human, "on whose authority?": an authorizer may
