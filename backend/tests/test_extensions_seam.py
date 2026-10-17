@@ -515,3 +515,270 @@ async def test_billing_classifier_can_only_narrow_the_metered_count(monkeypatch)
     assert r["metered_executions"] == 10 and "metered_by_outcome" not in r
     extensions.reset()
     assert (await usage_rating.rate_tenant_period(_DB(), "t"))["metered_executions"] == 10
+
+
+# ── autonomy authorizers (F14): on whose authority does the machine act alone? ──
+
+async def test_autonomy_authorizer_returning_none_lets_the_run_proceed():
+    seen = []
+
+    async def lends(skill, context):
+        seen.append((skill["skill_id"], context["execution_id"]))
+        context["authority"] = {"basis": "delegated", "holder": "priya@example.com"}
+        return None
+
+    # no authorizer at all: nothing to object
+    assert await extensions.authorize_autonomy({"skill_id": "s"}, {"execution_id": "e0"}) is None
+    extensions.add_autonomy_authorizer(lends)
+    ctx = {"execution_id": "e1"}
+    assert await extensions.authorize_autonomy({"skill_id": "s"}, ctx) is None
+    assert seen == [("s", "e1")]
+    assert ctx["authority"]["holder"] == "priya@example.com", "an authorizer may stamp the basis"
+
+
+async def test_autonomy_authorizer_first_objection_wins_and_later_ones_are_not_asked():
+    asked = []
+
+    def authorizer(name, verdict):
+        async def fn(skill, context):
+            asked.append(name)
+            return verdict
+        return fn
+
+    extensions.add_autonomy_authorizer(authorizer("quiet", None))
+    # a verdict that neither forces a human nor refuses is not an objection
+    extensions.add_autonomy_authorizer(authorizer("shrug", {"note": "fine by me"}))
+    extensions.add_autonomy_authorizer(authorizer("falsey", {"force_hitl": False, "reason": "x"}))
+    extensions.add_autonomy_authorizer(
+        authorizer("first", {"force_hitl": True, "reason": "nobody has lent authority"}))
+    extensions.add_autonomy_authorizer(authorizer("second", {"refuse": True, "reason": "no"}))
+
+    verdict = await extensions.authorize_autonomy({"skill_id": "s"}, {"execution_id": "e"})
+    assert verdict == {"force_hitl": True, "reason": "nobody has lent authority"}
+    assert asked == ["quiet", "shrug", "falsey", "first"], "the objection short-circuits"
+
+
+async def test_autonomy_authorizer_refuse_verdict_is_returned_as_is():
+    refusal = {"refuse": True, "reason": "the grant was revoked", "extra": 1}
+
+    async def refuses(skill, context):
+        return refusal
+
+    extensions.add_autonomy_authorizer(refuses)
+    assert await extensions.authorize_autonomy({"skill_id": "s"}, {}) is refusal
+
+
+async def test_autonomy_authorizer_that_raises_fails_closed_naming_the_exception():
+    asked = []
+
+    async def broken(skill, context):
+        raise ConnectionError("authority ledger unreachable")
+
+    async def never(skill, context):
+        asked.append("never")
+        return None
+
+    extensions.add_autonomy_authorizer(broken)
+    extensions.add_autonomy_authorizer(never)
+    verdict = await extensions.authorize_autonomy({"skill_id": "s"}, {"execution_id": "e"})
+    assert verdict["force_hitl"] is True, "an unverified authority routes to a human"
+    assert "ConnectionError" in verdict["reason"] and "a human decides" in verdict["reason"]
+    assert "unreachable" not in verdict["reason"], "the reason names the class, never the message"
+    assert asked == [], "the failure short-circuits the remaining authorizers"
+
+
+def test_registry_reset_clears_autonomy_authorizers():
+    reg = ExtensionRegistry()
+
+    async def fn(skill, context):
+        return None
+
+    reg.add_autonomy_authorizer(fn)
+    assert reg.autonomy_authorizers == [fn]
+    reg.reset()
+    assert reg.autonomy_authorizers == []
+    extensions.add_autonomy_authorizer(fn)
+    extensions.reset()
+    assert extensions.autonomy_authorizers == []
+
+
+# Gate 3 harness: the executor's confidence gate driven directly, with a captured HITL
+# manager, the tenant ceiling and the department threshold pinned (no database, no model).
+
+class _GateHITL:
+    def __init__(self):
+        self.calls = []
+
+    async def request_human_confirmation(self, skill, context):
+        self.calls.append(context.get("hitl_reason"))
+        return {"pending": True, "execution_id": context.get("execution_id"),
+                "reason": "Awaiting human approval."}
+
+
+@pytest.fixture()
+def _gate3(monkeypatch):
+    """(executor, hitl) with the tenant ceiling at 1.0 and the department threshold at 0.82."""
+    from app.agents import runtime
+    from app.agents.runtime import AgentExecutor
+    from app.services import llm_router as lr
+
+    class _Router:
+        def confidence_ceiling(self, model_tier="reasoning"):
+            return 1.0
+
+    async def for_tenant(cls, tenant_id):
+        return _Router()
+
+    async def threshold(tenant_id, department):
+        return 0.82
+
+    async def no_cost(self, context):
+        return None
+
+    async def no_mark(execution_id, status):
+        return None
+
+    monkeypatch.setattr(lr.LLMRouter, "for_tenant", classmethod(for_tenant))
+    monkeypatch.setattr(runtime, "resolve_min_confidence", threshold)
+    monkeypatch.setattr(AgentExecutor, "_gate_cost", no_cost)
+    monkeypatch.setattr(AgentExecutor, "_mark_execution_failed", staticmethod(no_mark))
+    hitl = _GateHITL()
+    return AgentExecutor(None, hitl), hitl
+
+
+def _recording_authorizer(verdict=None):
+    calls = []
+
+    async def authorizer(skill, context):
+        calls.append((skill, context))
+        return verdict
+
+    return authorizer, calls
+
+
+_CONFIDENT = {"skill_id": "triage_ticket", "department": "support", "confidence": 0.95}
+_GATE_CTX = {"tenant_id": "t", "execution_id": "e-gate3"}
+
+
+async def test_gate3_never_asks_authority_for_a_high_consequence_skill(_gate3):
+    ex, hitl = _gate3
+    authorizer, calls = _recording_authorizer({"force_hitl": True, "reason": "unlent"})
+    extensions.add_autonomy_authorizer(authorizer)
+    skill = {**_CONFIDENT, "skill_id": "wire_funds", "always_hitl": True}
+    ctx = dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl(skill, ctx, None, hitl_pre_approved=False)
+    assert out["status"] == "PENDING_HITL"
+    assert calls == [], "authority is never consumed by a run a human was going to see anyway"
+    assert "high-consequence" in ctx["hitl_reason"]
+    assert hitl.calls == [ctx["hitl_reason"]]
+
+
+async def test_gate3_never_asks_authority_when_confidence_is_below_the_threshold(_gate3):
+    ex, hitl = _gate3
+    authorizer, calls = _recording_authorizer({"force_hitl": True, "reason": "unlent"})
+    extensions.add_autonomy_authorizer(authorizer)
+    ctx = dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl({**_CONFIDENT, "confidence": 0.5}, ctx, None,
+                                         hitl_pre_approved=False)
+    assert out["status"] == "PENDING_HITL" and calls == []
+    assert "below this department's autonomy threshold" in ctx["hitl_reason"]
+
+
+async def test_gate3_never_asks_authority_when_an_input_trust_cap_forced_review(_gate3):
+    ex, hitl = _gate3
+    authorizer, calls = _recording_authorizer({"force_hitl": True, "reason": "unlent"})
+
+    async def suspect(skill, context):
+        return {"ceiling": None, "force_hitl": True, "reason": "the input looks injected"}
+
+    extensions.add_confidence_cap(suspect)
+    extensions.add_autonomy_authorizer(authorizer)
+    ctx = dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), ctx, None, hitl_pre_approved=False)
+    assert out["status"] == "PENDING_HITL" and calls == []
+    assert ctx["hitl_reason"] == "the input looks injected"
+
+
+async def test_gate3_never_asks_authority_for_a_run_a_human_already_approved(_gate3):
+    ex, hitl = _gate3
+    authorizer, calls = _recording_authorizer({"force_hitl": True, "reason": "unlent"})
+    extensions.add_autonomy_authorizer(authorizer)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), dict(_GATE_CTX), None,
+                                         hitl_pre_approved=True)
+    assert out is None and calls == [] and hitl.calls == []
+
+
+async def test_gate3_asks_authority_for_a_confident_low_consequence_run_and_pauses_on_force(
+        _gate3):
+    ex, hitl = _gate3
+    reason = "No one has lent authority for triage ticket in support."
+    authorizer, calls = _recording_authorizer({"force_hitl": True, "reason": reason})
+    extensions.add_autonomy_authorizer(authorizer)
+    skill, ctx = dict(_CONFIDENT), dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl(skill, ctx, None, hitl_pre_approved=False)
+    assert len(calls) == 1 and calls[0][0] is skill and calls[0][1] is ctx
+    assert out["status"] == "PENDING_HITL"
+    assert ctx["hitl_reason"] == reason, "the approver is told exactly why, in the authorizer's words"
+    assert hitl.calls == [reason]
+
+
+async def test_gate3_force_without_a_reason_still_pauses_with_a_stated_cause(_gate3):
+    ex, hitl = _gate3
+    authorizer, _ = _recording_authorizer({"force_hitl": True})
+    extensions.add_autonomy_authorizer(authorizer)
+    ctx = dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), ctx, None, hitl_pre_approved=False)
+    assert out["status"] == "PENDING_HITL"
+    assert "no one has lent authority" in ctx["hitl_reason"]
+
+
+async def test_gate3_lets_a_lent_run_through_without_a_human(_gate3):
+    ex, hitl = _gate3
+    gates = []
+
+    async def watch(context, gate, state, detail):
+        gates.append((gate, state, detail))
+
+    async def lends(skill, context):
+        context["authority"] = {"basis": "delegated", "holder": "priya@example.com"}
+        return None
+
+    extensions.add_gate_stage_hook(watch)
+    extensions.add_autonomy_authorizer(lends)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), dict(_GATE_CTX), None,
+                                         hitl_pre_approved=False)
+    assert out is None and hitl.calls == []
+    assert ("authority", "lent", "priya@example.com") in gates
+    assert ("hitl", "passed", "") in gates
+
+
+async def test_gate3_blocks_a_refused_run_instead_of_queueing_it(_gate3):
+    ex, hitl = _gate3
+    authorizer, calls = _recording_authorizer({"refuse": True, "reason": "grant revoked"})
+    extensions.add_autonomy_authorizer(authorizer)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), dict(_GATE_CTX), None,
+                                         hitl_pre_approved=False)
+    assert len(calls) == 1
+    assert out["status"] == "BLOCKED_ACTUATION" and out["reason"] == "grant revoked"
+    assert hitl.calls == [], "a refusal is not an approval request"
+
+
+async def test_gate3_an_erroring_authorizer_pauses_the_run_for_a_human(_gate3):
+    ex, hitl = _gate3
+
+    async def broken(skill, context):
+        raise RuntimeError("ledger down")
+
+    extensions.add_autonomy_authorizer(broken)
+    ctx = dict(_GATE_CTX)
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), ctx, None, hitl_pre_approved=False)
+    assert out["status"] == "PENDING_HITL"
+    assert "RuntimeError" in ctx["hitl_reason"], "fail-closed: no lent authority, no autonomy"
+
+
+async def test_gate3_with_no_authorizer_registered_behaves_as_before(_gate3):
+    ex, hitl = _gate3
+    assert extensions.autonomy_authorizers == []
+    out = await ex._gate_confidence_hitl(dict(_CONFIDENT), dict(_GATE_CTX), None,
+                                         hitl_pre_approved=False)
+    assert out is None and hitl.calls == []

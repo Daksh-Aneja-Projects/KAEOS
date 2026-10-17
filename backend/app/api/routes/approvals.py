@@ -141,9 +141,12 @@ async def decide(token: str):
                          "for that department to decide it.", False)
 
     from app.services.hitl_manager import hitl_manager
+    # No attestation: a link click measures nothing about the review, and the
+    # record says so (present=False) rather than counting it as attended.
     success = await hitl_manager.resolve_hitl(
         execution_id, approved=approved, approver=approver,
-        reason="decided from notification link", tenant_id=tenant_id)
+        reason="decided from notification link", tenant_id=tenant_id,
+        attestation={"channel": "notification_link"})
     if not success:
         return _page("Already decided",
                      "This approval is no longer pending. It may have been "

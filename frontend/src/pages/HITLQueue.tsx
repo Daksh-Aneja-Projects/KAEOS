@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldAlert, CheckCircle2, XCircle, Clock, Search, Bot, GitBranch, AlertTriangle, Loader2, Gavel } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { DiffTable } from './GovernedExecution';
@@ -54,6 +54,13 @@ export default function HITLQueue(_props: { domain?: string }) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Review attestation: when each item first reached this screen. A decision
+  // records how long the approver had it in front of them.
+  const firstSeen = useRef<Record<string, number>>({});
+  useEffect(() => {
+    for (const item of items) firstSeen.current[item.id] ??= Date.now();
+  }, [items]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,9 +156,16 @@ export default function HITLQueue(_props: { domain?: string }) {
     }
   };
 
-  const handleApprove = (id: string) => runDecision(id, () => api.approveHITL(id));
+  const attestationFor = (id: string) => ({
+    seconds_visible: (Date.now() - (firstSeen.current[id] || Date.now())) / 1000,
+    diff_shown: !!rehearsals[id],
+    reasoning_shown: true,
+    channel: 'console',
+  });
 
-  const handleReject = (id: string) => runDecision(id, () => api.rejectHITL(id));
+  const handleApprove = (id: string) => runDecision(id, () => api.approveHITL(id, { attestation: attestationFor(id) }));
+
+  const handleReject = (id: string) => runDecision(id, () => api.rejectHITL(id, { attestation: attestationFor(id) }));
 
   const filteredItems = items.filter(i =>
     i.skill_id_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -273,6 +287,10 @@ export default function HITLQueue(_props: { domain?: string }) {
                     </button>
                   </div>
                 </div>
+                {/* Attested review: the decision records what the reviewer had in front of them. */}
+                <p className="mt-3 text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>
+                  Your decision records how long this item was on your screen; a decision made within 5 seconds is marked quick and does not count as evidence that the skill is safe to run alone.
+                </p>
 
                 {convening === item.id && !committees[item.id] && (
                   <div className="mt-5 p-4 rounded-xl" style={{ background: colors.surface2, border: `1px solid ${colors.primary}30` }}>

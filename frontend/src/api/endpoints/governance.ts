@@ -179,8 +179,12 @@ export const governanceApi = {
   // Single HITL queue: the DB is the source of truth for ALL pending
   // approvals, including Gate-3 pipeline pauses (route_type GATED_AGENT).
   getPendingHITL: () => request<PendingHITLItem[]>('/skills/hitl/pending'),
-  approveHITL: (execId: string) => request(`/skills/hitl/${execId}/approve`, { method: 'POST' }),
-  rejectHITL: (execId: string) => request(`/skills/hitl/${execId}/reject`, { method: 'POST' }),
+  // The optional body carries the review attestation (how long the item was on
+  // the approver's screen) and, on approve, a corrected answer.
+  approveHITL: (execId: string, body?: { corrected_answer?: string; attestation?: Record<string, unknown> }) =>
+    request(`/skills/hitl/${execId}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }),
+  rejectHITL: (execId: string, body?: { reason?: string; attestation?: Record<string, unknown> }) =>
+    request(`/skills/hitl/${execId}/reject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }),
 
   // LLM Routing / BYOK
   // Autonomy Dial — per-domain risk appetite (the confidence a domain must clear to run without a human)

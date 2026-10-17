@@ -15,10 +15,15 @@ class HITLResolutionRequest(BaseModel):
     execution_id: str
     approved: bool
     reason: str = ""
+    # Review attestation measured by the deciding surface (seconds the item
+    # was on screen, whether the diff / reasoning were shown). Optional; the
+    # server normalizes and stamps it (hitl_manager.normalize_attestation).
+    attestation: dict | None = None
 
 
 class HITLDecisionBody(BaseModel):
     reason: str = ""
+    attestation: dict | None = None
 
 
 @router.get("/status/{execution_id}")
@@ -51,8 +56,10 @@ async def resolve_hitl(
     # Department-scoped approvers may only decide their own department's items.
     check_department_scope(
         tenant, await hitl_manager.get_record_department(req.execution_id))
+    from app.services.hitl_manager import normalize_attestation
     success = await hitl_manager.resolve_hitl(
-        req.execution_id, req.approved, approver, req.reason, tenant_id=tenant_id
+        req.execution_id, req.approved, approver, req.reason, tenant_id=tenant_id,
+        attestation=req.attestation,
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found in pending HITL requests")
@@ -64,7 +71,9 @@ async def resolve_hitl(
         actor_role=tenant.get("role"),
         resource_type="hitl_execution",
         resource_id=req.execution_id,
-        details={"reason": req.reason},
+        details={"reason": req.reason,
+                 "attestation": normalize_attestation(req.attestation, approver=approver,
+                                                      approved=req.approved)},
     )
     return {"status": "success", "execution_id": req.execution_id, "approved": req.approved}
 
@@ -83,9 +92,12 @@ async def approve_hitl(
     tenant_id = tenant["tenant_id"]
     check_department_scope(
         tenant, await hitl_manager.get_record_department(execution_id))
+    from app.services.hitl_manager import normalize_attestation
     reason = data.reason if data else ""
+    attestation = data.attestation if data else None
     success = await hitl_manager.resolve_hitl(
-        execution_id, approved=True, approver=approver, reason=reason, tenant_id=tenant_id
+        execution_id, approved=True, approver=approver, reason=reason, tenant_id=tenant_id,
+        attestation=attestation,
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found")
@@ -97,7 +109,9 @@ async def approve_hitl(
         actor_role=tenant.get("role"),
         resource_type="hitl_execution",
         resource_id=execution_id,
-        details={"reason": reason},
+        details={"reason": reason,
+                 "attestation": normalize_attestation(attestation, approver=approver,
+                                                      approved=True)},
     )
     return {"status": "approved", "execution_id": execution_id}
 
@@ -116,9 +130,12 @@ async def reject_hitl(
     tenant_id = tenant["tenant_id"]
     check_department_scope(
         tenant, await hitl_manager.get_record_department(execution_id))
+    from app.services.hitl_manager import normalize_attestation
     reason = data.reason if data else ""
+    attestation = data.attestation if data else None
     success = await hitl_manager.resolve_hitl(
-        execution_id, approved=False, approver=approver, reason=reason, tenant_id=tenant_id
+        execution_id, approved=False, approver=approver, reason=reason, tenant_id=tenant_id,
+        attestation=attestation,
     )
     if not success:
         raise HTTPException(status_code=404, detail="Execution ID not found")
@@ -130,7 +147,9 @@ async def reject_hitl(
         actor_role=tenant.get("role"),
         resource_type="hitl_execution",
         resource_id=execution_id,
-        details={"reason": reason},
+        details={"reason": reason,
+                 "attestation": normalize_attestation(attestation, approver=approver,
+                                                      approved=False)},
     )
     return {"status": "rejected", "execution_id": execution_id}
 

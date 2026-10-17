@@ -171,7 +171,10 @@ def _spy_resolve(monkeypatch):
 
     calls = {}
 
-    async def spy(execution_id, approved, approver="human", reason="", tenant_id=None):
+    # resolve_hitl also takes the review attestation (attested review, EE 0.24);
+    # the spy accepts it so the route contract under test stays the real one.
+    async def spy(execution_id, approved, approver="human", reason="", tenant_id=None,
+                  attestation=None):
         calls.update(execution_id=execution_id, approved=approved,
                      approver=approver, tenant_id=tenant_id)
         return True

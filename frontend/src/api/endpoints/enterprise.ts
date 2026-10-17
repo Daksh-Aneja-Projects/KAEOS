@@ -357,5 +357,43 @@ export const governedExecutionApi = {
   // section labelled measured or self-assessed; the zip adds the proofs.
   getEvidenceSummary: (trailLimit = 25) => request<any>(`/evidence/pack/summary?trail_limit=${trailLimit}`),
   evidencePackPath: () => '/evidence/pack',
+
+  // Authority: a person lends their own signature to the machine. Scoped,
+  // limited per action and per window, revocable, delegable only downward.
+  // The holder is always the authenticated user, never a field.
+  getAuthoritySettings: () => request<any>('/authority/settings'),
+  setAuthorityMode: (mode: 'observe' | 'enforce') =>
+    request<any>('/authority/settings', { method: 'PUT', body: JSON.stringify({ mode }) }),
+  listAuthorityGrants: (scope: 'mine' | 'workspace' = 'mine', includeClosed = false) =>
+    request<any>(`/authority/grants?scope=${scope}${includeClosed ? '&include_closed=true' : ''}`),
+  lendAuthority: (body: Record<string, unknown>) =>
+    request<any>('/authority/grants', { method: 'POST', body: JSON.stringify(body) }),
+  getAuthorityGrant: (id: string) => request<any>(`/authority/grants/${encodeURIComponent(id)}`),
+  revokeAuthorityGrant: (id: string, reason: string) =>
+    request<any>(`/authority/grants/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  delegateAuthorityGrant: (id: string, body: Record<string, unknown>) =>
+    request<any>(`/authority/grants/${encodeURIComponent(id)}/delegate`, { method: 'POST', body: JSON.stringify(body) }),
+  respondToAuthorityGrant: (id: string, accept: boolean) =>
+    request<any>(`/authority/grants/${encodeURIComponent(id)}/accept`, { method: 'POST', body: JSON.stringify({ accept }) }),
+  getAuthorityExposure: () => request<any>('/authority/exposure'),
+  getAuthorityLedger: (limit = 100, status?: string) =>
+    request<any>(`/authority/ledger?limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
+  getAuthorityUnderwriting: (skillId: string, days = 90) =>
+    request<any>(`/authority/underwrite?skill_id=${encodeURIComponent(skillId)}&days=${days}`),
+  // Pause switch, tripwire resume, replay, reviewer quality and signed run tokens.
+  resumeAuthorityGrant: (id: string) =>
+    request<any>(`/authority/grants/${encodeURIComponent(id)}/resume`, { method: 'POST', body: JSON.stringify({}) }),
+  pauseMyAuthority: () => request<any>('/authority/pause', { method: 'POST', body: JSON.stringify({}) }),
+  resumeMyAuthority: () => request<any>('/authority/resume', { method: 'POST', body: JSON.stringify({}) }),
+  replayAuthority: (body: Record<string, unknown>) =>
+    request<any>('/authority/replay', { method: 'POST', body: JSON.stringify(body) }),
+  getAuthorityReviewers: (days = 90) => request<any>(`/authority/reviewers?days=${days}`),
+  getAuthorityToken: (executionId: string) =>
+    request<any>(`/authority/token/${encodeURIComponent(executionId)}`),
+  verifyAuthorityToken: (token: string, expectedPublicKey?: string) =>
+    request<any>('/authority/verify', {
+      method: 'POST',
+      body: JSON.stringify(expectedPublicKey ? { token, expected_public_key: expectedPublicKey } : { token }),
+    }),
 };
 

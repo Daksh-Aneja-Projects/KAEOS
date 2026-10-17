@@ -11,6 +11,27 @@ All notable changes to KAEOS are documented here. This project adheres to
 
 ## [Unreleased]
 
+- Seam + Gate 3: **autonomy authorizers** (`extensions.add_autonomy_authorizer`,
+  `authorize_autonomy`). The pipeline now asks, for a run every other rule
+  lets through with no human, "on whose authority?": an authorizer may
+  stamp the basis into the context, route the run to a human or refuse it;
+  an erroring authorizer fails closed to a human. Consulted only on the
+  otherwise-autonomous branch, so a run a person was going to see anyway
+  never pays. Inert without Enterprise. Gate trail gains an `authority`
+  stage (`lent` / `unlent`).
+- HITL: **attested review.** Every decide route (`/hitl/*`, `/skills/hitl/*`,
+  the e-mail link) accepts an optional `attestation` the deciding surface
+  measured (seconds the item was on screen, diff / reasoning shown, channel);
+  `hitl_manager.normalize_attestation` clamps, types and stamps it, marks a
+  decision inside `QUICK_DECISION_SECONDS` (5) as quick, and `resolve_hitl`
+  stores it on the pause record and merges `hitl_attestation` into the
+  execution's context so the resumed run's proof carries it. Absent means
+  unattested, never attended. The audit row's details carry it too.
+- Frontend: **Authority** page at `/platform/authority` (what runs under my
+  name: grants with live headroom and an exposure ring, lend with
+  underwriting inline, revoke, delegate, accept, the live feed); the HITL
+  queue measures and sends the review attestation; proof rows name whose
+  signature a run proceeded on.
 - Frontend: **Governed execution rounds out the Enterprise surface (EE
   0.23.0).** The Committees tab gains a "Convene a committee" form for a
   standalone question (options, criteria with weights, an explicit

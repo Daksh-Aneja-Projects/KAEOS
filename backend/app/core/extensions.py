@@ -108,6 +108,17 @@ class ExtensionRegistry:
     # register their own guard rather than composing into one function.
     actuation_guards: List[Callable[[dict, dict], Awaitable[Optional[dict]]]] = \
         field(default_factory=list)
+    # Autonomy authorizers - consulted at Gate 3 ONLY for a run that would
+    # otherwise proceed with no human (confidence above the dial, not high-
+    # consequence, no cap forced review). The question they answer is "on
+    # whose authority does this machine act on its own?": each is called with
+    # (skill, context) and returns None (no objection; it may have stamped
+    # ``context["authority"]`` with the basis), {"force_hitl": True, "reason"}
+    # (nobody has lent authority for this - a human decides) or
+    # {"refuse": True, "reason"}. Like caps, an authorizer can only widen
+    # scrutiny; an erroring one fails closed to a human.
+    autonomy_authorizers: List[Callable[[dict, dict], Awaitable[Optional[dict]]]] = \
+        field(default_factory=list)
 
     # Load state - surfaced honestly (ops console / status), never guessed.
     loaded: bool = False
@@ -190,6 +201,9 @@ class ExtensionRegistry:
 
     def add_actuation_guard(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
         self.actuation_guards.append(fn)
+
+    def add_autonomy_authorizer(self, fn: Callable[[dict, dict], Awaitable[Optional[dict]]]) -> None:
+        self.autonomy_authorizers.append(fn)
 
     def add_vendor_adapters(
         self, adapters: Dict[str, Any],
@@ -275,6 +289,27 @@ class ExtensionRegistry:
                 return str(verdict.get("reason") or "refused by the actuation guard")
         return None
 
+    async def authorize_autonomy(self, skill: dict, context: dict) -> Optional[dict]:
+        """Ask every autonomy authorizer whether this run may proceed with no
+        human. Returns None when none objects, else the first objection
+        ({"force_hitl": True, "reason"} or {"refuse": True, "reason"}).
+        FAIL-CLOSED: an authorizer that raises routes the run to a human with
+        the reason - an autonomous action on an unverified authority is
+        exactly what this slot exists to prevent."""
+        for fn in self.autonomy_authorizers:
+            try:
+                verdict = await fn(skill, context)
+            except Exception as e:
+                logger.error("[EE] autonomy authorizer failed; routing to a human "
+                             "(fail-closed)", exc_info=True)
+                return {"force_hitl": True,
+                        "reason": ("The authority check for this autonomous action could "
+                                   f"not complete ({type(e).__name__}); a human decides "
+                                   "until it is healthy.")}
+            if isinstance(verdict, dict) and (verdict.get("force_hitl") or verdict.get("refuse")):
+                return verdict
+        return None
+
     async def dispatch_startup(self) -> None:
         """Run Enterprise startup hooks (from the core lifespan, post-DB-init).
 
@@ -307,6 +342,7 @@ class ExtensionRegistry:
         self.writeback_adapters.clear()
         self.mcp_tools.clear()
         self.actuation_guards.clear()
+        self.autonomy_authorizers.clear()
         self.loaded = False
         self.version = None
         self.features = frozenset()

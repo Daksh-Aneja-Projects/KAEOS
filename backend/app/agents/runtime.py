@@ -707,12 +707,52 @@ class AgentExecutor:
         # executor's skill dict may not carry the explicit flag.
         _high_consequence = is_high_consequence(skill) or is_high_consequence(skill_obj)
 
-        if _high_consequence or _ext_force_reason or effective_confidence < _threshold:
+        # (d) The run is about to proceed with NO human. Enterprise seam: on
+        #     whose authority? An authorizer may answer "nobody has lent any"
+        #     (a human decides) or refuse; it is consulted only here, for runs
+        #     that every other rule already lets through, so authority is
+        #     never consumed by a run a human was going to see anyway.
+        _authority_reason = None
+        if not (_high_consequence or _ext_force_reason or effective_confidence < _threshold) \
+                and extensions.autonomy_authorizers:
+            _verdict = await extensions.authorize_autonomy(skill, context)
+            if _verdict and _verdict.get("refuse"):
+                logger.warning(f"[Gate3] autonomy refused for {skill.get('skill_id')}: "
+                               f"{_verdict.get('reason')}")
+                await self._mark_execution_failed(context["execution_id"],
+                                                  ExecutionStatus.BLOCKED_ACTUATION)
+                await self._emit_gate(context, "confidence", "blocked",
+                                      str(_verdict.get("reason"))[:300])
+                return {
+                    "status": ExecutionStatus.BLOCKED_ACTUATION,
+                    "execution_id": context["execution_id"],
+                    "reason": str(_verdict.get("reason")),
+                    "cost": await self._gate_cost(context),
+                }
+            if _verdict and _verdict.get("force_hitl"):
+                _authority_reason = str(_verdict.get("reason") or
+                                        "no one has lent authority for this autonomous action")
+                await self._emit_gate(context, "authority", "unlent", _authority_reason[:300])
+            elif isinstance(context.get("authority"), dict) and context["authority"].get("holder"):
+                await self._emit_gate(context, "authority", "lent",
+                                      str(context["authority"].get("holder"))[:120])
+            elif isinstance(context.get("authority"), dict) \
+                    and context["authority"].get("basis") == "none":
+                # Observe mode: nobody's authority, not routed. The trail says
+                # so, which is how a tenant sees what enforce would change.
+                await self._emit_gate(context, "authority", "unlent",
+                                      str(context["authority"].get("reason") or "")[:300])
+
+        if _high_consequence or _ext_force_reason or _authority_reason \
+                or effective_confidence < _threshold:
             if _high_consequence:
                 logger.info(f"[Gate3] high-consequence action -> forcing HITL: {skill.get('skill_id')}")
             if _ext_force_reason:
                 logger.info(f"[Gate3] extension cap forced HITL for "
                             f"{skill.get('skill_id')}: {_ext_force_reason}")
+            if _authority_reason:
+                logger.info(f"[Gate3] no lent authority for {skill.get('skill_id')}: "
+                            f"{_authority_reason}")
             # Tell the reviewer WHY, in plain English. The approval queue, the
             # notification and the pipeline response all carry this; a pause
             # with no stated cause is a decision nobody can review well.
@@ -723,6 +763,8 @@ class AgentExecutor:
                     "always require a human, whatever the confidence).")
             elif _ext_force_reason:
                 context["hitl_reason"] = str(_ext_force_reason)
+            elif _authority_reason:
+                context["hitl_reason"] = _authority_reason
             else:
                 context["hitl_reason"] = (
                     f"Effective confidence {effective_confidence:.2f} is below this "

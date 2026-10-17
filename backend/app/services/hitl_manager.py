@@ -53,6 +53,53 @@ _HITL_TTL = 86400
 RESUME_BACKSTOP_SECONDS = 600
 
 
+#: A decision made within this many seconds of the item first being on the
+#: reviewer's screen is recorded as QUICK. It is a label, not a verdict: the
+#: decision stands. Downstream, the Enterprise underwriting excludes quick
+#: decisions from the evidence that a skill's autonomy is safe, because a
+#: reviewer who did not look did not review.
+QUICK_DECISION_SECONDS = 5.0
+
+
+def normalize_attestation(raw: Dict[str, Any] | None, *, approver: str,
+                          approved: bool) -> Dict[str, Any]:
+    """The review attestation as stored: what the deciding surface MEASURED
+    about the human's review, server-stamped. Never trusts the client's
+    conclusion - only its measurements, which are clamped and typed here.
+
+    ``present`` False means the surface sent none (an older client, the
+    e-mail link): the decision is recorded as unattested, which is honest
+    about what is known, never as a quick or an attended review.
+    """
+    out: Dict[str, Any] = {
+        "present": False,
+        "approver": approver,
+        "approved": bool(approved),
+        "decided_at": datetime.now(timezone.utc).isoformat(),
+        "quick_threshold_seconds": QUICK_DECISION_SECONDS,
+    }
+    if not isinstance(raw, dict):
+        return out
+    seconds = raw.get("seconds_visible")
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        seconds = None
+    if seconds is not None and seconds != seconds:  # NaN: a measurement nobody made
+        seconds = None
+    if seconds is not None:
+        seconds = max(0.0, min(seconds, 7 * 24 * 3600.0))
+    out.update({
+        "present": seconds is not None,
+        "seconds_visible": seconds,
+        "diff_shown": bool(raw.get("diff_shown")),
+        "reasoning_shown": bool(raw.get("reasoning_shown")),
+        "channel": str(raw.get("channel") or "console")[:32],
+        "quick": (seconds is not None and seconds < QUICK_DECISION_SECONDS),
+    })
+    return out
+
+
 class HITLManager:
     """
     Manages Human-in-the-Loop workflows for agent executions.
@@ -501,8 +548,18 @@ class HITLManager:
         approver: str = "human",
         reason: str = "",
         tenant_id: str | None = None,
+        attestation: Dict[str, Any] | None = None,
     ) -> bool:
         """Resolve a pending HITL approval and schedule the resume.
+
+        `attestation` is the REVIEW ATTESTATION the deciding surface measured
+        about the human's own review (how long the item was on screen, whether
+        the predicted diff and the reasoning were shown) - see
+        :func:`normalize_attestation`. It is stored on the pause record and
+        merged into the execution's context as ``hitl_attestation`` so the
+        resumed run's proof can say not only WHO decided but whether they had
+        the item in front of them when they did. Absent (an older client, the
+        e-mail link) is recorded as absent, never as a review.
 
         `tenant_id` is the caller's tenant and MUST be passed by any request-
         driven path. This looked the record up by execution_id alone, so one
@@ -545,12 +602,18 @@ class HITLManager:
         except Exception:
             pass
 
+        _attest = normalize_attestation(attestation, approver=approver, approved=approved)
         if record:
             record["status"] = "RESOLVED"
             record["decision"] = approved
             record["approver"] = approver
             record["reason"] = reason
             record["resolved_at"] = datetime.now(timezone.utc).isoformat()
+            record["attestation"] = _attest
+            # A gated (synthetic) skill resumes from this record's context: the
+            # attestation must ride there too, or its proof would not carry it.
+            if isinstance(record.get("context"), dict):
+                record["context"]["hitl_attestation"] = _attest
             await self._put_record(execution_id, record, ttl=300)  # keep 5 min for reader
             logger.info(f"[HITL] Resolved {execution_id}: approved={approved}")
         else:
@@ -587,6 +650,10 @@ class HITLManager:
                     agent_state=AgentState.RUNNING if approved else AgentState.FAILED,
                     hitl_approved=approved,
                     hitl_approver=approver,
+                    # The resumed run reads this row's context; the attestation
+                    # travels with it (merged, never replacing the context).
+                    context={**(execution.context if isinstance(execution.context, dict) else {}),
+                             "hitl_attestation": _attest},
                 )
                 if not approved:
                     values.update(

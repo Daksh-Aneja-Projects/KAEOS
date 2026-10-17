@@ -171,6 +171,11 @@ function ProofsPanel() {
             <Pill text={humanize(r.subject_kind || 'action')} tone="primary" />
             <span className="truncate flex-1">{r.skill_id ? `${humanize(r.skill_id)} · ` : ''}{r.subject_id}</span>
             {r.status && <Pill text={humanize(r.status)} tone={String(r.status).startsWith('SUCCESS') ? 'ok' : String(r.status).startsWith('BLOCKED') || String(r.status).startsWith('FAILED') ? 'bad' : 'muted'} />}
+            {r.authority && (r.authority.basis === 'delegated'
+              ? <Pill text={`Under ${r.authority.holder}'s authority`} tone="primary" />
+              : r.authority.basis === 'direct'
+                ? <Pill text={r.authority.quick === true ? `Approved by ${r.authority.holder} (quick)` : `Approved by ${r.authority.holder}`} tone={r.authority.quick === true ? 'warn' : 'ok'} />
+                : <Pill text="Nobody's authority" tone="warn" />)}
             {r.subject_kind === 'action' && r.skill_id && String(r.status || '').startsWith('SUCCESS') && (
               <RateRun executionId={r.subject_id} skillId={r.skill_id} />
             )}

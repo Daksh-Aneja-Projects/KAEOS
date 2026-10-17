@@ -6,7 +6,7 @@ import {
   MessageSquare, LogOut, Building2, Rocket, Package,
   BarChart3, LayoutDashboard, Plug, ChevronRight, Briefcase,
   Scale, ShieldCheck,
-  Compass, Server, Factory, UserPlus, Zap, FlaskConical, Menu
+  Compass, Server, Factory, UserPlus, Zap, FlaskConical, Menu, PenLine
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_COLORS } from './lib/departments';
@@ -76,6 +76,7 @@ const KnowledgeView = lazy(() => import('./views/KnowledgeView'));
 const AgentsView = lazy(() => import('./views/AgentsView'));
 const DecisionsView = lazy(() => import('./views/DecisionsView'));
 const ComplianceChecker = lazy(() => import('./pages/ComplianceChecker'));
+const Authority = lazy(() => import('./pages/Authority'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OperatorConsole = lazy(() => import('./pages/OperatorConsole'));
@@ -122,6 +123,7 @@ const PLATFORM_NAV: NavItem[] = [
   { path: '/platform/knowledge', label: 'Knowledge', icon: Database },
   { path: '/platform/agents', label: 'Agents', icon: Bot },
   { path: '/platform/decisions', label: 'Decisions', icon: Activity },
+  { path: '/platform/authority', label: 'Authority', icon: PenLine },
   { path: '/platform/proving-ground', label: 'Proving Ground', icon: ShieldCheck },
   { path: '/platform/compliance-checker', label: 'Compliance Checker', icon: Scale },
   // Tooling next.
@@ -502,6 +504,7 @@ function Shell() {
                 <Route path="/platform/knowledge" element={<ThemeAdapter><KnowledgeView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />
+                <Route path="/platform/authority" element={<ThemeAdapter><Authority /></ThemeAdapter>} />
                 <Route path="/platform/proving-ground" element={<ThemeAdapter><ProvingGround /></ThemeAdapter>} />
                 <Route path="/platform/compliance-checker" element={<ThemeAdapter><ComplianceChecker /></ThemeAdapter>} />
                 {/* Company Brain merged into Knowledge; Trust merged into Decisions (Governance tab). */}

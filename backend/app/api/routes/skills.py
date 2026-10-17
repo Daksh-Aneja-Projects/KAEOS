@@ -369,8 +369,16 @@ def _approver_identity(tenant: dict) -> str:
 
 class ApproveHitlIn(BaseModel):
     """Optional approval payload. `corrected_answer` turns a plain approval into
-    an APPROVE-WITH-EDIT: the human accepted the action but rewrote the answer."""
+    an APPROVE-WITH-EDIT: the human accepted the action but rewrote the answer.
+    `attestation` is what the deciding surface measured about the review itself
+    (seconds on screen, diff / reasoning shown); the server normalizes it."""
     corrected_answer: str | None = None
+    attestation: dict | None = None
+
+
+class RejectHitlIn(BaseModel):
+    reason: str = ""
+    attestation: dict | None = None
 
 
 @router.post("/hitl/{exec_id}/approve")
@@ -434,8 +442,11 @@ async def approve_hitl(
         except Exception as e:
             logger.error(f"[HITL] could not record the correction for {exec_id}: {e}")
 
+    from app.services.hitl_manager import normalize_attestation
+    _attestation = body.attestation if body else None
     resolved = await hitl_manager.resolve_hitl(
-        exec_id, approved=True, approver=approver, tenant_id=tenant_id
+        exec_id, approved=True, approver=approver, tenant_id=tenant_id,
+        attestation=_attestation,
     )
     if not resolved:
         raise HTTPException(409, "Approval was already resolved")
@@ -457,6 +468,9 @@ async def approve_hitl(
         tenant_id=tenant_id, event_type="HITL_DECISION", action="APPROVE",
         actor=approver, actor_role=tenant.get("role"),
         resource_type="skill_execution", resource_id=exec_id,
+        details={"edited": bool(edit),
+                 "attestation": normalize_attestation(_attestation, approver=approver,
+                                                      approved=True)},
     )
     return {"status": "RESUMING", "execution_id": exec_id}
 
@@ -464,12 +478,16 @@ async def approve_hitl(
 async def reject_hitl(
     exec_id: str,
     background_tasks: BackgroundTasks,
+    body: RejectHitlIn | None = None,
     tenant: dict = Depends(require_role("operator")),
     db: AsyncSession = Depends(get_db),
 ):
     """L9 - Reject a pending HITL execution (operator+, your own tenant's only)."""
+    from app.services.hitl_manager import normalize_attestation
     tenant_id = tenant["tenant_id"]
     approver = _approver_identity(tenant)
+    _attestation = normalize_attestation(body.attestation if body else None,
+                                         approver=approver, approved=False)
     result = await db.execute(
         select(SkillExecution).where(
             SkillExecution.id == exec_id, SkillExecution.tenant_id == tenant_id
@@ -486,7 +504,9 @@ async def reject_hitl(
     execution.status = ExecutionStatus.HUMAN_OVERRIDDEN
     execution.outcome_type = ExecutionStatus.HUMAN_OVERRIDDEN
     execution.hitl_approved = False
+    execution.hitl_approver = approver
     execution.completed_at = datetime.now(timezone.utc)
+    execution.context = {**(execution.context or {}), "hitl_attestation": _attestation}
 
     # Emit activity event
     await activity_feed.emit(
@@ -513,13 +533,15 @@ async def reject_hitl(
     gate_record = await hitl_manager._get_record(exec_id)
     if gate_record and gate_record.get("status") == "PENDING":
         await hitl_manager.resolve_hitl(
-            exec_id, approved=False, approver=approver, tenant_id=tenant_id
+            exec_id, approved=False, approver=approver, tenant_id=tenant_id,
+            attestation=body.attestation if body else None,
         )
 
     await record_security_event(
         tenant_id=tenant_id, event_type="HITL_DECISION", action="REJECT",
         actor=approver, actor_role=tenant.get("role"),
         resource_type="skill_execution", resource_id=exec_id,
+        details={"reason": body.reason if body else "", "attestation": _attestation},
     )
     return {"status": "REJECTED", "execution_id": exec_id}
 
