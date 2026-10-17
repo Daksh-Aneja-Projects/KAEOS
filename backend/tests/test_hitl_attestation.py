@@ -380,12 +380,19 @@ def test_every_hitl_decision_route_uses_the_human_gate():
     """Pins the route table: an approve / reject / resolve route that only
     checks a role would let an agent key approve its own pause again."""
     from app.main import app
-    decide = [r for r in app.routes if getattr(r, "methods", None) and "POST" in r.methods
+    from tests.route_introspection import iter_api_routes
+    # iter_api_routes, not app.routes: FastAPI >= 0.120 keeps included routers
+    # as lazy entries, so a flat walk finds nothing and the test would pass
+    # vacuously (it found zero routes in CI the first time).
+    decide = [r for r in iter_api_routes(app) if "POST" in r.methods
               and "hitl" in r.path.split("/")
               and (r.path.rsplit("/", 1)[-1] in ("approve", "reject", "resolve", "hitl"))]
     assert len(decide) >= 8, [r.path for r in decide]
     for r in decide:
-        calls = {getattr(d.call, "__qualname__", "") for d in r.dependant.dependencies}
+        deps = list(getattr(r.dependant, "dependencies", []) or [])
+        calls = {getattr(d.call, "__qualname__", "") for d in deps}
+        calls |= {getattr(getattr(d, "dependency", d), "__qualname__", "")
+                  for d in r.router_dependencies}
         assert any("require_human_decider" in c for c in calls), r.path
 
 
