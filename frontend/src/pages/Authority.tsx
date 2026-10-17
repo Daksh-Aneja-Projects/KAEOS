@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PenLine, Loader2, Lock, Unlock, ChevronDown, ChevronUp, Check, X, ArrowRight, Share2, Ban, Sparkles,
-  PauseCircle, PlayCircle, KeyRound, History,
+  PauseCircle, PlayCircle, KeyRound, History, Undo2, Users, Download, Plus,
 } from 'lucide-react';
+import { Link } from 'react-router';
 import { api } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +14,7 @@ import { humanize } from '../lib/format';
 import { timeAgo } from '../lib/time';
 import { PAGE_PAD } from '../lib/layout';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type DepartmentSlug } from '../lib/departments';
+import AuthorityBalance from './AuthorityBalance';
 
 /**
  * Authority: what runs under your name, and on whose signature.
@@ -148,6 +150,69 @@ function expiryText(iso: string | null | undefined): string {
   const r = relFuture(iso);
   if (!r) return 'No expiry';
   return r === 'now' ? 'Expired' : `Expires ${r}`;
+}
+
+/** A moment from the record as a short local date and time. */
+function whenText(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : String(iso);
+}
+
+/** How long a run's write can be undone, in words; empty when the server did not send the field. */
+function undoWords(g: any): string[] {
+  const out: string[] = [];
+  if (g?.undo_window_hours === null) out.push('no undo');
+  else if (g?.undo_window_hours !== undefined) out.push(`undo within ${numText(g.undo_window_hours)} h`);
+  if (g?.reversible_only) out.push('reversible writes only');
+  return out;
+}
+
+/** The undo assessment in plain English. */
+function undoSentence(a: any): { text: string; tone: Tone } {
+  const by = a?.reversed_by ? ` by ${a.reversed_by}` : '';
+  switch (a?.state) {
+    case 'available':
+      return { text: a.deadline ? `Can be undone until ${whenText(a.deadline)}.` : 'Can be undone.', tone: 'ok' };
+    case 'reversed':
+      return { text: `Already undone${by}${a.reversed_at ? ` ${timeAgo(a.reversed_at)}` : ''}.`, tone: 'muted' };
+    case 'expired':
+      return { text: a.deadline ? `The undo window closed at ${whenText(a.deadline)}.` : 'The undo window has closed.', tone: 'muted' };
+    case 'drifted':
+      return { text: 'The record has changed since the write, so undoing would overwrite a change nobody reviewed.', tone: 'warn' };
+    case 'not_reversible':
+      return { text: 'This write cannot be undone.', tone: 'muted' };
+    case 'no_write':
+      return { text: 'This run performed no governed write.', tone: 'muted' };
+    case 'no_undo_window':
+      return { text: 'The grant behind this run had no undo window, so it cannot be undone.', tone: 'muted' };
+    default:
+      return { text: a?.state ? humanize(a.state) : NOT_MEASURED, tone: 'muted' };
+  }
+}
+
+/** A list the server may send bare or wrapped under a key. */
+function asList(d: any, key: string): any[] {
+  if (Array.isArray(d)) return d;
+  if (d && Array.isArray(d[key])) return d[key];
+  return [];
+}
+
+/** One claim of a declared record: its value in words, or "Not measured" when it holds none. */
+function claimValueText(c: any): string {
+  const v = c && typeof c === 'object' && 'value' in c ? c.value : null;
+  if (v == null) return NOT_MEASURED;
+  if (typeof v === 'number') return numText(v);
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch { return NOT_MEASURED; }
+}
+
+function claimTitle(c: any): string | undefined {
+  if (!c || typeof c !== 'object') return undefined;
+  const why = c.reason ?? c.evidence;
+  const text = why == null ? '' : typeof why === 'string' ? why : (() => { try { return JSON.stringify(why); } catch { return ''; } })();
+  return [c.status ? humanize(c.status) : '', text].filter(Boolean).join(': ') || undefined;
 }
 
 function prefersReducedMotion(): boolean {
@@ -326,6 +391,7 @@ function GrantCard({ g, me, onChanged }: { g: any; me: string | null; onChanged:
       <div className="text-[12px]" style={{ color: colors.inkMuted }}>
         {limitWords(g)}
         {tripwireWords(g) && <span style={{ color: colors.inkTertiary }}>{`; ${tripwireWords(g)}`}</span>}
+        {undoWords(g).length > 0 && <span style={{ color: colors.inkTertiary }}>{`; ${undoWords(g).join('; ')}`}</span>}
       </div>
 
       {g.state === 'suspended' && (
@@ -817,6 +883,7 @@ function ReviewQuality() {
 const EMPTY_FORM = {
   department: '', skill: '', per_action: '', window_amount: '', window_actions: '', window: 'day',
   currency: 'USD', expires_in_days: '', max_risk_tier: '', delegable: false, note: '', tripwire: '1',
+  undo_window_hours: '24', reversible_only: false,
 };
 
 function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
@@ -873,6 +940,8 @@ function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
         delegable: f.delegable,
         note: f.note.trim(),
         tripwire_adverse_runs: num(f.tripwire),
+        undo_window_hours: num(f.undo_window_hours),
+        reversible_only: f.reversible_only,
       });
       setF(EMPTY_FORM); setDone(true);
       onLent();
@@ -939,6 +1008,17 @@ function LendPanel({ onLent, sectionRef, fallbackCurrency }: {
               An adverse run under this grant suspends it and tells you. You resume it after looking.
             </span>
           </Field>
+          <Field label="Undo window (hours)">
+            <input type="number" min={0} step="any" value={f.undo_window_hours} onChange={e => set({ undo_window_hours: e.target.value })}
+              className={inputCls} style={inputStyle} placeholder="Blank for no undo" />
+            <span className="block text-[11px] mt-1 leading-snug" style={{ color: colors.inkTertiary }}>
+              A run's write can be undone by you inside this window, if the record has not moved since.
+            </span>
+          </Field>
+          <label className="flex items-center gap-2 text-[12px] cursor-pointer" style={{ color: colors.inkMuted }}>
+            <input type="checkbox" checked={f.reversible_only} onChange={e => set({ reversible_only: e.target.checked })} />
+            Admit only reversible writes
+          </label>
           <label className="flex items-center gap-2 text-[12px] cursor-pointer" style={{ color: colors.inkMuted }}>
             <input type="checkbox" checked={f.delegable} onChange={e => set({ delegable: e.target.checked })} />
             The holder of this grant may delegate part of it
@@ -1026,10 +1106,45 @@ function TokenButton({ executionId }: { executionId: string }) {
   );
 }
 
-function FeedRow({ u }: { u: any }) {
+type UndoUi = { open: boolean; loading: boolean; assessment: any; error: string | null; busy: boolean; result: any };
+
+function FeedRow({ u, onChanged }: { u: any; onChanged: () => void }) {
   const { colors } = useTheme();
   const st = USE_STATUS[u.status] || { label: humanize(u.status), tone: 'muted' as Tone };
   const settled = u.status === 'used' || u.status === 'released';
+  const [ud, setUd] = useState<UndoUi>({ open: false, loading: false, assessment: null, error: null, busy: false, result: null });
+  const canUndo = (u.status === 'used' || u.status === 'reserved') && !!u.execution_id && !u.reversed_at;
+
+  // First click reads the assessment; nothing is written until the person confirms.
+  const toggleUndo = async () => {
+    if (ud.open) { setUd(p => ({ ...p, open: false })); return; }
+    setUd(p => ({ ...p, open: true, loading: true, error: null, result: null }));
+    try {
+      const a = await api.getAuthorityUndo(u.execution_id);
+      setUd(p => ({ ...p, loading: false, assessment: a }));
+    } catch (e: any) {
+      setUd(p => ({ ...p, loading: false, error: e?.message || 'Whether this run can be undone could not be read.' }));
+    }
+  };
+
+  const confirmUndo = async () => {
+    setUd(p => ({ ...p, busy: true, error: null }));
+    try {
+      const r = await api.undoAuthorityRun(u.execution_id);
+      setUd(p => ({ ...p, busy: false, result: r }));
+      onChanged();
+    } catch (e: any) {
+      setUd(p => ({ ...p, busy: false, error: e?.message || 'The undo was refused.' }));
+    }
+  };
+
+  const a = ud.assessment;
+  const verdict = a ? undoSentence(a) : null;
+  const w = a?.write;
+  const r = ud.result;
+  const restored = r?.restored;
+  const restoredTo = restored && (typeof restored.to === 'string' || typeof restored.to === 'number') ? String(restored.to) : '';
+
   return (
     <div className="px-4 py-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[12.5px]"
       style={{ borderTop: `1px solid ${colors.hairline}`, color: colors.inkMuted }} title={u.reason || undefined}>
@@ -1047,12 +1162,509 @@ function FeedRow({ u }: { u: any }) {
       </span>
       {settled && (u.proof_id ? <Pill text="Proof sealed" tone="ok" /> : <Pill text="Seal missing" tone="bad" />)}
       {u.disputed && <Pill text="Rated wrong" tone="bad" />}
+      {u.reversed_at && (
+        <span title={u.reversed_by ? `Undone by ${u.reversed_by}` : 'Undone'}><Pill text="Undone" tone="muted" /></span>
+      )}
+      {canUndo && (
+        <button onClick={toggleUndo} aria-expanded={ud.open}
+          title="Take back the write this run made, if it can still be taken back."
+          className="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1"
+          style={{ background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` }}>
+          <Undo2 className="w-3 h-3" /> Undo
+        </button>
+      )}
       {(u.status === 'used' || u.status === 'reserved') && u.execution_id && <TokenButton executionId={u.execution_id} />}
       {u.status === 'unlent' && (
         <span className="basis-full text-[11px] pl-[68px]" style={{ color: colors.inkTertiary }}>
           No one lent a signature for this run{u.reason ? '. Hover for the reason.' : '.'}
         </span>
       )}
+      {ud.open && (
+        <div className="basis-full pl-[68px] space-y-1.5" aria-live="polite">
+          {ud.loading && <div className="flex items-center gap-1.5 text-[12px]" style={{ color: colors.inkSubtle }}><Loader2 className="w-3 h-3 animate-spin" /> Checking whether this run can be undone…</div>}
+          {ud.error && <div className="text-[12px]" style={{ color: colors.error }} role="alert">{ud.error}</div>}
+          {r ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap text-[12px]" style={{ color: colors.ink }}>
+                <Check className="w-3.5 h-3.5" style={{ color: colors.success }} />
+                <span>{`Undone by ${r.reversed_by || NOT_MEASURED}`}</span>
+                {r.reversal_proof_id ? <Pill text="Proof sealed" tone="ok" /> : <Pill text="Seal missing" tone="bad" />}
+              </div>
+              {restored && (
+                <div className="text-[11px]" style={{ color: colors.inkTertiary }}>
+                  {`Restored ${humanize(restored.object_type)} ${restored.external_id ?? ''} in ${humanize(restored.system)}${restoredTo ? ` to ${restoredTo}` : ''}.`}
+                </div>
+              )}
+            </div>
+          ) : a && verdict && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap text-[12px]">
+                <Pill text={humanize(a.state)} tone={verdict.tone} />
+                <span style={{ color: colors.ink }}>{verdict.text}</span>
+                {a.state === 'reversed' && (a.reversal_proof_id ? <Pill text="Proof sealed" tone="ok" /> : <Pill text="Seal missing" tone="bad" />)}
+              </div>
+              {a.reason && a.reason !== verdict.text && <div className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>{a.reason}</div>}
+              {w && (
+                <div className="text-[11px]" style={{ color: colors.inkTertiary }}>
+                  {`Write: ${humanize(w.operation)} on ${humanize(w.object_type)} ${w.external_id ?? ''} in ${humanize(w.system)}.`}
+                </div>
+              )}
+              {a.state === 'available' && (
+                <button onClick={confirmUndo} disabled={ud.busy}
+                  className="px-2.5 py-1 rounded-md text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                  style={{ background: colors.primary, color: '#fff' }}>
+                  {ud.busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />} Undo this run
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Autonomy balance sheet, folded into the page ─────────────────────────────
+
+function BalancePanel() {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}`, background: colors.surface1 }}>
+      <div className="px-4 py-2.5 flex items-center justify-between gap-3" style={{ background: colors.surface2 }}>
+        <button onClick={() => setOpen(o => !o)} aria-expanded={open} aria-controls="authority-balance-body"
+          className="flex items-center gap-1.5 text-[11.5px] font-medium min-w-0" style={{ color: colors.inkSubtle }}>
+          {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          <span>Autonomy balance sheet</span>
+        </button>
+        <Link to="/platform/authority/balance" className="text-[11.5px] font-semibold flex items-center gap-1 whitespace-nowrap" style={{ color: colors.primary }}>
+          Open full statement <ArrowRight className="w-3 h-3" />
+        </Link>
+      </div>
+      {open ? (
+        <div id="authority-balance-body" className="p-4"><AuthorityBalance embedded /></div>
+      ) : (
+        <p className="px-4 py-2.5 text-[11.5px]" style={{ color: colors.inkTertiary }}>
+          What stood open, what ran on lent authority, what went wrong and how closely the humans looked, for a month, a quarter or a range you choose.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Deputies and handover ─────────────────────────────────────────────────────
+
+function DeputiesPanel({ onChanged }: { onChanged: () => void }) {
+  const { colors } = useTheme();
+  const inputStyle = useInputStyle();
+  const dp = usePanel(() => api.getAuthorityDeputies());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState({ deputy: '', note: '' });
+  const [ho, setHo] = useState({ reason: '', until: '' });
+
+  // An agent principal is refused (403) and a deployment without the capability answers 402: no panel.
+  if (dp.notice) return null;
+
+  const d: any = dp.data;
+  const asHolder: any[] = Array.isArray(d?.as_holder) ? d.as_holder : [];
+  const asDeputy: any[] = Array.isArray(d?.as_deputy) ? d.as_deputy : [];
+  const open: any = d?.open_handover || null;
+  const covering: any[] = Array.isArray(d?.covering) ? d.covering : [];
+  const accepted = asHolder.find(x => x.status === 'accepted') || null;
+  const pending = asHolder.filter(x => x.status === 'pending');
+  const declined = asHolder.filter(x => x.status === 'declined');
+  const offered = asDeputy.filter(x => x.status === 'pending');
+  const deputyFor = asDeputy.filter(x => x.status === 'accepted');
+
+  const btn = 'px-2.5 py-1 rounded-md text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50';
+  const quiet: React.CSSProperties = { background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` };
+  const primary: React.CSSProperties = { background: colors.primary + '18', color: colors.primary };
+  const soft: React.CSSProperties = { background: colors.surface2, border: `1px solid ${colors.hairline}` };
+
+  const run = async (key: string, fn: () => Promise<unknown>, after?: () => void) => {
+    setBusy(key); setError(null);
+    try { await fn(); after?.(); await dp.reload(); onChanged(); }
+    catch (e: any) { setError(e?.message || 'That change was refused.'); }
+    finally { setBusy(null); }
+  };
+
+  const nameDeputy = () => {
+    const who = name.deputy.trim();
+    if (!who) { setError('Name the person who will cover for you.'); return; }
+    run('name', () => api.nameAuthorityDeputy(who, name.note.trim()), () => setName({ deputy: '', note: '' }));
+  };
+
+  const handOver = () => {
+    const reason = ho.reason.trim();
+    if (!reason) { setError('Say why you are handing over, so the record explains it.'); return; }
+    let until: string | null = null;
+    if (ho.until) {
+      const t = new Date(ho.until);
+      if (!Number.isFinite(t.getTime()) || t.getTime() <= Date.now()) { setError('The return time must be in the future.'); return; }
+      until = t.toISOString();
+    }
+    run('handover', () => api.startAuthorityHandover(reason, until), () => setHo({ reason: '', until: '' }));
+  };
+
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const sinceText = (h: any) => `since ${whenText(h.started_at)}${h.until ? `, until ${whenText(h.until)}` : ''}`;
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}`, background: colors.surface1 }}>
+      <SectionHead title="Deputies" />
+      <div className="p-4 space-y-3">
+        <p className="text-[11.5px] leading-snug" style={{ color: colors.inkTertiary }}>
+          A deputy covers for you while you are away. A handover lends your active, delegable grants to your deputy until you return.
+        </p>
+        {dp.loading && !d && <BrainLoading variant="compact" message="Reading who covers for whom…" />}
+        {dp.error && !d && <p className="text-[12px]" style={{ color: colors.error }}>{dp.error}</p>}
+
+        {d && (
+          <>
+            {/* My deputy */}
+            <div className="space-y-1.5">
+              <div className="text-[11.5px] font-medium" style={{ color: colors.inkSubtle }}>My deputy</div>
+              {accepted && (
+                <div className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2" style={soft}>
+                  <span className="text-[12.5px] font-medium min-w-0 truncate" style={{ color: colors.ink }}>{accepted.deputy}</span>
+                  <Pill text="Accepted" tone="ok" />
+                  <button onClick={() => run(`revoke-${accepted.id}`, () => api.revokeAuthorityDeputyship(accepted.id))} disabled={busy !== null}
+                    className={`${btn} ml-auto`} style={quiet}>
+                    {busy === `revoke-${accepted.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />} Revoke
+                  </button>
+                </div>
+              )}
+              {pending.map(x => (
+                <div key={x.id} className="text-[12px] rounded-lg px-3 py-2" style={{ ...soft, color: colors.inkMuted }}>
+                  {`Waiting for ${x.deputy} to accept`}
+                  {x.note && <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{`. ${x.note}`}</span>}
+                </div>
+              ))}
+              {declined.map(x => (
+                <div key={x.id} className="text-[11.5px]" style={{ color: colors.inkTertiary }}>{`${x.deputy} declined to cover for you.`}</div>
+              ))}
+              {!accepted && pending.length === 0 && declined.length === 0 && (
+                <div className="text-[12px]" style={{ color: colors.inkTertiary }}>You have not named a deputy.</div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-end pt-1">
+                <Field label="Name a deputy">
+                  <input value={name.deputy} onChange={e => setName({ ...name, deputy: e.target.value })} className={inputCls} style={inputStyle} placeholder="Their sign-in email" />
+                </Field>
+                <Field label="Note">
+                  <input value={name.note} onChange={e => setName({ ...name, note: e.target.value })} className={inputCls} style={inputStyle} placeholder="Optional" />
+                </Field>
+                <button onClick={nameDeputy} disabled={busy !== null} className={`${btn} h-[30px]`} style={primary}>
+                  {busy === 'name' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Ask
+                </button>
+              </div>
+            </div>
+
+            {/* Offered to me */}
+            {(offered.length > 0 || deputyFor.length > 0) && (
+              <div className="space-y-1.5">
+                <div className="text-[11.5px] font-medium" style={{ color: colors.inkSubtle }}>Deputyships offered to me</div>
+                {offered.map(x => (
+                  <div key={x.id} className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2" style={soft}>
+                    <span className="text-[12px] flex-1 min-w-[140px]" style={{ color: colors.inkMuted }}>
+                      {`${x.holder} asks you to cover for them`}
+                      {x.note && <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{`. ${x.note}`}</span>}
+                    </span>
+                    <button onClick={() => run(`accept-${x.id}`, () => api.respondToAuthorityDeputyship(x.id, true))} disabled={busy !== null}
+                      className={btn} style={primary}>
+                      {busy === `accept-${x.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Accept
+                    </button>
+                    <button onClick={() => run(`decline-${x.id}`, () => api.respondToAuthorityDeputyship(x.id, false))} disabled={busy !== null}
+                      className={btn} style={quiet}>
+                      {busy === `decline-${x.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />} Decline
+                    </button>
+                  </div>
+                ))}
+                {deputyFor.map(x => (
+                  <div key={x.id} className="text-[11.5px]" style={{ color: colors.inkTertiary }}>{`You are the deputy for ${x.holder}.`}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Handover */}
+            <div className="space-y-1.5">
+              <div className="text-[11.5px] font-medium" style={{ color: colors.inkSubtle }}>Handover</div>
+              {open ? (
+                <div className="rounded-lg px-3 py-2 space-y-1.5" style={{ background: colors.primary + '0f', border: `1px solid ${colors.primary}30` }}>
+                  <div className="text-[12.5px] font-medium" style={{ color: colors.ink }}>
+                    {`Handed over to ${open.deputy} ${sinceText(open)}`}
+                  </div>
+                  <div className="text-[12px]" style={{ color: colors.inkMuted }}>
+                    {`${plural(Number(open.grant_count || 0), 'grant', 'grants')} lent to ${open.deputy}.`}
+                  </div>
+                  {Array.isArray(open.not_delegable) && open.not_delegable.length > 0 && (
+                    <div className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>
+                      {`${plural(open.not_delegable.length, 'grant stayed', 'grants stayed')} with you because ${open.not_delegable.length === 1 ? 'it does' : 'they do'} not allow delegation.`}
+                    </div>
+                  )}
+                  {Array.isArray(open.not_active) && open.not_active.length > 0 && (
+                    <div className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>
+                      {`${plural(open.not_active.length, 'grant stayed', 'grants stayed')} with you because ${open.not_active.length === 1 ? 'it was' : 'they were'} not active (paused, suspended or expired).`}
+                    </div>
+                  )}
+                  {open.reason && <div className="text-[11px]" style={{ color: colors.inkTertiary }}>{`Reason: ${open.reason}`}</div>}
+                  {open.note && <div className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>{open.note}</div>}
+                  <button onClick={() => run('return', () => api.returnAuthorityHandover())} disabled={busy !== null} className={btn} style={primary}>
+                    {busy === 'return' ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />} Return
+                  </button>
+                </div>
+              ) : accepted ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Field label="Hand over while I am away">
+                      <input value={ho.reason} onChange={e => setHo({ ...ho, reason: e.target.value })} className={inputCls} style={inputStyle} placeholder="Why you are away" />
+                    </Field>
+                    <Field label="Until (optional)">
+                      <input type="datetime-local" value={ho.until} onChange={e => setHo({ ...ho, until: e.target.value })} className={inputCls} style={inputStyle} />
+                    </Field>
+                  </div>
+                  <button onClick={handOver} disabled={busy !== null} className={btn} style={primary}>
+                    {busy === 'handover' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />} {`Hand over to ${accepted.deputy}`}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-[12px]" style={{ color: colors.inkTertiary }}>You can hand over once a deputy has accepted.</div>
+              )}
+              {covering.map(h => (
+                <div key={h.id} className="rounded-lg px-3 py-2 text-[12px]" style={{ ...soft, color: colors.inkMuted }}>
+                  {`You are covering ${h.holder} ${sinceText(h)}.`}
+                  <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{` ${plural(Number(h.grant_count || 0), 'grant', 'grants')} lent to you.`}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {error && <div className="text-[12px] leading-snug" style={{ color: colors.error }} role="alert">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Portable records and trusted issuers ──────────────────────────────────────
+
+function DeclaredView({ r }: { r: any }) {
+  const { colors } = useTheme();
+  const claims = r?.claims && typeof r.claims === 'object' && !Array.isArray(r.claims) ? Object.entries(r.claims) : [];
+  const subject = r?.subject_kind === 'skill' ? humanize(r.subject_id) : (r?.subject_id || NOT_MEASURED);
+  return (
+    <div className="rounded-lg px-3 py-2 space-y-1.5" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[12.5px] font-medium min-w-0" style={{ color: colors.ink }}>{r?.issuer || NOT_MEASURED}</span>
+        {r?.verified ? <Pill text="Signature verified" tone="ok" /> : <Pill text="Signature not verified" tone="bad" />}
+        {r?.issuer_trusted_now ? <Pill text="Trusted issuer" tone="ok" /> : <Pill text="Not on your trusted list" tone="warn" />}
+      </div>
+      <div className="text-[11.5px]" style={{ color: colors.inkMuted }}>
+        {`${humanize(r?.subject_kind) || 'Subject'}: ${subject}`}
+        <span style={{ color: colors.inkTertiary }}>
+          {`${r?.exported_at ? `. Exported ${timeAgo(r.exported_at)}` : ''}${r?.imported_at ? `, imported ${timeAgo(r.imported_at)}` : ''}${r?.imported_by ? ` by ${r.imported_by}` : ''}.`}
+        </span>
+      </div>
+      {r?.newly_stored === false && <div className="text-[11px]" style={{ color: colors.inkTertiary }}>This record was already on file, so nothing new was stored.</div>}
+      {r?.note && <div className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>{r.note}</div>}
+      {claims.length === 0 ? (
+        <div className="text-[12px]" style={{ color: colors.inkTertiary }}>This record makes no claims.</div>
+      ) : (
+        <div>
+          {claims.map(([k, c], i) => {
+            const text = claimValueText(c);
+            return (
+              <div key={k} className="py-1 flex items-baseline justify-between gap-3 text-[12px]"
+                style={{ borderTop: i === 0 ? undefined : `1px solid ${colors.hairline}`, color: colors.inkMuted }} title={claimTitle(c)}>
+                <span className="min-w-0">{humanize(k)}</span>
+                <span className="tabular-nums font-medium text-right" style={{ color: text === NOT_MEASURED ? colors.inkTertiary : colors.ink }}>{text}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortabilityPanel({ isAdmin }: { isAdmin: boolean }) {
+  const { colors } = useTheme();
+  const inputStyle = useInputStyle();
+  const issuers = usePanel(() => api.listAuthorityIssuers());
+  const declared = usePanel(() => api.listAuthorityDeclared());
+  const [skill, setSkill] = useState('');
+  const [exp, setExp] = useState<{ busy: boolean; token: string; copied: boolean; note: string; error: string | null }>(
+    { busy: false, token: '', copied: false, note: '', error: null });
+  const [tokenIn, setTokenIn] = useState('');
+  const [imp, setImp] = useState<{ busy: boolean; result: any; error: string | null }>({ busy: false, result: null, error: null });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [newIssuer, setNewIssuer] = useState({ name: '', key: '', note: '' });
+  const [issuerBusy, setIssuerBusy] = useState<string | null>(null);
+  const [issuerError, setIssuerError] = useState<string | null>(null);
+
+  // Operator and above only: a viewer's 403 (or an open-core 402) hides the whole panel.
+  if (issuers.notice) return null;
+
+  const btn = 'px-2.5 py-1 rounded-md text-[11.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50';
+  const quiet: React.CSSProperties = { background: colors.surface2, color: colors.inkMuted, border: `1px solid ${colors.hairline}` };
+  const primary: React.CSSProperties = { background: colors.primary + '18', color: colors.primary };
+  const head = 'text-[11.5px] font-medium';
+
+  const doExport = async () => {
+    const id = skill.trim();
+    if (!id) { setExp(p => ({ ...p, error: 'Enter a skill id to export its track record.' })); return; }
+    setExp({ busy: true, token: '', copied: false, note: '', error: null });
+    try {
+      const r = await api.getAuthorityTrackRecord({ skill_id: id });
+      const token = String(r?.token || '');
+      if (!token) throw new Error('No record came back for this skill.');
+      let copied = false;
+      try { await navigator.clipboard.writeText(token); copied = true; } catch { copied = false; }
+      setExp({ busy: false, token, copied, note: r?.note || '', error: null });
+    } catch (e: any) {
+      setExp({ busy: false, token: '', copied: false, note: '', error: e?.message || 'The track record could not be exported.' });
+    }
+  };
+
+  const doImport = async () => {
+    const token = tokenIn.trim();
+    if (!token) { setImp({ busy: false, result: null, error: 'Paste a track-record token to import.' }); return; }
+    setImp({ busy: true, result: null, error: null });
+    try {
+      const r = await api.importAuthorityTrackRecord(token);
+      setImp({ busy: false, result: r, error: null });
+      declared.reload();
+    } catch (e: any) {
+      setImp({ busy: false, result: null, error: e?.message || 'The record could not be imported.' });
+    }
+  };
+
+  const issuerRun = async (key: string, fn: () => Promise<unknown>, after?: () => void) => {
+    setIssuerBusy(key); setIssuerError(null);
+    try { await fn(); after?.(); await issuers.reload(); }
+    catch (e: any) { setIssuerError(e?.message || 'That change was refused.'); }
+    finally { setIssuerBusy(null); }
+  };
+
+  const addIssuer = () => {
+    const n = newIssuer.name.trim(), k = newIssuer.key.trim();
+    if (!n || !k) { setIssuerError('An issuer needs a name and its public key.'); return; }
+    issuerRun('add', () => api.addAuthorityIssuer({ name: n, public_key_hex: k, note: newIssuer.note.trim() }), () => setNewIssuer({ name: '', key: '', note: '' }));
+  };
+
+  const issuerList = asList(issuers.data, 'issuers');
+  const declaredList = asList(declared.data, 'declared');
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}`, background: colors.surface1 }}>
+      <SectionHead title="Portable records and trusted issuers" />
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Export */}
+          <div className="space-y-2 min-w-0">
+            <div className={head} style={{ color: colors.inkSubtle }}>Export a track record</div>
+            <div className="flex items-end gap-2">
+              <Field label="Skill id" className="flex-1">
+                <input value={skill} onChange={e => setSkill(e.target.value)} className={inputCls} style={inputStyle} placeholder="e.g. handle_refund_request" />
+              </Field>
+              <button onClick={doExport} disabled={exp.busy} className={`${btn} h-[30px]`} style={primary}>
+                {exp.busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} Export
+              </button>
+            </div>
+            {exp.error && <div className="text-[12px]" style={{ color: colors.error }} role="alert">{exp.error}</div>}
+            {exp.token && (
+              <div className="space-y-1.5">
+                {exp.copied ? (
+                  <div className="flex items-center gap-1.5 text-[12px]" style={{ color: colors.success }}><Check className="w-3.5 h-3.5" /> Record copied to the clipboard.</div>
+                ) : (
+                  <div className="text-[11.5px]" style={{ color: colors.inkMuted }}>The clipboard was not available. Copy the record from here.</div>
+                )}
+                <input readOnly value={exp.token} onFocus={e => e.currentTarget.select()} aria-label="Signed track record"
+                  className="w-full px-2 py-1 rounded-md text-[11px] font-mono focus:outline-none"
+                  style={{ background: colors.inputBg, color: colors.ink, border: `1px solid ${colors.hairline}` }} />
+              </div>
+            )}
+            {exp.note && <p className="text-[11px] leading-snug" style={{ color: colors.inkTertiary }}>{exp.note}</p>}
+          </div>
+
+          {/* Import */}
+          <div className="space-y-2 min-w-0">
+            <div className={head} style={{ color: colors.inkSubtle }}>Import a record</div>
+            <textarea value={tokenIn} onChange={e => setTokenIn(e.target.value)} rows={3} aria-label="Track-record token"
+              placeholder="Paste a signed track record from another workspace"
+              className="w-full px-2.5 py-1.5 rounded-lg text-[11.5px] font-mono focus:outline-none resize-y" style={inputStyle} />
+            <button onClick={doImport} disabled={imp.busy} className={btn} style={primary}>
+              {imp.busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />} Import
+            </button>
+            {imp.error && <div className="text-[12px] leading-snug" style={{ color: colors.error }} role="alert">{imp.error}</div>}
+          </div>
+        </div>
+
+        {imp.result && <DeclaredView r={imp.result} />}
+
+        {/* Trusted issuers */}
+        <div className="space-y-1.5">
+          <div className={head} style={{ color: colors.inkSubtle }}>Trusted issuers</div>
+          {issuers.loading && !issuers.data && <BrainLoading variant="compact" message="Reading trusted issuers…" />}
+          {issuers.error && !issuers.data && <p className="text-[12px]" style={{ color: colors.error }}>{issuers.error}</p>}
+          {issuers.data && issuerList.length === 0 && <div className="text-[12px]" style={{ color: colors.inkTertiary }}>No issuer is trusted yet, so imported records stay unverified.</div>}
+          {issuerList.map((x, i) => (
+            <div key={x.id} className="py-1.5 flex items-center gap-2 flex-wrap text-[12px]"
+              style={{ borderTop: i === 0 ? undefined : `1px solid ${colors.hairline}`, color: colors.inkMuted }} title={x.note || undefined}>
+              <span className="font-medium min-w-0 truncate" style={{ color: colors.ink }}>{x.name}</span>
+              <span className="font-mono text-[11px]" style={{ color: colors.inkTertiary }}>{String(x.public_key_hex || '').slice(0, 16)}</span>
+              <Pill text={x.active ? 'Active' : 'Revoked'} tone={x.active ? 'ok' : 'muted'} />
+              {isAdmin && x.active && (
+                <button onClick={() => issuerRun(`revoke-${x.id}`, () => api.revokeAuthorityIssuer(x.id))} disabled={issuerBusy !== null}
+                  className={`${btn} ml-auto`} style={quiet}>
+                  {issuerBusy === `revoke-${x.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />} Revoke
+                </button>
+              )}
+            </div>
+          ))}
+          {isAdmin && (
+            <div className="rounded-lg p-3 space-y-2" style={{ background: colors.surface2, border: `1px solid ${colors.hairline}` }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Field label="Add issuer: name">
+                  <input value={newIssuer.name} onChange={e => setNewIssuer({ ...newIssuer, name: e.target.value })} className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Public key (hex)">
+                  <input value={newIssuer.key} onChange={e => setNewIssuer({ ...newIssuer, key: e.target.value })} className={`${inputCls} font-mono`} style={inputStyle} />
+                </Field>
+              </div>
+              <div className="flex items-end gap-2">
+                <Field label="Note" className="flex-1">
+                  <input value={newIssuer.note} onChange={e => setNewIssuer({ ...newIssuer, note: e.target.value })} className={inputCls} style={inputStyle} placeholder="Who this issuer is" />
+                </Field>
+                <button onClick={addIssuer} disabled={issuerBusy !== null} className={`${btn} h-[30px]`} style={primary}>
+                  {issuerBusy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add issuer
+                </button>
+              </div>
+            </div>
+          )}
+          {issuerError && <div className="text-[12px] leading-snug" style={{ color: colors.error }} role="alert">{issuerError}</div>}
+        </div>
+
+        {/* Declared records */}
+        <div className="space-y-1.5">
+          <div className={head} style={{ color: colors.inkSubtle }}>Declared records</div>
+          {declared.loading && !declared.data && <BrainLoading variant="compact" message="Reading declared records…" />}
+          {declared.error && !declared.data && <p className="text-[12px]" style={{ color: colors.error }}>{declared.error}</p>}
+          {declared.data && declaredList.length === 0 && <div className="text-[12px]" style={{ color: colors.inkTertiary }}>No record has been imported yet.</div>}
+          {declaredList.slice(0, 20).map((x, i) => (
+            <div key={x.id} style={{ borderTop: i === 0 ? undefined : `1px solid ${colors.hairline}` }}>
+              <button onClick={() => setOpenId(openId === x.id ? null : x.id)} aria-expanded={openId === x.id}
+                className="w-full py-1.5 flex items-center gap-2 flex-wrap text-[12px] text-left" style={{ color: colors.inkMuted }}>
+                {openId === x.id ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+                <span className="font-medium min-w-0 truncate" style={{ color: colors.ink }}>{x.issuer || NOT_MEASURED}</span>
+                <span className="min-w-0 truncate flex-1">{x.subject_kind === 'skill' ? humanize(x.subject_id) : x.subject_id}</span>
+                <span className="text-[11px]" style={{ color: colors.inkTertiary }}>{x.imported_at ? `Imported ${timeAgo(x.imported_at)}` : ''}</span>
+                {x.verified ? <Pill text="Verified" tone="ok" /> : <Pill text="Not verified" tone="bad" />}
+              </button>
+              {openId === x.id && <div className="pb-2"><DeclaredView r={x} /></div>}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1232,16 +1844,21 @@ export default function Authority() {
 
           <ReviewQuality />
 
+          <BalancePanel />
+
           <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${colors.hairline}`, background: colors.surface1 }}>
             <SectionHead title="Running under my name" right={<span>Refreshes on its own</span>} />
             {feed.length === 0 ? (
               <div className="px-4 py-5 text-[12.5px]" style={{ color: colors.inkTertiary }}>Nothing has run under your authority yet.</div>
-            ) : feed.map(u => <FeedRow key={u.id} u={u} />)}
+            ) : feed.map(u => <FeedRow key={u.id} u={u} onChanged={reloadAll} />)}
           </div>
+
+          <PortabilityPanel isAdmin={isAdmin} />
         </div>
 
-        <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+        <div className="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <LendPanel onLent={reloadAll} sectionRef={lendRef} fallbackCurrency={ring.cur} />
+          <DeputiesPanel onChanged={reloadAll} />
         </div>
       </div>
     </div>

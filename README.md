@@ -206,6 +206,8 @@ actually ships.
 | Connector catalog (read + basic write-back) | Open core | Available |
 | Company Brain, Foresight, Proving Ground, dashboards | Open core | Available |
 | Offline-verifiable action proofs + auditor bundles | Enterprise | Available |
+| Authority: every autonomous action runs on a named person's lent signature | Enterprise | Available: a person lends their own authority (scoped, limited per action and per period, reserved atomically at Gate 3, revocable at once, delegable only downward with acceptance); Gate 3 asks "on whose authority?" only for a run every other rule lets through; every proof names the basis; attested human review; underwriting before lending; tripwires; policy replay; review quality; portable offline-verifiable authority tokens; the autonomy balance sheet; reversibility windows; deputies and handover; portable signed track records and trusted issuers |
+| Authority page (what runs under my name) | Open core shell, Enterprise data | Available |
 | Deterministic decision-proof arbitration | Enterprise | Available |
 | Earned-autonomy trust ledger and ladder | Enterprise | Available: input-trust gating, calibration, bounded tier movement (audited, sealed, human pin wins, per-tenant enforce mode), model assurance gate |
 | Rehearsal: predicted-diff approvals before execution | Enterprise | Partial: shadow-computed predicted diffs, risk tiers, stale-rehearsal refusal, drift proofs, and the approval diff viewer (the HITL queue shows what will change before you approve) ship; vendor dry-run adapters and a hermetic sandbox are pending |

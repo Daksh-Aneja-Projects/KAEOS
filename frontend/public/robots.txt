@@ -1,0 +1,17 @@
+# KAEOS is an authenticated console. The sign-in page and the public
+# descriptions below are indexable; application routes carry tenant data and
+# are not.
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /llms.txt
+Disallow: /platform/
+Disallow: /departments/
+Disallow: /my-work
+Disallow: /analytics
+Disallow: /integrations
+Disallow: /marketplace
+Disallow: /automation
+Disallow: /pulse
+Disallow: /api/
+Sitemap: /sitemap.xml

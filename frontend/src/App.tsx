@@ -77,6 +77,7 @@ const AgentsView = lazy(() => import('./views/AgentsView'));
 const DecisionsView = lazy(() => import('./views/DecisionsView'));
 const ComplianceChecker = lazy(() => import('./pages/ComplianceChecker'));
 const Authority = lazy(() => import('./pages/Authority'));
+const AuthorityBalance = lazy(() => import('./pages/AuthorityBalance'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OperatorConsole = lazy(() => import('./pages/OperatorConsole'));
@@ -505,6 +506,7 @@ function Shell() {
                 <Route path="/platform/agents" element={<ThemeAdapter><AgentsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/decisions" element={<ThemeAdapter><DecisionsView domain={domain} /></ThemeAdapter>} />
                 <Route path="/platform/authority" element={<ThemeAdapter><Authority /></ThemeAdapter>} />
+                <Route path="/platform/authority/balance" element={<ThemeAdapter><AuthorityBalance /></ThemeAdapter>} />
                 <Route path="/platform/proving-ground" element={<ThemeAdapter><ProvingGround /></ThemeAdapter>} />
                 <Route path="/platform/compliance-checker" element={<ThemeAdapter><ComplianceChecker /></ThemeAdapter>} />
                 {/* Company Brain merged into Knowledge; Trust merged into Decisions (Governance tab). */}

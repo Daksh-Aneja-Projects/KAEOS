@@ -13,6 +13,63 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <title>KAEOS: The Governed AI Workforce</title>
+    <!-- Discoverability for the public surface only (the sign-in page). Application
+         routes are disallowed in robots.txt; nothing here describes tenant data. -->
+    <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large" />
+    <meta name="theme-color" content="#0b0d12" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="KAEOS" />
+    <meta property="og:title" content="KAEOS: The Governed AI Workforce" />
+    <meta property="og:description" content="AI departments that act on their own only when they have proven they can, on a named person's lent authority, with a signed proof for every decision." />
+    <meta property="og:image" content="/icons.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="KAEOS: The Governed AI Workforce" />
+    <meta name="twitter:description" content="Governed autonomy: a seven-gate pipeline, a measured confidence ceiling, earned autonomy on a trust ladder, and every autonomous action under a named person's lent authority." />
+    <!-- Answer-engine facing: a direct, honest description of what the product is and
+         the question it answers. No claims the product does not make about itself. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "KAEOS",
+      "alternateName": "KAEOS: The Governed AI Workforce",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "description": "KAEOS runs AI departments for every business function and regulated industry that act on their own only when they have proven they can. Every action passes a seven-gate governance pipeline with deterministic statutory compliance checkers and is sealed as an offline-verifiable signed proof. Autonomy is earned on a trust ladder and exercised only on a named person's lent authority: scoped, limited, revocable, and named in every proof.",
+      "url": "https://github.com/Daksh-Aneja-Projects/KAEOS",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "featureList": [
+        "Seven-gate governance pipeline with fail-closed statutory compliance checkers",
+        "Measured confidence ceiling probed on the customer's own model",
+        "Earned autonomy on a calibrated trust ladder",
+        "Authority: every autonomous action under a named person's lent, limited, revocable signature",
+        "Offline-verifiable signed proofs and an EU AI Act evidence pack read from the record"
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "On whose authority does a KAEOS agent act when no human is in the loop?",
+          "acceptedAnswer": {"@type": "Answer", "text": "On a named person's lent authority. A person lends their own signature to the machine with limits per action and per period; the run is reserved against that grant before it proceeds, the grant can be revoked at once, and the sealed proof of the run names the person."}
+        },
+        {
+          "@type": "Question",
+          "name": "How does KAEOS decide whether an agent may act autonomously?",
+          "acceptedAnswer": {"@type": "Answer", "text": "Autonomy is earned, not granted: calibrated outcomes move a skill up a four-rung trust ladder, the customer's own model is probed for a confidence ceiling, high-consequence actions always pause for a human, and a run that clears every rule still needs a person's lent authority."}
+        },
+        {
+          "@type": "Question",
+          "name": "Can an auditor verify what a KAEOS agent did without trusting KAEOS?",
+          "acceptedAnswer": {"@type": "Answer", "text": "Yes. Every governed run is sealed as an Ed25519-signed, hash-chained proof that verifies offline with a standalone script against the tenant's pinned public key, and the evidence pack labels each section as measured from the record or self-assessed."}
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

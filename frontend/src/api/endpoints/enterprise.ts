@@ -1,5 +1,17 @@
 import { request, requestPublic } from '../http';
 
+/** Query string for the balance sheet: a named period, or a custom start and end. */
+function authorityBalanceQuery(q: { period: string; start?: string; end?: string; previous?: boolean }): string {
+  const p = new URLSearchParams();
+  p.set('period', q.period);
+  if (q.period === 'custom') {
+    if (q.start) p.set('start', q.start);
+    if (q.end) p.set('end', q.end);
+  }
+  if (q.previous) p.set('previous', 'true');
+  return p.toString();
+}
+
 export const enterpriseApi = {
   // ─── Enterprise Platform APIs ───
   getSystemStats: () => request<any>('/system/stats'),
@@ -395,5 +407,53 @@ export const governedExecutionApi = {
       method: 'POST',
       body: JSON.stringify(expectedPublicKey ? { token, expected_public_key: expectedPublicKey } : { token }),
     }),
+
+  // Reversibility (0.26.0): assess a run's undo, then undo it inside the window.
+  getAuthorityUndo: (executionId: string) =>
+    request<any>(`/authority/undo/${encodeURIComponent(executionId)}`),
+  undoAuthorityRun: (executionId: string) =>
+    request<any>(`/authority/undo/${encodeURIComponent(executionId)}`, { method: 'POST', body: JSON.stringify({}) }),
+
+  // Balance sheet: the period statement, as JSON or as a plain-text attachment.
+  getAuthorityBalance: (q: { period: 'month' | 'quarter' | 'custom'; start?: string; end?: string; previous?: boolean }) =>
+    request<any>(`/authority/balance?${authorityBalanceQuery(q)}`),
+  authorityBalanceExportPath: (q: { period: 'month' | 'quarter' | 'custom'; start?: string; end?: string }, format: 'text' | 'json') =>
+    `/authority/balance/export?${authorityBalanceQuery({ ...q, previous: false })}&format=${format}`,
+
+  // Deputies and handover: a named person who may cover while the holder is away.
+  getAuthorityDeputies: () => request<any>('/authority/deputies'),
+  nameAuthorityDeputy: (deputy: string, note: string) =>
+    request<any>('/authority/deputies', { method: 'POST', body: JSON.stringify({ deputy, note }) }),
+  respondToAuthorityDeputyship: (id: string, accept: boolean) =>
+    request<any>(`/authority/deputies/${encodeURIComponent(id)}/accept`, { method: 'POST', body: JSON.stringify({ accept }) }),
+  revokeAuthorityDeputyship: (id: string) =>
+    request<any>(`/authority/deputies/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: JSON.stringify({}) }),
+  startAuthorityHandover: (reason: string, until: string | null) =>
+    request<any>('/authority/handover', { method: 'POST', body: JSON.stringify({ reason, until }) }),
+  returnAuthorityHandover: () =>
+    request<any>('/authority/handover/return', { method: 'POST', body: JSON.stringify({}) }),
+  listAuthorityHandovers: () => request<any>('/authority/handovers'),
+
+  // Portability: a signed track record that travels, and the issuers trusted to sign one.
+  getAuthorityTrackRecord: (q: { skill_id?: string; principal?: string }) => {
+    const p = new URLSearchParams();
+    if (q.skill_id) p.set('skill_id', q.skill_id);
+    if (q.principal) p.set('principal', q.principal);
+    return request<any>(`/authority/track-record?${p.toString()}`);
+  },
+  importAuthorityTrackRecord: (token: string) =>
+    request<any>('/authority/track-record/import', { method: 'POST', body: JSON.stringify({ token }) }),
+  listAuthorityIssuers: () => request<any>('/authority/issuers'),
+  addAuthorityIssuer: (body: { name: string; public_key_hex: string; note: string }) =>
+    request<any>('/authority/issuers', { method: 'POST', body: JSON.stringify(body) }),
+  revokeAuthorityIssuer: (id: string) =>
+    request<any>(`/authority/issuers/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: JSON.stringify({}) }),
+  listAuthorityDeclared: (subjectKind?: string, subjectId?: string) => {
+    const p = new URLSearchParams();
+    if (subjectKind) p.set('subject_kind', subjectKind);
+    if (subjectId) p.set('subject_id', subjectId);
+    const qs = p.toString();
+    return request<any>(`/authority/declared${qs ? `?${qs}` : ''}`);
+  },
 };
 

@@ -1,0 +1,22 @@
+# KAEOS
+
+> KAEOS is the Governed AI Workforce: AI departments for every business function and regulated industry that act on their own only when they have proven they can, under a named person's lent authority, with a signed, offline-verifiable proof for every decision.
+
+KAEOS answers the question enterprises cannot answer about autonomous agents today: on whose authority did the machine act, and can you prove what it did? Every agent action passes a seven-gate pipeline (statutory compliance checkers, fairness, a measured confidence ceiling, a human gate, adversarial debate, governed execution, audit) and is sealed as an Ed25519-signed, hash-chained proof. Autonomy is earned on a trust ladder from calibrated outcomes, and it is exercised only on a human's lent authority: scoped, limited per action and per period, revocable at once, and named in every proof.
+
+## What it does
+
+- Governed autonomy: a seven-gate pipeline with deterministic statutory compliance checkers (EEOC, SOX, ECOA, HIPAA, GDPR, OFAC and more), fail-closed.
+- Ten AI departments (HR, Finance, Legal, Sales, Support, Operations, Engineering and IT Ops, Healthcare, Procurement, Lending) with 48 agents over a live org graph.
+- A measured confidence ceiling: the platform probes the customer's own model and caps every decision's confidence at what that model actually demonstrated.
+- Authority (Enterprise): every autonomous action runs on a named person's lent signature, with underwriting before lending, attested human review, tripwires, policy replay, review quality and portable, offline-verifiable authority tokens.
+- Proofs and evidence: offline-verifiable action proofs, an auditor bundle, and a procurement and EU AI Act evidence pack read from the record, each section labelled measured or self-assessed.
+
+## What it refuses to fake
+
+Hours saved and cost reduction are null until a tenant supplies a human baseline. Compliance is checked by statute, not guessed by a model. A simulated evaluation can never promote a model. Figures the record cannot support are reported as not measured, never as zero.
+
+## Links
+
+- Source and documentation: https://github.com/Daksh-Aneja-Projects/KAEOS
+- License: Apache 2.0 (open core); KAEOS Enterprise is a separate proprietary overlay.
